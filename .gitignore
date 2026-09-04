@@ -3,7 +3,7 @@
 # ---- the decision log --------------------------------------------------------------
 # .mem/ is this project's working memory: plans, checkpoints, the decision log. 
 .mem/
-docs/
+docs/*.md
 !docs/cite/
 !docs/tutorials/
 

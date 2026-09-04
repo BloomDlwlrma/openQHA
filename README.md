@@ -295,9 +295,8 @@ basin_store.census(tag="prod")                          # how many per chunk
 
 ## Documentation
 
-| | |
+|Document|Content|
 |---|---|
-| [`docs/branchA_workflow.md`](docs/branchA_workflow.md) | design, the full parameter set, and how to run on Tianhe |
 | [`docs/tutorials/T01_…ipynb`](docs/tutorials/) | **practice** — a real conformer search, end to end |
 | [`docs/tutorials/T02_…ipynb`](docs/tutorials/) | **theory** — AD Hessians and Projected Hessian Learning |
 | [`configs/`](configs/) | every parameter, classified and sourced |
