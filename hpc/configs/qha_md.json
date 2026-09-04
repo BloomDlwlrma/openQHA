@@ -1,0 +1,108 @@
+{
+  "_what_this_is": [
+    "Branch B task configuration: how one (basin, seed) quasi-harmonic trajectory is",
+    "placed on a machine. The SCIENCE settings are NOT here -- the timestep, the",
+    "friction, the temperature, the sampling interval and the three prohibitions live in",
+    "scripts/production/s0_B_qha_trajectory.py and configs/mdp/s0_qha_production.mdp,",
+    "and the standard state lives in configs/openqha.yaml.",
+    "",
+    "That split is the point of branch E: choosing a machine must never change a result.",
+    "If a value appears both here and in one of those files, that file wins and this one",
+    "is wrong."
+  ],
+  "driver": "scripts/production/s0_B_qha_trajectory.py",
+  "analysis": "scripts/production/s0_B_qha_analyse.py",
+  "granularity": "one task per (basin, seed)",
+  "_granularity_why": [
+    "The protocol is 3 independent seeds per basin, because the seed-to-seed spread IS",
+    "acceptance criterion 5 -- the blank control that decides whether branch B can",
+    "measure an edge at all. So the independent work exists by construction and there is",
+    "never a reason to look for parallelism inside one trajectory.",
+    "",
+    "A trajectory is also the smallest unit that can be resumed: the driver flushes",
+    "frames in chunks and rereads them on restart, so a task that is killed costs at most",
+    "one chunk."
+  ],
+  "resources": {
+    "device": "cpu",
+    "threads_per_task": 1,
+    "memory_gb_per_task": 3,
+    "_device_why": [
+      "CPU, and this is a ruling with a condition attached rather than a preference.",
+      "D0-54 criterion (ii) says a GPU is worth it once structures are evaluated in",
+      "batches; a Langevin trajectory is a serial chain of single-structure force calls,",
+      "which is the case D0-56 measured as not filling a card. On this repo's T400 the",
+      "same trajectory ran 3.5x SLOWER than on the CPU (394 s against 1393 s, D0-C-5).",
+      "Revisit only when a batched interface exists -- not before."
+    ],
+    "_threads_why": [
+      "1, not 4. MACE thread scaling on a 10-atom molecule is 111/90/72/101 ms at",
+      "1/2/4/8 threads (D0-P1-27, D0-P1-32): four threads buy 1.54x while four separate",
+      "trajectories buy 4x, and eight threads are slower than four. Branch A uses 4",
+      "threads per task because CREST parallelises its own metadynamics runs; the two",
+      "branches divide the cores differently and the executors are not interchangeable."
+    ]
+  },
+  "cost_measured": {
+    "_status": "MEASURED 2026-09-03 on this machine, acetone (10 atoms), 1 thread",
+    "seconds_per_ps": 96.1,
+    "seconds_per_force_call": 0.096,
+    "conditions": "MACE-OFF23_medium, float64, CPU, OMP_NUM_THREADS=1, uncontended",
+    "_warning": [
+      "Uncontended and for ONE species. The cost per trajectory with 64 concurrent",
+      "trajectories on one node has NOT been measured, and this number must not be",
+      "divided by a worker count to produce one (D0-P1-12, defects 34 and 56).",
+      "",
+      "The production length is NOT settled either: plan_B section 3.1 says the length is",
+      "set by the saturation curve, not chosen in advance. 200 ps is the starting point",
+      "the driver defaults to, which at the measured rate is about 5.3 hours per",
+      "trajectory."
+    ]
+  },
+  "walltime": {
+    "per_task_timeout_s": 0,
+    "wall_budget_fraction_of_job": 0.90,
+    "_why": [
+      "The driver takes --wall-budget-s and stops at a chunk boundary once it is past,",
+      "leaving a resumable state, rather than being killed with frames still in memory",
+      "(D0-C-25, branch E acceptance criterion 2). Resource configs set the budget to 90",
+      "per cent of the job walltime; the remaining 10 per cent is the final flush.",
+      "",
+      "per_task_timeout_s = 0 means no hard timeout: a trajectory that is going slowly is",
+      "still producing frames, and killing it would throw away work that a restart cannot",
+      "recover any faster."
+    ]
+  },
+  "failure_policy": {
+    "retries": 0,
+    "_why": [
+      "A trajectory that fails the molecular-integrity check has fallen apart, and",
+      "rerunning it from the same basin with the same seed will do it again. Cluster",
+      "resource configs raise this to 1 for pre-emption, which is not reproducible.",
+      "",
+      "There is no fallback of any kind. Branch B has three prohibitions and a driver",
+      "that writes them into every trajectory's metadata, where openqha/qha.py checks",
+      "them; a fallback that quietly changed one would produce a healthy-looking entropy",
+      "that is systematically too high."
+    ]
+  },
+  "acceptance": {
+    "_note": [
+      "Placement must not change a number, so branch E's criteria for this stage are about",
+      "the trajectories meaning the same thing wherever they ran. The scientific criteria",
+      "are plan_B's, and scripts/production/s0_B_qha_analyse.py tests all of them.",
+      "",
+      "D0-C-34's rule applies first: ask whether the chain has a random step. It has two.",
+      "The seed fixes both, so the SAME machine reproduces a trajectory exactly. A",
+      "DIFFERENT machine does not, and demanding that it should would be a criterion that",
+      "cannot pass -- molecular dynamics is chaotic, and a last-bit difference in one MACE",
+      "force call (a different BLAS, a different core count, a different CPU) separates two",
+      "trajectories exponentially. Within a few picoseconds they are different samples of",
+      "the same distribution, which is exactly what three seeds already are."
+    ],
+    "same_machine_same_seed": "a (basin, seed) rerun on the same machine reproduces frames.npy byte for byte",
+    "cross_machine": "T*S_QH from the same (basin, seed) on another machine must agree within the seed-to-seed noise floor that acceptance criterion 5 measures -- the machine must not be distinguishable from a seed",
+    "resume_is_seamless": "a task killed mid-run and restarted must give the same frames as one that ran straight through on that machine: the restart reloads frames.npy and continues, so this tests the chunking rather than the physics",
+    "identity_assertion": "every trajectory's metadata passes qha.assert_trajectory_identity, or the analysis refuses it"
+  }
+}

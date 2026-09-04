@@ -1,0 +1,119 @@
+; =====================================================================================
+; stage 0 - Branch B - Quasi-Harmonic Analysis production trajectory
+;
+; IDENTITY: this is a PROTOCOL SPECIFICATION, not a job that is run.
+;   Stage 0's potential is MACE-OFF23-SC. Production is driven by ASE
+;   (scripts/production/s0_B_qha_trajectory.py). This file exists so every parameter is
+;   written down once in a form that can be compared line-by-line with the
+;   reference literature, and so GROMACS can read the SAME settings when it is
+;   used as the independent cross-check of our S_QH / S_Schlitter (plan_B section 2).
+;
+; REFERENCE: Rinaldo & Field, Biophys. J. 2003, 85, 3485-3501.
+;            Andricioaei & Karplus, J. Chem. Phys. 2001, 115, 6289 (the omega formula).
+;
+; *** THE THREE LINES THAT MATTER MOST ARE PROHIBITIONS, NOT SETTINGS ***
+;
+; A CREST metadynamics trajectory CANNOT be used here (S0-B-3, user ruling
+; 2026-09-03). Three independent reasons, each fatal on its own:
+;
+;   (1) BIAS POTENTIAL. Metadynamics does not sample the Boltzmann distribution of
+;       the true surface. The covariance eigenvalues lambda_i come out too large,
+;       so nu_i = sqrt(kB*T/lambda_i) comes out too low, so the entropy comes out
+;       too HIGH. The direction is fixed -- this is a bias, not noise.
+;
+;   (2) CONSTRAINTS. SHAKE does not soften a degree of freedom, it REMOVES it. The
+;       covariance is identically zero along every constrained bond, so the count
+;       of non-zero eigenvalues cannot reach 3N-6. Acceptance criterion 9 fails
+;       on the spot. A 10-atom molecule has 9 bonds frozen out of 24 internal DOF.
+;
+;   (3) HYDROGEN MASS. lambda_i comes from the MASS-WEIGHTED covariance. CREST runs
+;       with m_H = 2 amu (deuterium) to afford its 5 fs step. Since nu ~ 1/sqrt(mu)
+;       and sqrt(0.92/1.71) = 0.734, a 3000 cm^-1 C-H stretch would be reported near
+;       2200 cm^-1. Zero-point energy and entropy are both wrong.
+;
+; Branch A hands Branch B GEOMETRIES, never trajectories. Branch B restarts from
+; the tightened, deduplicated, zero-imaginary basins produced by
+; s0tf/crest_census.py. Not one CREST frame is reused.
+;
+; Superseded specs for the abandoned multi-molecule near-critical gas box route
+; (D0-P3-19) are in _superseded/. Do not copy parameters from them.
+; =====================================================================================
+title                    = stage0-branchB-qha-production
+cpp                      = cpp
+include                  =
+define                   =
+
+; ---- Integrator ---------------------------------------------------------------------
+; dt = 1 fs: the value used by Rinaldo & Field, and independently the value the MACE
+; authors use (D0-C-30, Moore/Cole/Csanyi JACS 2026, 148, 4928). The repo's old 0.5 fs
+; was an unsourced guess that doubled the cost for nothing (AUDIT section 0 item 3).
+integrator               = md
+tinit                    = 0
+dt                       = 0.001                   ; ps = 1.0 fs
+nsteps                   = 200000                  ; 200 ps; FINAL LENGTH IS SET BY THE
+                                                   ; SATURATION CURVE, NOT BY THIS LINE
+init_step                = 0
+comm-mode                = Linear
+nstcomm                  = 1
+
+; ---- Prohibition 2: NO CONSTRAINTS ---------------------------------------------------
+; Not "few". None. See the header.
+constraints              = none
+constraint-algorithm     = lincs                   ; irrelevant while constraints = none
+lincs-order              = 4
+
+; ---- Prohibition 3: real hydrogen mass ----------------------------------------------
+; GROMACS takes masses from the topology, so there is no keyword here. The assertion
+; lives in the driver instead (acceptance criterion 11): abs(m_H - 1.00794) < 1e-3.
+; NEVER apply hydrogen-mass repartitioning in this branch.
+
+; ---- Prohibition 1: no bias ----------------------------------------------------------
+; No pull code, no AWH, no metadynamics, no restraints of any kind.
+pull                     = no
+awh                      = no
+disre                    = no
+orire                    = no
+
+; ---- Thermostat ----------------------------------------------------------------------
+; Canonical ensemble: quasi-harmonic analysis assumes a multivariate Gaussian drawn
+; from the canonical distribution (Rinaldo & Field eq. 5). D0-C-36: the criterion is
+; "what are you measuring", and here it is positional fluctuation, not velocity
+; autocorrelation -- so a thermostat is required, not forbidden.
+tcoupl                   = v-rescale
+tc-grps                  = system
+tau-t                    = 1.0                     ; ps; D0-C-30 (MACE authors use 1/ps)
+ref-t                    = 298.15                  ; K; the stage-0 standard state
+gen-vel                  = yes
+gen-temp                 = 298.15
+gen-seed                 = 20260903
+
+; ---- Isolated molecule: no box, no pressure coupling ---------------------------------
+; The multi-molecule near-critical gas box is retired (D0-P3-19). One molecule,
+; in vacuum, no periodicity.
+pbc                      = no
+Pcoupl                   = no
+nstlist                  = 0
+ns_type                  = simple
+rlist                    = 0                       ; 0 = no cutoff, all pairs
+rcoulomb                 = 0
+rvdw                     = 0
+
+; ---- Output: POSITIONS, not velocities ----------------------------------------------
+; Quasi-harmonic analysis needs the position covariance. This is the point where it
+; differs from the retired velocity-autocorrelation route, which needed velocities at
+; Nyquist-limited intervals. Frames only need to be near-independent.
+;
+; 8 fs x 200 ps = 25000 frames, against 3N-6 = 18..51 for our 8-19 atom species. The
+; rank limit (non-zero eigenvalues <= frames - 1) is what cost Rinaldo & Field most of
+; their modes -- 3000 of 7758. It cannot bite us here, but criterion 9 measures it
+; rather than assuming it.
+nstxout                  = 8                       ; every 8 fs
+nstvout                  = 0
+nstfout                  = 0
+nstlog                   = 1000
+nstenergy                = 100
+
+; ---- Equilibration is measured, not assumed ------------------------------------------
+; Rinaldo & Field started with 20 ps and found in the end that 520 ps were needed --
+; a factor of 26. The equilibration length for this branch comes from the measured
+; relaxation, not from this file. See plan_B section 3.1.

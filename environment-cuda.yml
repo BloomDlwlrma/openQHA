@@ -1,0 +1,143 @@
+# openQHA -- the CUDA environment. For Tianhe's AI partition, and any site like it.
+#
+#     conda env create -f environment-cuda.yml
+#     conda activate openqha-cuda
+#
+# ---------------------------------------------------------------------------------------
+# WHEN YOU WANT THIS FILE, AND WHEN YOU DO NOT
+# ---------------------------------------------------------------------------------------
+# You want it for BRANCH C ONLY -- fine-tuning the potential with the PHL loss. That is
+# the one part of this repository that is faster on a GPU.
+#
+# You do NOT want it for branches A or B. Measured on this project (D0-48, D0-C-5): both
+# are SLOWER on the GPU than on the CPU. Branch A's cost is ~10^5 GFN2-xTB gradient calls
+# and xtb never touches a GPU at all; MACE refines only the ~2% that survive. Running the
+# conformer search on a GPU partition buys nothing and, on Tianhe, bills the whole card
+# for the 14 CPUs that come with it.
+#
+#     branch A, branch B   -> environment.yml       (CPU, and that is not a compromise)
+#     branch C training    -> this file
+#
+# ---------------------------------------------------------------------------------------
+# CUDA 12, AND WHAT TO DO IF YOUR DRIVER IS OLDER
+# ---------------------------------------------------------------------------------------
+# `cuda-version=12` constrains the whole solve. Without it a CUDA-13 build installs
+# cleanly, imports cleanly, and then fails at the first kernel launch -- the worst
+# possible time to find out. With it, the failure happens in the solver instead.
+#
+# CHECK YOUR DRIVER FIRST. `nvidia-smi` reports the highest CUDA version it supports.
+# conda-forge's `cuda-version=12` requires only `__cuda >=12`, so any 12.x driver works
+# (CUDA 12 has minor-version compatibility); an 11.x driver does not.
+#
+#   driver reports 12.x  ->  this file as it stands. Verified by dry run to resolve to
+#                            cuda-version 12.9, cuda-cudart 12.9.79, and pytorch 2.13.0
+#                            cuda129_generic_py311, with NO MKL in the environment.
+#   driver reports 11.x  ->  change the ONE line to `cuda-version=11.8`, AND delete
+#                            `nomkl` below. Every conda-forge CUDA-11.8 pytorch build
+#                            depends on MKL, so `nomkl` and an 11.8 torch cannot both be
+#                            satisfied -- measured:
+#                              "pytorch 2.4.1|2.5.1 would require mkl >=2024.2.2 ...
+#                               Could not solve for environment specs"
+#                            Keep the three OpenBLAS pins even then; only `nomkl` goes.
+#                            (11.8 also caps torch at 2.5.1.)
+#
+# A real advantage of CUDA 12 beyond "it is newer": it resolves to the SAME torch 2.13.0
+# as environment.yml. Measured 2026-09-04, the torch version is the thing that moves the
+# last digits of a result -- the BLAS is not, with eigenvalues agreeing to 1e-14 and the
+# potential bit-identical on a fixed geometry. Branch C's GPU torch and branch A/B's CPU
+# torch being the same version is worth more than it looks.
+#
+# ---------------------------------------------------------------------------------------
+# THE BLAS BLOCK IS NOW IDENTICAL TO environment.yml, AND THAT IS THE POINT
+# ---------------------------------------------------------------------------------------
+# conda-forge's `crest` pulls `libopenblas=*=pthreads_*` while CREST is OpenMP-parallel,
+# and OpenBLAS then prints "Detect OpenMP Loop and this application may hang" on every
+# step. Measured 2026-09-04: 4164 warning lines and 38.0 s against 0 lines and 18.5 s on
+# the same molecule -- and the same 2 conformers from both, so it is cost and noise, not
+# a different answer.
+#
+# Under CUDA 11.8 this file had to drop `nomkl` and diverge from environment.yml. Under
+# CUDA 12 it does not: `nomkl` + the three pins + a CUDA torch all solve together, with
+# no MKL anywhere. Two files that agree about BLAS are one fewer thing to get wrong.
+#
+# The pins are not optional in either file. Drop them and the solver hands `libblas` to
+# `libopenblas=*=pthreads_*` -- exactly the build that produces the warning. Note that
+# the Tianhe `cuda11` environment this file was written against carries
+# `libopenblas=0.3.25=pthreads_h413a1c8_0`, i.e. that build. If you add CREST to an
+# existing site environment instead of using this file, export OPENBLAS_NUM_THREADS=1.
+#
+# ---------------------------------------------------------------------------------------
+# MIRRORS AND THE PROXY (Tianhe)
+# ---------------------------------------------------------------------------------------
+# Outbound traffic goes through a proxy and conda HANGS rather than failing when it is
+# not set. Before running anything:
+#
+#     source /APP/u22/ai_x86/toolshs/setproxy.sh <host> <port>
+#     # or:  export https_proxy=http://<host>:<port>  http_proxy=$https_proxy
+#
+# If conda-forge is slow or blocked, the TUNA mirror is what the site uses:
+#
+#     conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+#     conda config --set show_channel_urls true
+#
+# Channels are NOT mirrored inside this file on purpose: a URL baked into a committed
+# environment file is wrong for everyone outside that one network, and silently so.
+# ---------------------------------------------------------------------------------------
+name: openqha-cuda
+channels:
+  - conda-forge
+  # `channels: [conda-forge]` alone does NOT mean conda-forge only: conda merges
+  # whatever the user has configured. Measured 2026-09-04 on a box with `defaults`
+  # configured -- the dry run pulled defaults' pytorch 2.3.1 into an otherwise
+  # conda-forge stack, and that channel mixing was also HIDING a real solver conflict.
+  # Two channels' builds of one C++/CUDA library is the same class of hazard as two
+  # BLAS builds.
+  - nodefaults
+dependencies:
+  # ---- the CUDA constraint. Change this line, not the torch line. --------------------
+  - cuda-version=12
+
+  # ---- BLAS: OpenMP OpenBLAS everywhere, no MKL. Identical to environment.yml. -------
+  - nomkl
+  - libopenblas=*=openmp*
+  - libblas=*=*openblas
+  - liblapack=*=*openblas
+
+  - python=3.11
+  - numpy>=1.24
+  - scipy>=1.10
+  - pyyaml>=6.0
+  - pandas>=1.5
+  - pyarrow>=10.0
+  - matplotlib>=3.5
+  - h5py>=3.8            # branch C datasets -- the reason this environment exists
+  - jupyter
+  - nbconvert
+  - ase>=3.22
+  - rdkit>=2023.03
+
+  # The CUDA build. `cuda-version=12` above is what selects the right one; asking for a
+  # *cuda* build here as well makes the intent explicit and turns "the solver quietly
+  # gave me the CPU build" into a solver error.
+  - pytorch>=2.0=*cuda*
+
+  # ---- the conformer search, so one environment still runs the whole chain -----------
+  # CPU code. Present for convenience on a login node; do not schedule branch A onto a
+  # GPU partition because of it.
+  - crest>=3.0.2
+  - xtb>=6.6
+
+  - pip
+  - pip:
+      - mace-torch>=0.3.6
+      - pymsym>=0.3.5
+      - parsl>=2024.01
+
+# NOT IN HERE:
+#   gromacs   branch B's cross-check; branch B is a CPU job, so it belongs to
+#             environment.yml. Its activation hook also fails under `set -u`.
+#   orca      registration required, installed by hand; branch C's RI-MP2 labels.
+#   MACE-OFF weights   fetched by install_dependency.sh, hash-checked on every load.
+#             On Tianhe, fetch them where you have bandwidth and rsync them in --
+#             `install_dependency.sh --tianhe` deliberately does not pull 100 MB
+#             through the proxy from a login node.

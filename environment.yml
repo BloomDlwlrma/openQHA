@@ -1,0 +1,99 @@
+# openQHA -- ONE environment. Python stack, CREST and xtb all in here.
+#
+#     conda env create -f environment.yml
+#     conda activate openqha
+#
+# ---------------------------------------------------------------------------------------
+# THE BLAS PINS ARE NOT COSMETIC. Read this before relaxing them.
+#
+# conda-forge's `crest` pulls `libopenblas=*=pthreads_*`, and CREST itself is
+# OpenMP-parallel. That combination makes OpenBLAS print
+#
+#     "OpenBLAS Warning : Detect OpenMP Loop and this application may hang.
+#      Please rebuild the library with USE_OPENMP=1 option."
+#
+# on essentially every step. Pinning the `openmp_*` build removes the mismatch at its
+# source. `nomkl` and the two `*openblas` pins are there because conda allows exactly one
+# BLAS provider per environment: without them the solver hands numpy/scipy MKL, CREST
+# still wants the OpenBLAS `libblas`, and the two cannot both win.
+#
+# MEASURED on this environment, 2026-09-04, dsgdb9nsd_000018 `--gfn2 --noreftopo -T 4`:
+#
+#     this file (openmp_*), nothing set        18.5 s   745 lines      0 warnings
+#     this file (openmp_*), OPENBLAS=1         18.4 s   749 lines      0 warnings
+#     old split env (pthreads_*), nothing set  38.0 s  4910 lines   4164 warnings
+#     old split env (pthreads_*), OPENBLAS=1   25.1 s   747 lines      0 warnings
+#
+# Both binaries report the same 2 conformers: this is cost and noise, not a different
+# answer. The pin needs NO environment variable, and is still 1.35x faster than the
+# pthreads build with the variable set. env_openqha.sh exports OPENBLAS_NUM_THREADS=1
+# regardless -- free here, and it is what protects a CREST installed from elsewhere.
+#
+# This repository used to ship TWO environments to dodge the warning. That decision came
+# from a measurement that changed two things at once -- it separated the environments AND
+# set the variable -- and credited the whole difference to the separation. The bottom two
+# rows above are one binary, one input, one variable: the separation was never doing
+# anything. `environment-crest.yml` and its numbers are in `_superseded/`.
+# ---------------------------------------------------------------------------------------
+name: openqha
+channels:
+  - conda-forge
+  # `channels: [conda-forge]` alone does NOT mean conda-forge only: conda merges
+  # whatever the user has configured. Measured 2026-09-04 on a box with `defaults`
+  # configured -- the dry run pulled defaults' pytorch 2.3.1 into an otherwise
+  # conda-forge stack. Two channels' builds of one C++/CUDA library in one
+  # environment is the same class of hazard as two BLAS builds.
+  - nodefaults
+dependencies:
+  # ---- BLAS: OpenMP OpenBLAS everywhere, no MKL. See the note above. -----------------
+  # `nodefaults` above is what keeps this (and everything else) on conda-forge.
+  # Without it the bare name resolved to defaults 3.0 instead of conda-forge 1.0.
+  - nomkl
+  - libopenblas=*=openmp*
+  - libblas=*=*openblas
+  - liblapack=*=*openblas
+
+  - python=3.11
+  - numpy>=1.24
+  - scipy>=1.10
+  - pyyaml>=6.0
+  - pandas>=1.5
+  - pyarrow>=10.0
+  - matplotlib>=3.5
+  - h5py>=3.8
+  - jupyter
+  - nbconvert
+  - ase>=3.22
+  - rdkit>=2023.03
+
+  # float64 is required, not preferred: geometry optimisation converges to fmax = 1e-4
+  # eV/A, and a float32 force call cannot resolve that.
+  #
+  # CPU build, pinned. Unpinned, conda-forge hands you a CUDA build -- 2 GB of libraries
+  # that branches A and B never touch, and both are MEASURED SLOWER on this project's GPU
+  # than on its CPU (D0-48, D0-C-5). Branch C training is the one thing that wants CUDA:
+  # `install_dependency.sh --tianhe` swaps the build, or drop the `=*=cpu*` yourself.
+  - pytorch>=2.0=*cpu*
+
+  # ---- the conformer search itself ---------------------------------------------------
+  - crest>=3.0.2
+  - xtb>=6.6            # the GFN2 workhorse; also branch C's `xtb --hess` labels
+
+  - pip
+  - pip:
+      # Measured on 0.3.17 AND 0.3.16; get_hessian returns (3N, N, 3) in both.
+      # A lower bound, not a pin: across torch 2.7.1/mace 0.3.17 and torch 2.13.0/mace
+      # 0.3.16 the same molecule came out identical in electronic energy and differed by
+      # 2.2e-4 kcal/mol in G - Eel -- 230x below the CREGEN energy condition. Pin both
+      # exactly only if you need two machines to agree to the last digit; see the note in
+      # requirements.txt for where that residual comes from (not the BLAS).
+      - mace-torch>=0.3.6
+      - pymsym>=0.3.5
+      - parsl>=2024.01
+
+# NOT IN HERE, and each for its own reason:
+#   gromacs   branch B's independent cross-check only. `conda install -c conda-forge
+#             gromacs` if you want it; its activation hook fails under `set -u`.
+#   orca      registration required, installed by hand; branch C only.
+#   MACE-OFF weights   fetched by install_dependency.sh, not shipped and not a package.
+#                      openqha/engine.py recomputes their SHA-256 on every load.

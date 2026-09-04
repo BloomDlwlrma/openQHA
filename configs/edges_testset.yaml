@@ -1,0 +1,114 @@
+# ======================================================================================
+# openQHA — the eleven-edge test set
+# ======================================================================================
+# THIS PROJECT'S OWN CAMPAIGN, not part of the method.
+#
+# openQHA publishes a METHOD: give it a molecule, get its conformational entropy. The
+# eleven QM9 isomerisation edges below, and the seven species they name, are the test
+# set this repository developed the method against. They are the debug and regression
+# fixtures — nobody installing openQHA needs to re-run them.
+#
+# Split out of the main config on 2026-09-04 and included back through `include:`. It
+# is a MOVE, not a copy: openqha/config.py raises if two files define the same key.
+#
+# WHAT IS ACTUALLY DISTRIBUTED WITH THE REPOSITORY
+#   the 7 reference geometries (11 KB) plus a 7-row excerpt of the QM9 index. That is
+#   what lets the core deliverable reproduce with no external data at all (D0-41).
+#   Full QM9 and curatedQM9 are placed by the user; neither goes into version control.
+#
+# WHY sigma AND g0 ARE DECLARED HERE AND NOT DERIVED
+#   D0-9: they must be declared, never guessed. openqha/symmetry.py can now derive
+#   sigma from the geometry, and these declarations remain the INDEPENDENT ANSWERS the
+#   derivation is checked against — 7/7 agreement, including acetone, which ORCA gets
+#   wrong (C1, sigma=1; correct is C2v, sigma=2, worth RT ln 2 = 0.411 kcal/mol).
+#
+#   One declaration is deliberately CONDITIONAL: oxetane is C2v with sigma = 2 when the
+#   ring is planar and Cs with sigma = 1 when puckered. A conditional declaration does
+#   NOT override the per-basin geometric value — letting it win would silently give
+#   every puckered basin the planar number.
+# ======================================================================================
+
+
+# --------------------------------------------------------------------------------------
+# 边集与物种 —— 从 stage 2 抄写一次，此后本文件即事实来源
+# --------------------------------------------------------------------------------------
+edges_provenance:
+  transcribed_from: "stage2-lambda-delta0-mace-learning/configs/r0_production.yaml"
+  transcribed_on: "2026-08-28"
+  ordering: "优先级排序，最有信息量的在前 —— 与来源逐字一致"
+  sha256_of_edge_list: "3d3e56f94bea6fb00e018de842001c88e6c202ff9d2517d8b361849d48d3ecd5"   # 由 scripts/s0_check_config.py 计算并核对
+
+
+edges:
+  - "C2H5O1N1_19_36"        # 唯一同时含 C、H、N、O 四元素的边
+  - "C3H6O1N0_18_35"
+  - "C3H6O1N0_18_44"
+  - "C3H6O1N0_18_46"
+  - "C3H6O1N0_18_48"
+  - "C3H6O1N0_35_44"
+  - "C3H6O1N0_35_46"
+  - "C3H6O1N0_35_48"
+  - "C3H6O1N0_44_46"
+  - "C3H6O1N0_44_48"
+  - "C3H6O1N0_46_48"
+
+
+# 外对称数 σ 与电子基态简并度 g0：**显式声明，绝不自动推导，缺失即拒绝运行**。
+# 记错 σ 的代价在异构体之间不相消，最高约 3 kcal/mol（图自同构会把内转子算进去，
+# 乙烷高估 12 倍、环己烷 128 倍）。
+species:
+  dsgdb9nsd_000018:
+    name: "acetone"
+    zh: "丙酮"
+    smiles: "CC(=O)C"
+    symmetry_number: 2
+    symmetry_reason: "C2v：C2 轴穿过羰基碳与氧，交换两个甲基"
+    electronic_degeneracy: 1
+  dsgdb9nsd_000019:
+    name: "acetamide"
+    zh: "乙酰胺"
+    smiles: "CC(=O)N"
+    symmetry_number: 1
+    symmetry_reason: "Cs，无真旋转轴"
+    electronic_degeneracy: 1
+  dsgdb9nsd_000035:
+    name: "propanal"
+    zh: "丙醛"
+    smiles: "CCC=O"
+    symmetry_number: 1
+    symmetry_reason: "Cs，无真旋转轴"
+    electronic_degeneracy: 1
+  dsgdb9nsd_000036:
+    name: "N-methylformamide"
+    zh: "N-甲基甲酰胺"
+    smiles: "CNC=O"
+    symmetry_number: 1
+    symmetry_reason: "Cs，无真旋转轴"
+    electronic_degeneracy: 1
+  dsgdb9nsd_000044:
+    name: "2-methyloxirane"
+    zh: "2-甲基环氧乙烷"
+    smiles: "C[C@H]1CO1"
+    symmetry_number: 1
+    symmetry_reason: "C1，手性中心，无对称元素"
+    electronic_degeneracy: 1
+  dsgdb9nsd_000046:
+    name: "cyclopropanol"
+    zh: "环丙醇"
+    smiles: "OC1CC1"
+    symmetry_number: 1
+    symmetry_reason: "羟基取向使镜面失效"
+    electronic_degeneracy: 1
+  dsgdb9nsd_000048:
+    name: "oxetane"
+    zh: "氧杂环丁烷"
+    smiles: "C1COC1"
+    symmetry_number: 2
+    symmetry_reason: >
+      平面 C2v → σ=2。**这一条有条件**：若最低盆是折叠的（C2 轴被破坏），
+      严格的 Cs 给 σ=1，差 kT ln2 = 0.41 kcal/mol。
+      运行时按实测环平面性判定：到最佳拟合平面的最大距离 < planarity_tol_A 即按平面处理。
+    electronic_degeneracy: 1
+    conditional:
+      planarity_tol_A: 0.05      # modifiable_convention
+      symmetry_number_if_puckered: 1

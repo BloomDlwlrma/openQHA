@@ -1,0 +1,58 @@
+# openQHA — what does not go into version control
+
+# ---- the decision log --------------------------------------------------------------
+# .mem/ is this project's working memory: plans, checkpoints, the decision log. 
+.mem/
+docs/
+!docs/cite/
+!docs/tutorials/
+
+# ---- data: large, redistributable by its owners, not by us --------------------------
+data/qm9/
+data/basins/
+data/curated-qm9/
+!data/reference-geometries/          # 11 KB, and the core deliverable needs it
+!data/qm9-uncharacterized/           # the official list, small, and pinned by sha256
+
+# ---- the potential -------------------------------------------------------------------
+# The weights are fetched by install_dependency.sh, not carried in the repository: they
+# are ~100 MB of binary that version control has no use for, and openqha/engine.py
+# already pins their SHA-256 so nothing is lost by leaving them out.
+*.model
+data/potentials/
+source-code/
+../source-code/
+
+# ---- products ------------------------------------------------------------------------
+analysis/
+runs/
+*.parquet
+*.h5
+
+# ---- scratch and backups ---------------------------------------------------------------
+_backup/
+_to_delete/
+_superseded/
+*.bak
+*.part
+env_openqha.sh                        # written by install_dependency.sh, machine-specific
+
+# ---- python ----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# ---- notebooks ---------------------------------------------------------------------------
+.ipynb_checkpoints/
+# Tutorials are committed WITH their outputs on purpose: the outputs are measurements,
+# and four claims in T03 were corrected only because executing it contradicted them.
+
+# ---- editors and OS -----------------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

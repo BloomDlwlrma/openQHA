@@ -1,0 +1,177 @@
+; =====================================================================================
+; openQHA - Branch A - CREST iMTD-GC conformational search
+;
+; IDENTITY: this is a PROTOCOL SPECIFICATION, not a job that is run.
+;   Branch A's dynamics is run by CREST, not by GROMACS. GROMACS computes nothing
+;   anywhere in this repository. This file exists for one reason:
+;
+;       to put branch A's dynamics settings in the SAME FORMAT as branch B's, so the
+;       two can be compared line by line instead of by memory.
+;
+;   The comparison is the point. Read this file next to s0_qha_production.mdp and the
+;   incompatibility is mechanical rather than a claim you have to trust.
+;
+; REFERENCES:
+;   iMTD-GC algorithm .... Pracht, Bohle & Grimme, Phys. Chem. Chem. Phys. 2020, 22, 7169
+;   MD settings .......... Grimme, J. Chem. Theory Comput. 2019, 15, 2847
+;   GFN2-xTB ............. Bannwarth, Ehlert & Grimme, JCTC 2019, 15, 1652
+;   Parameters in force .. configs/conformers.yaml (crest:)
+;
+; =====================================================================================
+; *** DO NOT RUN THIS FILE THROUGH GROMACS, AND DO NOT COPY ITS SETTINGS INTO ***
+; ***                    A QUASI-HARMONIC TRAJECTORY.                        ***
+; =====================================================================================
+;
+; Every setting below exists to CROSS BARRIERS. Each one buys sampling by destroying
+; the physical thermal fluctuations:
+;
+;   (1) BIAS POTENTIAL. Metadynamics deliberately does not sample the Boltzmann
+;       distribution of the true surface -- that is what it is for. A quasi-harmonic
+;       analysis reads entropy out of the covariance of the fluctuations, and a biased
+;       trajectory inflates that covariance. The eigenvalues come out too large, so
+;       nu_i = sqrt(kB*T/lambda_i) comes out too low, so the entropy comes out too HIGH.
+;       The direction is fixed. It is a bias, not noise, and averaging does not remove it.
+;
+;   (2) CONSTRAINTS. SHAKE does not soften a degree of freedom, it REMOVES it. The
+;       covariance is identically zero along every constrained bond, so the 3N-6
+;       non-zero eigenvalues cannot all be filled. The count itself breaks.
+;
+;   (3) DEUTERIUM MASS. Hydrogen at 2 amu drops the C-H stretches from about 3000 to
+;       about 2200 cm^-1. Every vibrational term computed from such a trajectory is
+;       wrong, and wrong by an amount that looks plausible.
+;
+; Any one of the three is fatal to a quasi-harmonic analysis on its own. Branch A does
+; not care about any of them, because ITS PRODUCT IS A GEOMETRY, NOT A TRAJECTORY.
+;
+; The handover between the branches is the BASIN GEOMETRIES. Branch B restarts from
+; them with dt = 1 fs, constraints = none and real hydrogen mass, and uses not one frame
+; of the CREST run.
+; =====================================================================================
+
+; -------------------------------------------------------------------------------------
+; Integrator and timestep
+; -------------------------------------------------------------------------------------
+; The 5 fs step is only stable because bonds are constrained AND hydrogens are heavy.
+; These three settings are ONE PACKAGE. Measured, taking two of the three (shake = 1,
+; H bonds only, with the 5 fs step and 2 amu mass): 29 and 20 metadynamics runs
+; `terminated EARLY` on GFN2-xTB. See conformers.yaml section 1.4 for the four-arm
+; attribution.
+integrator               = md            ; CREST: leapfrog Verlet, its own implementation
+dt                       = 0.005         ; ps  = 5 fs   (JCTC 2019, 15, 2847)
+                                         ; branch B uses 0.001. That is the whole gap.
+
+; -------------------------------------------------------------------------------------
+; Constraints -- REMOVED degrees of freedom, not softened ones
+; -------------------------------------------------------------------------------------
+constraints              = all-bonds     ; CREST shake = 2, "all covalent bonds"
+constraint-algorithm     = shake
+shake-tol                = 1e-07         ; CREST src/dynamics/shake_module.f90:81
+;
+; KNOWN FAILURE MODE, and the fallback it needs. On strained rings the SHAKE iteration
+; (250 iterations max, shake_module.f90:80) does not converge, do_shake returns non-zero,
+; the MD is judged failed, and CREST prints `terminated EARLY` -- WITHOUT printing any
+; reason. Measured (D0-P1-34):
+;
+;     dsgdb9nsd_000607  O[C@H]1C[C@H]1C#N    all-bonds -> 31 aborts | h-bonds -> 0
+;     dsgdb9nsd_003163  O[C@H]1CC[C@]21CO2   all-bonds -> 24 aborts | h-bonds -> 0
+;     dsgdb9nsd_002334  CCC[C@H]1C[C@H]1C    all-bonds ->  4 aborts | h-bonds -> 0
+;
+; The fallback is POINTWISE: only a molecule that actually aborted is retried, once, at
+; h-bonds, in a separate directory, and marked in its own record. A molecule that fell
+; back must never be mistakable for one that ran the published protocol.
+;
+;   constraints          = h-bonds       ; the fallback, applied per molecule, never globally
+
+; -------------------------------------------------------------------------------------
+; Masses
+; -------------------------------------------------------------------------------------
+; RECORDED, NOT SET: 2.0 amu is already CREST's own default (src/confparse.f90:215,
+; env%hmass = 2.0d0). Written here so the third member of the package is visible in our
+; own record instead of living only in someone else's source tree.
+;
+; GROMACS spells this as a topology modification rather than an .mdp key; the closest
+; .mdp expression is the heavy-hydrogen flag, given here for the comparison only.
+;   define                = -DHEAVY_H    ; H mass -> 2 amu (deuterium)
+; branch B: real hydrogen mass, 1.008 amu. No mass repartitioning of any kind.
+
+; -------------------------------------------------------------------------------------
+; Thermostat
+; -------------------------------------------------------------------------------------
+tcoupl                   = berendsen     ; JCTC 2019, 15, 2847
+tau-t                    = 0.5           ; ps
+ref-t                    = 300           ; K, bath temperature
+;
+; NOTE the gap between bath and reality: the paper reports ACTUAL average temperatures
+; of 350-500 K under the bias. That is expected for metadynamics and harmless here --
+; and it is a second, independent reason this trajectory cannot be used for
+; thermodynamics at 298.15 K. Branch B uses v-rescale at ref-t = 298.15 and checks that
+; the realised temperature matches.
+
+; -------------------------------------------------------------------------------------
+; Metadynamics bias -- the setting with no GROMACS equivalent
+; -------------------------------------------------------------------------------------
+; This is where the .mdp analogy runs out, and the fact that it runs out is itself the
+; clearest statement of why the two protocols cannot share a file. GROMACS has no key
+; for "add the current structure to an RMSD-space bias potential every 1 ps". The
+; published values (PCCP 2020, 22, 7169), for the record:
+;
+;   number of MTD runs .......... 12, with different Vbias settings
+;   bias width alpha ............ 0.1 to 1.3 Bohr^-2
+;   bias height k_i/N ........... 0.75 to 3.00 mEh
+;   bias update ................. a new structure added every 1.0 ps
+;   MTD length .................. t = 0.1*(Neff + 0.1*Neff^2), bounded 5 ps <= t <= 200 ps
+;   unbiased MD ................. 2 runs, at 400 K and 500 K, on the 3 lowest conformers
+;   iteration ................... restarted at least once, at most five times
+;   snapshots ................... every 0.1 ps
+;   energy windows (3 stages) ... 18 / 12 / 6 kcal/mol
+;   GC limit .................... min(5000, t * 50 ps)
+;
+; branch B: NO BIAS OF ANY KIND. That is the first of the three prohibitions at the
+; top of s0_qha_production.mdp.
+;
+; A separate protocol worth naming so it is not confused with this one: CREST's
+; reactive nanoreactor uses NO SHAKE and dt = 0.2-0.5 fs, "in order to allow any
+; reaction". Different goal, different settings, same program.
+
+; -------------------------------------------------------------------------------------
+; Boundary conditions and interactions
+; -------------------------------------------------------------------------------------
+pbc                      = no            ; isolated molecule, gas phase
+cutoff-scheme            = group
+nstlist                  = 0             ; no neighbour list: every pair, every step
+coulombtype              = cut-off
+rcoulomb                 = 0
+rvdw                     = 0
+rlist                    = 0             ; 0 = infinite in GROMACS; the semi-empirical
+                                         ; Hamiltonian has no cutoff at these sizes
+
+; -------------------------------------------------------------------------------------
+; Output
+; -------------------------------------------------------------------------------------
+nstxout                  = 20            ; 20 * 5 fs = 0.1 ps, the paper's snapshot rate
+nstvout                  = 0             ; velocities are not used downstream
+nstenergy                = 20
+nstlog                   = 200
+
+; =====================================================================================
+; The two protocols, side by side
+; =====================================================================================
+;
+;   setting            branch A (this file)        branch B (s0_qha_production.mdp)
+;   -----------------  --------------------------  ---------------------------------
+;   purpose            cross barriers              sample one basin at equilibrium
+;   product            geometries                  a trajectory
+;   bias               metadynamics, 12 runs       NONE
+;   dt                 5 fs                        1 fs
+;   constraints        all-bonds (SHAKE)           none
+;   hydrogen mass      2 amu (deuterium)           real, 1.008 amu
+;   thermostat         Berendsen, tau 0.5 ps       v-rescale
+;   ref-t              300 K (realised 350-500 K)  298.15 K, and checked
+;   potential          GFN2-xTB, MACE refines      MACE only
+;   what may be read   which minima exist          frequencies, entropy, free energy
+;   off the result
+;
+; Read the last two rows together. Branch A's trajectory cannot tell you a frequency;
+; branch B's cannot tell you which minima exist. Neither is a deficiency -- they are
+; different instruments, and the only error available here is using one for the other.
+; =====================================================================================

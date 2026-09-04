@@ -1,0 +1,52 @@
+{
+  "_what_this_is": [
+    "Branch A task configuration: how one molecule is turned into one basin list,",
+    "and what resources that takes. The SCIENCE settings are NOT here -- they live",
+    "in configs/openqha.yaml, which is the repo's single source of truth",
+    "for anything that changes a number. This file only says how the work is placed",
+    "on machines.",
+    "",
+    "That split is the point of branch E: choosing a machine must never change a",
+    "result. If a value appears in both files, the YAML wins and this file is wrong."
+  ],
+  "driver": "scripts/production/s0_A_pipeline.py",
+  "granularity": "one task per molecule",
+  "_granularity_why": [
+    "Conformer search is embarrassingly parallel over molecules and not usefully",
+    "parallel within one: CREST's own `threads` covers the metadynamics runs, and",
+    "MACE thread scaling on 10-atom molecules is 111/90/72/101 ms at 1/2/4/8 threads",
+    "-- 8 is slower than 4. Parallelism goes between processes (hpc/env/common.sh)."
+  ],
+  "resources": {
+    "device": "cpu",
+    "threads_per_task": 4,
+    "memory_gb_per_task": 4,
+    "_threads_note": "4 is the condition the 285 s/species cost was measured under (S0-A-8). Changing it invalidates that number."
+  },
+  "mace_server": {
+    "one_per_worker": true,
+    "_why": [
+      "CREST reaches MACE through a Unix socket served by a resident process. One",
+      "server holds one model behind one lock, so N workers sharing one server are",
+      "not parallel -- they queue. Each worker therefore gets its own socket under",
+      "$S0_RUNS_ROOT/sockets/."
+    ],
+    "socket_dir": "sockets",
+    "startup_timeout_s": 180
+  },
+  "cost_measured": {
+    "seconds_per_species": 285,
+    "conditions": "4 threads, single molecule, uncontended, gfn2 workhorse, refine=opt",
+    "source": "S0-A-8, edge C2H5O1N1_19_36, 2026-09-03",
+    "_warning": "Uncontended. The per-molecule cost with 16 concurrent jobs on one node has NOT been measured."
+  },
+  "walltime": {
+    "per_task_timeout_s": 14400,
+    "_why": "generous: the cost above is for a 9-atom molecule, and the scaling with atom count is not measured"
+  },
+  "failure_policy": {
+    "retries": 0,
+    "_why": "a molecule that aborts CREST aborts it again -- a retry buys nothing and makes the record ambiguous about how many times a thing ran",
+    "shake_fallback": "handled inside openqha/crest.py, pointwise, and marked in the product"
+  }
+}

@@ -1,0 +1,8 @@
+--- crest-pristine/subprojects/gfnff.wrap	2026-08-28 20:48:51.180923097 +0800
++++ crest-patched/subprojects/gfnff.wrap	2026-08-28 21:32:19.238797017 +0800
+@@ -1,4 +1,4 @@
+ [wrap-git]
+ directory = gfnff
+ url = https://github.com/pprcht/gfnff
+-revision = head
++revision = v0.2.0

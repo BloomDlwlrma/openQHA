@@ -1,0 +1,20 @@
+--- crest-pristine/config/meson.build	2026-08-28 20:48:51.037242843 +0800
++++ crest-patched/config/meson.build	2026-08-28 21:22:00.741321065 +0800
+@@ -222,7 +222,7 @@
+    'gfn0',
+ #   version: '>=0.2',
+    fallback: ['gfn0', 'gfn0_dep'],
+-   default_options: ['default_library=static','with_gbsa=true'],
++   default_options: ['default_library=static'],  # P4 (stage 0): upstream gfnff/gfn0 HEAD dropped with_gbsa; stage 0 is gas phase so implicit solvation is unused
+  )
+  exe_deps += gfn0_dep
+ endif
+@@ -233,7 +233,7 @@
+  gfnff_dep = dependency(
+    'gfnff',
+    fallback: ['gfnff', 'gfnff_dep'],
+-   default_options: ['default_library=static','with_gbsa=true'],
++   default_options: ['default_library=static'],  # P4 (stage 0): upstream gfnff/gfn0 HEAD dropped with_gbsa; stage 0 is gas phase so implicit solvation is unused
+  )
+  exe_deps += gfnff_dep
+ endif

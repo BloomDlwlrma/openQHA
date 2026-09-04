@@ -1,0 +1,82 @@
+# openQHA — Python dependencies
+#
+# Versions are the ones this repository is DEVELOPED AND MEASURED ON. Lower bounds are
+# given where a version genuinely matters and an equality where it does not yet have a
+# tested range. `python check_dependency.py` reports what you actually have.
+#
+# NOT LISTED HERE, because pip cannot install them. All of these live in the single
+# conda environment built by environment.yml / install_dependency.sh:
+#   crest    conda-forge; the conformer search itself
+#   xtb      conda-forge; the GFN2 workhorse, and branch C's labels
+#   gromacs  conda-forge; branch B's independent cross-check only
+#   orca     registration required, installed by hand; branch C only
+#
+# NOT A PACKAGE AT ALL:
+#   MACE-OFF weights. install_dependency.sh downloads them and openqha/engine.py
+#   recomputes their SHA-256 on every load, so a truncated or swapped file fails loudly.
+
+# ---- reproducibility: lower bounds are not pins ----------------------------------------
+# The bounds below say what the code REQUIRES. They do not make two machines agree to the
+# last digit, and it is worth knowing exactly how much they do not.
+#
+# MEASURED 2026-09-04, same code, same reused CREST directory, minutes apart,
+# dsgdb9nsd_000018 -- old split environment (MKL, torch 2.7.1, mace 0.3.17) against the
+# new single environment (OpenBLAS, torch 2.13.0, mace 0.3.16):
+#
+#     electronic energy      identical to 4.6e-10 eV
+#     lowest frequency       79.715281 vs 79.692059 cm-1   (2.3e-02)
+#     G - Eel                35.5091567 vs 35.5089401 kcal/mol  (2.2e-04)
+#
+# 2.2e-04 kcal/mol is 230x below the CREGEN energy condition (0.05) and ~450x below this
+# branch's target precision. Nothing here changes a basin, a sigma or a ruling.
+#
+# AND THE CAUSE IS NOT THE BLAS. Isolated separately, so neither could hide behind the
+# other:
+#     eigenvalues of a fixed seeded symmetric matrix   agree to 1e-14   (LAPACK)
+#     MACE energy on a FIXED geometry                  identical, d = 0 (potential)
+#     MACE forces on that geometry                     agree to 8e-16
+# What is left is the optimiser: a 1e-15 force difference, iterated ~125 BFGS steps,
+# converges to a different point INSIDE the fmax = 1e-4 eV/A tolerance, and the softest
+# mode -- a second derivative -- is where that shows up first.
+#
+# So: for ordinary use, the bounds are right. If you need bit-identical numbers across
+# machines, pin `torch==` and `mace-torch==` to the versions in your product records --
+# every record written by this repository carries both (`engine/torch_version`,
+# `engine/mace_torch_version`), which is why it carries them.
+
+# ---- core numerics -------------------------------------------------------------------
+numpy>=1.24,<3
+scipy>=1.10
+
+# ---- atomistic ------------------------------------------------------------------------
+ase>=3.22                 # Atoms, optimisers, xyz I/O
+rdkit>=2023.03            # SMILES, ETKDG seed geometries, GetBestRMS over automorphisms
+
+# ---- the potential --------------------------------------------------------------------
+# float64 is required, not preferred: geometry optimisation converges to fmax = 1e-4
+# eV/A and a float32 force call cannot resolve that.
+torch>=2.0
+mace-torch>=0.3.6         # measured on 0.3.17; get_hessian returns (3N, N, 3)
+
+# ---- symmetry -------------------------------------------------------------------------
+# Point-group LABEL and an independent cross-check on ideal geometries only. sigma
+# itself comes from openqha/symmetry.py, because pymsym returns C1 for a structure
+# 0.005 A off ideal symmetry and our basins are further off than that.
+pymsym>=0.3.5
+
+# ---- configuration and products ---------------------------------------------------------
+PyYAML>=6.0
+pandas>=1.5               # summary tables
+pyarrow>=10.0             # parquet products
+
+# ---- execution layer (branch E) ----------------------------------------------------------
+# Only needed to fan out over molecules. A single molecule runs without it.
+parsl>=2024.01
+
+# ---- plots and tutorials -------------------------------------------------------------------
+matplotlib>=3.5
+jupyter>=1.0
+nbconvert>=7.0
+
+# ---- branch C only (Hessian training datasets) ---------------------------------------------
+h5py>=3.8

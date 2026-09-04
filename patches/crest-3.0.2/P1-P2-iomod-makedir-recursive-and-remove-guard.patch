@@ -1,0 +1,68 @@
+--- crest-pristine/src/iomod.F90	2026-08-28 20:48:49.459863037 +0800
++++ crest-patched/src/iomod.F90	2026-08-28 20:50:01.583528221 +0800
+@@ -123,13 +123,21 @@
+ ! if 'fname' contains the wildcard '*', the remove is ignored
+ !--------------------------------------------------------------
+   subroutine remove(fname)
++!>--- P2 (stage 0 patch, D0-49): deleting something that is not there must be
++!>    a no-op, not a crash.  Upstream opened the file with no iostat, so a
++!>    missing PARENT DIRECTORY produced
++!>      Fortran runtime error: Cannot open file ...
++!>    and killed the run.  Ask first, and keep iostat as a second guard.
+     implicit none
+     character(len=*) :: fname
+-    integer :: ich,och
++    integer :: ich,io
+     logical :: ex
+     if (index(fname,'*') .eq. 0) then
+-      open (newunit=ich,file=fname)
+-      close (ich,status='delete')
++      inquire (file=fname,exist=ex)
++      if (.not.ex) return
++      open (newunit=ich,file=fname,iostat=io)
++      if (io /= 0) return
++      close (ich,status='delete',iostat=io)
+     end if
+   end subroutine remove
+ 
+@@ -322,10 +330,39 @@
+ ! make a directory via iso_c_binding
+ !-------------------------------------------------------------------------
+   function makedir(str)
++!>--- P1 (stage 0 patch, D0-49): create the directory RECURSIVELY and return a
++!>    status that callers can actually check.
++!>    Upstream called the C mkdir() exactly once, non-recursively, and every
++!>    call site threw the return value away.  A nested calculation space such
++!>    as calculation.level.1 followed by _1 therefore failed silently with
++!>    ENOENT, and the very next statement (remove) killed the program instead
++!>    of reporting the problem.
++!>    Returns 0 on success or if the directory already exists, non-zero else.
+     implicit none
+     integer :: makedir
+     character(len=*) :: str
+-    makedir = mkdir(str//char(0),int(o'770',c_int16_t)) !create new directory
++    integer :: i,l
++    character(len=:),allocatable :: path
++    makedir = 0
++    l = len_trim(str)
++    if (l < 1) return
++    path = trim(str)
++    !>--- walk the path and create every missing component in turn
++    do i = 2,l
++      if (path(i:i) == '/') then
++        if (.not.directory_exist(path(1:i-1))) then
++          makedir = mkdir(path(1:i-1)//char(0),int(o'770',c_int16_t))
++          if (makedir /= 0 .and. .not.directory_exist(path(1:i-1))) return
++        end if
++      end if
++    end do
++    if (directory_exist(path)) then
++      makedir = 0
++      return
++    end if
++    makedir = mkdir(path//char(0),int(o'770',c_int16_t))
++    !>--- losing a race with another thread is not an error if it now exists
++    if (makedir /= 0 .and. directory_exist(path)) makedir = 0
+     return
+   end function makedir
+ 

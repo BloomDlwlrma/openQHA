@@ -1,0 +1,438 @@
+# ======================================================================================
+# openQHA — Branch A: conformer search
+# ======================================================================================
+# THE authoritative parameter set for branch A. Split out of openqha.yaml on
+# 2026-09-04 and translated to English.
+#
+# `openqha.yaml` pulls this file in through its `include:` list. It is a MOVE,
+# not a copy: those sections no longer exist in the monolith, because two files that
+# both claim to define `crest:` is how a run ends up using settings nobody chose.
+#
+# --------------------------------------------------------------------------------------
+# WHAT THIS BRANCH PRODUCES
+# --------------------------------------------------------------------------------------
+#   one molecule  ->  one basin list
+#
+# Each basin carries: geometry converged on MACE-OFF23_medium, electronic energy, an
+# analytic Hessian with zero imaginary frequencies, its own external symmetry number,
+# RRHO thermodynamic terms, and a Boltzmann weight.
+#
+# It is the ONLY structure source for the other branches: branch B starts its unbiased
+# trajectories from these geometries, branch C computes RI-MP2 labels on them.
+#
+# --------------------------------------------------------------------------------------
+# PARAMETER CLASSIFICATION (used throughout this file)
+# --------------------------------------------------------------------------------------
+#   published_protocol    taken verbatim from a paper. Changing it means departing from
+#                         a benchmarked method, and the departure must be argued.
+#   modifiable_convention a choice. Changing it changes results; the consequence must be
+#                         reported, and the value must sit on a measured plateau.
+#   numerical_tolerance   a convergence criterion, not a preference.
+#   resource_budget       changes speed only, never a result.
+#   derived_criterion     follows from something else in this file.
+# ======================================================================================
+
+conformers_meta:
+  branch: "A"
+  authority: "this file, for everything under crest: and package1:"
+  split_from: "configs/openqha.yaml"
+  split_date: "2026-09-04"
+  plan: ".mem/plan/plan_A_conformational-search.md"
+  checkpoints: ".mem/checkpoints/checkpoints_A_conformational-search.md"
+  driver: "scripts/production/s0_A_pipeline.py"
+  executor: "scripts/production/s0_E_branchA_parsl.py"
+
+# ======================================================================================
+# 1. CREST — the conformational search
+# ======================================================================================
+crest:
+  enabled: true
+
+  # ---- 1.1 What is run --------------------------------------------------------------
+  # iMTD-GC: iterative metadynamics with genetic Z-matrix crossing. The published
+  # workflow of Pracht, Bohle & Grimme, PCCP 2020, 22, 7169.
+  runtype: "imtd-gc"          # modifiable_convention. "optimize" for a single structure.
+  optlev: "tight"             # modifiable_convention. Upstream ladder crude..extreme.
+  threads: 4                  # resource_budget. Also the condition the 285 s/species
+                              # cost was measured under -- changing it invalidates that
+                              # number, so it is not purely a speed knob in the record.
+
+  # ---- 1.2 Workhorse: gfn2, because it is the published setting ----------------------
+  # `--gfn2` is the published iMTD-GC configuration (PCCP 2020, 22, 7169; upstream
+  # example 1 is literally `crest struc.xyz --gfn2`).
+  #
+  # gfnff was only ever a COST SUBSTITUTE, chosen by D0-50 for a 16000-molecule campaign.
+  # That reason disappeared when stage 0 shrank to a few hundred molecules -- and when
+  # the cost was finally measured end to end it pointed the other way (S0-A-9, same
+  # species dsgdb9nsd_000019, same refine=opt, both zero `terminated EARLY`):
+  #
+  #     gfn2    285.5 s     86 834 energy+gradient calls
+  #     gfnff   352.1 s    116 535
+  #
+  # A better workhorse converges in fewer calls, hands fewer structures to the expensive
+  # refinement, and saves more than it costs. ONE species is not enough to overturn
+  # D0-50 in general; it is enough to remove cost as an objection here.
+  workhorse: "gfn2"           # published_protocol. gfn2 | gfn1 | gfnff | gfn0 | tblite
+
+  # ---- 1.3 Quality layer: MACE refines, it does not sample ---------------------------
+  # The CREST documentation is explicit: do not put a machine-learning potential in the
+  # metadynamics; use a semi-empirical workhorse and let the MLIP refine the ensemble.
+  # The reason is arithmetic -- a small-molecule search takes ~1e5 energy+gradient calls
+  # (measured on OCCC(=O)CO: 107 966). MACE took 2514 of 130 937 on acetone, ~1.9%.
+  refine: "opt"               # sp | add | opt | none. User ruling 2026-09-03.
+  backend: "generic"          # generic = this repo's socket client; mlip = upstream 3.1
+
+  # WHAT `opt` COSTS, MEASURED -- kept because it is the argument that was overturned,
+  # not deleted because it lost. Every number below was taken with the GFNFF workhorse
+  # (scripts/_superseded/one-off/s0_crest_refine_compare.py):
+  #
+  #   propanal CCC=O (3 basins globally)
+  #     opt   CREST  833 s -> 2 basins, conformational correction error +0.1054 kcal/mol
+  #     sp    CREST  136 s -> 3 basins, error +0.0000
+  #     none  CREST    3 s -> 1 basin,  error +0.2336
+  #
+  #   OCCC(=O)CO (34 basins globally)
+  #     opt   CREST 2926 s -> 11 basins, error +0.0103
+  #     sp    CREST  496 s -> 28 basins, error +0.0003
+  #     none  CREST    9 s -> 20 basins, error +0.0045
+  #
+  # On those numbers `sp` was both faster and more complete, with no trade-off -- which
+  # is why `sp` was the default from 2026-08-31. The mechanism is that `opt` re-optimises
+  # and merges the ensemble BEFORE cregen deduplicates, discarding diversity that should
+  # have reached us.
+  #
+  # ** THE NUMBERS ARE NOT WRONG. THEY NO LONGER APPLY. ** The size of that merging
+  # effect depends on how far the workhorse geometries sit from the MACE minimum, and
+  # gfn2 geometries are far closer than gfnff ones. Under the new workhorse the effect is
+  # UNMEASURED. Branch A step 2 re-measures both molecules and fills the table to four
+  # columns; the ruling stands whatever it shows, and the measured miss rate is a
+  # deliverable either way (plan_A acceptance criterion 3).
+  #
+  # ***** OPEN: branch A acceptance criterion 3 is unpaid. *****
+
+  # ---- 1.4 The dynamics package: three settings, one protocol ------------------------
+  # Grimme, JCTC 2019, 15, 2847, verbatim:
+  #
+  #   "the SHAKE algorithm for constraining ALL COVALENT BONDS (based on standard
+  #    covalent radii estimation) with an MD time step d(tau) of 5 fs is used to
+  #    integrate the equations of motion. The atomic mass of hydrogen is set to 2 amu
+  #    (deuterium)."
+  #
+  #        SHAKE on all bonds  +  5 fs step  +  hydrogen mass 2 amu
+  #
+  # ** THESE THREE ARE ONE PACKAGE, NOT THREE PARAMETERS TO PICK FROM. ** The 5 fs step
+  # is only stable because the bonds are constrained AND the hydrogens are heavy.
+  #
+  # This repository ran shake = 1 (hydrogen bonds only, D0-P1-40) with the 5 fs step and
+  # the 2 amu mass, which held on the softer gfnff. On gfn2 it does not: 29 and 20
+  # metadynamics runs `terminated EARLY`. Four-arm attribution, one variable at a time,
+  # species dsgdb9nsd_000019:
+  #
+  #     arm  workhorse  shake  dt     EARLY   wall      engrad
+  #     A    gfn2       1      5 fs   29       48.6 s     5 837
+  #     B    gfn2       1      2 fs    0      285.5 s    86 834   <- an invented compromise
+  #     C    gfn2       2      5 fs    0      283.4 s    45 463   <- the published protocol
+  #     D    gfnff      1      5 fs    0      352.1 s   116 535
+  #
+  # B and C cost the same (285.5 vs 283.4 s), so this is NOT a cost decision. C is chosen
+  # because it is the protocol that was published and benchmarked; B is a compromise
+  # nobody has validated.
+  #
+  # ######################################################################
+  # #  THIS BLOCK BELONGS TO BRANCH A ONLY. IT MUST NOT REACH BRANCH B.  #
+  # ######################################################################
+  # Branch A crosses barriers, so it buys a large step with constraints and deuterium and
+  # pays with a trajectory that is no longer real thermal motion. Fair, because its
+  # product is a GEOMETRY. Branch B samples real fluctuations inside one basin and every
+  # one of the three ruins it: the bias flattens the fluctuations (entropy too high),
+  # SHAKE removes bond-stretch degrees of freedom (the 3N-6 non-zero eigenvalues cannot
+  # all be filled), deuterium drops C-H stretches from ~3000 to ~2200 cm^-1.
+  # Side-by-side comparison: configs/mdp/s0_branchA_crest_metadynamics.mdp.
+  shake: 2                    # published_protocol. 2 = all bonds | 1 = H bonds | 0 = off
+  tstep_fs: 5.0               # published_protocol
+  hydrogen_mass_amu: 2.0      # published_protocol. NOW WRITTEN into [dynamics], as of
+                              # 2026-09-04. It used to be RECORDED HERE BUT NOT SET, on
+                              # the grounds that 2.0 is already CREST's default -- which
+                              # it is: a plain MD driven by our own [dynamics] block
+                              # prints `hydrogen mass /u   :   2.00000`. Measured, not
+                              # read off the source; the source is misleading here
+                              # (confparse2.f90:215 sets 5.0, parse_calcdata.f90:1192
+                              # falls back to 1.00794, and neither is what runs).
+                              #
+                              # Writing it changes NO number. It changes what acceptance
+                              # criterion 11 can catch: a criterion named "dynamics
+                              # package written as one" that checked two of the three
+                              # members was trusting the third to a default in someone
+                              # else's source tree, and could not fail if that default
+                              # ever changed. All three are now checked.
+                              #
+                              # Directories written before this still reuse: an absent
+                              # hmass line reads as 2.0 through crest.effective_hmass(),
+                              # which reports WHICH -- read, or assumed from the default.
+
+  # ---- 1.5 Pointwise fallback, not a global loosening --------------------------------
+  # Applied ONLY to a molecule that actually reported `terminated EARLY`: retry that one
+  # molecule once at shake = 1, in a SIBLING directory, and mark it. D0-P1-34 measured
+  # shake = 2 failing to converge its SHAKE iterations on strained rings (250 iterations,
+  # tolerance 1e-7, src/dynamics/shake_module.f90:80-81):
+  #
+  #     dsgdb9nsd_000607  O[C@H]1C[C@H]1C#N     shake=2 -> 31 EARLY | shake=1 -> 0
+  #     dsgdb9nsd_003163  O[C@H]1CC[C@]21CO2    shake=2 -> 24 EARLY | shake=1 -> 0
+  #     dsgdb9nsd_002334  CCC[C@H]1C[C@H]1C     shake=2 ->  4 EARLY | shake=1 -> 0
+  #
+  # A molecule that fell back is NOT silently mixed with the rest: every product carries
+  # `shake_used` and `used_shake_fallback`, because a condition that cannot be read off
+  # the product has already cost this repository one dataset (defect 57).
+  #
+  # ***** OPEN: this path has never fired. Five molecules, none aborted. It is written
+  # ***** and unproven. The three strained rings above are the test it needs.
+  shake_fallback:
+    enabled: true
+    to: 1
+    trigger: "n_terminated_early > 0"
+    note: "D0-P1-34: shake=2 diverges on strained rings. Retry once, mark the row."
+
+  # ---- 1.6 How CREST reaches MACE ----------------------------------------------------
+  # `method = "generic"` runs an external binary per gradient. A resident server behind a
+  # Unix socket avoids paying model-load cost ~2500 times per molecule.
+  #
+  # ONE SERVER PER PARALLEL SLOT. A server holds one model behind one lock, so N workers
+  # sharing one socket are not parallel -- they queue, and nothing in the logs says so.
+  engine_client: "scripts/production/s0_mace_engrad.py"
+  socket: "/tmp/s0_mace_engrad.sock"       # single-molecule default; branch E overrides
+                                           # it per worker under $S0_RUNS_ROOT/sockets/
+
+  # `mlip` needs CREST 3.1, which is NOT RELEASED (D0-87, verified item by item: GitHub
+  # releases stop at v3.0.2; the continuous-release binary contains 0 occurrences of the
+  # string `mlip`; upstream master has no mlip source file). When 3.1 lands, change
+  # `backend` to "mlip" and nothing else.
+  mlip:
+    backend: "mace"
+    modelpath: "../source-code/MACE-OFF23-SC-main/MACE-OFF23-SC_swa.model"
+
+  # ---- 1.7 An upstream defect this configuration deliberately avoids -----------------
+  # CREST 3.0.2 fails on the ONE combination "external generic calculator + MD/metaMD":
+  # measured, 14 metadynamics runs all `terminated EARLY` after 0.019-0.021 s each
+  # (D0-88). Our shape never touches it, because the workhorse drives the dynamics and
+  # the external calculator only does single points and optimisations -- the same
+  # external calculator ran 2514 times successfully in the refinement stage.
+  known_upstream_defect:
+    scope: "external generic calculator + MD/metaMD path only"
+    workaround: "the built-in workhorse drives the dynamics; the external engine refines"
+    verified: "2026-08-30, acetone, exit 0, 0 terminated EARLY, 7 conformers"
+
+  # ---- 1.8 Environment that is NOT optional ------------------------------------------
+  # Set by openqha/crest.py::CREST_ENV on every invocation. This FIXES A DEFECT; it is
+  # not tuning. conda-forge's CREST links the pthreads OpenBLAS while CREST itself is
+  # OpenMP-parallel, and the mismatch prints "Detect OpenMP Loop and this application may
+  # hang" on every step. Measured on acetone, this variable the only change:
+  #     unset: 4.4 s, 4406 output lines of which 3626 are that warning, crest.out 476 KB
+  #     = 1  : 2.7 s,  779 output lines, 0 warnings,                    crest.out  34 KB
+  environment:
+    OPENBLAS_NUM_THREADS: "1"
+    OPENBLAS_MAIN_FREE: "1"
+
+  # ---- 1.9 Upstream CREGEN defaults, recorded for reference --------------------------
+  # CREST's own ensemble sorting. We do NOT run cregen -- we re-tighten and deduplicate
+  # on our own surface (package1 below) -- but our criterion is now the same shape and
+  # the same numbers, so the source belongs here.
+  cregen_upstream_defaults:
+    rthr_A: 0.125             # "Set RMSD threshold to <REAL> Angstroem"
+    ethr_kcal: 0.05           # "energy threshold between conformer pairs"
+    bthr_relative: 0.01       # rotational constants; upstream adjusts dynamically to 2.5%
+    ewin_kcal: 6.0            # energy window for conformational searches
+    source: "https://crest-lab.github.io/crest-docs/page/documentation/keywords.html"
+
+  # ---- 1.10 iRMSD: not available in the installed binary -----------------------------
+  # CREST 3.1 adds `--irmsd`, a permutation-invariant RMSD (canonical atom identities,
+  # rotational-axis alignment, Hungarian assignment). MEASURED on the installed 3.0.2:
+  # `--irmsd` aborts in parseflags_ (src/confparse.f90:788), and the strings irmsd,
+  # isort and hungarian occur 0 times in the binary while rthr/bthr/ethr/cregen occur
+  # 9/12/12/254 times. Same shape as the `mlip` finding.
+  #
+  # WE ARE NOT MISSING PERMUTATION INVARIANCE: conformers.all_atom_best_rms uses RDKit
+  # GetBestRMS, already minimised over the molecular automorphisms. iRMSD's value to us
+  # is a SECOND INDEPENDENT IMPLEMENTATION to check ours against, using upstream's own
+  # fluoxetine case (plain RMSD 5.13 A vs iRMSD 0.00008793 A) as the entry test.
+  irmsd:
+    available: false
+    needs: "CREST >= 3.1"
+    verified: "2026-09-04, parseflags_ abort + string absence in the 3.0.2 binary"
+
+# ======================================================================================
+# 2. Basin list — this repository's own criteria, applied after CREST
+# ======================================================================================
+# WHY THIS LAYER EXISTS AT ALL
+#
+# The conformer count a search program reports is NOT the basin count on our surface.
+# Two criteria differ: convergence (CREST's optlev="tight" is looser than our
+# fmax = 1e-4 eV/A) and duplicate detection. Measured, defect 54: on acetone CREST
+# reported 2 conformers 0.8118 kcal/mol apart; tightened to fmax = 1e-4 their energies
+# were identical to the last digit. That 0.8118 was CREST's convergence residual.
+#
+# And a third reason, which is physics rather than criteria: a converged gradient is not
+# a minimum. Saddle points have zero gradient too, and package 2 caught one (cyclopropanol,
+# a "basin" with a -195.79 cm^-1 imaginary frequency).
+package1:
+
+  # ---- 2.1 Tightening ----------------------------------------------------------------
+  tighten_fmax_eV_A: 1.0e-4            # numerical_tolerance. Same as the Hessian criterion.
+  max_opt_steps: 500                   # numerical_tolerance
+  # The number of optimisation steps is itself a RESULT: it measures how far the handed
+  # over geometry sat from a minimum of OUR surface. Measured on OCCC(=O)CO: 34 to 120
+  # steps per frame, on structures another program had already called converged.
+
+  # ---- 2.2 Deduplication: CREST's CREGEN criterion, all three conditions --------------
+  # Two structures are the same basin only if ALL of:
+  #     all-atom best RMSD  <  dedup_rmsd_A        0.125 kcal   (CREST RTHR)
+  #     |dE|                <  dedup_ethr_kcal     0.05 kcal/mol (CREST ETHR)
+  #     rotational constants within dedup_bthr_relative  1%      (CREST BTHR)
+  #
+  # THE OLD VALUE WAS 0.30 A AND IT HAD NO SOURCE ANYWHERE. The config comment claimed
+  # "this package carries its own threshold sweep" and the sweep had never been run. It
+  # has now been run, on two molecules (checkpoint 5,
+  # scripts/calibration/s0_A_dedup_threshold_scan.py):
+  #
+  #     threshold / A    OCCC(=O)CO basins    OCCO basins
+  #     0.05 - 0.25            23                 10      <- plateau, a factor 5 wide
+  #     0.125 (CREST RTHR)     23                 10      <- mid-plateau
+  #     0.30  (the old value)  22                  9      <- first value off the edge
+  #     0.40                   17                  7
+  #     0.50                   17                  4
+  #
+  # ** 0.30 A SAT ON A SLOPE, NOT A PLATEAU. ** The two merges it bought were
+  # 0.2786 A / 0.3769 kcal/mol and 0.2937 A / 2.1986 kcal/mol -- the second merged two
+  # structures 2.2 kcal/mol apart into one basin. Both fail CREST's test twice over.
+  #
+  # The energy and rotational conditions COST NOTHING on the data measured so far: at
+  # 0.125 A the three-fold criterion returns exactly the plateau count on both molecules,
+  # and CREGEN's own criterion returns it too -- three routes, one answer. They are free
+  # guards against the failure above on molecules not yet run, which is why every product
+  # carries n_merges_blocked_by_energy and n_merges_blocked_by_rotational.
+  #
+  # ***** Both counts are still zero on every molecule run. The first non-zero value is
+  # ***** a molecule to look at, not a log line to skip.
+  # RULING 2026-09-04 -- the plateau sample is NOT to be widened further.
+  # Two more molecules (acetone, oxetane) were run and were flat at every threshold from
+  # 0.05 to 0.50 A, because both are SINGLE-BASIN: a molecule with one basin cannot tell
+  # you where a merging threshold stops being safe, so "four molecules measured" would
+  # have been four measured and still two that discriminate.
+  # The reason to stop is not the difficulty, though. All three numbers below are CREST's
+  # own published CREGEN values. A plateau study is the evidence you need to justify a
+  # threshold OF YOUR OWN; what a published value is owed is fidelity to its source and a
+  # record of any departure. There is no departure here. The sweep above stays because it
+  # is why the unsourced 0.30 A went, not because more of it is owed.
+  dedup_criterion: "cregen_three_fold"  # cregen_three_fold | rmsd_only (old, reproducible)
+  dedup_rmsd_A: 0.125                   # published_protocol (CREST RTHR); the sweep above
+                                        # independently found it mid-plateau
+  dedup_ethr_kcal: 0.05                 # published_protocol (CREST ETHR)
+  dedup_bthr_relative: 0.01             # published_protocol (CREST BTHR lower bound; the
+                                        # lower bound is the STRICTER choice -- it merges
+                                        # less than upstream's dynamic value)
+  dedup_metric: "all_atom"              # all_atom | heavy_atom
+  # all_atom is a MEASURED departure from the plan text, which said heavy_atom: a
+  # heavy-atom metric cannot see a rotor that moves only hydrogens (hydroxyl, amino,
+  # methyl), and cyclopropanol went from 50 embeddings to 1 surviving conformer under it.
+  merge_energy_warn_kcal: 0.05          # diagnostic; changes no merge result. With the
+                                        # energy CONDITION enabled this should now never
+                                        # fire, and if it does the two are inconsistent.
+
+  # ---- 2.3 Hessian screen -------------------------------------------------------------
+  hessian_check: true                   # derived_criterion: small gradient != minimum
+  reject_imaginary: true                # derived_criterion: eject saddles, do not relax
+                                        # the criterion to keep them
+  hessian_mode: "analytic"              # analytic | finite_difference
+  # ANALYTIC IS NOT AN OPTIMISATION, IT IS A CORRECTION. Defect 64 / D0-P1-47, measured
+  # (mace 0.3.17):
+  #     quantity                    finite difference    analytic
+  #     max|H - H^T|                4.785e-02 eV/A^2     4.263e-14
+  #     dsgdb9nsd_000506 mode 0     -9.17 cm^-1          +13.94 cm^-1
+  #     cost                        3.93 s               2.24 s
+  # More accurate AND cheaper. The middle row is why it matters: at delta = 0.01 A the
+  # finite-difference resolution is +-9 to 20 cm^-1, while the modes it was condemning as
+  # imaginary had absolute values of 9 to 24 cm^-1. THE CRITERION WAS BEING APPLIED BELOW
+  # THE RESOLUTION OF THE INSTRUMENT, and a true minimum was thrown away as a saddle.
+
+  # ---- 2.4 Symmetry number, per basin --------------------------------------------------
+  # sigma enters G_rot as +RT ln(sigma); a factor 2 is 0.411 kcal/mol against a
+  # 1.0 kcal/mol target, and it does not cancel between isomers.
+  #
+  # IT IS A PROPERTY OF THE CONFORMER, NOT THE MOLECULE. Measured on ethylene glycol:
+  # 10 basins, 5 with sigma=2 (C2, C2h) and 5 with sigma=1 (C1, Ci) -- while the graph
+  # automorphism count is 8 for every one of them.
+  #
+  # Cost of the two ways of getting it wrong, on that ensemble:
+  #     sigma forced to 1 (what a point-group detector returns on an optimised
+  #     geometry)                                        +0.132 kcal/mol
+  #     sigma = graph automorphism count (forbidden)      +1.033 kcal/mol
+  # The second spends the entire error budget on one substitution, on a 10-atom molecule.
+  symmetry_tolerance_A: 0.10            # modifiable_convention. Superposition RMSD below
+                                        # which a candidate permutation counts as a real
+                                        # symmetry operation. Every record carries the
+                                        # sweep and the margin it was chosen from.
+  symmetry_source_order: ["declared_in_config", "geometry_rigid_superposition"]
+  # A declaration the config itself marks `conditional` does NOT override the geometry --
+  # oxetane is C2v sigma=2 when planar and Cs sigma=1 when puckered, and letting the
+  # declaration win would silently give every puckered basin the planar value.
+
+  # ---- 2.5 Reference geometry pooling --------------------------------------------------
+  seed_with_reference_geometry: true    # measured: the QM9 native geometry forms a basin
+                                        # of its own 43.9% of the time
+  # With ETKDG retired this is the ONLY starting point that does not come from CREST, and
+  # therefore the only thing that can bound the systematic error plan_A section 1.2
+  # records for a CREST-only ensemble (mean +0.1209, max +0.5824 kcal/mol).
+  #
+  # A molecule specified by SMILES has no deposited geometry, so for it that error is
+  # UNBOUNDED and acceptance criterion 6 reports not-applicable rather than passing.
+
+  # ---- 2.6 Reporting -------------------------------------------------------------------
+  energy_window_kT: 5.0                 # modifiable_convention. Both 1 kT and 5 kT reported.
+  threshold_scan_every: 40              # resource_budget: the scan is O(n^2) automorphism
+                                        # searches
+
+  # ---- 2.7 Campaign scope --------------------------------------------------------------
+  qm9_range: [1, 16000]                 # executed in four chunks
+  chunk_size: 4000
+  order_seed: 20260830
+  order_note: >
+    Processing order is a FIXED-SEED RANDOM PERMUTATION. Any prefix ("everything up to
+    molecule N") is therefore an unbiased random sample of the chunk, and statistics from
+    an interrupted run can still be quoted. Running in index order cannot give that:
+    QM9 index correlates strongly with molecular size.
+
+  # ---- 2.8 Batch execution ------------------------------------------------------------
+  crest_batch:
+    enabled: true
+    source_geometry: "qm9_native_relaxed"  # qm9_native_relaxed | etkdg_lowest
+    # The QM9 native B3LYP geometry is a FREE real structure. Relaxing it on MACE to a
+    # coarse criterion before handing it to CREST stops CREST spending its budget
+    # dragging another program's geometry onto our minimum.
+    combine_with_etkdg: true               # union with the completed ETKDG census, both
+                                           # sides measured with the same ruler
+    scratch_dir: "crest_batch"             # under runtime.runs_root
+    threads_per_job: 2                     # resource_budget
+    parallel_jobs: 4                       # resource_budget: 8 physical cores here
+    timeout_s: 7200                        # resource_budget
+    keep_crest_out: true                   # a third-party program's full output is
+                                           # archived (gzip), never summarised away
+
+  # ---- 2.9 Retired: ETKDG ---------------------------------------------------------------
+  # User ruling 2026-09-03: ETKDG is retired AS A CONFORMER SEARCH METHOD. The parameters
+  # remain so the completed census stays reproducible; the production path does not call
+  # them.
+  #
+  # ONE EXCEPTION, and it is not a loophole: a molecule given by SMILES with no deposited
+  # geometry needs SOME starting structure, and a single embedding (n_embed = 1) relaxed
+  # on the potential provides it. Every conformer in the result still comes from CREST's
+  # metadynamics. Upstream's own example is `crest struc.xyz --gfn2`; struc.xyz has to
+  # come from somewhere.
+  etkdg_retired:
+    n_embed: 50                          # the census setting; too few and basins are missed
+    embed_seed: 20260827
+    prune_rms_forcefield_A: 0.125        # NOTE: this was described as "deliberately
+                                         # tight". It is not tight -- 0.125 A is CREST's
+                                         # PRODUCTION threshold. Only the description was
+                                         # wrong; the value stands.
+    fmax_census_eV_A: 0.001              # numerical_tolerance
+    seed_for_smiles_start_geometry: 20260903
+    n_embed_for_smiles_start_geometry: 1
