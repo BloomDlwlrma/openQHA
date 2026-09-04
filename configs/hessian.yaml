@@ -1,0 +1,115 @@
+# openQHA -- Hessian screen, RRHO tolerances and the electronic reference ladder. Branch A reads fmax_hessian_eV_A on every run.
+#
+# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# now holds ONLY global configuration and the `include:` index. This is a
+# MOVE, not a copy -- openqha/config.py raises if two files define the same
+# key -- and it was moved by byte range, so every comment and every measured
+# number came with it verbatim.
+# ======================================================================
+
+# ======================================================================================
+# Branch A -- basin list criteria
+# ======================================================================================
+# MOVED to configs/conformers.yaml on 2026-09-04, and merged back in through the
+# `include:` list at the top of this file. It is a MOVE, not a copy: `package1:` is
+# defined in exactly one place, and openqha/config.py raises if two files define it.
+#
+# Everything measured in it went with it -- the four-arm SHAKE attribution, the
+# refine=opt/sp comparison, the deduplication threshold sweep. Nothing was summarised
+# away in the move.
+# ======================================================================================
+
+# --------------------------------------------------------------------------------------
+# 包 2 —— Hessian 旁路与频率对标
+# --------------------------------------------------------------------------------------
+package2:
+  fmax_hessian_eV_A: 0.0001          # numerical_tolerance：残余力污染曲率
+  finite_difference_delta_A: 0.01    # modifiable_convention，收敛性已实测（D0-34）
+  delta_scan_A: [0.005, 0.010, 0.020, 0.040]
+  delta_scan_species: "dsgdb9nsd_000048"   # 氧杂环丁烷，有最软的环折叠模
+  rigid_singular_tol: 1.0e-8         # numerical_tolerance：刚体向量组的秩判据
+  rigid_overlap_threshold: 0.5       # derived_criterion：本征向量落在刚体子空间的比例
+  reject_imaginary_frequencies: true # derived_criterion：进入求和的必须是真极小点
+  qrrho_nu0_cm: 100.0                # literature_value：Grimme, Chem. Eur. J. 2012, 18, 9955
+  # ---- 参考层级（2026-08-29 用户裁定：改走完整复合，不再直接算 CCSD(T)/cc-pVTZ）----
+  # 依据 Allen 等, "Reactive Chemistry at Unrestricted Coupled Cluster Level"（式 1、式 2）。
+  # 原文对**能量与力都**给了复合式；数值频率由力做有限差分，所以复合力式直接给出复合 Hessian。
+  # 实测（丙酮 10 原子、ORCA 6.0.1、8 核，单次解析梯度，见 D0-73）：
+  #   MP2/DZ 5 s | MP2/TZ 30 s | MP2/QZ 321 s | CCSD/DZ 65 s | CCSD(T)/DZ 326 s | CCSD/TZ 435 s
+  #   对照 CCSD(T)/TZ > 7200 s 未完成；六分量临时文件合计 17 MB，对照 CCSD(T)/TZ 单次 144 GB。
+  reference_level: "composite_TZstar_ccsd"
+  reference_spin: "restricted"       # 本体系全是中性闭壳层平衡极小点（门 F4 保证），用 R 不用 U
+  composite_recipes:
+    smoke_mp2_dz:                    # **冒烟专用** —— 单项, 不是复合, 只为把流程跑通
+      target: "MP2/cc-pVDZ 单点, 用于验证复合流水线的接线"
+      terms:
+        - [1, "MP2", "cc-pVDZ"]
+      seconds_per_gradient_8core: 5
+    # 每一项是 [系数, 方法, 基组]；力与 Hessian 按系数线性组合
+    composite_TZstar_ccsd:           # **在用** —— 用 CCSD 增量把 CCSD(T)/DZ 修到 TZ
+      target: "CCSD(T)/cc-pVTZ 的复合近似"
+      terms:
+        - [1, "CCSD(T)", "cc-pVDZ"]
+        - [1, "CCSD", "cc-pVTZ"]
+        - [-1, "CCSD", "cc-pVDZ"]
+      seconds_per_gradient_8core: 826
+    composite_TZstar_mp2:            # 更便宜、精度更低（原文图 S1c 对照的就是它）
+      target: "CCSD(T)/cc-pVTZ 的复合近似，增量取自 MP2"
+      terms:
+        - [1, "CCSD(T)", "cc-pVDZ"]
+        - [1, "MP2", "cc-pVTZ"]
+        - [-1, "MP2", "cc-pVDZ"]
+      seconds_per_gradient_8core: 361
+    composite_QZstar:                # 原文式 1/式 2 的完整形式，目标是 QZ
+      target: "CCSD(T)/cc-pVQZ 的复合近似"
+      terms:
+        - [1, "CCSD(T)", "cc-pVDZ"]
+        - [1, "CCSD", "cc-pVTZ"]
+        - [-1, "CCSD", "cc-pVDZ"]
+        - [1, "MP2", "cc-pVQZ"]
+        - [-1, "MP2", "cc-pVTZ"]
+      seconds_per_gradient_8core: 1177
+    # ---- 2026-08-29 用户裁定 E2 的精度: "MP2 DZ* -> QZ*" ----------------------------
+    # 一条**只用 MP2 增量**的基组阶梯, 底座是 CCSD(T)/cc-pVDZ, 三级都从同一个项池组合:
+    #   DZ      = CCSD(T)/DZ
+    #   TZ*_mp2 = CCSD(T)/DZ + (MP2/TZ - MP2/DZ)
+    #   QZ*_mp2 = CCSD(T)/DZ + (MP2/QZ - MP2/DZ)
+    # **三级共用一个项池**(4 个单点: CCSD(T)/DZ, MP2/DZ, MP2/TZ, MP2/QZ),
+    # 所以量出整条阶梯的代价 = 量出最高一级的代价, **中间两级是免费的**,
+    # 于是"阶梯收敛了没有"从假设变成一个可读的数。
+    dz_base:                         # 阶梯第 0 级: 不做任何基组修正
+      target: "CCSD(T)/cc-pVDZ(阶梯底座, 非复合)"
+      terms:
+        - [1, "CCSD(T)", "cc-pVDZ"]
+      seconds_per_gradient_8core: 326
+    composite_QZstar_mp2:            # **E2 在用** —— MP2 增量一步修到 QZ
+      target: "CCSD(T)/cc-pVQZ 的复合近似, 基组增量全部取自 MP2"
+      terms:
+        - [1, "CCSD(T)", "cc-pVDZ"]
+        - [1, "MP2", "cc-pVQZ"]
+        - [-1, "MP2", "cc-pVDZ"]
+      seconds_per_gradient_8core: 652
+    smoke_hf_dz:                     # **冒烟专用** —— 最便宜的一项, 只为验证阶梯的接线
+      target: "HF/cc-pVDZ 单点, 约 1 秒"
+      terms:
+        - [1, "HF", "cc-pVDZ"]
+      seconds_per_gradient_8core: 1
+  # 一次跑出整条阶梯: 驱动脚本按**项池**求解, 公共单点只算一次
+  recipe_ladders:
+    smoke_hf_to_mp2:                 # **冒烟专用**: 两级, 共用 cc-pVDZ, 每个结构约 6 秒
+      description: "验证项池/组合/阶梯/续跑的接线, 不产出任何有物理意义的数"
+      recipes: ["smoke_hf_dz", "smoke_mp2_dz"]
+      pool_seconds_per_structure_8core: 6
+    mp2_dz_to_qz:
+      description: "MP2 增量阶梯 DZ -> TZ* -> QZ*, 共用一个项池"
+      recipes: ["dz_base", "composite_TZstar_mp2", "composite_QZstar_mp2"]
+      pool_seconds_per_structure_8core: 682   # 326 + 5 + 30 + 321
+  reference_level_rejected:
+    - level: "r2SCAN-3c"
+      reason: "用户 2026-08-28 裁定排除"
+    - level: "CCSD(T)/cc-pVTZ 直接计算"
+      reason: >
+        实测不可负担：单次解析梯度 > 7200 秒未完成、临时文件 144 GB，
+        61 次 x 7 个物种 >= 36 天。见 D0-66、D0-69、D0-73。
+
+

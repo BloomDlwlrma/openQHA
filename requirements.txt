@@ -80,3 +80,22 @@ nbconvert>=7.0
 
 # ---- branch C only (Hessian training datasets) ---------------------------------------------
 h5py>=3.8
+
+# ---- branch B, the OpenMM route ------------------------------------------------------------
+# NOT INSTALLABLE BY PIP, and listed anyway so the requirement is written down somewhere a
+# reader will look. OpenMM and openmm-torch are conda-forge packages with compiled CUDA and
+# C++ components; `pip install openmm` does not give you a working build.
+#
+#     conda install -c conda-forge openmm openmm-torch openmmtools mdtraj mdanalysis
+#
+# What each is for:
+#   openmm         the Nose-Hoover chain integrator branch B now runs on
+#   openmm-torch   carries MACE into OpenMM as a TorchForce
+#   openmmtools    NoseHooverChainVelocityVerletIntegrator, whose DEFAULTS branch B adopts
+#                  (collision_frequency 50/ps = 20 fs coupling, chain 5, MTS 5, YS 5)
+#   mdtraj,
+#   mdanalysis     independent superposition checks; see openqha/mdtraj_io.py for why
+#                  mdtraj alone is not sufficient as a reference
+# mdtraj and MDAnalysis ARE pip-installable, so they are the two that appear below.
+mdtraj>=1.9
+MDAnalysis>=2.4

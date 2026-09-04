@@ -10,6 +10,9 @@
 #     bash install_dependency.sh --all-weights# fetch the whole MACE-OFF family, not one
 #     bash install_dependency.sh --cuda       # CUDA build, without the Tianhe specifics
 #
+# Branch B has TWO production routes and this installs both: ASE + Langevin, and
+# OpenMM + a Nose-Hoover chain. `--minimal` installs neither the OpenMM stack nor parsl.
+#
 # --tianhe and --cuda build from environment-cuda.yml into `openqha-cuda`. That is for
 # BRANCH C TRAINING ONLY: branches A and B are measured SLOWER on this project's GPU than
 # on its CPU (D0-48, D0-C-5), and GFN2-xTB never touches a GPU at all.
@@ -187,6 +190,44 @@ python - <<'PY'
 import mace, torch
 print("mace-torch", mace.__version__, "| torch", torch.__version__)
 PY
+
+# -------------------------------------------------------------------------------------
+# 3b. Branch B's OpenMM route
+# -------------------------------------------------------------------------------------
+# Conda-forge only. `pip install openmm` does not give a working build, which is why this
+# is here and not in requirements.txt.
+#
+# What it buys: the Nose-Hoover chain thermostat branch B now runs on, at openmmtools'
+# own documented defaults (collision_frequency 50/ps = a 20 fs coupling time, chain_length
+# 5, num_mts 5, num_yoshidasuzuki 5), plus two independent superposition implementations
+# to check ours against.
+#
+# What it costs to skip: nothing that stops branch B. The ASE + Langevin route is the
+# other production path and needs none of this; scripts/production/s0_B_qha_analyse.py
+# reads either. Skipping it does remove the OpenMM half of the implementation pair.
+#
+# NNPOps and openmm-ml are deliberately absent: openqha/openmm_mace.py builds the graph
+# as the complete graph, which is exact for 10-19 atoms and needs no neighbour search.
+if [ "$REQ" = "requirements-minimal.txt" ]; then
+    say "skipping the OpenMM route (--minimal); the ASE route is unaffected"
+else
+    say "branch B OpenMM route (openmm, openmm-torch, openmmtools, mdtraj, mdanalysis)"
+    if conda install -y "${SOLVER[@]}" -n "$PY_ENV" -c conda-forge \
+         "openmm>=8.1" "openmm-torch>=1.4" "openmmtools>=0.23" \
+         "mdtraj>=1.9" "mdanalysis>=2.4"; then
+        python - <<'PY'
+try:
+    import openmm, openmmtools, mdtraj
+    print("openmm", openmm.version.version, "| openmmtools", openmmtools.__version__,
+          "| mdtraj", mdtraj.__version__)
+except Exception as exc:
+    print("openmm stack imported with:", exc)
+PY
+    else
+        warn "the OpenMM stack did not install; branch B's ASE route still works, and"
+        warn "scripts/production/s0_B_qha_trajectory_openmm.py will not run"
+    fi
+fi
 
 CREST_BIN="$(command -v crest || true)"
 [ -x "$CREST_BIN" ] || warn "crest not on PATH inside $PY_ENV"

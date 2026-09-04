@@ -42,15 +42,37 @@ PYTHON_DEPS = [
     ("parsl", None, "branch E", "no fan-out; one molecule at a time still works"),
     ("matplotlib", "3.5", "tutorials", "no plots"),
     ("h5py", "3.8", "branch C", "no Hessian dataset export"),
+    # ---- branch B, the OpenMM route ---------------------------------------------------
+    # Optional because branch B has two routes and the ASE one needs none of these. What
+    # they buy is the Nose-Hoover chain at openmmtools' own defaults, and an independent
+    # superposition to check ours against.
+    ("openmm", "8.1", "branch B (OpenMM route)",
+     "no Nose-Hoover chain route; the ASE route still runs"),
+    ("openmmtorch", None, "branch B (OpenMM route)",
+     "MACE cannot be carried into OpenMM"),
+    ("openmmtools", None, "branch B (OpenMM route)",
+     "falls back to openmm.NoseHooverIntegrator, which uses a DIFFERENT Yoshida-Suzuki "
+     "order (7 rather than 5); the fallback is recorded in the product"),
+    ("mdtraj", "1.9", "branch B cross-check",
+     "no mdtraj superposition check"),
+    ("MDAnalysis", "2.4", "branch B cross-check",
+     "no MASS-WEIGHTED independent superposition; mdtraj alone cannot mass-weight and "
+     "differed from us by 2.41 kcal/mol on a real trajectory"),
 ]
 
-OPTIONAL_MODULES = {"pymsym", "pandas", "pyarrow", "parsl", "matplotlib", "h5py"}
+OPTIONAL_MODULES = {"pymsym", "pandas", "pyarrow", "parsl", "matplotlib", "h5py",
+                    "openmm", "openmmtorch", "openmmtools", "mdtraj", "MDAnalysis"}
 
 #: (executable, env var that overrides, required_for, what breaks)
 BINARIES = [
     ("crest", "S0_CREST_BIN", "branch A", "no conformer search at all"),
     ("xtb", None, "branch C", "no GFN2 labels"),
-    ("gmx", None, "branch B cross-check", "no independent check of S_QH"),
+    # `gmx` may live in a SIBLING conda environment; openqha/gmx_io.gmx_binary() searches
+    # for it, because acceptance criterion 2 once failed for no reason but which shell was
+    # active. This check looks only on PATH, so a "missing" here is not conclusive.
+    ("gmx", "S0_GMX_BIN", "branch B cross-check",
+     "no gmx covar -mwa check of the covariance spectrum (the mass-weighted one, which "
+     "mdtraj cannot provide)"),
     ("orca", None, "branch C", "no RI-MP2 reference labels"),
 ]
 

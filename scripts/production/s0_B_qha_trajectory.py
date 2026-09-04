@@ -116,6 +116,27 @@ SAMPLE_EVERY_STEPS = 8     # one frame per 8 fs. Positions, not velocities: quas
 #: before the covariance is taken.
 FIXCM = False
 
+#: Which thermostat produces branch B trajectories.
+#:
+#: Nose-Hoover on instruction (2026-09-04). It is NOT a drop-in for Langevin here, and the
+#: coupling time below is the whole reason: on the harmonic surface built from the
+#: production potential's own Hessian, where the answer is known in closed form,
+#:
+#:     thermostat                       T*S error / kcal    softest mode / cm^-1
+#:     Langevin, friction 1/ps               +0.031                81.6
+#:     Nose-Hoover, tdamp   20 fs            -0.093                78.6
+#:     Nose-Hoover, tdamp  100 fs            -1.150               179.0
+#:     Nose-Hoover, tdamp  419 fs            -1.228               229.0
+#:     (true value)                              --                79.7
+#:
+#: The kinetic temperature is right in every row. It is the CONFIGURATIONAL distribution
+#: that collapses, and that is the only thing quasi-harmonic analysis reads.
+#: `qha.assert_trajectory_identity` refuses any trajectory outside these limits, so this
+#: is enforced rather than documented.
+THERMOSTAT = "nose-hoover"
+NOSE_HOOVER_TDAMP_FS = 20.0
+NOSE_HOOVER_CHAIN_LENGTH = 3
+
 #: Pin the centre of mass to the origin every step.
 #:
 #: This is NOT required for correctness, and the reason has been rewritten twice. What is
@@ -222,8 +243,17 @@ def instantaneous_temperature(atoms):
     """2 E_kin / (3N k_B).
 
     3N, not 3N-6. With `fixcm=False` every one of the 3N Cartesian degrees of freedom is
-    Langevin-thermostatted, including the three that carry the centre-of-mass motion, so
-    3N is the count that makes this an estimator of the bath temperature. The retired
+    thermostatted, including the three that carry the centre-of-mass motion, so 3N is the
+    count that makes this an estimator of the bath temperature. The same holds under the
+    Nose-Hoover chain, which does not remove centre-of-mass momentum either: measured on
+    the calibration surface, 2<KE>/(k_B T) came back 29.9 to 30.2 against 3N = 30 for
+    every coupling time tried.
+
+    Note what this quantity can and cannot see. It is a KINETIC temperature, and
+    Nose-Hoover holds it perfectly correct while the configurational distribution
+    collapses -- which is the only thing quasi-harmonic analysis reads. A healthy number
+    here is not evidence that the trajectory is admissible; that is what
+    `qha.assert_trajectory_identity` is for. The retired
     density-of-states route used 3N-6 for a good reason -- it ran pure microcanonical
     dynamics after removing translation and rotation -- and carrying that divisor over to
     here would report 298 K as 373 K and invite somebody to "fix" a thermostat that was
@@ -233,15 +263,68 @@ def instantaneous_temperature(atoms):
     return 2.0 * atoms.get_kinetic_energy() / (3 * len(atoms) * units.kB)
 
 
-def equilibrate(atoms, calc, temperature_K, seed, equil_ps, timestep_fs, friction_per_ps):
-    """Langevin equilibration, with the relaxation MEASURED rather than assumed complete."""
+def pin_centre_of_mass(thermostat, requested):
+    """Whether re-centring is applied, and a refusal when it was asked for and cannot be.
+
+    `requested` is None for "whatever suits the thermostat", True or False for an explicit
+    choice. Under Nose-Hoover the answer is always False, because ASE's integrator
+    overwrites any attempt -- see the message below. An explicit request is REFUSED rather
+    than downgraded, because a caller who asked for pinning and silently did not get it is
+    the exact failure this branch has been unpicking all day.
+    """
+    is_langevin = str(thermostat or THERMOSTAT).lower() == "langevin"
+    if is_langevin:
+        return PIN_CENTRE_OF_MASS if requested is None else bool(requested)
+    if requested:
+        raise ValueError(
+            "--pin-com was requested and the thermostat is Nose-Hoover. ASE's "
+            "NoseHooverChainNVT caches positions and momenta at construction "
+            "(nose_hoover_chain.py lines 92-93), propagates its own copies and writes "
+            "them back over the atoms at the end of every step (lines 118-119). It never "
+            "reads the atoms back, so an attached observer that re-centres them -- or "
+            "Stationary, or ZeroRotation -- is silently overwritten and does NOTHING. "
+            "Measured: a run with the re-centring observer attached came back "
+            "bit-identical to one without it, with a 1422 A centre-of-mass drift in the "
+            "variant that was supposed to pin it at zero. Refusing rather than writing "
+            "centre_of_mass_pinned_to_origin=True into a product where it is false.")
+    return False
+
+
+def make_dynamics(atoms, temperature_K, timestep_fs, friction_per_ps, rng,
+                  thermostat=None, tdamp_fs=None, chain_length=None):
+    """The integrator, in ONE place so both stages cannot drift apart.
+
+    Equilibration and production used to build their own `Langevin` objects from the same
+    literal arguments. That is two places to change and one of them to forget, and the
+    thing being changed is the sampled ensemble.
+    """
     from ase import units
-    from ase.md.langevin import Langevin
+    name = (thermostat or THERMOSTAT).lower()
+    if name == "langevin":
+        from ase.md.langevin import Langevin
+        return Langevin(atoms, timestep_fs * units.fs, temperature_K=temperature_K,
+                        friction=friction_per_ps / (1000.0 * units.fs), rng=rng,
+                        fixcm=FIXCM), "ase.md.langevin.Langevin"
+    if name in ("nose-hoover", "nose_hoover", "nosehoover"):
+        from ase.md.nose_hoover_chain import NoseHooverChainNVT
+
+        return NoseHooverChainNVT(
+            atoms, timestep_fs * units.fs, temperature_K=temperature_K,
+            tdamp=(tdamp_fs or NOSE_HOOVER_TDAMP_FS) * units.fs,
+            tchain=int(chain_length or NOSE_HOOVER_CHAIN_LENGTH)), \
+            "ase.md.nose_hoover_chain.NoseHooverChainNVT"
+    raise ValueError("unknown thermostat {!r} -- 'langevin' or 'nose-hoover'".format(name))
+
+
+def equilibrate(atoms, calc, temperature_K, seed, equil_ps, timestep_fs, friction_per_ps,
+                thermostat=None, tdamp_fs=None, chain_length=None,
+                pin_com=None):
+    """Equilibration, with the relaxation MEASURED rather than assumed complete."""
     from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
     rng = np.random.RandomState(int(seed))
     MaxwellBoltzmannDistribution(atoms, temperature_K=temperature_K, rng=rng)
-    dyn = Langevin(atoms, timestep_fs * units.fs, temperature_K=temperature_K,
-                   friction=friction_per_ps / (1000.0 * units.fs), rng=rng, fixcm=FIXCM)
+    dyn, _name = make_dynamics(atoms, temperature_K, timestep_fs, friction_per_ps, rng,
+                               thermostat, tdamp_fs, chain_length)
     trace = []
 
     def sample():
@@ -253,7 +336,7 @@ def equilibrate(atoms, calc, temperature_K, seed, equil_ps, timestep_fs, frictio
     # the comment on PIN_CENTRE_OF_MASS. Every step rather than every hundred because a
     # centre of mass that random-walks at 3.6 A/ps leaves a 14 A box in about 2 ps, which
     # is the margin any origin-anchored neighbour search would give.
-    if PIN_CENTRE_OF_MASS:
+    if (PIN_CENTRE_OF_MASS if pin_com is None else pin_com):
         dyn.attach(lambda: recentre(atoms), interval=1)
     n_steps = int(round(equil_ps * 1000.0 / timestep_fs))
     t0 = time.time()
@@ -283,10 +366,10 @@ def equilibrate(atoms, calc, temperature_K, seed, equil_ps, timestep_fs, frictio
 
 
 def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
-            friction_per_ps, sample_every, wall_budget_s, e_min, d_max_ref):
+            friction_per_ps, sample_every, wall_budget_s, e_min, d_max_ref,
+            thermostat=None, tdamp_fs=None, chain_length=None, pin_com=None):
     """The production segment, flushed in chunks so that it can be resumed."""
     from ase import units
-    from ase.md.langevin import Langevin
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     frames_path = outdir / "frames.npy"
@@ -320,8 +403,8 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
 
     n_start = n_have
     rng = np.random.RandomState(int(seed) + 1)
-    dyn = Langevin(atoms, timestep_fs * units.fs, temperature_K=temperature_K,
-                   friction=friction_per_ps / (1000.0 * units.fs), rng=rng, fixcm=FIXCM)
+    dyn, _name = make_dynamics(atoms, temperature_K, timestep_fs, friction_per_ps, rng,
+                               thermostat, tdamp_fs, chain_length)
     buf, temps = [], []
 
     def grab():
@@ -329,7 +412,7 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
         temps.append(instantaneous_temperature(atoms))
 
     dyn.attach(grab, interval=sample_every)
-    if PIN_CENTRE_OF_MASS:
+    if (PIN_CENTRE_OF_MASS if pin_com is None else pin_com):
         dyn.attach(lambda: recentre(atoms), interval=1)   # see 
 
     t0 = time.time()
@@ -411,6 +494,13 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
     # Equilibration is skipped when there is a state to continue from: the saved momenta
     # are already equilibrated, and re-equilibrating would pay the cost again AND throw
     # away the state it was about to continue.
+    is_langevin = args.thermostat.lower() == "langevin"
+    thermostat_label = ("ase.md.langevin.Langevin" if is_langevin
+                        else "ase.md.nose_hoover_chain.NoseHooverChainNVT")
+    # Before either stage runs: this call can REFUSE, and refusing after a trajectory has
+    # been produced would be a refusal that arrives too late to mean anything.
+    pin_com = pin_centre_of_mass(args.thermostat, args.pin_com)
+
     resuming = (outdir / "state.npz").exists() and (outdir / "frames.npy").exists()
     previous = {}
     if (outdir / "meta.json").exists():
@@ -424,10 +514,13 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
                      this_run_skipped_equilibration=True)
     else:
         equil = equilibrate(relaxed, calc, args.temperature, seed, args.equil_ps,
-                            TIMESTEP_FS, args.friction)
+                            TIMESTEP_FS, args.friction, args.thermostat,
+                            args.tdamp_fs, args.chain_length, pin_com)
     frames, prod = produce(relaxed, calc, outdir, args.temperature, seed, args.prod_ps,
                            TIMESTEP_FS, args.friction, args.sample_every,
-                           args.wall_budget_s, e_min, d_max_ref)
+                           args.wall_budget_s, e_min, d_max_ref,
+                           args.thermostat, args.tdamp_fs, args.chain_length,
+                           pin_com)
 
     meta = dict(
         # ---- the identity assertion's inputs. Written here, checked in qha.py. --------
@@ -435,15 +528,27 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
         constraints=None,
         hydrogen_mass_amu=(float(hydrogen[0]) if hydrogen else qha.HYDROGEN_MASS_AMU),
         timestep_fs=float(TIMESTEP_FS),
-        thermostat_fixcm=bool(FIXCM),
-        centre_of_mass_pinned_to_origin=bool(PIN_CENTRE_OF_MASS),
+        thermostat=thermostat_label,
+        # Exactly one of the two blocks below is meaningful, and the other is absent
+        # rather than defaulted: `fixcm` is an ASE Langevin option and a Nose-Hoover run
+        # that recorded `thermostat_fixcm=False` would carry a field that looks checked
+        # and is not. `qha.assert_trajectory_identity` picks which block to enforce from
+        # the thermostat name.
+        thermostat_fixcm=(bool(FIXCM) if is_langevin else None),
+        thermostat_tdamp_fs=(None if is_langevin else float(args.tdamp_fs)),
+        thermostat_chain_length=(None if is_langevin else int(args.chain_length)),
+        # Under Nose-Hoover this is necessarily False: the integrator overwrites any
+        # attempt to re-centre, so the driver refuses the combination outright rather
+        # than recording a pinning that did not happen. See make_dynamics.
+        centre_of_mass_pinned_to_origin=bool(pin_com),
         neighbour_list_patch=engine.provenance().get("neighbour_list_patch"),
         safe_origin_radius_A=float(engine.SAFE_ORIGIN_RADIUS_A),
         pinning_reason=("insurance: an origin-anchored neighbour search loses pairs once "
                         "the molecule random-walks away, which the MACE develop tree does "
                         "and the installed mace_torch 0.3.16 does not; see openqha.engine."
                         "translation_invariance and the recentre() docstring"),
-        source="openQHA.branchB.langevin",
+        source=("openQHA.branchB.langevin" if is_langevin
+                else "openQHA.branchB.nose_hoover"),
         # ---- everything else ---------------------------------------------------------
         qm9_index=args.species, basin_index=int(basin_index), seed=int(seed),
         geometry_source=geometry_source,
@@ -453,8 +558,8 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
         friction_per_ps=float(args.friction),
         sample_every_steps=int(args.sample_every),
         frame_spacing_fs=float(args.sample_every * TIMESTEP_FS),
-        ensemble="canonical (Langevin)",
-        thermostat="ase.md.langevin.Langevin",
+        ensemble=("canonical (Langevin)" if is_langevin
+                  else "canonical (Nose-Hoover chain)"),
         engine=engine.provenance(),
         engine_dtype=engine.DTYPE,
         composite_notation=engine.composite_notation(),
@@ -495,7 +600,23 @@ def main():
     ap.add_argument("--equil-ps", type=float, default=EQUIL_PS)
     ap.add_argument("--prod-ps", type=float, default=PROD_PS)
     ap.add_argument("--temperature", type=float, default=None)
-    ap.add_argument("--friction", type=float, default=FRICTION_PER_PS)
+    ap.add_argument("--friction", type=float, default=FRICTION_PER_PS,
+                    help="Langevin friction in 1/ps; ignored under Nose-Hoover")
+    ap.add_argument("--thermostat", default=THERMOSTAT,
+                    choices=("nose-hoover", "langevin"),
+                    help="Nose-Hoover by default. Read the THERMOSTAT constant before "
+                         "changing the coupling time: at the conventional 100 fs this "
+                         "thermostat returns the softest mode three times too stiff")
+    ap.add_argument("--tdamp-fs", type=float, default=NOSE_HOOVER_TDAMP_FS,
+                    help="Nose-Hoover coupling time. qha.assert_trajectory_identity "
+                         "refuses anything above {} fs".format(NOSE_HOOVER_TDAMP_FS))
+    ap.add_argument("--chain-length", type=int, default=NOSE_HOOVER_CHAIN_LENGTH,
+                    help="Nose-Hoover chain length; 1 is plain Nose-Hoover and is refused")
+    ap.add_argument("--pin-com", dest="pin_com", action="store_true", default=None,
+                    help="re-centre the molecule every step. Refused under Nose-Hoover, "
+                         "where ASE's integrator overwrites it and it would do nothing")
+    ap.add_argument("--no-pin-com", dest="pin_com", action="store_false",
+                    help="let the centre of mass random-walk freely")
     ap.add_argument("--sample-every", type=int, default=SAMPLE_EVERY_STEPS)
     ap.add_argument("--fmax", type=float, default=0.005)
     ap.add_argument("--device", default="cpu")
@@ -504,6 +625,10 @@ def main():
                          "resumable state. 0 means no budget")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    # Resolved once, before anything runs, so that a refusal happens here rather than
+    # after a trajectory has been produced under a setting the caller did not get.
+    pin_com = pin_centre_of_mass(args.thermostat, args.pin_com)
 
     cfg = config.load()
     if args.temperature is None:
@@ -518,8 +643,18 @@ def main():
     print("species        {}".format(args.species))
     print("geometries     {}  ({})".format(len(frames_in), geometry_source))
     print("engine         {}".format(engine.engine_name()))
-    print("protocol       dt = {} fs, friction = {}/ps, T = {} K, frame every {} fs"
-          .format(TIMESTEP_FS, args.friction, args.temperature,
+    # Print the coupling that is actually in force. A banner that says "friction" under
+    # Nose-Hoover names a parameter the run does not have, and this branch has already
+    # spent a session on a product that recorded a request instead of what ran.
+    if args.thermostat.lower() == "langevin":
+        coupling = "Langevin, friction = {}/ps".format(args.friction)
+    else:
+        coupling = ("Nose-Hoover chain, tdamp = {} fs, chain = {} "
+                    "(refused above {} fs -- see THERMOSTAT)"
+                    .format(args.tdamp_fs, args.chain_length,
+                            qha.NOSE_HOOVER_MAX_TDAMP_FS))
+    print("protocol       dt = {} fs, {}, T = {} K, frame every {} fs"
+          .format(TIMESTEP_FS, coupling, args.temperature,
                   args.sample_every * TIMESTEP_FS))
     print("prohibitions   no bias, no constraints, real hydrogen mass")
     print("length         {} ps equilibration + {} ps production x {} seeds"

@@ -18,7 +18,7 @@ The six steps (plan_A section 3)
 --------------------------------
   1. gates F0-F7                       -> is this molecule in scope at all
   2. CREST iMTD-GC, gfn2 workhorse     -> raw ensemble
-     + MACE refine="opt" over a socket
+     + MACE refine="sp" over a socket (was "opt" until 2026-09-04; criterion 3)
   3. pool in the reference geometry    -> an independent starting point
   4. tighten to fmax = 1e-4 eV/A       -> tighter than CREST's optlev="tight"
   5. all-atom best-RMSD dedup, 0.30 A  -> graph automorphism solves the atom mapping

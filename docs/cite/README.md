@@ -9,13 +9,21 @@ Two ready-made entries:
 
 ## Before you use them
 
-**The author line and the URL are placeholders.** They read `{openQHA developers}` and
-`https://github.com/<org>/openQHA` because this repository does not record a real author
-list or a public URL yet, and a citation naming the wrong author is worse than no
-citation at all. Fill both in, and set `version`/`ET` to the release you actually used.
+We have not yet published a paper describing openQHA. Until then, please cite the software directly using the following BibTeX entry:
 
-There is no openQHA paper yet, so both entries cite the **software**. Replace them with
-the paper when one exists.
+```bibtex
+@misc{openqha,
+    title = {{openQHA}: conformational free energy for small organic molecules on a machine-learned potential},
+    author = {Zhang, Shiwei},  % replace with actual author list when known
+    url = {https://github.com/BloomDlwlrma/openQHA},
+    urldate = {2026-09-04},
+    version = {0.1},
+    year = {2026},
+    month = sep,
+    note = {Accessed: Sep 4, 2026},
+}
+```
+If you use openQHA in your work, we encourage you to cite it in the main text of your paper, not only in the supporting information, to ensure proper discoverability by search engine or database.
 
 ## What else to cite
 

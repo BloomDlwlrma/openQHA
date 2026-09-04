@@ -1,0 +1,135 @@
+# openQHA -- Package 3: near-critical gas state points. RECORD ONLY -- no code reads this section.
+#
+# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# now holds ONLY global configuration and the `include:` index. This is a
+# MOVE, not a copy -- openqha/config.py raises if two files define the same
+# key -- and it was moved by byte range, so every comment and every measured
+# number came with it verbatim.
+# ======================================================================
+
+# --------------------------------------------------------------------------------------
+# 包 3 —— 近临界气相的状态点（2026-08-31 加入）
+# --------------------------------------------------------------------------------------
+# **为什么需要它**：2026-08-31 用户裁定包 3 改走**真实多分子气相**，
+#   并用「近临界/近饱和高密度气相 + 热力学外推」（方案甲）。
+#   298.15 K 时本体系的饱和蒸气太稀（丙酮 0.0074 nm^-3，碰撞间隔约 368 ps），
+#   所以必须在近临界温度模拟，再按 S(T2)=S(T1)+∫Cp/T dT 外推回 298.15 K。
+#
+# **数据来源**：`chemicals` 1.5.2（Caleb Bell），逐条方法名见下面的 tc_source。
+#   **注意 cyclopropanol 的 Tc/Pc 是 JOBACK 基团贡献法的估计值，不是实验值。**
+# **饱和蒸气压**：Lee–Kesler 对比关联式；**数密度按理想气体 n = P/kT，近饱和时偏低**
+#   （真实 Z < 1，故这是下限）。生产时应以模拟的位力压力回校。
+# 生成脚本：`scripts/_superseded/branch1-archived/s0_species_critical_constants.py`
+#   产物：`analysis/species_critical_constants.json`
+package3_state_points:
+  reference_reduced_temperature: 0.886   # modifiable_convention：参考文献近临界气相常用点
+  target_state: "298.15 K, 1 bar 理想气体标准态（由模拟点外推得到）"
+  extrapolation:
+    pressure: "S(P) = S(P_sat) - R ln(P/P_sat)；E(P) = E(P_sat)（焦耳定律）"
+    temperature: "S(T2) = S(T1) + ∫ Cp/T dT；**这是本路线最大的近似**"
+  species:
+    dsgdb9nsd_000018:
+      name: "acetone"
+      zh: "丙酮"
+      cas: "67-64-1"
+      Tc_K: 508.1
+      Pc_bar: 46.9
+      acentric_factor: 0.307
+      tc_source: "HEOS, IUPAC, CRC"
+      at_Tr_0.886:
+        temperature_K: 450.2
+        Psat_bar: 19.00
+        number_density_nm3: 0.3057
+        box_length_A_27mol: 44.5
+        collision_interval_ps: 7.26
+        extrapolation_span_K: 152.0   # 450.2 - 298.15
+    dsgdb9nsd_000019:
+      name: "acetamide"
+      zh: "乙酰胺"
+      cas: "60-35-5"
+      Tc_K: 761.0
+      Pc_bar: 66.0
+      acentric_factor: 0.451
+      tc_source: "PSRK, PINAMARTINES, YAWS"
+      at_Tr_0.886:
+        temperature_K: 674.2
+        Psat_bar: 24.47
+        number_density_nm3: 0.2629
+        box_length_A_27mol: 46.8
+        collision_interval_ps: 6.90
+        extrapolation_span_K: 376.1   # 674.2 - 298.15
+    dsgdb9nsd_000035:
+      name: "propanal"
+      zh: "丙醛"
+      cas: "123-38-6"
+      Tc_K: 505.0
+      Pc_bar: 52.6
+      acentric_factor: 0.245
+      tc_source: "IUPAC, CRC, PSRK"
+      at_Tr_0.886:
+        temperature_K: 447.4
+        Psat_bar: 22.13
+        number_density_nm3: 0.3582
+        box_length_A_27mol: 42.2
+        collision_interval_ps: 6.22
+        extrapolation_span_K: 149.3   # 447.4 - 298.15
+    dsgdb9nsd_000036:
+      name: "N-methylformamide"
+      zh: "N-甲基甲酰胺"
+      cas: "123-39-7"
+      Tc_K: 725.0
+      Pc_bar: 75.0
+      acentric_factor: 0.492
+      tc_source: "PSRK, PINAMARTINES, YAWS"
+      at_Tr_0.886:
+        temperature_K: 642.4
+        Psat_bar: 27.12
+        number_density_nm3: 0.3058
+        box_length_A_27mol: 44.5
+        collision_interval_ps: 6.08
+        extrapolation_span_K: 344.2   # 642.4 - 298.15
+    dsgdb9nsd_000044:
+      name: "2-methyloxirane"
+      zh: "2-甲基环氧乙烷"
+      cas: "75-56-9"
+      Tc_K: 488.1
+      Pc_bar: 54.4
+      acentric_factor: 0.249
+      tc_source: "HEOS, IUPAC, PSRK"
+      at_Tr_0.886:
+        temperature_K: 432.5
+        Psat_bar: 22.81
+        number_density_nm3: 0.3821
+        box_length_A_27mol: 41.3
+        collision_interval_ps: 5.93
+        extrapolation_span_K: 134.3   # 432.5 - 298.15
+    dsgdb9nsd_000046:
+      name: "cyclopropanol"
+      zh: "环丙醇"
+      cas: "16545-68-9"
+      Tc_K: 543.7
+      Pc_bar: 60.7
+      acentric_factor: 0.584
+      tc_source: "JOBACK, WILSON_JASPERSON"   # **估计值，非实验值**
+      at_Tr_0.886:
+        temperature_K: 481.7
+        Psat_bar: 20.73
+        number_density_nm3: 0.3117
+        box_length_A_27mol: 44.2
+        collision_interval_ps: 6.89
+        extrapolation_span_K: 183.6   # 481.7 - 298.15
+    dsgdb9nsd_000048:
+      name: "oxetane"
+      zh: "氧杂环丁烷"
+      cas: "503-30-0"
+      Tc_K: 507.9
+      Pc_bar: 57.5
+      acentric_factor: 0.201
+      tc_source: "WEBBOOK, PINAMARTINES, YAWS"
+      at_Tr_0.886:
+        temperature_K: 450.0
+        Psat_bar: 24.85
+        number_density_nm3: 0.3999
+        box_length_A_27mol: 40.7
+        collision_interval_ps: 5.55
+        extrapolation_span_K: 151.8   # 450.0 - 298.15

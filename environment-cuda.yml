@@ -121,6 +121,16 @@ dependencies:
   # gave me the CPU build" into a solver error.
   - pytorch>=2.0=*cuda*
 
+  # ---- branch B, the OpenMM route ----------------------------------------------------
+  # Same as environment.yml. The CUDA build of OpenMM is worth having here even though
+  # branch B itself is a CPU job: openmm-torch has to match the pytorch build, and mixing
+  # a CPU openmm-torch with a CUDA pytorch is the same class of hazard as two BLAS builds.
+  - openmm>=8.1
+  - openmm-torch>=1.4
+  - openmmtools>=0.23
+  - mdtraj>=1.9
+  - mdanalysis>=2.4
+
   # ---- the conformer search, so one environment still runs the whole chain -----------
   # CPU code. Present for convenience on a login node; do not schedule branch A onto a
   # GPU partition because of it.

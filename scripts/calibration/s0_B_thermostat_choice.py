@@ -303,12 +303,68 @@ VARIANTS = [
     ("nose_hoover_chain_1", "thermostat",
      dict(kind="nose_hoover_chain", tdamp_fs=100.0, tchain=1),
      "plain Nose-Hoover: EXPECTED TO FAIL, the textbook non-ergodic case"),
+    # ---- Nose-Hoover, swept rather than sampled once. See the header of the patch that
+    # added these: one setting is not a test of a method.
+    ("nh_tdamp5_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=5.0, tchain=3, tloop=1),
+     "very tight coupling, 200/ps"),
+    ("nh_tdamp10_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=10.0, tchain=3, tloop=1),
+     "100/ps"),
+    ("nh_tdamp30_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=30.0, tchain=3, tloop=1),
+     "33/ps"),
+    ("nh_tdamp20_c5_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=20.0, tchain=5, tloop=1),
+     "the tight-coupling point with a longer chain"),
+    ("nh_tdamp20_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=20.0, tchain=3, tloop=1),
+     "tight coupling"),
+    ("nh_tdamp50_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=50.0, tchain=3, tloop=1),
+     ""),
+    ("nh_tdamp200_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=200.0, tchain=3, tloop=1),
+     ""),
+    ("nh_tdamp419_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=419.0, tchain=3, tloop=1),
+     "coupling time matched to the 79.7 cm-1 lowest mode's period"),
+    ("nh_tdamp1000_c3_l1", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=1000.0, tchain=3, tloop=1),
+     "loose coupling"),
+    ("nh_tdamp100_c3_l5", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=100.0, tchain=3, tloop=5),
+     "same as nose_hoover_chain_3 but five times the chain propagation resolution"),
+    ("nh_tdamp419_c5_l5", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=419.0, tchain=5, tloop=5),
+     "matched coupling, longer chain, resolved propagation"),
+    ("nh_tdamp1000_c5_l5", "nose-hoover",
+     dict(kind="nose_hoover_chain", tdamp_fs=1000.0, tchain=5, tloop=5),
+     "loose coupling, longer chain, resolved propagation"),
+
     ("berendsen", "thermostat",
      dict(kind="berendsen", taut_fs=100.0, fixcm=False),
      "EXPECTED TO FAIL: no canonical stationary distribution"),
     ("andersen", "thermostat",
      dict(kind="andersen", prob=0.01, fixcm=False),
      "hard collisions; correct ensemble, badly broken dynamics"),
+
+    # ---- Nose-Hoover with rigid-motion removal, proposed 2026-09-04. Measured at the
+    # ORIGINAL 100 fs coupling as well as the tight 20 fs one, so the comparison against
+    # Langevin is not made only where Nose-Hoover happens to do best.
+    ("nh_tdamp100_stationary", "nose-hoover + rigid removal",
+     dict(kind="nose_hoover_chain", tdamp_fs=100.0, tchain=3, tloop=1, stationary=True),
+     "original coupling, Stationary + ZeroRotation every step"),
+    ("nh_tdamp20_stationary", "nose-hoover + rigid removal",
+     dict(kind="nose_hoover_chain", tdamp_fs=20.0, tchain=3, tloop=1, stationary=True),
+     "tight coupling, Stationary + ZeroRotation every step"),
+    ("nh_tdamp100_recentre", "nose-hoover + rigid removal",
+     dict(kind="nose_hoover_chain", tdamp_fs=100.0, tchain=3, tloop=1, recentre=True),
+     "original coupling, POSITIONS re-centred: the same visual cleanliness, no momentum "
+     "touched"),
+    ("nh_tdamp20_recentre", "nose-hoover + rigid removal",
+     dict(kind="nose_hoover_chain", tdamp_fs=20.0, tchain=3, tloop=1, recentre=True),
+     "tight coupling, POSITIONS re-centred"),
 
     ("com_fixcm_true", "centre of mass",
      dict(kind="langevin", friction_per_ps=1.0, fixcm=True),
@@ -345,9 +401,15 @@ def make_dynamics(spec, atoms, rng):
                      taut=spec["taut_fs"] * units.fs, rng=rng)
     if kind == "nose_hoover_chain":
         from ase.md.nose_hoover_chain import NoseHooverChainNVT
+        # `tloop` is the multiple-time-step count for the chain propagation. ASE defaults
+        # it to 1 and uses a three-term Yoshida-Suzuki decomposition, i.e. three chain
+        # evaluations per step; OpenMM's default for the same algorithm is 3 x 7 = 21.
+        # It is exposed here because a thermostat judged on an under-resolved propagator
+        # has been judged on the wrong thing.
         return NoseHooverChainNVT(atoms, dt, temperature_K=TARGET_K,
                                   tdamp=spec["tdamp_fs"] * units.fs,
-                                  tchain=int(spec["tchain"]))
+                                  tchain=int(spec["tchain"]),
+                                  tloop=int(spec.get("tloop", 1)))
     if kind == "berendsen":
         from ase.md.nvtberendsen import NVTBerendsen
         return NVTBerendsen(atoms, dt, temperature_K=TARGET_K,

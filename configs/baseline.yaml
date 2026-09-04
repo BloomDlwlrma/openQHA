@@ -1,0 +1,91 @@
+# openQHA -- the baseline for tests/unit/t_translation_preserved_numbers.py
+#
+# WHAT THIS FILE IS FOR
+# ---------------------
+# That test checks that restructuring and rewriting never silently delete a measurement.
+# The comments in this repository are where measurements live; losing one while tidying a
+# comment deletes an experiment with no test going red anywhere. The check needs a
+# snapshot to compare against, and THIS FILE SAYS WHICH ONE.
+#
+# It is a config and not a constant in the test because the baseline is a decision --
+# when it was re-anchored, and on what evidence -- and decisions belong where they can be
+# read without opening test code.
+#
+# WHY THERE IS A NEW BASELINE INSTEAD OF A RENAME MAP
+# --------------------------------------------------
+# User ruling 2026-09-04. The previous baseline (`pre_branchD_restructure_2026-09-03`)
+# predated the package rename, the config split and several deliberate file moves, so it
+# reported four differences that were not losses. The available fixes were to teach the
+# test a rename map, or to re-anchor. A rename map grows an exception per move and
+# eventually documents the moves instead of checking the numbers; re-anchoring keeps the
+# check simple, at the cost of one careful accounting exercise.
+#
+# **A BASELINE MAY ONLY BE RE-ANCHORED AFTER EVERY DIFFERENCE IT REPORTS IS ACCOUNTED
+# FOR.** Re-anchor first and any real loss becomes permanent and invisible -- the exact
+# failure this test exists to prevent. The accounting is recorded under
+# `superseded.accounting` below, and it found a real loss.
+
+baseline:
+  snapshot: "_backup/baseline_2026-09-04"
+  created: "2026-09-04"
+  reason: >
+    Re-anchored after the openQHA -> openqha package rename, the
+    stage0_production.yaml -> openqha.yaml rename, and the split of openqha.yaml into
+    per-purpose configs. Every difference the previous baseline reported was accounted
+    for first; see superseded.accounting.
+  scope:
+    directories: ["configs", "hpc", "openqha", "scripts", "tests"]
+    suffixes: [".py", ".yaml", ".yml", ".toml", ".template", ".sh", ".mdp", ".md"]
+    skip_path_parts: ["__pycache__", "_superseded", "_to_delete", ".ipynb_checkpoints"]
+  note: >
+    The scope mirrors the previous baseline: code and configuration, not `.mem/`,
+    `docs/` or `data/`. Widening it is a separate decision -- a baseline that covers
+    the decision log would report every appended checkpoint as a change.
+
+superseded:
+  snapshot: "_backup/pre_branchD_restructure_2026-09-03"
+  retired_on: "2026-09-04"
+  kept: true            # the directory stays; it is the evidence for the accounting
+  accounting:
+    # Every difference the retired baseline reported, and what became of it.
+    - path: "configs/stage0_production.yaml"
+      reported: "MISSING"
+      finding: >
+        Renamed to configs/openqha.yaml and rewritten on 2026-09-04. The rewrite LOST
+        SIX TOKENS that existed nowhere else in the tree: 1066, 4.9, 5.7, 5.9, 929,
+        D0-86. This is a real loss, not a bookkeeping artefact.
+      resolution: >
+        RESTORED VERBATIM to configs/conformers.yaml before this snapshot was taken:
+        the SHAKE x timestep temperature table (GFN-FF, 20 ps, target 300 K, molecules
+        002334 and 000018), the `terminated EARLY` root cause with its three CREST
+        source locations (shake_module.f90:80-81, dynamics_module.f90:437-444,
+        parallel.f90:1066), decision D0-86 for the composite calculator, and the
+        full-chain cost 2985 / 929 / 189 s.
+      status: "resolved -- restored"
+    - path: "configs/crest_composite.toml.template"
+      reported: "MISSING"
+      finding: >
+        Lost in the 2026-09-03 restructure. Nothing had read it for some time --
+        openqha/crest.py builds the TOML inline -- but the module still defined a
+        TEMPLATE constant naming it, and every generated input.toml told the reader to
+        edit it.
+      resolution: >
+        Not restored: reinstating it would create a second source of truth for content
+        that is generated. The dead constant was removed and the generated header now
+        names openqha/crest.py. The file remains in the retired snapshot.
+      status: "resolved -- deliberately not restored"
+    - path: "configs/mdp/README.md"
+      reported: "LOST (many tokens)"
+      finding: >
+        Every token was located elsewhere in the current tree -- the mdp documentation
+        was reorganised across configs/mdp/ and the branch configs on 2026-09-04.
+      status: "resolved -- accounted for elsewhere"
+    - path: "configs/mdp/s0_qha_production.mdp"
+      reported: "LOST (D0-C-30, 1.0)"
+      finding: "Both tokens present elsewhere in the current tree."
+      status: "resolved -- accounted for elsewhere"
+
+# Losses that are NOT translation losses, acknowledged one at a time with a reason.
+# An entry that stops matching is itself reported, so the list cannot outlive its reason.
+# Empty at re-anchor time, and that is the point of re-anchoring.
+acknowledged_losses: []

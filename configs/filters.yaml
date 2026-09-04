@@ -1,0 +1,103 @@
+# openQHA -- Species scope: the F0-F7 gates. Read by openqha/filters.py.
+#
+# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# now holds ONLY global configuration and the `include:` index. This is a
+# MOVE, not a copy -- openqha/config.py raises if two files define the same
+# key -- and it was moved by byte range, so every comment and every measured
+# number came with it verbatim.
+# ======================================================================
+
+# --------------------------------------------------------------------------------------
+# 物种筛选 —— 语义逐条重写自 stage 1 的门 F0–F6
+# --------------------------------------------------------------------------------------
+# 用户 2026-08-28 裁定：**只考虑不带孤立电子、净电荷为 0 的中性分子**。
+# stage 1 的 docs/02 §4.1 把这件事拆成了可分别计数的门，这里逐条重写（**不是引用**）。
+# 顺序是规范的且短路：第一个失败的门即判出局，因此每一次剔除都只归因于一个原因。
+species_filter:
+  enabled: true
+  gates:
+    F0_parses:        true    # MolFromSmiles + 净化成功
+    F1_single_fragment: true  # 恰好一个连通片段（排除盐、复合物）
+    F3_net_charge_zero: true  # 形式电荷之和为 0（排除离子）
+    F4_no_radicals:   true    # 孤立电子数为 0（排除卡宾、氮宾、双自由基）
+    F5_no_formal_charge: true # 没有任何原子带非零形式电荷（排除两性离子、叶立德）
+    F6_elements_HCNO: false   # **默认关闭**，与 stage 1 不同 —— 理由见下
+    F7_qm9_geometry_consistent: true  # not on QM9's official "uncharacterized" list
+  # ---- f7_mode: how F7 treats that list (three ways) ---------------------------------
+  #   drop_all  remove all 3054 on the list. Conservative and LOSSY: the repair paper
+  #             fixed 2988 of them and found only 66 genuinely unstable, so this drops
+  #             ~2.2% of QM9 to avoid 0.05%.
+  #   curated   pass a listed molecule IF curatedQM9 has a geometry, and USE that
+  #             geometry. Removes only what the repair workflow could not fix.
+  #   off       do not apply F7. Debugging only -- it lets through molecules whose
+  #             deposited geometry is a different molecule from their SMILES, which
+  #             cost this repository 1399 s of CREST on dsgdb9nsd_003838.
+  #
+  # `curated` RAISES if the archive is absent rather than falling back to drop_all:
+  # silently changing which molecules are in a dataset, because a directory was
+  # missing, is exactly the condition that cannot be read off the products afterwards.
+  #
+  # Default stays drop_all so every product made before 2026-09-04 stays reproducible.
+  # Switching the default is a separate decision from making the switch exist.
+  f7_mode: "drop_all"               # drop_all | curated | off
+  f6_note: >
+    stage 1 把元素限制在 {H,C,N,O} 是 v0 的一个**数据决定**（排除 QM9 的全部氟化学）。
+    stage 0 的势 MACE-OFF23 支持 F，且 stage 0 的 11 条边本来就不含氟，
+    所以这道门在这里**不是必要的**；默认关闭以免无理由地丢数据。
+    **若要与 stage 1 的物种集逐一可比，把它改成 true** —— 这是一行的事。
+    编号 1–4000 实测：开启会再剔除 7 个（0.17%）。
+  # ---- F7：QM9 上游数据缺陷（2026-09-02 补，缺陷 63）------------------------------------
+  f7_note: >
+    QM9 里有 3054 个分子（133885 的 2.3%），**上游存进去的 B3LYP/6-31G(2df,p) 几何
+    与上游存进去的 SMILES 不是同一个分子** —— 初始几何（Corina 生成）在 DFT 优化中
+    重排或解离了，而索引里仍然记着原来的 SMILES。上游把它们单独列成
+    `uncharacterized.txt`（Ramakrishnan, Dral, Rupp & von Lilienfeld,
+    Sci. Data 1, 140022 (2014) 附件），本仓把该文件随仓库分发在
+    data/qm9-uncharacterized/，sha256 写死在 openqha/qm9_uncharacterized.py 里。
+
+    **本仓因此栽过一次**：dsgdb9nsd_003838，索引 SMILES 是 `N=C1N=CON=N1`（六元环），
+    而存的几何实测是 **7 根键、2 个连通分量**（NCNCOHH 与 NN，即 N2 已脱离）；
+    名单自己给出的"B3LYP 几何解析结果"是 `[NH][C][N]C=O.N#N`，那个点号就是两个片段。
+    在这道门加上之前，它一路跑完 CREST（1399 秒）才在图同构那一步被接住。
+
+    **一处已声明后果的保守**：名单 3054 条里有 48 条（1.6%）的 GDB17 SMILES 与
+    B3LYP 几何解析结果其实相同 —— 它们进名单只因为 Corina 的初始猜测被 OpenBabel
+    解析成了别的东西，B3LYP 几何是好的。本仓**仍然全部剔除**：名单是已发表、
+    可引用、逐位可复现的对象，按自己的判据在名单里再挑一遍等于用未发表的判据
+    替换已发表的判据。代价是 48 / 133885 = 0.036% 的数据。
+    这是 modifiable_convention，不是 derived_criterion。
+
+  # F7 的作用范围。**改这一行就能切换，后果已实测。**
+  f7_scope: "all"          # all | identity_from_geometry_only
+  f7_scope_note: >
+    本仓索引每一行都带一列 qm9_identity_source。它的值是 relaxed 时，
+    这一行的 qm9_smiles **本来就是从 B3LYP 几何解析出来的**，
+    于是"几何与 SMILES 不一致"这件事**对我们不成立**。实测名单 3054 个的分布：
+      relaxed 1749 | gdb17 1270 | none 35
+    dsgdb9nsd_003838 属于 gdb17 那一类（relaxed SMILES 是 `[NH][C][N]C=O.N#N`，
+    两个片段且带自由基，索引因此退回 GDB17 的 `N=C1N=CON=N1`，而几何是解离的）。
+
+    "all"（当前值，用户 2026-09-02 要求）：3054 个全剔除。
+      理由是上游把它们叫作"**未表征**" —— 分子身份未确立；
+      对一个做同分异构反应的数据集，拿 OpenBabel 从几何猜的身份当分子身份，
+      风险由我们承担。
+      实测代价：全量过完 F0/F1/F3/F4/F5 的 122737 个 -> 120215 个，**少 2522 个（2.05%）**；
+      编号 1-4000 段 3819 -> 3749，**少 70 个**。
+      其中已经跑完 CREST 的有 11 个（3.43 核·小时）。
+
+    "identity_from_geometry_only"：只剔除 qm9_identity_source != "relaxed" 的那些。
+      **这一档才是"只剔除对我们真正不自洽的"**。若要用，把上面一行改成这个值即可。
+      实测代价：全量 122737 -> 121598，**少 1139 个（0.93%）**；1-4000 段 3819 -> 3786，少 33 个。
+
+    两档的实测对照（2026-09-02，脚本见断点）：
+                                        1-4000 段          全量 133884
+      不开 F7                            3819               122737
+      f7_scope = "all"                   3749  (-70)        120215  (-2522, -2.05%)
+      f7_scope = "identity_from_geometry_only"
+                                         3786  (-33)        121598  (-1139, -0.93%)
+
+
+  provenance:
+    transcribed_from: "stage1-qm9-alchemical-reaction-energy/docs/02_data_ingestion-and-filtering.md §4.1"
+    transcribed_on: "2026-08-28"
+    note: "语义重写，不是代码复用。stage 0 有自己的实现 openqha/filters.py 与自己的测试。"

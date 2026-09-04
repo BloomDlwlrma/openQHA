@@ -95,8 +95,10 @@ Open items are listed, not hidden: see [`docs/branchA_workflow.md`](docs/branchA
 
 ### To-do
 
-* `refine=opt` vs `sp` under the GFN2 workhorse — measured on propanal (same basins,
-  4.2× the cost); a second molecule is running
+* **`refine=opt` vs `sp` is measured and awaiting a decision.** On `OCCC(=O)CO` under
+  GFN2, `opt` finds 23 basins to `sp`'s 37 (union 45), costs 7.7× the wall clock, and
+  errs by 0.40 kcal/mol against a ~0.1 target. Propanal, with 2 basins, showed no
+  difference at all. The production value stays `opt` pending a ruling.
 * nothing has been submitted to Tianhe; three scheduler command names unverified
 
 ---

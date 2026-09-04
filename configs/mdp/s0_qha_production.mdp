@@ -47,7 +47,14 @@ define                   =
 ; dt = 1 fs: the value used by Rinaldo & Field, and independently the value the MACE
 ; authors use (D0-C-30, Moore/Cole/Csanyi JACS 2026, 148, 4928). The repo's old 0.5 fs
 ; was an unsourced guess that doubled the cost for nothing (AUDIT section 0 item 3).
-integrator               = md
+; md-vv, NOT md. This is not a preference: GROMACS 2026.3 with the leap-frog `md`
+; integrator SILENTLY reduces a Nose-Hoover chain to length 1 --
+;     "leapfrog does not yet support Nose-Hoover chains, nhchainlength reset to 1"
+; (measured on the installed binary, 2026-09-04) -- and mdout.mdp still records the
+; length that was ASKED FOR. Chain length 1 is plain Nose-Hoover, which is not ergodic
+; for a harmonic oscillator: measured on the closed-form surface it returned a
+; configurational variance ratio of 2.591 against a canonical value of 1.
+integrator               = md-vv
 tinit                    = 0
 dt                       = 0.001                   ; ps = 1.0 fs
 nsteps                   = 200000                  ; 200 ps; FINAL LENGTH IS SET BY THE
@@ -79,9 +86,32 @@ orire                    = no
 ; from the canonical distribution (Rinaldo & Field eq. 5). D0-C-36: the criterion is
 ; "what are you measuring", and here it is positional fluctuation, not velocity
 ; autocorrelation -- so a thermostat is required, not forbidden.
-tcoupl                   = v-rescale
+; Nose-Hoover, on instruction (2026-09-04). THE COUPLING TIME IS THE WHOLE DECISION.
+; Measured on a harmonic surface built from the production potential's own Hessian,
+; where the answer is known in closed form (acetone, lowest true mode 79.69 cm-1,
+; scripts/calibration/s0_B_thermostat_choice.py):
+;
+;     tau-t / fs      T*S error / kcal      lowest recovered mode / cm-1
+;         20              -0.093                     78.6
+;         50              -0.442                     78.4
+;        100              -1.150                    179.0
+;        419              -1.228                    229.0
+;       1000              -1.221                    227.9
+;
+; The KINETIC temperature is correct in every row (2<KE>/kT = 29.9 to 30.2 against
+; 3N = 30), so nothing about such a run looks wrong. It is the CONFIGURATIONAL
+; distribution that collapses (2<U>/kT = 18.1 to 19.1 against 3N-3 = 27), and
+; quasi-harmonic analysis reads only that. The conventional 0.1-1 ps coupling is
+; exactly the failing region, and 419 fs -- the intuitive choice, matched to the
+; lowest mode's period -- is among the worst.
+;
+; Lengthening the chain (3 to 5) and the chain propagation resolution (tloop 1 to 5)
+; changed nothing, so this is ergodicity on a small stiff molecule, not discretisation.
+; v-rescale (Bussi) measured -0.058 +- 0.048 and remains the fallback.
+tcoupl                   = nose-hoover
+nh-chain-length          = 3                       ; 1 is plain Nose-Hoover; see above
 tc-grps                  = system
-tau-t                    = 1.0                     ; ps; D0-C-30 (MACE authors use 1/ps)
+tau-t                    = 0.020                   ; ps = 20 fs; MEASURED, see the table
 ref-t                    = 298.15                  ; K; the stage-0 standard state
 gen-vel                  = yes
 gen-temp                 = 298.15

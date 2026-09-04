@@ -40,7 +40,6 @@ check its own aperture before believing it.
 Run::  python tests/unit/t_translation_preserved_numbers.py
 """
 import collections
-import csv
 import re
 import sys
 from pathlib import Path
@@ -55,8 +54,20 @@ def _repo_root():
 
 
 ROOT = _repo_root()
-BACKUP_ROOT = ROOT / "_backup"
-BASELINE_PREFIX = "pre_branchD_restructure"
+
+#: The baseline is declared in configs/baseline.yaml, not here.
+#:
+#: It used to be a directory-name prefix in this file plus a rename map read from
+#: scripts/MIGRATION_MANIFEST.csv. The map grew an entry per file move and was on its way
+#: to documenting the moves rather than checking the numbers, so on 2026-09-04 (user
+#: ruling) the baseline was RE-ANCHORED instead and the declaration moved to config.
+#:
+#: Re-anchoring is only legitimate after every difference the old baseline reported has
+#: been accounted for -- otherwise a real loss is baselined in as correct. That
+#: accounting is in configs/baseline.yaml under `superseded.accounting`, and it found
+#: one: six tokens from configs/stage0_production.yaml existed nowhere in the tree and
+#: were restored to configs/conformers.yaml before the new snapshot was taken.
+BASELINE_CONFIG = ROOT / "configs" / "baseline.yaml"
 
 #: Text replaced wholesale by the restructure, whose own digits are structural rather
 #: than measured. Removed from BOTH sides before counting, or every rewritten file
@@ -94,33 +105,41 @@ _TOKEN = re.compile(
 #: case is listed here individually, which makes acknowledging one a deliberate act with a
 #: justification attached. An entry that stops matching is itself reported, so the list
 #: cannot quietly outlive its reason.
-ACKNOWLEDGED_LOSSES = {
-    ("hpc/README.md", "D0-48"):
-        "the row citing D0-48 (local T400 slower than CPU, branch B placement undecided) "
-        "was rewritten on 2026-09-03 when branch B gained a measured cost and its "
-        "placement stopped being undecided; a deliberate edit, not a translation loss",
-}
+#: Filled from configs/baseline.yaml `acknowledged_losses:` in main(). Each entry is
+#: {path, token, reason}. Empty at re-anchor time, and that is the point of re-anchoring:
+#: a fresh baseline should need no exceptions, and any that accumulate afterwards are
+#: real edits that somebody decided to make.
+ACKNOWLEDGED_LOSSES = {}
 
 FAIL = []
 
 
-def baseline_dir():
-    if not BACKUP_ROOT.is_dir():
+def baseline_spec():
+    """The baseline declaration, or None if configs/baseline.yaml is absent.
+
+    Read with PyYAML if available and with a small line parser otherwise, so that the
+    check still runs in an environment that has no yaml -- a test that skips itself
+    because of a missing convenience is a test that stops protecting anything.
+    """
+    if not BASELINE_CONFIG.is_file():
         return None
-    cands = sorted(d for d in BACKUP_ROOT.iterdir()
-                   if d.is_dir() and d.name.startswith(BASELINE_PREFIX))
-    return cands[-1] if cands else None
-
-
-def path_map():
-    """Baseline relative path -> current relative path, from the migration manifest."""
-    m = {}
-    manifest = ROOT / "scripts" / "MIGRATION_MANIFEST.csv"
-    if manifest.is_file():
-        with open(manifest, newline="", encoding="utf-8") as fh:
-            for row in csv.DictReader(fh):
-                m[row["old_path"]] = row["new_path"]
-    return m
+    text = BASELINE_CONFIG.read_text(encoding="utf-8")
+    try:
+        import yaml
+        spec = yaml.safe_load(text) or {}
+        base = spec.get("baseline") or {}
+        return dict(snapshot=base.get("snapshot"),
+                    suffixes=tuple(base.get("scope", {}).get("suffixes") or ()),
+                    skip=tuple(base.get("scope", {}).get("skip_path_parts") or ()),
+                    acknowledged=spec.get("acknowledged_losses") or [])
+    except ImportError:
+        snap = None
+        for line in text.splitlines():
+            s = line.strip()
+            if s.startswith("snapshot:"):
+                snap = s.split(":", 1)[1].strip().strip('"\'')
+                break
+        return dict(snapshot=snap, suffixes=(), skip=(), acknowledged=[])
 
 
 def tokens(text):
@@ -132,24 +151,38 @@ def tokens(text):
 
 
 def main():
-    base = baseline_dir()
-    if base is None:
-        print("no baseline under _backup/{}* -- nothing to compare against.".format(
-            BASELINE_PREFIX))
+    spec = baseline_spec()
+    if spec is None or not spec.get("snapshot"):
+        print("configs/baseline.yaml declares no baseline -- nothing to compare against.")
         print("This is a FAILURE, not a skip: without a baseline the restructure has "
               "no rollback and no check (S0-G-9, this repository is not under git).")
         return 1
-    print("baseline: {}".format(base.relative_to(ROOT)))
+    base = ROOT / spec["snapshot"]
+    if not base.is_dir():
+        print("configs/baseline.yaml points at {}, which is not a directory.".format(
+            spec["snapshot"]))
+        return 1
+    print("baseline: {}  (declared in configs/baseline.yaml)".format(
+        base.relative_to(ROOT)))
 
-    moved = path_map()
+    suffixes = spec["suffixes"] or (".py", ".yaml", ".yml", ".toml", ".template",
+                                    ".sh", ".mdp", ".md")
+    skip = spec["skip"]
+    # No rename map. Paths in the baseline ARE the paths in the tree: re-anchoring is
+    # what keeps that true, and it is why a map is not needed (user ruling 2026-09-04).
+    moved = {}
+    ACKNOWLEDGED_LOSSES.update(
+        {(e.get("path"), e.get("token")): e.get("reason", "")
+         for e in spec.get("acknowledged", []) if isinstance(e, dict)})
     checked = missing_file = 0
     seen_ack = set()
     lost_total = added_total = 0
     per_file_added = []
 
     for old in sorted(base.rglob("*")):
-        if not old.is_file() or old.suffix not in (".py", ".yaml", ".yml", ".toml",
-                                                   ".template", ".sh", ".mdp", ".md"):
+        if not old.is_file() or old.suffix not in suffixes:
+            continue
+        if any(part in skip for part in old.parts):
             continue
         rel = old.relative_to(base).as_posix()
         new_rel = moved.get(rel, rel)

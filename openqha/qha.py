@@ -80,6 +80,33 @@ RANK_TOLERANCE = 1e-12
 #: can fail, because none of the three mistakes it guards against would ever raise on
 #: its own.
 FORBIDDEN_SOURCES = ("crest", "metadynamics", "alf_sampling", "alf", "biased")
+#: The longest Nose-Hoover coupling time a branch B trajectory may be produced with.
+#:
+#: MEASURED, not conventional -- and the conventional choice is what fails. On the
+#: harmonic surface built from the production potential's own Hessian, where the answer is
+#: known in closed form (scripts/calibration/s0_B_thermostat_choice.py, 200 ps x 4 seeds,
+#: acetone, lowest true mode 79.69 cm^-1):
+#:
+#:     tdamp / fs      T*S error / kcal      lowest recovered mode / cm^-1
+#:         20              -0.093                      78.6
+#:         50              -0.442                      78.4
+#:        100              -1.150                     179.0
+#:        419              -1.228                     229.0
+#:       1000              -1.221                     227.9
+#:
+#: The KINETIC temperature is correct in every row (2<KE>/kT = 29.9 to 30.2 against 3N =
+#: 30), so nothing about the run looks wrong; it is the CONFIGURATIONAL distribution that
+#: collapses (2<U>/kT = 18.1 to 19.1 against 3N-3 = 27), and quasi-harmonic analysis reads
+#: exactly that. The softest mode -- which dominates the entropy -- comes back three times
+#: too stiff. Lengthening the chain (3 to 5) and the propagation resolution (tloop 1 to 5)
+#: changed nothing, so this is the thermostat's ergodicity on a small stiff molecule and
+#: not a discretisation error.
+NOSE_HOOVER_MAX_TDAMP_FS = 20.0
+#: Chains were invented because plain Nose-Hoover is not ergodic for a harmonic
+#: oscillator, which is the regime a 10-atom molecule near its minimum sits in. Measured
+#: on the same surface, chain length 1 returned a configurational variance ratio of 2.591
+#: against a canonical value of 1.
+NOSE_HOOVER_MIN_CHAIN_LENGTH = 3
 HYDROGEN_MASS_AMU = 1.00794
 HYDROGEN_MASS_TOLERANCE_AMU = 1e-3
 REQUIRED_TIMESTEP_FS = 1.0
@@ -103,6 +130,13 @@ def assert_trajectory_identity(meta, timestep_fs=REQUIRED_TIMESTEP_FS):
         eigenvalues cannot reach 3N-6;
       * m_H = 2 amu changes the mass weighting itself, and nu ~ 1/sqrt(mu) turns a
         3000 cm^-1 C-H stretch into roughly 2200 cm^-1.
+
+    A FIFTH applies only under Nose-Hoover, and it replaces the fourth rather than
+    joining it: `fixcm` is an ASE Langevin option and means nothing there. What takes its
+    place is the COUPLING TIME, because Nose-Hoover fails in exactly the same shape -- the
+    kinetic temperature stays perfect while the configurational distribution collapses,
+    and the entropy comes out wrong in a fixed direction with nothing looking wrong. See
+    NOSE_HOOVER_MAX_TDAMP_FS for the table that fixes the limit.
 
     A fourth was added on 2026-09-03 after being measured rather than reasoned about:
     ASE's Langevin defaults to `fixcm=True`, which on a 10-atom molecule thermostats to
@@ -130,8 +164,31 @@ def assert_trajectory_identity(meta, timestep_fs=REQUIRED_TIMESTEP_FS):
     dt = meta.get("timestep_fs")
     if dt is None or abs(float(dt) - timestep_fs) > 1e-9:
         problems.append("timestep_fs is {!r}, must be {}".format(dt, timestep_fs))
-    fixcm = meta.get("thermostat_fixcm")
-    if fixcm is not False:
+    name = str(meta.get("thermostat", "")).lower()
+    is_nose_hoover = "nose" in name and "hoover" in name
+    if is_nose_hoover:
+        tdamp = meta.get("thermostat_tdamp_fs")
+        if tdamp is None or float(tdamp) > NOSE_HOOVER_MAX_TDAMP_FS + 1e-9:
+            problems.append(
+                "thermostat_tdamp_fs is {!r}, must be present and <= {} fs. Nose-Hoover "
+                "holds the KINETIC temperature perfectly at any coupling time while the "
+                "CONFIGURATIONAL distribution collapses, and quasi-harmonic analysis "
+                "reads only the configurational one. Measured on the closed-form surface: "
+                "at 100 fs the softest mode comes back at 179 cm^-1 and at 419 fs at 229, "
+                "against a true 79.7, costing 1.15 to 1.23 kcal/mol on T*S with nothing "
+                "in the run looking wrong".format(tdamp, NOSE_HOOVER_MAX_TDAMP_FS))
+        chain = meta.get("thermostat_chain_length")
+        if chain is None or int(chain) < NOSE_HOOVER_MIN_CHAIN_LENGTH:
+            problems.append(
+                "thermostat_chain_length is {!r}, must be present and >= {}. A chain of "
+                "length 1 is plain Nose-Hoover, which is not ergodic for a harmonic "
+                "oscillator -- the regime this branch works in. Note that GROMACS with "
+                "the default leap-frog integrator SILENTLY resets the chain to 1 "
+                "('leapfrog does not yet support Nose-Hoover chains, nhchainlength reset "
+                "to 1') while mdout.mdp still records the length that was asked for"
+                .format(chain, NOSE_HOOVER_MIN_CHAIN_LENGTH))
+    elif meta.get("thermostat_fixcm") is not False:
+        fixcm = meta.get("thermostat_fixcm")
         problems.append(
             "thermostat_fixcm is {!r}, must be False. ASE's Langevin defaults to "
             "fixcm=True and upstream warns that it 'does not strictly sample the correct "
@@ -153,7 +210,10 @@ def assert_trajectory_identity(meta, timestep_fs=REQUIRED_TIMESTEP_FS):
                          + "\n  - ".join(problems))
     return dict(bias_potential=None, constraints=None,
                 hydrogen_mass_amu=float(m_h), timestep_fs=float(dt),
-                thermostat_fixcm=False,
+                thermostat=meta.get("thermostat"),
+                thermostat_fixcm=meta.get("thermostat_fixcm"),
+                thermostat_tdamp_fs=meta.get("thermostat_tdamp_fs"),
+                thermostat_chain_length=meta.get("thermostat_chain_length"),
                 source=meta.get("source"), checked=True)
 
 

@@ -1,0 +1,84 @@
+# openQHA -- Tianhe site facts, recorded. RECORD ONLY -- no code reads this section; branch E's live settings are in hpc/.
+#
+# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# now holds ONLY global configuration and the `include:` index. This is a
+# MOVE, not a copy -- openqha/config.py raises if two files define the same
+# key -- and it was moved by byte range, so every comment and every measured
+# number came with it verbatim.
+# ======================================================================
+
+# ======================================================================================
+# Branch A -- CREST conformer search
+# ======================================================================================
+# MOVED to configs/conformers.yaml on 2026-09-04, and merged back in through the
+# `include:` list at the top of this file. It is a MOVE, not a copy: `crest:` is
+# defined in exactly one place, and openqha/config.py raises if two files define it.
+#
+# Everything measured in it went with it -- the four-arm SHAKE attribution, the
+# refine=opt/sp comparison, the deduplication threshold sweep. Nothing was summarised
+# away in the move.
+# ======================================================================================
+
+# --------------------------------------------------------------------------------------
+# 集群（天河 TianheXY-AI）—— 用户 2026-08-31 提供的现场信息
+# --------------------------------------------------------------------------------------
+# **这一段是"记录已知的现场事实"，不是"本仓会自动去用它"。**
+# 作业脚本在 .mem/plan/plan_pkg1-cluster-tianhe.md 里，需要人工投递。
+cluster:
+  name: "TianheXY-AI"
+  scheduler:
+    submit: "yhbatch"           # 交互式是 yhrun
+    directives: "#SBATCH"       # **实测现场脚本用的就是 #SBATCH** —— 是 Slurm 派生
+    gpu_flag: "-G"              # **必须显式给 -G，否则作业提不上**（2025-06-24 站点公告）
+    examples:
+      - "yhrun -p 分区 -G 1 hostname"
+      - "yhbatch -p 分区 -G <GPU 数> <脚本>"
+    max_walltime_per_job_days: 7      # 用户 2026-08-31：单个作业 < 7 天即可
+    note: >
+      站点公告说 hx/h100x/a100x/a800x/v100x 分区的分配粒度是 **GPU 卡**，
+      调度系统按 -G 分配相应数量的卡。**作业阵列是否可用尚未确认** ——
+      现场样例用的是循环投多个独立作业，本仓的 --shard k/n 两种方式都支持。
+  partitions:
+    - name: "h100x"
+      kind: "gpu"
+      note: "H100 80 GB；1 GPU / 14 CPUs / 240 GB（D0-56）。**按 GPU 计费**"
+    - name: "a100x"
+      kind: "gpu"
+    - name: "a800x"
+      kind: "gpu"
+    - name: "v100x"
+      kind: "gpu"
+    - name: "hx"
+      kind: "gpu"
+  paths:
+    home: "/HOME/hku2021_fos4/hku2021_fos4xy_2"
+    home_alt: "/XYAIFS00/HOME/hku2021_fos4/hku2021_fos4xy_2"   # 同一份，另一个挂载名
+    conda_init: "~/init_conda.sh"        # miniforge3 + mamba，已由用户建好
+    proxy: "source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138"
+    proxy_note: >
+      **有代理可上外网** —— 所以 conda/pip 装包是可行的，
+      不必走 Apptainer 镜像。这解决了计划里"软件环境"那条待确认。
+  scratch:
+    # 用户 2026-08-31 指定的写法（照搬他给的 ORCA_SCR 模式）：
+    #   优先 $TMPDIR（节点本地 NVMe/SSD），退回 /tmp；**绝不在 Lustre 上写临时文件**
+    prefer: "$TMPDIR"
+    fallback: "/tmp"
+    pattern: "${TMPDIR:-/tmp}/$USER/s0tf_${SLURM_JOB_ID}_${ARRAY_ID}"
+    why: >
+      CREST 在并行 _N 子目录里写大量小文件（本机实测一个分子的工作目录
+      2.6–15 MB、几十个文件）。在 Lustre 上做这件事既慢又拖累整个文件系统。
+  quirks:
+    - "ulimit -l unlimited  —— 现场脚本注明不加会让并行计算失败"
+    - "export GLEX_USE_ZC_RNDV=0  —— 现场脚本里有，与 GLEX 网络有关"
+    - "环境里已有 CUDA 11.8 与 gcc 11.4（conda 环境 cuda11），可直接用于构建"
+  # ---- 分阶段（用户 2026-08-31 裁定）----------------------------------------------------
+  # 阶段一 CREST 采样放纯 CPU 分区；阶段二（收紧 + Hessian）再看 GPU 值不值得。
+  # 两段的产物落在**同一个结果根的不同子目录**下，用 --stage 区分。
+  staging:
+    stage1: {name: "stage1-crest", phase: "crest",
+             note: "GFN-FF 驱动元动力学 + refine=sp 的 MACE 单点（MACE 跑在 CPU 上）"}
+    stage2: {name: "stage2-mace", phase: "analyse",
+             note: "收紧到 fmax=1e-4 + 并池去重 + Hessian；唯一**可能**吃到 GPU 的一段"}
+    submit_note: >
+      阶段二用 --dependency=afterok:<阶段一作业号> 挂在阶段一之后自动开跑；
+      汇总（parquet 拼接）再挂在阶段二之后。

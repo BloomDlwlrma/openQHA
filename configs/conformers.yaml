@@ -79,7 +79,27 @@ crest:
   # metadynamics; use a semi-empirical workhorse and let the MLIP refine the ensemble.
   # The reason is arithmetic -- a small-molecule search takes ~1e5 energy+gradient calls
   # (measured on OCCC(=O)CO: 107 966). MACE took 2514 of 130 937 on acetone, ~1.9%.
-  refine: "opt"               # sp | add | opt | none. User ruling 2026-09-03.
+  # RECOVERED 2026-09-04, same loss, same finder (tokens 929 and D0-86).
+  #
+  # The composite calculator itself is decision D0-86 (2026-08-30): upstream's docs say
+  # plainly not to put a machine-learning potential inside the metadynamics -- sample with
+  # a force-field or semi-empirical workhorse and let the MLIP refine only the final
+  # ensemble. Order of magnitude: one small-molecule search is ~1e5 energy+gradient calls
+  # (acetone measured at 130 937), of which MACE took 2514, about 1.9%. That agrees word
+  # for word with the two-stage design of D0-54 and D0-64.
+  #
+  # Full-chain cost INCLUDING downstream tightening and Hessians, OCCC(=O)CO, GFN-FF era:
+  #     opt ~2985 s | sp ~929 s | none ~189 s
+  # and in that era `sp` was 5.9x faster and 2.5x more complete than `opt` on this
+  # molecule. Under gfn2 the ratio is 7.7x faster and 37 basins against 23 -- see the
+  # measured table below.
+  refine: "sp"                # sp | add | opt | none. User ruling 2026-09-04,
+                              # REVERSING the 2026-09-03 ruling of "opt" after
+                              # acceptance criterion 3 was paid. The 2026-09-03
+                              # ruling rested on "the gfnff numbers no longer
+                              # apply under gfn2"; they do -- see the measured
+                              # table below. `opt` loses 14 of 37 basins on
+                              # OCCC(=O)CO and errs by 0.4023 kcal/mol.
   backend: "generic"          # generic = this repo's socket client; mlip = upstream 3.1
 
   # WHAT `opt` COSTS, MEASURED -- kept because it is the argument that was overturned,
@@ -107,6 +127,34 @@ crest:
   # UNMEASURED. Branch A step 2 re-measures both molecules and fills the table to four
   # columns; the ruling stands whatever it shows, and the measured miss rate is a
   # deliverable either way (plan_A acceptance criterion 3).
+  #
+  # ===== RE-MEASURED UNDER gfn2, 2026-09-04. ACCEPTANCE CRITERION 3 IS PAID. =====
+  #
+  #   propanal CCC=O
+  #     opt   CREST 1150.9 s ->  2 basins, error 0.0000 kcal/mol
+  #     sp    CREST  273.5 s ->  2 basins, error 0.0000
+  #     union of both, re-deduplicated: 2 basins.  opt costs 4.2x and loses nothing.
+  #
+  #   OCCC(=O)CO
+  #     opt   CREST 5980.0 s -> 24 conformers, 23 basins, error 0.4023 kcal/mol
+  #     sp    CREST  776.6 s -> 82 conformers, 37 basins, error 0.0025
+  #     union of both, re-deduplicated: 45 basins.  opt costs 7.7x and LOSES 14 OF 37.
+  #
+  # ** THE PREDICTION ABOVE IS REFUTED. ** The merging effect does NOT shrink under gfn2;
+  # on the molecule that can see it, `opt` misses 38% of the basins and gets the
+  # conformational correction wrong by 0.40 kcal/mol -- above this branch's ~0.1 kcal/mol
+  # target and 8x the CREGEN energy condition (dedup_ethr_kcal, 0.05).
+  #
+  # PROPANAL SHOWED NONE OF IT, and that is the same trap as the deduplication plateau:
+  # a 2-basin molecule has no room to lose 14, so it cannot discriminate. Reporting
+  # propanal alone as "the effect does not reproduce" was wrong, and the error was
+  # choosing a molecule that could not fail the test.
+  #
+  # THE PRODUCTION VALUE IS UNCHANGED BY THIS FILE. `refine: "opt"` is the user's ruling
+  # of 2026-09-03, made with the gfnff numbers in view, and the re-measurement was
+  # commissioned as a reportable number rather than as an automatic reversal. What has
+  # changed is that the ruling's stated premise -- "those numbers no longer apply" -- has
+  # now been tested and did not hold. Whether the ruling stands is the user's call.
   #
   # ***** OPEN: branch A acceptance criterion 3 is unpaid. *****
 
@@ -148,6 +196,62 @@ crest:
   # SHAKE removes bond-stretch degrees of freedom (the 3N-6 non-zero eigenvalues cannot
   # all be filled), deuterium drops C-H stretches from ~3000 to ~2200 cm^-1.
   # Side-by-side comparison: configs/mdp/s0_branchA_crest_metadynamics.mdp.
+  # ======================================================================================
+  # RECOVERED 2026-09-04. The block below was lost when configs/stage0_production.yaml
+  # was rewritten into openqha.yaml, and found again by
+  # tests/unit/t_translation_preserved_numbers.py, which reported tokens 4.9, 5.7 and
+  # 1066 as present in the 2026-09-03 baseline and absent from the whole tree. Restored
+  # verbatim from _backup/pre_branchD_restructure_2026-09-03.
+  #
+  # ** READ THE CONDITIONS BEFORE USING THE NUMBERS. ** They were taken under the GFN-FF
+  # workhorse at 1.0-4.0 fs with ordinary hydrogen masses. This branch now runs gfn2 at
+  # 5 fs with hmass 2. The table is therefore NOT a statement about the current protocol,
+  # and the 2026-08-31 ruling it supported (shake=1) was itself later overturned by the
+  # published-protocol ruling (S0-A-10, shake=2). What survives is the SHAPE of the
+  # result -- shake=0 heats at every timestep tried -- and that was independently
+  # reproduced on 2026-09-04 under the current protocol: 20 ps, 5 fs, gfn2,
+  # dsgdb9nsd_003163, shake=0 gave <T> = 1 381 015 K against a 300 K target, while the
+  # published shake=2 gave 300.76 K. Same conclusion, a far more violent version of it.
+  #
+  # Measured (standard MD 20 ps, target 300 K, GFN-FF, reading CREST's printed <T>/K):
+  #
+  #   molecule 002334 (strained ring)   tstep=1.0   1.5    2.0    4.0   <- deviation from 300 K
+  #     shake=2                          +0.9   -2.2   -1.6   -1.2
+  #     shake=1                          +1.0   +0.2   +2.1   +2.9
+  #     shake=0                          +6.5   +5.7   +7.3  +17.0     <- SILENT HEATING
+  #
+  #   molecule 000018 (acetone)
+  #     shake=2                          -3.1   +0.1   +3.4   -1.3
+  #     shake=1                          -2.0   -0.5   +2.0   +3.6
+  #     shake=0                          +4.5   +6.7   +4.9   +4.5     <- SILENT HEATING
+  #
+  # Three conclusions as recorded then:
+  #   (1) shake=0 heats systematically at EVERY timestep (+4.5 to +17.0 K) -- unusable;
+  #   (2) shake=1 deviated least at the 1.5 fs then in use (+0.2 / -0.5 K);
+  #   (3) shake=2 is thermally fine too -- its fault is that its ITERATION FAILS TO
+  #       CONVERGE on strained rings and the run dies (see shake_fallback below).
+  #
+  # ---- why `terminated EARLY` happens at all: the root cause, with its source lines ----
+  # CREST's iMTD-GC defaults to `shake = 2` (all bonds constrained). On strained rings the
+  # SHAKE iteration (at most 250 passes, tolerance 1e-7,
+  # src/dynamics/shake_module.f90:80-81) does not converge, `do_shake` returns io=1, the
+  # MD is judged to have failed (dynamics_module.f90:437-444), and the layer above prints
+  # `terminated EARLY` (src/algos/parallel.f90:1066).
+  # ** CREST ITSELF PRINTS NO REASON. ** Without those three source locations the message
+  # is unattributable, which is why they are kept here and not summarised away again.
+  #
+  # Three failing molecules x three SHAKE settings, GFN-FF era (EARLY count / final
+  # conformer count):
+  #   dsgdb9nsd_000607  O[C@H]1C[C@H]1C#N     2 -> 31 / 2  | 1 -> 0 / 5  | 0 -> 0 / 6
+  #   dsgdb9nsd_003163  O[C@H]1CC[C@]21CO2    2 -> 24 / 8  | 1 -> 0 / 7  | 0 -> 0 / 7
+  #   dsgdb9nsd_002334  CCC[C@H]1C[C@H]1C     2 ->  4 / 16 | 1 -> 0 / 12 | 0 -> 0 / 14
+  # Note shake=2 does not merely "report an error" -- IT LOSES CONFORMERS (000607 kept
+  # only 2).
+  #
+  # Why the fallback goes to 1 and not 0: at the 1.5 fs then in use, X-H bonds had to stay
+  # constrained (the X-H stretch period is about 10 fs); switching SHAKE off would have
+  # required about 0.5 fs, which is slower (002334 measured 73 s against 47 s).
+  # ======================================================================================
   shake: 2                    # published_protocol. 2 = all bonds | 1 = H bonds | 0 = off
   tstep_fs: 5.0               # published_protocol
   hydrogen_mass_amu: 2.0      # published_protocol. NOW WRITTEN into [dynamics], as of
@@ -184,8 +288,26 @@ crest:
   # `shake_used` and `used_shake_fallback`, because a condition that cannot be read off
   # the product has already cost this repository one dataset (defect 57).
   #
-  # ***** OPEN: this path has never fired. Five molecules, none aborted. It is written
-  # ***** and unproven. The three strained rings above are the test it needs.
+  # ===== CLOSED 2026-09-04. The path fired, and the re-measurement is the interesting
+  # ===== part -- the counts above did NOT reproduce, and on one molecule the aborts did
+  # ===== not happen at all:
+  #
+  #     molecule          D0-P1-34   re-measured   fallback fired   product
+  #     dsgdb9nsd_000607     31           9        yes -> 0 EARLY   3 basins, 9/9
+  #     dsgdb9nsd_003163     24          15        yes -> 0 EARLY   2 basins, 9/9
+  #     dsgdb9nsd_002334      4           0        NO, none needed  6 basins, 9/9
+  #
+  # So it is not only the COUNT that is stochastic: at low counts, WHETHER a molecule
+  # aborts is not reproducible either. (An earlier note in this repository claimed
+  # zero-vs-nonzero was the stable criterion. 002334 refutes that.)
+  #
+  # That is the strongest argument for the shape this fallback already has. It is
+  # POINTWISE and REACTIVE: it fires for the molecule that actually aborted in the run at
+  # hand, so it never has to assume the abort reproduces. A global loosening decided from
+  # a prior list would have loosened 002334 for nothing.
+  #
+  # Not proven by this: that shake=1 always rescues. It rescued both molecules that
+  # needed it here, and both had aborted under shake=2 in two independent runs.
   shake_fallback:
     enabled: true
     to: 1

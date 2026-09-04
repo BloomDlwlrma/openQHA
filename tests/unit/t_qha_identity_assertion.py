@@ -38,6 +38,19 @@ def clean():
                 source="openQHA.branchB.langevin")
 
 
+def clean_nose_hoover():
+    """What the driver writes when the thermostat is Nose-Hoover.
+
+    `fixcm` is absent on purpose: it is an ASE Langevin option and recording it here would
+    be a field that looks checked and is not.
+    """
+    return dict(bias_potential=None, constraints=None,
+                hydrogen_mass_amu=1.008, timestep_fs=1.0,
+                thermostat="ase.md.nose_hoover_chain.NoseHooverChainNVT",
+                thermostat_tdamp_fs=20.0, thermostat_chain_length=3,
+                source="openQHA.branchB.nose_hoover")
+
+
 def rejects(meta):
     try:
         qha.assert_trajectory_identity(meta)
@@ -88,6 +101,34 @@ def main():
          dict(thermostat_fixcm=None)),
     ]:
         meta = clean()
+        meta.update(patch)
+        ok, why = rejects(meta)
+        cases.append(("REJECTED: " + label, ok, why))
+
+    # ---- Nose-Hoover ---------------------------------------------------------------
+    # The branch moved to Nose-Hoover on instruction. `fixcm` means nothing there, so the
+    # fifth check is replaced rather than dropped, and the replacement needs its own
+    # failing examples or it is not a check.
+    ok, why = rejects(clean_nose_hoover())
+    cases.append(("a Nose-Hoover trajectory at the measured coupling time is ACCEPTED",
+                  not ok, why))
+
+    for label, patch in [
+        ("Nose-Hoover at the CONVENTIONAL 100 fs coupling -- measured to return the "
+         "softest mode at 179 cm^-1 against a true 79.7, costing 1.15 kcal/mol",
+         dict(thermostat_tdamp_fs=100.0)),
+        ("Nose-Hoover at 419 fs, the coupling time matched to the lowest mode's period, "
+         "which is the intuitive choice and is measured to be among the worst",
+         dict(thermostat_tdamp_fs=419.0)),
+        ("Nose-Hoover with no record of the coupling time",
+         dict(thermostat_tdamp_fs=None)),
+        ("plain Nose-Hoover, chain length 1 -- what GROMACS SILENTLY falls back to under "
+         "the default leap-frog integrator",
+         dict(thermostat_chain_length=1)),
+        ("Nose-Hoover with no record of the chain length",
+         dict(thermostat_chain_length=None)),
+    ]:
+        meta = clean_nose_hoover()
         meta.update(patch)
         ok, why = rejects(meta)
         cases.append(("REJECTED: " + label, ok, why))
