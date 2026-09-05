@@ -1,7 +1,5 @@
 % openQHA -- software citation.
 %
-% AUTHOR AND VERSION ARE PLACEHOLDERS. Fill both in before you publish anything that
-% cites this: a citation that names the wrong author is worse than no citation.
 
 @misc{openqha,
 	title = {{openQHA}: conformational free energy for small organic molecules on a
@@ -13,4 +11,211 @@
 	month = sep,
 	urldate = {2026-09-04},
 	note = {Accessed: Sep 4, 2026},
+}
+
+% =======================================================================================
+% Branch B -- the methods this branch's numbers actually rest on.
+%
+% Added 2026-09-04, when branch B moved from a Langevin thermostat to a Nose-Hoover chain
+% and gained a second production route through OpenMM. Every entry below is cited by name
+% somewhere in openqha/ or scripts/, and the ones that fix a NUMBER say which number.
+% =======================================================================================
+
+% ---- Quasi-harmonic analysis ----------------------------------------------------------
+
+% The estimator itself: entropy from the eigenvalues of the mass-weighted covariance of
+% atomic fluctuations. openqha/qha.py implements eq. 6 and eq. 7.
+% Also the source of the convergence warning branch B inherited: on their Lennard-Jones
+% test 200 ps was NOT converged and about 4 ns were needed. openQHA's acceptance
+% criterion 1 is that statement made checkable.
+@article{andricioaei2001,
+	title = {On the calculation of entropy from covariance matrices of the atomic
+	         fluctuations},
+	author = {Andricioaei, Ioan and Karplus, Martin},
+	journal = {The Journal of Chemical Physics},
+	volume = {115},
+	number = {14},
+	pages = {6289--6292},
+	year = {2001},
+	doi = {10.1063/1.1401821},
+}
+
+% The upper bound used as a free implementation check: S_QH <= S_Schlitter is analytic,
+% so a violation is an implementation error rather than a physical result.
+@article{schlitter1993,
+	title = {Estimation of absolute and relative entropies of macromolecules using the
+	         covariance matrix},
+	author = {Schlitter, J{\"u}rgen},
+	journal = {Chemical Physics Letters},
+	volume = {215},
+	number = {6},
+	pages = {617--621},
+	year = {1993},
+	doi = {10.1016/0009-2614(93)89366-P},
+}
+
+% The protocol branch B follows: superimpose every frame, then take the covariance;
+% translational and rotational contributions are neglected and added back analytically.
+% ALSO the source of branch B's 50/ps coupling -- "a friction coefficient of 50 ps-1 was
+% employed for each atom", and "a piston collision frequency of 50 ps-1" -- and of the
+% equilibration warning: 20 ps was planned, 520 ps was necessary.
+@article{rinaldo2003,
+	title = {A computational study of the open and closed forms of the {N}-lobe human
+	         serum transferrin apo-protein},
+	author = {Rinaldo, Danielle and Field, Martin J.},
+	journal = {Biophysical Journal},
+	volume = {85},
+	number = {6},
+	pages = {3485--3501},
+	year = {2003},
+	doi = {10.1016/S0006-3495(03)74769-9},
+}
+
+% The first use of a quasi-harmonic covariance to get configurational entropy.
+@article{karplus1981,
+	title = {Method for estimating the configurational entropy of macromolecules},
+	author = {Karplus, Martin and Kushick, Joseph N.},
+	journal = {Macromolecules},
+	volume = {14},
+	number = {2},
+	pages = {325--332},
+	year = {1981},
+	doi = {10.1021/ma50003a019},
+}
+
+% ---- The thermostat --------------------------------------------------------------------
+
+% Why a CHAIN and not plain Nose-Hoover. The harmonic oscillator is the case where plain
+% Nose-Hoover is not ergodic, which is precisely the regime a 10-atom molecule near its
+% minimum sits in -- measured here as a configurational variance ratio of 2.591 against a
+% canonical value of 1. GROMACS with the default leap-frog integrator SILENTLY reduces the
+% chain to length 1, so this reference is also why configs/mdp/s0_qha_production.mdp
+% specifies integrator = md-vv.
+@article{martyna1992,
+	title = {Nos{\'e}--{H}oover chains: The canonical ensemble via continuous dynamics},
+	author = {Martyna, Glenn J. and Klein, Michael L. and Tuckerman, Mark},
+	journal = {The Journal of Chemical Physics},
+	volume = {97},
+	number = {4},
+	pages = {2635--2643},
+	year = {1992},
+	doi = {10.1063/1.463940},
+}
+
+% The reversible multiple-time-step / Yoshida-Suzuki chain propagation that ASE and
+% OpenMM both implement, and whose ORDER turned out to matter: ASE is hard-wired to a
+% 3-term decomposition, OpenMM defaults to 7, and at the same coupling time the measured
+% bias differed by a factor of four (-1.15 against -0.31 kcal/mol on T*S).
+@article{martyna1996,
+	title = {Explicit reversible integrators for extended systems dynamics},
+	author = {Martyna, Glenn J. and Tuckerman, Mark E. and Tobias, Douglas J. and
+	          Klein, Michael L.},
+	journal = {Molecular Physics},
+	volume = {87},
+	number = {5},
+	pages = {1117--1157},
+	year = {1996},
+	doi = {10.1080/00268979600100761},
+}
+
+% ---- Software -----------------------------------------------------------------------
+
+% Branch B's second production route, and the reference implementation of the thermostat.
+@article{openmm2017,
+	title = {{OpenMM} 7: Rapid development of high performance algorithms for molecular
+	         dynamics},
+	author = {Eastman, Peter and Swails, Jason and Chodera, John D. and McGibbon,
+	          Robert T. and Zhao, Yutong and Beauchamp, Kyle A. and Wang, Lee-Ping and
+	          Simmonett, Andrew C. and Harrigan, Matthew P. and Stern, Chaya D. and
+	          Wiewiora, Rafal P. and Brooks, Bernard R. and Pande, Vijay S.},
+	journal = {PLOS Computational Biology},
+	volume = {13},
+	number = {7},
+	pages = {e1005659},
+	year = {2017},
+	doi = {10.1371/journal.pcbi.1005659},
+}
+
+% The integrator whose DEFAULTS branch B adopted: collision_frequency 50/ps (a 20 fs
+% coupling time), chain_length 5, num_mts 5, num_yoshidasuzuki 5.
+@misc{openmmtools,
+	title = {openmmtools: A batteries-included toolkit for the {GPU}-accelerated
+	         {OpenMM} molecular simulation engine},
+	author = {Chodera, John D. and Rizzi, Andrea and Naden, Levi N. and Beauchamp,
+	          Kyle A. and Grinaway, Patrick and Fass, Josh and Rustenburg, Bas and
+	          Ross, Gregory A. and Simmonett, Andrew and Swenson, David W. H.},
+	howpublished = {\url{https://github.com/choderalab/openmmtools}},
+	year = {2024},
+	note = {NoseHooverChainVelocityVerletIntegrator; its documented defaults are what
+	        scripts/production/s0_B_qha_trajectory_openmm.py runs.},
+}
+
+% Carries MACE into OpenMM as a TorchForce.
+@misc{openmmtorch,
+	title = {{OpenMM-Torch}: {PyTorch} wrapper for {OpenMM}},
+	author = {Eastman, Peter and Gal{\'a}n, Ra{\'u}l P. and Doerr, Stefan and
+	          De Fabritiis, Gianni},
+	howpublished = {\url{https://github.com/openmm/openmm-torch}},
+	year = {2024},
+}
+
+% Independent superposition. Cited WITH its caveat: it cannot mass-weight, and on a real
+% 25 ps trajectory its float32 Theobald solver returned the identity rotation for 300 of
+% 3125 frames without raising. See openqha/mdtraj_io.py.
+@article{mdtraj2015,
+	title = {{MDTraj}: A modern open library for the analysis of molecular dynamics
+	         trajectories},
+	author = {McGibbon, Robert T. and Beauchamp, Kyle A. and Harrigan, Matthew P. and
+	          Klein, Christoph and Swails, Jason M. and Hern{\'a}ndez, Carlos X. and
+	          Schwantes, Christian R. and Wang, Lee-Ping and Lane, Thomas J. and
+	          Pande, Vijay S.},
+	journal = {Biophysical Journal},
+	volume = {109},
+	number = {8},
+	pages = {1528--1532},
+	year = {2015},
+	doi = {10.1016/j.bpj.2015.08.015},
+}
+
+% The mass-weighted independent superposition, which is the one that can actually be
+% compared against openqha/qha.py's fit.
+@inproceedings{mdanalysis2016,
+	title = {{MDAnalysis}: A {Python} package for the rapid analysis of molecular
+	         dynamics simulations},
+	author = {Gowers, Richard J. and Linke, Max and Barnoud, Jonathan and Reddy,
+	          Tyler J. E. and Melo, Manuel N. and Seyler, Sean L. and Domanski, Jan and
+	          Dotson, David L. and Buchoux, S{\'e}bastien and Kenney, Ian M. and
+	          Beckstein, Oliver},
+	booktitle = {Proceedings of the 15th Python in Science Conference},
+	pages = {98--105},
+	year = {2016},
+	doi = {10.25080/Majora-629e541a-00e},
+}
+
+% The potential. -SC is SoftCore: the two-body repulsion is deliberately softened and
+% capped, which is why it is a SOFTER short-range wall and not a harder one. Source of
+% branch B's 1 fs timestep and 1/ps Langevin friction (D0-C-30).
+@article{maceoff2026,
+	title = {Computing solvation free energies of small molecules with experimental
+	         accuracy},
+	author = {Moore, Joshua and Cole, Daniel J. and Cs{\'a}nyi, G{\'a}bor},
+	journal = {Journal of the American Chemical Society},
+	volume = {148},
+	pages = {4928},
+	year = {2026},
+}
+
+% The other independent implementation of the covariance spectrum, and the only one of the
+% two that can mass-weight: gmx covar -mwa agreed with openqha/qha.py to 1.27e-04 kcal/mol
+% on a real 25 ps trajectory, where mdtraj differed by 2.41.
+@article{gromacs2015,
+	title = {{GROMACS}: High performance molecular simulations through multi-level
+	         parallelism from laptops to supercomputers},
+	author = {Abraham, Mark James and Murtola, Teemu and Schulz, Roland and P{\'a}ll,
+	          Szil{\'a}rd and Smith, Jeremy C. and Hess, Berk and Lindahl, Erik},
+	journal = {SoftwareX},
+	volume = {1--2},
+	pages = {19--25},
+	year = {2015},
+	doi = {10.1016/j.softx.2015.06.001},
 }

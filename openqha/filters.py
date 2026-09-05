@@ -44,6 +44,8 @@ alone -- **enabling F7 without supplying an index raises, it does not skip silen
 > wrong**: what that produced was precisely the zwitterions F5 exists to remove. See
 > `D0-41`.
 """
+import pathlib as _pathlib
+
 from . import config as _config
 
 GATE_ORDER = ("F0", "F1", "F3", "F4", "F5", "F6", "F7")
@@ -249,6 +251,27 @@ def _f7_in_scope(identifier, cfg=None):
 
 
 _IDENTITY_SOURCE = {}
+
+
+def identity_source_available(cfg=None):
+    """Can `qm9_identity_source` be read at all?
+
+    False when the QM9 index is not present -- which is the DEFAULT state of a fresh
+    clone, because the 119 MB index is not shipped. In that state `_identity_source`
+    returns "" for every molecule and `f7_scope="identity_from_geometry_only"` therefore
+    behaves exactly like `"all"`.
+
+    That is the safe direction, and it is also invisible: without this function a caller
+    cannot tell "this molecule's identity came from GDB17" from "there is no index".
+    A test that cannot tell them apart passes for the wrong reason, which is what
+    happened (t_filters_f7, 2026-09-05).
+    """
+    cfg = cfg or _config.load()
+    try:
+        src_path = str(_config.qm9_index_csv(cfg))
+    except Exception:
+        return False
+    return bool(_IDENTITY_SOURCE.get(src_path)) or _pathlib.Path(src_path).is_file()
 
 
 def _identity_source(identifier, cfg=None):

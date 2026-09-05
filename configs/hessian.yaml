@@ -20,48 +20,62 @@
 # ======================================================================================
 
 # --------------------------------------------------------------------------------------
-# 包 2 —— Hessian 旁路与频率对标
+# Package 2 -- the Hessian side-channel and the frequency benchmark
 # --------------------------------------------------------------------------------------
 package2:
-  fmax_hessian_eV_A: 0.0001          # numerical_tolerance：残余力污染曲率
-  finite_difference_delta_A: 0.01    # modifiable_convention，收敛性已实测（D0-34）
+  fmax_hessian_eV_A: 0.0001          # numerical_tolerance: residual force contaminates
+                                     # the curvature
+  finite_difference_delta_A: 0.01    # modifiable_convention; convergence measured (D0-34)
   delta_scan_A: [0.005, 0.010, 0.020, 0.040]
-  delta_scan_species: "dsgdb9nsd_000048"   # 氧杂环丁烷，有最软的环折叠模
-  rigid_singular_tol: 1.0e-8         # numerical_tolerance：刚体向量组的秩判据
-  rigid_overlap_threshold: 0.5       # derived_criterion：本征向量落在刚体子空间的比例
-  reject_imaginary_frequencies: true # derived_criterion：进入求和的必须是真极小点
-  qrrho_nu0_cm: 100.0                # literature_value：Grimme, Chem. Eur. J. 2012, 18, 9955
-  # ---- 参考层级（2026-08-29 用户裁定：改走完整复合，不再直接算 CCSD(T)/cc-pVTZ）----
-  # 依据 Allen 等, "Reactive Chemistry at Unrestricted Coupled Cluster Level"（式 1、式 2）。
-  # 原文对**能量与力都**给了复合式；数值频率由力做有限差分，所以复合力式直接给出复合 Hessian。
-  # 实测（丙酮 10 原子、ORCA 6.0.1、8 核，单次解析梯度，见 D0-73）：
+  delta_scan_species: "dsgdb9nsd_000048"   # oxetane -- it has the softest ring-fold mode
+  rigid_singular_tol: 1.0e-8         # numerical_tolerance: rank criterion for the set
+                                     # of rigid-body vectors
+  rigid_overlap_threshold: 0.5       # derived_criterion: the fraction of an eigenvector
+                                     # lying in the rigid-body subspace
+  reject_imaginary_frequencies: true # derived_criterion: only true minima enter the sum
+  qrrho_nu0_cm: 100.0                # literature_value: Grimme, Chem. Eur. J. 2012, 18, 9955
+  # ---- Reference level (user ruling 2026-08-29: use the full composite, and stop
+  # ---- computing CCSD(T)/cc-pVTZ directly) ---------------------------------------------
+  # Following Allen et al., "Reactive Chemistry at Unrestricted Coupled Cluster Level"
+  # (equations 1 and 2). The paper gives composite expressions for BOTH the energy and the
+  # forces; numerical frequencies come from finite differences of the forces, so a
+  # composite force expression gives a composite Hessian directly.
+  # Measured (acetone, 10 atoms, ORCA 6.0.1, 8 cores, one analytic gradient; see D0-73):
   #   MP2/DZ 5 s | MP2/TZ 30 s | MP2/QZ 321 s | CCSD/DZ 65 s | CCSD(T)/DZ 326 s | CCSD/TZ 435 s
-  #   对照 CCSD(T)/TZ > 7200 s 未完成；六分量临时文件合计 17 MB，对照 CCSD(T)/TZ 单次 144 GB。
+  #   for comparison CCSD(T)/TZ did not finish in > 7200 s; the six components' scratch
+  #   files come to 17 MB in total, against 144 GB for a single CCSD(T)/TZ.
   reference_level: "composite_TZstar_ccsd"
-  reference_spin: "restricted"       # 本体系全是中性闭壳层平衡极小点（门 F4 保证），用 R 不用 U
+  reference_spin: "restricted"       # every system here is a neutral closed-shell
+                                     # equilibrium minimum (gate F4 guarantees it), so R
+                                     # and not U
   composite_recipes:
-    smoke_mp2_dz:                    # **冒烟专用** —— 单项, 不是复合, 只为把流程跑通
-      target: "MP2/cc-pVDZ 单点, 用于验证复合流水线的接线"
+    smoke_mp2_dz:                    # **SMOKE TEST ONLY** -- a single term, not a
+                                     # composite; it exists to get the wiring to run
+      target: "MP2/cc-pVDZ single point, to verify the composite pipeline is wired up"
       terms:
         - [1, "MP2", "cc-pVDZ"]
       seconds_per_gradient_8core: 5
-    # 每一项是 [系数, 方法, 基组]；力与 Hessian 按系数线性组合
-    composite_TZstar_ccsd:           # **在用** —— 用 CCSD 增量把 CCSD(T)/DZ 修到 TZ
-      target: "CCSD(T)/cc-pVTZ 的复合近似"
+    # Each term is [coefficient, method, basis]; forces and Hessians combine linearly
+    # with those coefficients
+    composite_TZstar_ccsd:           # **IN USE** -- a CCSD increment corrects
+                                     # CCSD(T)/DZ up to TZ
+      target: "composite approximation to CCSD(T)/cc-pVTZ"
       terms:
         - [1, "CCSD(T)", "cc-pVDZ"]
         - [1, "CCSD", "cc-pVTZ"]
         - [-1, "CCSD", "cc-pVDZ"]
       seconds_per_gradient_8core: 826
-    composite_TZstar_mp2:            # 更便宜、精度更低（原文图 S1c 对照的就是它）
-      target: "CCSD(T)/cc-pVTZ 的复合近似，增量取自 MP2"
+    composite_TZstar_mp2:            # cheaper and less accurate (it is what the paper's
+                                     # figure S1c compares against)
+      target: "composite approximation to CCSD(T)/cc-pVTZ, increment taken from MP2"
       terms:
         - [1, "CCSD(T)", "cc-pVDZ"]
         - [1, "MP2", "cc-pVTZ"]
         - [-1, "MP2", "cc-pVDZ"]
       seconds_per_gradient_8core: 361
-    composite_QZstar:                # 原文式 1/式 2 的完整形式，目标是 QZ
-      target: "CCSD(T)/cc-pVQZ 的复合近似"
+    composite_QZstar:                # the full form of the paper's equations 1 and 2,
+                                     # targeting QZ
+      target: "composite approximation to CCSD(T)/cc-pVQZ"
       terms:
         - [1, "CCSD(T)", "cc-pVDZ"]
         - [1, "CCSD", "cc-pVTZ"]
@@ -69,47 +83,55 @@ package2:
         - [1, "MP2", "cc-pVQZ"]
         - [-1, "MP2", "cc-pVTZ"]
       seconds_per_gradient_8core: 1177
-    # ---- 2026-08-29 用户裁定 E2 的精度: "MP2 DZ* -> QZ*" ----------------------------
-    # 一条**只用 MP2 增量**的基组阶梯, 底座是 CCSD(T)/cc-pVDZ, 三级都从同一个项池组合:
+    # ---- User ruling 2026-08-29, the accuracy of E2: "MP2 DZ* -> QZ*" ---------------
+    # A basis-set ladder using **MP2 increments only**, on a CCSD(T)/cc-pVDZ base, with
+    # all three rungs assembled from ONE pool of terms:
     #   DZ      = CCSD(T)/DZ
     #   TZ*_mp2 = CCSD(T)/DZ + (MP2/TZ - MP2/DZ)
     #   QZ*_mp2 = CCSD(T)/DZ + (MP2/QZ - MP2/DZ)
-    # **三级共用一个项池**(4 个单点: CCSD(T)/DZ, MP2/DZ, MP2/TZ, MP2/QZ),
-    # 所以量出整条阶梯的代价 = 量出最高一级的代价, **中间两级是免费的**,
-    # 于是"阶梯收敛了没有"从假设变成一个可读的数。
-    dz_base:                         # 阶梯第 0 级: 不做任何基组修正
-      target: "CCSD(T)/cc-pVDZ(阶梯底座, 非复合)"
+    # **The three rungs share one pool** (4 single points: CCSD(T)/DZ, MP2/DZ, MP2/TZ,
+    # MP2/QZ), so the cost of measuring the WHOLE ladder equals the cost of its highest
+    # rung -- **the two middle rungs are free** -- and "has the ladder converged" stops
+    # being an assumption and becomes a number you can read.
+    dz_base:                         # rung 0 of the ladder: no basis-set correction
+      target: "CCSD(T)/cc-pVDZ (the base of the ladder, not a composite)"
       terms:
         - [1, "CCSD(T)", "cc-pVDZ"]
       seconds_per_gradient_8core: 326
-    composite_QZstar_mp2:            # **E2 在用** —— MP2 增量一步修到 QZ
-      target: "CCSD(T)/cc-pVQZ 的复合近似, 基组增量全部取自 MP2"
+    composite_QZstar_mp2:            # **IN USE for E2** -- one MP2 increment straight
+                                     # to QZ
+      target: "composite approximation to CCSD(T)/cc-pVQZ, all basis increments from MP2"
       terms:
         - [1, "CCSD(T)", "cc-pVDZ"]
         - [1, "MP2", "cc-pVQZ"]
         - [-1, "MP2", "cc-pVDZ"]
       seconds_per_gradient_8core: 652
-    smoke_hf_dz:                     # **冒烟专用** —— 最便宜的一项, 只为验证阶梯的接线
-      target: "HF/cc-pVDZ 单点, 约 1 秒"
+    smoke_hf_dz:                     # **SMOKE TEST ONLY** -- the cheapest possible term,
+                                     # purely to verify the ladder's wiring
+      target: "HF/cc-pVDZ single point, about 1 second"
       terms:
         - [1, "HF", "cc-pVDZ"]
       seconds_per_gradient_8core: 1
-  # 一次跑出整条阶梯: 驱动脚本按**项池**求解, 公共单点只算一次
+  # Run the whole ladder at once: the driver solves by **term pool**, so a single point
+  # shared between rungs is computed only once
   recipe_ladders:
-    smoke_hf_to_mp2:                 # **冒烟专用**: 两级, 共用 cc-pVDZ, 每个结构约 6 秒
-      description: "验证项池/组合/阶梯/续跑的接线, 不产出任何有物理意义的数"
+    smoke_hf_to_mp2:                 # **SMOKE TEST ONLY**: two rungs sharing cc-pVDZ,
+                                     # about 6 seconds per structure
+      description: "verifies the pool / combination / ladder / resume wiring; it produces
+        no number with any physical meaning"
       recipes: ["smoke_hf_dz", "smoke_mp2_dz"]
       pool_seconds_per_structure_8core: 6
     mp2_dz_to_qz:
-      description: "MP2 增量阶梯 DZ -> TZ* -> QZ*, 共用一个项池"
+      description: "MP2-increment ladder DZ -> TZ* -> QZ*, sharing one term pool"
       recipes: ["dz_base", "composite_TZstar_mp2", "composite_QZstar_mp2"]
       pool_seconds_per_structure_8core: 682   # 326 + 5 + 30 + 321
   reference_level_rejected:
     - level: "r2SCAN-3c"
-      reason: "用户 2026-08-28 裁定排除"
-    - level: "CCSD(T)/cc-pVTZ 直接计算"
+      reason: "excluded by user ruling 2026-08-28"
+    - level: "CCSD(T)/cc-pVTZ computed directly"
       reason: >
-        实测不可负担：单次解析梯度 > 7200 秒未完成、临时文件 144 GB，
-        61 次 x 7 个物种 >= 36 天。见 D0-66、D0-69、D0-73。
+        Measured as unaffordable: a single analytic gradient did not finish in > 7200
+        seconds and used 144 GB of scratch; 61 of them x 7 species >= 36 days.
+        See D0-66, D0-69, D0-73.
 
 

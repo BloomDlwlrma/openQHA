@@ -52,6 +52,58 @@ MAX_WORKERS = max(1, N_CORES // THREADS_PER_JOB)
 QHA_THREADS_PER_JOB = 1
 QHA_MAX_WORKERS = max(1, N_CORES // QHA_THREADS_PER_JOB)
 
+#: The OpenMM route runs in THIS environment, unless told otherwise.
+#:
+#: It used to need its own. That changed on 2026-09-05, when the OpenMM stack moved into
+#: the core environment on a user ruling accepting the pins openmm-torch requires (pytorch
+#: 2.13.0 -> 2.12.1, numpy 2.4.6 -> 1.26.4) -- and the cost was MEASURED at exactly zero:
+#: energy, forces, every Hessian frequency and T*S on fixed frames all bit-identical
+#: (scripts/calibration/s0_B_stack_fingerprint.py).
+#:
+#: So `S0_OPENMM_ENV` is now EMPTY by default and the worker inherits the interpreter that
+#: started it. Set it only when the OpenMM route should run somewhere else -- the lean
+#: `openqha-openmm` environment from environment-openmm.yml, say, on a site with a small
+#: quota. A Parsl worker inherits its parent's interpreter, so that is the only way to
+#: send this executor elsewhere.
+#:
+#: The executor is kept as a separate label even when it points at the same environment.
+#: It carries its own worker count and its own cost record, and hpc/configs/qha_md_openmm.json
+#: describes it separately; collapsing it into `openqha_qha` would mean the two routes
+#: could no longer be given different resources.
+OPENMM_ENV = os.environ.get("S0_OPENMM_ENV", "")
+OPENMM_THREADS_PER_JOB = 1
+OPENMM_MAX_WORKERS = max(1, N_CORES // OPENMM_THREADS_PER_JOB)
+#: Measured 2026-09-04 on this machine: 100 s/ps for acetone on the CPU platform, against
+#: 96.1 s/ps for the ASE route. Close enough to plan with, not close enough to call equal
+#: -- the OpenMM figure was taken on a loaded machine.
+OPENMM_SECONDS_PER_PS = 100.0
+
+
+def _openmm_worker_init():
+    """What each OpenMM worker runs before its first task.
+
+    Two jobs, and the second one is the important one:
+
+      * switch environment, but ONLY if `S0_OPENMM_ENV` names one. With one environment
+        for everything there is nothing to switch to, and a `conda activate` that is not
+        needed is a `conda activate` that can fail for no reason.
+      * VERIFY the capabilities, always. An environment file that lists a package is not
+        evidence the package imports, and a worker that quietly lacks openmm would produce
+        trajectories that are not what hpc/configs/qha_md_openmm.json describes. Declaring
+        them through S0_REQUIRE_CAPS makes a missing one an error rather than a skip --
+        the contract in openqha/capabilities.py.
+    """
+    lines = []
+    if OPENMM_ENV:
+        lines += ['source "$(conda info --base)/etc/profile.d/conda.sh"',
+                  'conda activate {}'.format(OPENMM_ENV)]
+    lines.append('export S0_REQUIRE_CAPS=openmm,openmm_torch,openmmtools,mdanalysis')
+    lines.append(
+        'python -c "from openqha import capabilities as c; '
+        'c.check_declared(); c.require_core(); print(\'branch B core: ready\')"')
+    return "\n".join(lines)
+
+
 
 def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
            qha_max_workers=None):
@@ -93,6 +145,14 @@ def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
                 cpu_affinity="none",
                 provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1),
             ),
+            HighThroughputExecutor(
+                label="openqha_qha_openmm",
+                max_workers_per_node=OPENMM_MAX_WORKERS,
+                cores_per_worker=float(OPENMM_THREADS_PER_JOB),
+                cpu_affinity="none",
+                provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1,
+                                       worker_init=_openmm_worker_init()),
+            ),
         ],
         run_dir=run_dir or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
@@ -116,7 +176,11 @@ def describe():
         threads_per_job=THREADS_PER_JOB,
         qha_max_workers=QHA_MAX_WORKERS,
         qha_threads_per_job=QHA_THREADS_PER_JOB,
-        executors=["openqha_crest", "openqha_qha"],
+        executors=["openqha_crest", "openqha_qha", "openqha_qha_openmm"],
+        openmm_env=OPENMM_ENV,
+        openmm_max_workers=OPENMM_MAX_WORKERS,
+        openmm_threads_per_job=OPENMM_THREADS_PER_JOB,
+        openmm_seconds_per_ps=OPENMM_SECONDS_PER_PS,
         oversubscribed=bool(MAX_WORKERS * THREADS_PER_JOB > N_CORES
                             or QHA_MAX_WORKERS * QHA_THREADS_PER_JOB > N_CORES),
         provider="parsl.providers.LocalProvider",

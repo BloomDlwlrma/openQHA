@@ -31,6 +31,12 @@
       "config": "qha_md.json",
       "executor": "openqha_qha",
       "driver": "scripts/production/s0_B_qha_trajectory.py",
+      "_role": [
+        "The ASE route. It is the SECOND of branch B's two implementations as of",
+        "2026-09-05, kept enabled because it is the one that checkpoints the thermostat",
+        "state and therefore resumes bit-identically -- which the saturation benchmark",
+        "needs and the OpenMM route cannot yet do."
+      ],
       "analysis": "scripts/production/s0_B_qha_analyse.py",
       "fan_out": "scripts/production/s0_E_branchB_parsl.py",
       "device_note": [
@@ -40,6 +46,36 @@
         "card, and on this repo's T400 the same trajectory ran 3.5x slower than on the CPU",
         "(D0-C-5). Reopen it when a batched force interface exists -- D0-54 criterion (ii)",
         "-- and not before."
+      ]
+    },
+    "qha_md_openmm": {
+      "enabled": true,
+      "branch": "B",
+      "config": "qha_md_openmm.json",
+      "executor": "openqha_qha_openmm",
+      "driver": "scripts/production/s0_B_qha_trajectory_openmm.py",
+      "analysis": "scripts/production/s0_B_qha_analyse.py",
+      "_role": [
+        "The PRIMARY route as of 2026-09-05: OpenMM plus openmmtools' Nose-Hoover chain,",
+        "at that library's own documented defaults (collision_frequency 50/ps = a 20 fs",
+        "coupling, chain_length 5, num_mts 5, num_yoshidasuzuki 5).",
+        "",
+        "It no longer needs a separate interpreter. The OpenMM stack moved into the core",
+        "environment on 2026-09-05 and the cost was measured at exactly zero -- energy,",
+        "forces, every Hessian frequency and T*S on fixed frames all bit-identical across",
+        "the pytorch and numpy downgrades the solver required. The executor",
+        "openqha_qha_openmm still exists for sites that prefer the lean",
+        "`openqha-openmm` environment; on a machine with one environment, openqha_qha",
+        "serves both routes.",
+        "",
+        "BOTH stages are enabled on purpose. They write the same product contract and are",
+        "read by the same analysis, so running both is what makes their agreement a",
+        "measurement rather than an assumption."
+      ],
+      "device_note": [
+        "CPU, for the same reason as the ASE route: the cost is a serial chain of",
+        "single-structure MACE forward passes inside a TorchForce, and OpenMM's CUDA",
+        "platform does not change that."
       ]
     },
     "qm_label": {

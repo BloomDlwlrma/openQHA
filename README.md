@@ -90,7 +90,20 @@ Open items are listed, not hidden: see [`docs/branchA_workflow.md`](docs/branchA
   cheaper than finite differences, with no trade-off to weigh.
 * **Symmetry numbers from geometry**, per basin — not from the molecular graph, whose
   automorphism count is 72 for ethane against a true σ of 6.
-* **Quasi-harmonic entropy** from unbiased trajectories, cross-checked against GROMACS.
+* **Quasi-harmonic entropy** from unbiased trajectories, produced by **two independent
+  routes** — ASE and OpenMM — that write the same product and are read by the same
+  analysis, and cross-checked against `gmx covar -mwa` (agreement: 1.27e-04 kcal/mol on a
+  real 25 ps trajectory).
+* **One environment for everything**, including branch B's OpenMM route. Merging it
+  required pytorch 2.13.0 → 2.12.1 and numpy 2.4.6 → 1.26.4, and the cost of that was
+  *measured*: energy, forces, every Hessian frequency and `T*S` on fixed frames all
+  **bit-identical** (`scripts/calibration/s0_B_stack_fingerprint.py`).
+* **A thermostat chosen by measurement, with its cost written down.** Branch B runs a
+  Nosé–Hoover chain at a 20 fs coupling — `openmmtools`' own default, and the value in the
+  QHA reference paper. It is calibrated against a *closed form*, not against other
+  thermostats: on a harmonic surface built from the production potential's own Hessian the
+  conventional 100–1000 fs coupling returns the softest mode near 229 cm⁻¹ against a true
+  79.7, while reporting a perfectly correct temperature.
 * **Curvature training** with Hessian-vector products instead of Hessians.
 
 ### To-do
@@ -115,11 +128,40 @@ Open items are listed, not hidden: see [`docs/branchA_workflow.md`](docs/branchA
 * **parsl** — branch E only; one molecule runs without it
 * **matplotlib**, **jupyter** — tutorials
 * **h5py** — branch C datasets
+* **openmm**, **openmm-torch**, **openmmtools** — **core** for branch B: its production
+  route and its Nosé–Hoover chain. Conda-forge only; `pip install openmm` does not give a
+  working build
+* **MDAnalysis** — **core**: the independent implementation behind acceptance criterion 2
+* **mdtraj** — an extension. Read `openqha/mdtraj_io.py` before trusting it: it cannot
+  mass-weight, and its float32 solver silently returned the identity rotation for 300 of
+  3125 frames
+
+### What this installation can actually do
+
+Probed, never assumed — a broken build must read as unavailable, so the probes are real
+imports and real executions:
+
+```bash
+python -c "from openqha import capabilities; print(capabilities.summary())"
+```
+
+The contract follows ACEsuit/mace's: locally a missing **extension** skips, and a run that
+*declares* it fails instead.
+
+```bash
+S0_REQUIRE_CAPS=gromacs python tests/run_tests.py    # a skip is now an ERROR
+```
+
+That second line exists because acceptance criterion 2 twice reported "no comparison
+produced" for reasons it does not measure. A criterion that goes quiet instead of red
+teaches people to ignore it.
 
 ### External programs
 * **crest** ≥ 3.0.2 — conformer search
 * **xtb** — the GFN2 workhorse, and branch C's labels
-* **gromacs** — branch B's independent cross-check only
+* **gromacs** — an **extension**, not a requirement. `openqha/extensions/gromacs.py`;
+  no number depends on it. MDAnalysis is the routine independent check and agreed to
+  **8.0e-09 kcal/mol** where GROMACS gave 1.27e-04, without needing an external binary
 * **orca** ≥ 6.0 — branch C RI-MP2 reference labels (registration required)
 
 ### The potential's weights
@@ -300,6 +342,8 @@ basin_store.census(tag="prod")                          # how many per chunk
 |Document|Content|
 |---|---|
 | [`docs/tutorials/T01_…ipynb`](docs/tutorials/) | **practice** — a real conformer search, end to end |
+| [`docs/tutorials/T01b_…ipynb`](docs/tutorials/) | **practice** — branch B: MD, the thermostat, both routes, end to end |
+| [`docs/branchB_workflow.md`](docs/branchB_workflow.md) | branch B operationally: the prohibitions, the two routes, the acceptance criteria |
 | [`docs/tutorials/T02_…ipynb`](docs/tutorials/) | **theory** — AD Hessians and Projected Hessian Learning |
 | [`configs/`](configs/) | every parameter, classified and sourced |
 | [`hpc/README.md`](hpc/README.md) | which machine runs what, and why |

@@ -30,8 +30,11 @@
 # (CUDA 12 has minor-version compatibility); an 11.x driver does not.
 #
 #   driver reports 12.x  ->  this file as it stands. Verified by dry run to resolve to
-#                            cuda-version 12.9, cuda-cudart 12.9.79, and pytorch 2.13.0
+#                            cuda-version 12.9, cuda-cudart 12.9.79, and pytorch 2.12.1
 #                            cuda129_generic_py311, with NO MKL in the environment.
+#                            (It resolved to 2.13.0 before openmm-torch was added; that
+#                            package is what caps it, in this file and in
+#                            environment.yml alike.)
 #   driver reports 11.x  ->  change the ONE line to `cuda-version=11.8`, AND delete
 #                            `nomkl` below. Every conda-forge CUDA-11.8 pytorch build
 #                            depends on MKL, so `nomkl` and an 11.8 torch cannot both be
@@ -41,11 +44,14 @@
 #                            Keep the three OpenBLAS pins even then; only `nomkl` goes.
 #                            (11.8 also caps torch at 2.5.1.)
 #
-# A real advantage of CUDA 12 beyond "it is newer": it resolves to the SAME torch 2.13.0
-# as environment.yml. Measured 2026-09-04, the torch version is the thing that moves the
-# last digits of a result -- the BLAS is not, with eigenvalues agreeing to 1e-14 and the
-# potential bit-identical on a fixed geometry. Branch C's GPU torch and branch A/B's CPU
-# torch being the same version is worth more than it looks.
+# A real advantage of CUDA 12 beyond "it is newer": it resolves to the SAME torch as
+# environment.yml -- 2.12.1 in both, as of 2026-09-04, with openmm-torch resolving to the
+# matching build on each side (cpu_ here, cuda129 there). Measured the same day, the torch
+# version is the thing that moves the last digits of a result -- the BLAS is not, with
+# eigenvalues agreeing to 1e-14 and the potential bit-identical on a fixed geometry. So
+# branch C's GPU torch and branch A/B's CPU torch being one version is worth more than it
+# looks, and the exact number matters less than the two files agreeing on it. CHECK BOTH
+# after changing either: they are kept in step by the solver, not by a pin.
 #
 # ---------------------------------------------------------------------------------------
 # THE BLAS BLOCK IS NOW IDENTICAL TO environment.yml, AND THAT IS THE POINT
@@ -121,15 +127,19 @@ dependencies:
   # gave me the CPU build" into a solver error.
   - pytorch>=2.0=*cuda*
 
-  # ---- branch B, the OpenMM route ----------------------------------------------------
-  # Same as environment.yml. The CUDA build of OpenMM is worth having here even though
-  # branch B itself is a CPU job: openmm-torch has to match the pytorch build, and mixing
-  # a CPU openmm-torch with a CUDA pytorch is the same class of hazard as two BLAS builds.
+  # ---- branch B: OpenMM, openmmtools, MDAnalysis. CORE. --------------------------------
+  # Same as environment.yml, CUDA build. openmm-torch must match the pytorch build it was
+  # compiled against -- mixing a CPU openmm-torch with a CUDA pytorch is the same class of
+  # hazard as two BLAS builds, and worse because it is silent.
+  #
+  # Branch B itself is a CPU job (D0-C-5: the same trajectory ran 3.5x SLOWER on this
+  # repo's T400), so this environment exists for branch C training and carries the OpenMM
+  # stack only so that one environment can do everything.
   - openmm>=8.1
   - openmm-torch>=1.4
   - openmmtools>=0.23
-  - mdtraj>=1.9
   - mdanalysis>=2.4
+  - mdtraj>=1.9
 
   # ---- the conformer search, so one environment still runs the whole chain -----------
   # CPU code. Present for convenience on a login node; do not schedule branch A onto a

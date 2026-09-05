@@ -45,12 +45,26 @@ ROOT = _repo_root()
 #: own check -- the first version did exactly that (skills section 2.4(b)).
 CJK = re.compile("[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]")
 
-SEARCH = ("openQHA", "scripts", "tests", "examples", "hpc", "configs")
+#: `openqha`, lower case: the package was renamed on 2026-09-04 and this line still said
+#: "openQHA". It kept working only because this repository sits on a case-insensitive
+#: filesystem; on Linux the directory would not exist, the entry would be skipped by the
+#: `is_dir()` guard below, and the package's own modules would go unchecked while the test
+#: still passed.
+SEARCH = ("openqha", "scripts", "tests", "examples", "hpc", "configs")
 EXTS = {".py", ".yaml", ".yml", ".toml", ".template", ".sh", ".mdp", ".json"}
 SKIP_PARTS = {"__pycache__", "source-code", "_backup", ".mem", "docs"}
 RETIRED = "_superseded"
 
 FAIL = []
+
+#: SEARCH roots that do not exist. Reported and failed, never skipped quietly.
+MISSING = []
+
+#: A field whose whole purpose is to hold a Chinese common name. Exempt because
+#: "translating" it would DELETE data rather than translate it -- the molecule really is
+#: called that. Deliberately narrow: the key must be exactly `zh`, so this cannot grow
+#: into a general way of keeping untranslated prose.
+ZH_FIELD = re.compile(r"^\s*zh:\s")
 
 
 def scan():
@@ -58,6 +72,10 @@ def scan():
     for top in SEARCH:
         d = ROOT / top
         if not d.is_dir():
+            # NOT a silent skip. A search root that has gone missing means the scan is
+            # quietly covering less than it says, which is how the `openQHA` -> `openqha`
+            # rename would have gone unnoticed on any case-sensitive filesystem.
+            MISSING.append(top)
             continue
         for p in sorted(d.rglob("*")):
             if not p.is_file() or p.suffix not in EXTS:
@@ -68,7 +86,8 @@ def scan():
                 text = p.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError):
                 continue
-            n = sum(1 for line in text.splitlines() if CJK.search(line))
+            n = sum(1 for line in text.splitlines()
+                    if CJK.search(line) and not ZH_FIELD.match(line))
             if not n:
                 continue
             (retired if RETIRED in p.parts else live).append((n, p))
@@ -78,6 +97,11 @@ def scan():
 def main():
     live, retired = scan()
 
+    if MISSING:
+        for top in MISSING:
+            FAIL.append("search root missing: {}".format(top))
+            print("  FAIL -- SEARCH names {!r}, which is not a directory. The scan "
+                  "covered less than it claims.".format(top))
     print("A. live code must be free of CJK characters")
     if live:
         total = sum(n for n, _ in live)

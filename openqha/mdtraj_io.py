@@ -24,19 +24,46 @@ So a disagreement here is expected and is a measurement of the FIT PROTOCOL, not
 entropy algorithm. `cross_check` therefore reports the two contributions separately, the
 way `gmx_io.cross_check` reports `fit_protocol_difference`.
 
-What it measured, and why mdtraj is NOT a reference here
---------------------------------------------------------
-On the first real production trajectory (acetone, 25 ps, 3125 frames, MACE-OFF23_medium):
+What it measured -- the whole difference, attributed
+---------------------------------------------------
+On the first real production trajectory (acetone, 25 ps, 3125 frames, MACE-OFF23_medium),
+running each library both as it comes and with our protocol imposed:
 
-    openqha.qha  mass-weighted, iterated     T*S = 5.7998 kcal/mol   lowest 52.00 cm-1
-    mdtraj 1.11.1  unweighted, one frame     T*S = 8.2078            lowest 43.05
-                                             difference +2.4080 kcal/mol
+    implementation                  mass-weighted   reference        T*S      difference
+    openqha.qha (ours)                   yes        iterated mean   5.799829       --
+    MDAnalysis 2.10.0, iterated          yes        iterated mean   5.799829   +8.020e-09
+    MDAnalysis 2.10.0, as it comes       yes        one frame       5.828531   +2.870e-02
+    mdtraj 1.11.1                        NO         one frame       8.207780   +2.407951
 
-That is 2.4 times the whole stage-0 accuracy target, from the superposition alone, and it
-is not evidence that either implementation is wrong -- they are fitting different things.
-It does mean mdtraj cannot serve as the independent check that `gmx covar -mwa` serves
-(which agrees with us to 1.27e-04 kcal/mol on the same trajectory), because `gmx covar`
-can be told to mass-weight and `mdtraj.Trajectory.superpose` cannot.
+and the recovered SOFTEST MODE, which is where an unweighted fit goes wrong and which the
+T*S column hides:
+
+    openqha.qha (ours)                   52.00 cm-1     (T*S 5.7998)
+    MDAnalysis 2.10.0, iterated          52.00
+    MDAnalysis 2.10.0, as it comes       51.96
+    mdtraj 1.11.1                        43.05 cm-1     (T*S 8.2078, difference 2.4080)
+
+For scale, `gmx covar -mwa` -- the other mass-weighted implementation, and the one that
+needs an external binary -- agreed with us to 1.27e-04 kcal/mol on this same trajectory.
+
+Read down that column. It decomposes the disagreement into three separate things:
+
+  * NOT MASS-WEIGHTING costs 2.41 kcal/mol -- 2.4 times the whole stage-0 accuracy target,
+    from the superposition alone. This is why mdtraj cannot serve as the independent check
+    that `gmx covar -mwa` serves: `gmx covar` can be told to mass-weight and
+    `mdtraj.Trajectory.superpose` cannot. It is not evidence that mdtraj is wrong; it is
+    fitting a different thing.
+  * NOT ITERATING THE REFERENCE costs 0.029 kcal/mol. That is the bias `superimpose`'s
+    docstring warns about -- fitting to one arbitrary frame leaves a residue whose size
+    depends on which frame was picked -- and it is now a number rather than an argument.
+  * THE IMPLEMENTATION ITSELF costs 8.0e-09 kcal/mol. Our Kabsch/SVD against MDAnalysis'
+    Theobald QCP quaternion, same weighting, same reference protocol, 3125 frames: the
+    frequencies agree to 1.2e-04 cm^-1 over 24 modes and the eigenvalues to 1.2e-07
+    relative. That residual is float32: MDAnalysis stores positions in single precision,
+    and 1e-07 relative is its epsilon.
+
+The third line is the one worth having. Two independent algorithms, written by different
+people, agree on this branch's estimator to nine significant figures.
 
 mdtraj also printed, on stderr from its C extension:
 
@@ -44,13 +71,11 @@ mdtraj also printed, on stderr from its C extension:
 
 i.e. for 300 of the 3125 frames its float32 Theobald solver did not converge and returned
 the IDENTITY rotation instead of a fit -- silently, as far as the Python API is concerned.
-Roughly a tenth of the trajectory was therefore not superimposed at all. That is worth
-knowing before trusting any RMSD-based analysis of these trajectories, and it is why this
-module reports rather than adopts.
+Roughly a tenth of the trajectory was not superimposed at all. Worth knowing before
+trusting any RMSD-based analysis of these trajectories.
 
-MDAnalysis is the closer comparison because it can weight by mass, and it is declared in
-`environment.yml`; where it is absent `cross_check` says so rather than quietly comparing
-against one library and calling it agreement.
+Where a library is absent `cross_check` says so, rather than quietly comparing against one
+of them and calling it agreement.
 """
 import numpy as np
 
@@ -108,30 +133,65 @@ def superimpose_mdtraj(frames_A, symbols, reference_index=0):
         n_frames=int(len(fitted)))
 
 
-def superimpose_mdanalysis(frames_A, symbols, masses, reference_index=0):
-    """MDAnalysis' mass-weighted superposition. Returns (fitted frames, record)."""
+def superimpose_mdanalysis(frames_A, symbols, masses, reference_index=0,
+                           max_iterations=1, tolerance_A=1e-8):
+    """MDAnalysis' mass-weighted superposition. Returns (fitted frames, record).
+
+    `max_iterations=1` is MDAnalysis as it comes: fit every frame to ONE reference
+    structure. Raise it to iterate the reference to the mean of the fitted frames, which
+    is what `openqha.qha.superimpose` does -- and which is the only remaining protocol
+    difference between the two once mass weighting is switched on. Running it both ways is
+    how the comparison stops confounding two differences in one number.
+
+    Verified against the supplied source tree (mdanalysis-develop): `weights="mass"` goes
+    through `lib.util.get_weights` to `atoms.masses`, `rotation_matrix` normalises them by
+    their mean before QCP ("qcp does NOT divide weights relative to the mean"), and
+    `_fit_to` moves both structures to their weighted centre. That is the same fit as
+    ours.
+    """
     import MDAnalysis
     from MDAnalysis.analysis import align
 
-    n_frames, n_atoms, _ = np.asarray(frames_A).shape
+    frames_A = np.asarray(frames_A, dtype=float)
+    n_frames, n_atoms, _ = frames_A.shape
+    m = np.asarray(masses, dtype=float)
+
     u = MDAnalysis.Universe.empty(n_atoms, trajectory=True)
-    u.add_TopologyAttr("masses", np.asarray(masses, dtype=float))
+    u.add_TopologyAttr("masses", m)
     u.add_TopologyAttr("names", ["{}{}".format(s, i + 1)
                                  for i, s in enumerate(symbols)])
     ref = MDAnalysis.Universe.empty(n_atoms, trajectory=True)
-    ref.add_TopologyAttr("masses", np.asarray(masses, dtype=float))
-    ref.atoms.positions = np.asarray(frames_A[int(reference_index)], dtype=np.float32)
+    ref.add_TopologyAttr("masses", m)
+    ref.add_TopologyAttr("names", ["{}{}".format(s, i + 1)
+                                   for i, s in enumerate(symbols)])
 
-    fitted = np.empty_like(np.asarray(frames_A, dtype=float))
-    for i, frame in enumerate(np.asarray(frames_A, dtype=float)):
-        u.atoms.positions = frame.astype(np.float32)
-        align.alignto(u.atoms, ref.atoms, weights="mass")
-        fitted[i] = u.atoms.positions
+    reference = frames_A[int(reference_index)].copy()
+    w = m / m.sum()
+    history = []
+    fitted = np.empty_like(frames_A)
+    for it in range(int(max_iterations)):
+        ref.atoms.positions = reference.astype(np.float32)
+        for i, frame in enumerate(frames_A):
+            u.atoms.positions = frame.astype(np.float32)
+            align.alignto(u.atoms, ref.atoms, weights="mass")
+            fitted[i] = u.atoms.positions
+        new_reference = fitted.mean(axis=0)
+        shift = float(np.sqrt((w[:, None] * (new_reference - reference) ** 2).sum()))
+        history.append(shift)
+        reference = new_reference
+        if shift < tolerance_A:
+            break
+
     return fitted, dict(
         implementation="MDAnalysis.analysis.align.alignto(weights='mass')",
         version=MDAnalysis.__version__,
-        mass_weighted=True, iterated=False,
-        reference="frame {}".format(reference_index),
+        module_path=MDAnalysis.__file__,
+        mass_weighted=True,
+        iterated=bool(max_iterations > 1),
+        n_iterations=len(history),
+        reference_shift_A=history,
+        reference=("frame {}".format(reference_index) if max_iterations == 1
+                   else "iterated mean structure"),
         n_frames=int(n_frames))
 
 
@@ -169,17 +229,25 @@ def cross_check(frames_A, masses, symbols, temperature_K=None):
                   n_nonzero=ours["spectrum"]["n_nonzero_eigenvalues"]),
         comparisons=[])
 
-    for name, fn in (("mdtraj", lambda: superimpose_mdtraj(frames_A, symbols)),
-                     ("MDAnalysis",
-                      lambda: superimpose_mdanalysis(frames_A, symbols, masses))):
+    trials = (
+        ("mdtraj", "mdtraj",
+         lambda: superimpose_mdtraj(frames_A, symbols)),
+        ("MDAnalysis", "MDAnalysis",
+         lambda: superimpose_mdanalysis(frames_A, symbols, masses)),
+        # The one that isolates the implementation from the protocol: mass-weighted AND
+        # iterated to the mean, which is exactly what openqha.qha.superimpose does.
+        ("MDAnalysis (iterated)", "MDAnalysis",
+         lambda: superimpose_mdanalysis(frames_A, symbols, masses, max_iterations=10)),
+    )
+    for label, name, fn in trials:
         if record["available"].get(name) is None:
-            record["comparisons"].append(dict(library=name, skipped="not installed"))
+            record["comparisons"].append(dict(library=label, skipped="not installed"))
             continue
         try:
             fitted, fit_record = fn()
             ent, spec = _entropy_from_fitted(fitted, masses, temperature_K)
             fit_record.update(
-                library=name,
+                library=label,
                 TS_QH_kcal=ent["TS_QH_kcal"],
                 lowest_frequency_cm_inv=ent["lowest_frequency_cm_inv"],
                 n_nonzero=spec["n_nonzero_eigenvalues"],
@@ -190,5 +258,5 @@ def cross_check(frames_A, masses, symbols, temperature_K=None):
             record["comparisons"].append(fit_record)
         except Exception as exc:                              # noqa: BLE001
             record["comparisons"].append(
-                dict(library=name, failed="{}: {}".format(type(exc).__name__, exc)))
+                dict(library=label, failed="{}: {}".format(type(exc).__name__, exc)))
     return record

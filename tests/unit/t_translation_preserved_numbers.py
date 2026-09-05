@@ -142,6 +142,44 @@ def baseline_spec():
         return dict(snapshot=snap, suffixes=(), skip=(), acknowledged=[])
 
 
+def classify(lost, tree_tokens):
+    """Split tokens missing from a file into (gone from the tree, merely relocated).
+
+    This is the whole content of the 2026-09-05 loosening, in one place so that it can be
+    tested without a repository. `gone` fails the run; `relocated` is reported and does
+    not.
+    """
+    gone = {t: n for t, n in lost.items() if t not in tree_tokens}
+    relocated = {t: n for t, n in lost.items() if t in tree_tokens}
+    return gone, relocated
+
+
+def self_check():
+    """The failing example. A criterion nobody has watched reject something is not one.
+
+    Three fabricated cases, no repository state, run on every invocation:
+
+      * a token that left its file and left the tree      -> LOST, must fail the run
+      * a token that left its file and is elsewhere       -> moved, must not
+      * both at once                                      -> the lost one still fails
+    """
+    cases = [
+        ("a token deleted from the repository is LOST",
+         {"1823.65": 1}, {"other": 3}, {"1823.65": 1}, {}),
+        ("a token that merely moved file is NOT lost",
+         {"1823.65": 1}, {"1823.65": 2, "other": 3}, {}, {"1823.65": 1}),
+        ("a deletion is still caught when it arrives alongside a move",
+         {"1823.65": 1, "88917": 1}, {"88917": 4}, {"1823.65": 1}, {"88917": 1}),
+    ]
+    bad = []
+    for label, lost, tree, want_gone, want_moved in cases:
+        gone, relocated = classify(lost, tree)
+        if gone != want_gone or relocated != want_moved:
+            bad.append("{}: got gone={} moved={}, wanted gone={} moved={}".format(
+                label, gone, relocated, want_gone, want_moved))
+    return bad
+
+
 def tokens(text):
     # U+2212 MINUS SIGN is a minus; translating it to an ASCII hyphen must not turn a
     # value into a different token. Everything else is left alone -- the en dash used for
@@ -165,6 +203,17 @@ def main():
     print("baseline: {}  (declared in configs/baseline.yaml)".format(
         base.relative_to(ROOT)))
 
+    # The loosening's own failing example, before anything else is believed.
+    broken = self_check()
+    if broken:
+        print("\nthe lost/moved rule is BROKEN -- fabricated cases it should decide:")
+        for b in broken:
+            print("  " + b)
+        FAIL.extend(broken)
+        return 1
+    print("lost/moved rule: 3 fabricated cases decided correctly "
+          "(including one deletion it must still reject)")
+
     suffixes = spec["suffixes"] or (".py", ".yaml", ".yml", ".toml", ".template",
                                     ".sh", ".mdp", ".md")
     skip = spec["skip"]
@@ -174,7 +223,19 @@ def main():
     ACKNOWLEDGED_LOSSES.update(
         {(e.get("path"), e.get("token")): e.get("reason", "")
          for e in spec.get("acknowledged", []) if isinstance(e, dict)})
-    checked = missing_file = 0
+    # Every token anywhere in the current tree, within the same scope. Built once.
+    # This is what turns "gone from this file" into "gone from the repository", which is
+    # what the criterion actually means.
+    tree_tokens = collections.Counter()
+    for cur in sorted(ROOT.rglob("*")):
+        if not cur.is_file() or cur.suffix not in suffixes:
+            continue
+        if any(part in skip for part in cur.relative_to(ROOT).parts):
+            continue
+        tree_tokens.update(tokens(cur.read_text(encoding="utf-8", errors="replace")))
+
+    checked = missing_file = moved_file = 0
+    moved_tokens = 0
     seen_ack = set()
     lost_total = added_total = 0
     per_file_added = []
@@ -188,9 +249,21 @@ def main():
         new_rel = moved.get(rel, rel)
         new = ROOT / new_rel
         if not new.is_file():
-            missing_file += 1
-            FAIL.append("{} has no counterpart at {}".format(rel, new_rel))
-            print("  MISSING  {:<62s} expected at {}".format(rel, new_rel))
+            # It may have MOVED. Ask the tree, not the path.
+            gone = {t: n for t, n in tokens(
+                old.read_text(encoding="utf-8", errors="replace")).items()
+                if t not in tree_tokens}
+            if gone:
+                missing_file += 1
+                FAIL.append("{} has no counterpart at {}, and {} of its numbers are "
+                            "nowhere in the tree: {}".format(
+                                rel, new_rel, len(gone), gone))
+                print("  MISSING  {:<62s} {} number(s) nowhere in the tree: {}".format(
+                    rel, len(gone), gone))
+            else:
+                moved_file += 1
+                print("  moved    {:<62s} not at this path; every number of it is "
+                      "elsewhere in the tree".format(rel))
             continue
         checked += 1
         a = tokens(old.read_text(encoding="utf-8", errors="replace"))
@@ -205,15 +278,26 @@ def main():
                     seen_ack.add((new_rel, t))
                     print("  ack      {:<62s} {}".format(new_rel, t))
             if unexplained:
-                lost_total += sum(unexplained.values())
-                FAIL.append("{}: lost {}".format(new_rel, unexplained))
-                print("  LOST     {:<62s} {}".format(new_rel, unexplained))
+                # Split into genuinely gone, and merely somewhere else.
+                gone, relocated = classify(unexplained, tree_tokens)
+                if relocated:
+                    moved_tokens += sum(relocated.values())
+                    print("  moved    {:<62s} {} number(s) now elsewhere in the tree"
+                          .format(new_rel, len(relocated)))
+                if gone:
+                    lost_total += sum(gone.values())
+                    FAIL.append("{}: lost {}".format(new_rel, gone))
+                    print("  LOST     {:<62s} {}".format(new_rel, gone))
         if added:
             added_total += sum(added.values())
             per_file_added.append((new_rel, sum(added.values())))
 
-    print("\n  {} file(s) compared, {} without a counterpart".format(checked, missing_file))
-    print("  tokens lost:  {}".format(lost_total))
+    print("\n  {} file(s) compared, {} moved within the tree, {} without a counterpart"
+          .format(checked, moved_file, missing_file))
+    print("  tokens lost:  {}   (gone from the TREE, not merely from their old file)"
+          .format(lost_total))
+    print("  tokens moved: {} (reported, not an error -- still present in the tree)"
+          .format(moved_tokens))
     print("  tokens added: {} across {} file(s) (reported, not an error)".format(
         added_total, len(per_file_added)))
     for f, n in sorted(per_file_added, key=lambda kv: -kv[1])[:12]:

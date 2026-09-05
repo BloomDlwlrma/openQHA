@@ -11,6 +11,20 @@ the repository-scale version of a criterion nobody has built a failing case for.
 | Directory | What it does | State |
 |---|---|---|
 | `01_crest_composite_acetone/` | acetone through the CREST composite calculator: GFN sampling with MACE refinement over a socket | **runs** |
+| `02_qha_openmm_acetone/` | acetone through branch B, both production routes: the closed-form check, the OpenMM force against the ASE one, two trajectories, an independent superposition | **runs** |
+
+```
+python examples/02_qha_openmm_acetone/s0_qha_openmm_demo.py
+```
+
+It runs the ASE route in whatever interpreter you start it with, and looks for a second
+one that has OpenMM, openmm-torch and openmmtools — `S0_OPENMM_PYTHON`, else the `qm9fe`
+environment. If it cannot find one, the OpenMM half is **skipped with a message** rather
+than quietly omitted.
+
+The trajectories are 3 ps, which is a smoke length and is labelled as one: acceptance
+criteria 1 and 5 are refused below 20 ps, because a 0.4 ps run once passed the saturation
+criterion and the reason it passed was that it had not begun to rise.
 
 ```
 python -m openqha.mace_server --socket /tmp/s0_mace_engrad.sock &

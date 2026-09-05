@@ -9,9 +9,17 @@
 #     bash install_dependency.sh --no-weights # skip the MACE-OFF download
 #     bash install_dependency.sh --all-weights# fetch the whole MACE-OFF family, not one
 #     bash install_dependency.sh --cuda       # CUDA build, without the Tianhe specifics
+#     bash install_dependency.sh --lean       # branch B production only, `openqha-openmm`
 #
-# Branch B has TWO production routes and this installs both: ASE + Langevin, and
-# OpenMM + a Nose-Hoover chain. `--minimal` installs neither the OpenMM stack nor parsl.
+# ONE environment runs everything, including branch B's OpenMM route. That is a ruling of
+# 2026-09-05 which accepted the downgrades the solver requires (pytorch 2.13.0 -> 2.12.1,
+# numpy 2.4.6 -> 1.26.4) -- and the cost was MEASURED rather than assumed: energy, forces,
+# every Hessian frequency, T*S on 2000 fixed frames and every quasi-harmonic frequency all
+# came back BIT-IDENTICAL. See scripts/calibration/s0_B_stack_fingerprint.py.
+#
+# `--lean` builds `openqha-openmm` from environment-openmm.yml instead: the same branch B
+# capability without CREST, xtb, rdkit or the notebook stack. Choose it for size, not for
+# capability.
 #
 # --tianhe and --cuda build from environment-cuda.yml into `openqha-cuda`. That is for
 # BRANCH C TRAINING ONLY: branches A and B are measured SLOWER on this project's GPU than
@@ -60,6 +68,8 @@ for arg in "$@"; do
                          PY_ENV="${OPENQHA_ENV:-openqha-cuda}" ;;
         --local)         MODE="local" ;;
         --minimal)       REQ="requirements-minimal.txt" ;;
+        --lean)          ENV_FILE="environment-openmm.yml"; PY_ENV="openqha-openmm";
+                         LEAN=1 ;;
         --check)         DO_INSTALL=0 ;;
         --no-weights)    WEIGHTS="none" ;;
         --all-weights)   WEIGHTS="all" ;;
@@ -208,26 +218,48 @@ PY
 #
 # NNPOps and openmm-ml are deliberately absent: openqha/openmm_mace.py builds the graph
 # as the complete graph, which is exact for 10-19 atoms and needs no neighbour search.
+# The OpenMM stack comes from the environment file now, not from a second conda call:
+# it is CORE and belongs in the solve, so that conda resolves it together with pytorch
+# rather than against it. What is left here is the CHECK -- and it is a real one, because
+# an environment file that lists a package is not evidence that the package imports.
 if [ "$REQ" = "requirements-minimal.txt" ]; then
-    say "skipping the OpenMM route (--minimal); the ASE route is unaffected"
+    say "--minimal: branch B's production route is not installed"
+    warn "openqha/capabilities.py will report openmm, openmm_torch, openmmtools and"
+    warn "mdanalysis as missing, and s0_B_qha_trajectory_openmm.py will refuse to run"
 else
-    say "branch B OpenMM route (openmm, openmm-torch, openmmtools, mdtraj, mdanalysis)"
-    if conda install -y "${SOLVER[@]}" -n "$PY_ENV" -c conda-forge \
-         "openmm>=8.1" "openmm-torch>=1.4" "openmmtools>=0.23" \
-         "mdtraj>=1.9" "mdanalysis>=2.4"; then
-        python - <<'PY'
+    say "verifying branch B's core capabilities"
+    python - <<'PY'
+import sys
+from pathlib import Path
+for p in Path(__file__ if "__file__" in dir() else ".").resolve().parents:
+    if (p / "openqha" / "__init__.py").is_file():
+        sys.path.insert(0, str(p))
+        break
+else:
+    sys.path.insert(0, ".")
 try:
-    import openmm, openmmtools, mdtraj
-    print("openmm", openmm.version.version, "| openmmtools", openmmtools.__version__,
-          "| mdtraj", mdtraj.__version__)
+    from openqha import capabilities
+    print(capabilities.summary())
+    capabilities.require_core()
+    print("\nbranch B: READY")
 except Exception as exc:
-    print("openmm stack imported with:", exc)
+    print("\nbranch B is NOT ready: {}: {}".format(type(exc).__name__, exc))
+    raise SystemExit(1)
 PY
-    else
-        warn "the OpenMM stack did not install; branch B's ASE route still works, and"
-        warn "scripts/production/s0_B_qha_trajectory_openmm.py will not run"
+    if [ $? -ne 0 ]; then
+        warn "branch B's core capabilities are incomplete -- see the message above."
+        warn "Branch A is unaffected."
     fi
 fi
+
+# A stack change must be measured, not assumed. This is the fingerprint to take BEFORE
+# and AFTER any change to the environment files, on identical input:
+#
+#     python scripts/calibration/s0_B_stack_fingerprint.py --out analysis/qha/fp_before
+#     ... change the environment ...
+#     python scripts/calibration/s0_B_stack_fingerprint.py --out analysis/qha/fp_after
+#     python scripts/calibration/s0_B_stack_fingerprint.py --compare \
+#         analysis/qha/fp_before.json analysis/qha/fp_after.json
 
 CREST_BIN="$(command -v crest || true)"
 [ -x "$CREST_BIN" ] || warn "crest not on PATH inside $PY_ENV"

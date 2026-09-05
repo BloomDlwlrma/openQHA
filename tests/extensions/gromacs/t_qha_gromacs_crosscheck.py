@@ -53,6 +53,17 @@ SEED = 11
 
 
 def main():
+    # The capability contract (openqha/capabilities.py): locally a missing extension is a
+    # SKIP, and a run that DECLARED it via S0_REQUIRE_CAPS has already failed in
+    # check_declared() before reaching here. So a skip below is always a local skip and
+    # never a job quietly going green.
+    from openqha import capabilities
+    if not capabilities.available("gromacs"):
+        print("SKIP: {}".format(capabilities.missing_extension_note("gromacs")))
+        print("      install with: conda install -c conda-forge gromacs")
+        print("      to make this an ERROR instead: S0_REQUIRE_CAPS=gromacs")
+        return 0
+
     try:
         exe = gmx_io.gmx_binary()
     except RuntimeError as exc:

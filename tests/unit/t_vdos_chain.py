@@ -44,7 +44,7 @@ print("能量均分检验  C_vib(0)/(3N-6)kT = {:.4f}   (应约 1)".format(eq["r
 nu, S, Sd, nseg, raw = vdos.vacf_dos(v, masses, dt_fs, seg_ps=3.0, temperature_K=T)
 print("归一化前 ∫S dν/(3N-6) = {:.4f}   段数 {}   分辨率 {:.1f} cm^-1".format(
     raw, nseg, nu[1] - nu[0]))
-print("归一化后 ∫S dν = {:.6f}  (应为 {})".format(float(np.trapezoid(S, nu)), 3 * n_at - 6))
+print("归一化后 ∫S dν = {:.6f}  (应为 {})".format(float((getattr(np, "trapezoid", None) or np.trapz)(S, nu)), 3 * n_at - 6))
 
 # 谱峰应落在放进去的频率上
 peaks = []

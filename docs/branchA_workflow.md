@@ -106,12 +106,12 @@ reported; `resource_budget` = affects speed only.
 | parameter | value | class | why |
 |---|---|---|---|
 | `workhorse` | **`gfn2`** | published_protocol | upstream example 1 is `crest struc.xyz --gfn2` |
-| `refine` | **`opt`** | user ruling 2026-09-03 | quality layer re-optimises survivors |
+| `refine` | **`sp`** | user ruling 2026-09-04 | quality layer scores survivors; it does **not** re-optimise and merge them |
 | `backend` | `generic` | — | this repo's socket client; `mlip` needs CREST 3.1 |
 | `engine_client` | `scripts/production/s0_mace_engrad.py` | — | one resident server per parallel slot |
 
 **Why `gfn2` and not the cheaper `gfnff`** — measured end to end, same species, same
-`refine=opt`, both zero aborts:
+`refine` setting, both zero aborts:
 
 | workhorse | wall | energy+gradient calls |
 |---|---|---|
@@ -122,9 +122,30 @@ A better workhorse converges in fewer calls and hands fewer structures to the ex
 refinement. One species does not overturn `D0-50` in general; it removes cost as an
 objection here.
 
-> **Open:** `refine=opt` vs `sp` was measured only under **gfnff**, where `sp` was both
-> faster and more complete (`OCCC(=O)CO`: 496 s → 28 basins vs 2926 s → 11). Under gfn2
-> the effect is **unmeasured** — acceptance criterion 3 is unpaid.
+> **Settled 2026-09-04.** `refine=opt` vs `sp` was previously measured only under
+> **gfnff**, and the 2026-09-03 ruling chose `opt` on the stated grounds that those
+> numbers no longer applied under gfn2. Acceptance criterion 3 tested that premise and it
+> did not hold. Under gfn2, on `OCCC(=O)CO`:
+>
+> | refine | CREST wall | conformers | basins | error vs union |
+> |---|---:|---:|---:|---:|
+> | `opt` | 5980.0 s | 24 | **23** | **0.4023 kcal/mol** |
+> | `sp` | 776.6 s | 82 | **37** | 0.0025 kcal/mol |
+>
+> Union of both, pooled and re-deduplicated: 45 basins. `opt` loses 14 of the 37 basins
+> `sp` finds, costs 7.7×, and errs by 0.40 kcal/mol — above this branch's ~0.1 target and
+> 8× the CREGEN energy condition. **Propanal showed none of it** (2 basins each, error
+> 0.0000): a two-basin molecule has no room to lose fourteen, which is the same trap as
+> using single-basin molecules to probe the deduplication plateau.
+>
+> **Why `opt` loses them** — measured, not assumed. Sampling is identical (28 MTD blocks,
+> 2 iterations in both runs); the divergence is entirely in CREST's screening, and it
+> starts at the first screen (44 survivors against 91). Two components, not yet separated
+> from each other: relaxing on MACE before CREGEN merges structures, and the 6 kcal/mol
+> energy window bites on MACE energies under `opt` and gfn2 energies under `sp`
+> (retention 11.2% against 19.2%). Both happen **inside CREST, before the ensemble
+> reaches us**, so nothing downstream can recover what was discarded. See
+> `scripts/calibration/s0_A_refine_mechanism.py` and checkpoint 9.
 
 ### 3.3 The dynamics package — three settings, one protocol
 
@@ -460,13 +481,100 @@ they must not share an `.mdp`.
 
 | | item | status 2026-09-04 |
 |---|---|---|
-| 1 | `refine=opt` vs `sp` under gfn2 | **paid, and the answer reversed on the second molecule.** Propanal: same 2 basins, error 0.0000, `opt` 4.2× the cost. `OCCC(=O)CO`: `opt` 5980 s → **23** basins, error **0.4023 kcal/mol**; `sp` 777 s → **37** basins, error 0.0025; union 45. `opt` loses 14 of 37 basins, costs 7.7×, and errs by 0.40 kcal/mol — above the ~0.1 target. Propanal has only 2 basins and could not show it. **`refine: "opt"` is unchanged** — it is a user ruling; this delivers the number the ruling asked for, and the premise it rested on ("the gfnff numbers no longer apply") did not hold. |
+| 1 | `refine=opt` vs `sp` under gfn2 | **paid, and the answer reversed on the second molecule.** Propanal: same 2 basins, error 0.0000, `opt` 4.2× the cost. `OCCC(=O)CO`: `opt` 5980 s → **23** basins, error **0.4023 kcal/mol**; `sp` 777 s → **37** basins, error 0.0025; union 45. `opt` loses 14 of 37 basins, costs 7.7×, and errs by 0.40 kcal/mol — above the ~0.1 target. Propanal has only 2 basins and could not show it. **Closed: `refine` changed to `"sp"` on 2026-09-04** by user ruling, after this measurement showed the premise of the 2026-09-03 ruling did not hold. The mechanism is in checkpoint 9 and `scripts/calibration/s0_A_refine_mechanism.py`; one component of it (structural merging vs the energy window) is still unseparated. |
 | 2 | `shake_fallback` never fired | **closed.** All three strained rings run. `000607` 9 aborts → fallback → 0, 3 basins, 9/9. `003163` 15 → fallback → 0, 2 basins, 9/9. `002334` **0 aborts, no fallback needed**, 6 basins, 9/9. Against `D0-P1-34`'s 31/24/4 the counts did not reproduce, and on `002334` the aborts did not happen at all — so **zero-vs-nonzero is not a stable criterion either** at low counts. That is what makes the pointwise, reactive design right: it responds to the abort in the run at hand instead of assuming a prior list still holds. |
 | 3 | dedup plateau on two molecules | **closed 2026-09-04 by ruling, not by measurement.** All three deduplication conditions are CREST's own published CREGEN values — `RTHR` 0.125 Å, `ETHR` 0.05 kcal/mol, `BTHR` 1%. What this repository owes them is fidelity to the source; a plateau study is the evidence you need to pick a number *of your own*, and we are not picking one. The sweep that retired the unsourced 0.30 Å stays in §3.4 as the reason the old value went. |
 | 4 | **The energy and rotational conditions have never blocked a merge** — both counters still zero. |
 | 5 | **Nothing has been submitted to Tianhe.** Three scheduler command names unverified. |
 | 6 | **Per-molecule cost under contention unmeasured** — only the uncontended 285 s exists. |
 | 7 | **`f7_mode` implemented and curatedQM9 in place** (`openqha/filters.py`, `openqha/curated_qm9.py`). Default is still `drop_all`; switching the default to `curated` is a separate ruling and has not been made. `curated` refuses to run when the archive is absent rather than falling back silently. |
+
+---
+
+## 8b. Is branch A ready to publish?
+
+**It runs, and it is not ready.** Both halves of that matter.
+
+### What is done
+
+| | evidence |
+|---|---|
+| the chain runs end to end | 11 products on disk, every one 9/9 on the acceptance criteria |
+| the fallback works and is marked | 3 strained rings; 2 fell back, both recovered, `used_shake_fallback` in the record |
+| deduplication is CREST's own published criterion | RTHR 0.125 Å + ETHR 0.05 kcal/mol + BTHR 1%, all three |
+| σ comes from geometry, per basin | 13/13 on the validation set, including the four cases the first version got wrong |
+| the environment builds and is measured | one CPU environment (3.2 GB, 3m20s), one CUDA environment for branch C |
+| numbers are not lost when files move | `configs/baseline.yaml` + `t_translation_preserved_numbers`, 109 files, 0 lost |
+
+### What blocks publication
+
+1. ~~Nothing has been run under the shipped default.~~ **Closed 2026-09-04.**
+   `OCCC(=O)CO` through the full chain with `refine="sp"`: **62 conformers → 32 basins,
+   0 `terminated EARLY`, 9/9 acceptance criteria, wall 2526 s** (CREST 885 s), written to
+   `analysis/branchA/sp_default/`. The shipped configuration now has a product.
+2. **The tutorial is being re-executed against that product.** `docs/tutorials/T01` shows
+   a run made with `refine="opt"`; its loading cell now prefers the shipped-default
+   product and prints which one it used, so the state is visible either way. Its outputs
+   are measurements and are never hand-edited — they change by re-running the notebook.
+3. **`t_code_is_english` fails**: 25 files still hold non-English text, plus 28 under
+   `_superseded/` counted but not failed. An open ruling (`S0-D-2`).
+4. **`t_filters_f7` fails on one case** — `dsgdb9nsd_000080` passes F7 under
+   `f7_scope="identity_from_geometry_only"` because its index uses the relaxed SMILES,
+   which its geometry matches. Pre-existing and not yet ruled on.
+5. **Nothing has been submitted to Tianhe**, and three of five scheduler command names
+   are still unverified. A wrong SUBMIT fails loudly; a wrong STATUS does not.
+6. ~~The basin count is not reproducible and the consequence is unmeasured.~~
+   **Closed 2026-09-05, five runs.** The count varies by 14%; the correction varies by
+   0.0034 kcal/mol, 3.4% of the target. Report the correction; report a basin count as
+   one draw, never as the answer. Untested on a second molecule.
+7. **`f7_mode` default is still `drop_all`** — conservative and lossy (drops ~2.2% of QM9
+   to avoid 0.05%). Switching it to `curated` is a separate ruling that has not been made.
+
+### How repeatable is the answer itself?
+
+Worth knowing before comparing your run to ours. Two runs of the **identical** protocol on
+`OCCC(=O)CO`, differing only in the random seed of the metadynamics:
+
+| run | CREST conformers | basins | CREST wall |
+|---|---:|---:|---:|
+| calibration (`s0_A_refine_compare`) | 82 | **37** | 777 s |
+| production (`s0_A_pipeline --tag sp_default`) | 62 | **32** | 885 s |
+
+**A spread of 5 basins in 37, about 14%.** iMTD-GC is a stochastic search and two runs do
+not find the same set; this is the same lesson the `terminated EARLY` counts taught
+(31/24/4 in one campaign, 9/15/0 in another). All runs are far above `refine="opt"`'s 23,
+so the ruling is unaffected — if anything they confirm it independently.
+
+### And what that costs the answer — measured 2026-09-05, five runs
+
+| run | conformers | basins | correction / kcal·mol⁻¹ | w(lowest) | n < 5 kT |
+|---|---:|---:|---:|---:|---:|
+| calibration (`sp` arm) | 82 | 37 | −0.4486 | — | — |
+| `sp_default` | 62 | 32 | −0.4467 | 0.4705 | 7 |
+| `repro_2` | 63 | 35 | −0.4458 | 0.4712 | 7 |
+| `repro_3` | 80 | 37 | −0.4481 | 0.4694 | 7 |
+| `repro_4` | 73 | 35 | −0.4492 | 0.4685 | 7 |
+
+|  | min | max | spread |
+|---|---:|---:|---:|
+| basins | 32 | 37 | **5 (14% of the mean)** |
+| correction | −0.4492 | −0.4458 | **0.0034 kcal/mol** (sd 0.0014) |
+
+**The count is not reproducible; the deliverable is.** 0.0034 kcal/mol is 3.4% of this
+branch's ~0.1 target and 15× below the CREGEN energy condition (0.05). The weight of the
+lowest basin lands in 0.4685–0.4712 every time, and every run puts 7 basins within 5 kT.
+
+That was the argument when the spread first appeared — the count varies in the sparse
+tail while the correction is carried by low-lying basins every run finds — and it is now
+a measurement instead of an argument. It cuts both ways: **reporting a basin count as a
+result is reporting noise, and concluding from the varying count that the method is
+unreliable would be equally wrong.**
+
+One molecule, five runs. Whether the ratio holds for a molecule with a flatter landscape
+is untested.
+
+None of these is a defect in the science; they are the difference between "the author can
+run it" and "a stranger can run it and get what the documentation promises".
 
 ---
 

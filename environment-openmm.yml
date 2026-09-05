@@ -1,0 +1,123 @@
+# openQHA -- branch B's production environment. OpenMM, openmmtools, MDAnalysis.
+#
+#     conda env create -f environment-openmm.yml
+#     conda activate openqha-openmm
+#     python scripts/production/s0_B_qha_trajectory_openmm.py --species dsgdb9nsd_000018
+#
+# ---------------------------------------------------------------------------------------
+# THIS IS NOT A WORKAROUND. It is the LEAN variant.
+#
+# environment.yml already carries the whole OpenMM stack: since 2026-09-05 one environment
+# runs everything, on a user ruling that accepted the downgrades the solver requires
+# (pytorch 2.13.0 -> 2.12.1, numpy 2.4.6 -> 1.26.4). THE COST OF THAT WAS MEASURED, and it
+# was zero -- energy, forces, every Hessian frequency, T*S on 2000 fixed frames and every
+# quasi-harmonic frequency all came back BIT-IDENTICAL
+# (scripts/calibration/s0_B_stack_fingerprint.py; analysis/qha/fingerprint_before.json
+# against fingerprint_after.json). Use environment.yml unless you have a reason not to.
+#
+# The reason to use this file instead is SIZE, not capability. It leaves out CREST, xtb,
+# rdkit and the notebook stack -- roughly two gigabytes that branch B production never
+# touches -- which matters when a cluster gives you a small quota, a slow shared
+# filesystem, or a container to build. It runs branch B and nothing else, and it says so.
+#
+#     conda env create -f environment-openmm.yml
+#     conda activate openqha-openmm
+#     python scripts/production/s0_B_qha_trajectory_openmm.py --species dsgdb9nsd_000018
+#
+# `openqha/capabilities.py` will tell you what is missing here and what that costs:
+#
+#     python -c "from openqha import capabilities; print(capabilities.summary())"
+# ---------------------------------------------------------------------------------------
+#
+# NO GROMACS. It is an EXTENSION -- openqha/extensions/gromacs.py -- and no number depends
+# on it. MDAnalysis is the routine independent check: on 3125 real frames, fitted
+# mass-weighted and iterated the way openqha/qha.py fits, it agreed to 8.020e-09 kcal/mol
+# where `gmx covar -mwa` agreed to 1.27e-04, and it needs no external binary and no PATH.
+# Install GROMACS only for a check by a program that shares no Python with openQHA at all:
+#
+#     conda install -c conda-forge gromacs      # its activation hook fails under `set -u`
+#
+name: openqha-openmm
+channels:
+  - conda-forge
+  # Not decoration: `channels: [conda-forge]` alone does NOT mean conda-forge only, conda
+  # merges whatever the user has configured. Measured on a box with `defaults` configured,
+  # the dry run pulled defaults' pytorch into an otherwise conda-forge stack. Two
+  # channels' builds of one C++/CUDA library in one environment is the hazard this whole
+  # file is about.
+  - nodefaults
+dependencies:
+  # ---- BLAS: OpenMP OpenBLAS, no MKL. Same reasoning as environment.yml. --------------
+  - nomkl
+  - libopenblas=*=openmp*
+  - libblas=*=*openblas
+  - liblapack=*=*openblas
+
+  - python=3.11
+  # numpy is NOT pinned up: openmm-torch's pytorch pin settles it at 1.26.4. That is not
+  # a compromise -- measured against 2.4.6 on identical input, every branch B quantity was
+  # bit-identical. What matters is float64 throughout, which both provide.
+  - numpy
+  - scipy>=1.10
+  - pyyaml>=6.0
+  - pandas>=1.5
+  - pyarrow>=10.0
+  - matplotlib>=3.5
+  - ase>=3.22
+
+  # CPU build, pinned, for the same measured reason as environment.yml: a branch B
+  # trajectory is a serial chain of single-structure force calls, which D0-56 measured as
+  # not filling a card, and on this repo's T400 the same trajectory ran 3.5x SLOWER on the
+  # GPU than on the CPU (D0-C-5). Drop the `=*=cpu*` if you have a reason -- and measure
+  # it, because the last two people who assumed were wrong.
+  - pytorch=*=*cpu*
+
+  # ---- the reason branch B has a thermostat it can defend -------------------------------
+  # openmmtools is the one that fixes the thermostat's parameters. Its
+  # NoseHooverChainVelocityVerletIntegrator defaults -- collision_frequency 50/ps (a 20 fs
+  # coupling), chain_length 5, num_mts 5, num_yoshidasuzuki 5 -- are what branch B runs,
+  # adopted rather than chosen. The same 50 ps^-1 appears in the QHA reference paper
+  # (rinaldo2003), and 20 fs is independently what the closed-form calibration selected.
+  #
+  # It is NOT interchangeable with openmm.NoseHooverIntegrator, which defaults to a 7-term
+  # Yoshida-Suzuki decomposition rather than 5. The driver records which one ran.
+  - openmm>=8.1
+  - openmm-torch>=1.4=*cpu*
+  - openmmtools>=0.23
+
+  # MDAnalysis is CORE, not a convenience. It is the independent implementation behind
+  # acceptance criterion 2 -- mass-weighted, and iterable to the mean structure, which is
+  # openqha/qha.py's protocol exactly. Measured on 3125 real frames: T*S agrees to
+  # 8.020e-09 kcal/mol, frequencies to 1.241e-04 cm^-1 over 24 modes, eigenvalues to
+  # 1.173e-07 relative. The residual is float32 -- MDAnalysis stores positions in single
+  # precision.
+  - mdanalysis>=2.4
+
+  # mdtraj is an EXTENSION and is here only because it is cheap. It CANNOT be told to
+  # weight by mass, so it fits a different thing and differed from us by 2.41 kcal/mol on
+  # the same trajectory; it is never agreement. Its float32 Theobald solver also returned
+  # the IDENTITY rotation for 300 of those 3125 frames without raising.
+  - mdtraj>=1.9
+
+  - parsl>=2024.01
+
+  - pip
+  - pip:
+      # The potential. openqha/openmm_mace.py carries it into OpenMM as a traced
+      # TorchForce, building the interaction graph itself as the COMPLETE GRAPH -- exact
+      # for 10-19 atoms, and with no box to anchor it cannot have the origin-anchoring
+      # neighbour-list defect that openqha/mace_patch.py guards the ASE route against.
+      # NNPOps and openmm-ml are deliberately absent for the same reason.
+      - mace-torch>=0.3.6
+      - pymsym>=0.3.5
+
+# NOT IN HERE, and each for its own reason:
+#   gromacs   an EXTENSION. See the header.
+#   crest,
+#   xtb       branch A and branch C. They live in `openqha`, which is where those branches
+#             run; this environment exists for branch B production only.
+#   NNPOps,
+#   openmm-ml the usual way to run MACE inside OpenMM. Not needed -- see
+#             openqha/openmm_mace.py for the measurement that made them unnecessary.
+#   MACE-OFF weights   fetched by install_dependency.sh, never shipped, never a package.
+#                      openqha/engine.py recomputes their SHA-256 on every load.

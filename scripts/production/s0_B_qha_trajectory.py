@@ -151,7 +151,7 @@ NOSE_HOOVER_CHAIN_LENGTH = 3
 #: changes nothing, and it keeps coordinates small. Set it False to run a true free
 #: Langevin walk; the trajectory is equally valid either way, and the quasi-harmonic
 #: analysis superimposes every frame regardless.
-PIN_CENTRE_OF_MASS = True
+PIN_CENTRE_OF_MASS = False
 EQUIL_PS = 50.0            # D0-C-30. Measured, see the relaxation record.
 PROD_PS = 200.0            # STARTING POINT ONLY. The final length is set by the
                            # saturation curve in the analysis (criterion 1).

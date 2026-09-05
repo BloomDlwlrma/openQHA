@@ -26,6 +26,7 @@ invisible in its own products (defect 57), so the substitution is made in a name
 class that appears in the run record instead.
 """
 import logging
+import pathlib
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,13 @@ if SlurmProvider is not None:
         site = "tianhe"
 
         def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+            # BEFORE super().__init__(), not after. parsl's SlurmProvider.__init__
+            # probes the scheduler before it returns (slurm.py:216), and that probe
+            # goes through the overridden execute_wait below -- which reads
+            # self._command_map. Setting the map afterwards made every construction
+            # raise AttributeError, on every machine. The class had never been
+            # constructed here (branch E only ever ran the `local` config), which is
+            # what let it survive: written is not the same as executed.
             src, dst = COMMANDS["slurm"], COMMANDS[self.site]
             self._command_map = {
                 src["submit"]: dst["submit"],
@@ -151,6 +158,15 @@ if SlurmProvider is not None:
                 src["cancel"]: dst["cancel"],
             }
             logger.info("TianheSlurmProvider: command map %s", self._command_map)
+            # The loud-status check below is armed only after construction. parsl's
+            # SlurmProvider.__init__ runs `sacct -X` once to discover what the scheduler
+            # supports, and "not found" is a legitimate answer to that on a machine with
+            # no scheduler. Raising during the probe would make this class impossible to
+            # construct off-cluster and would block the render check (branch E acceptance
+            # criterion 3), which is supposed to run BEFORE anyone has a cluster.
+            self._status_check_armed = False
+            super().__init__(*args, **kwargs)
+            self._status_check_armed = True
 
         def execute_wait(self, cmd, *args, **kwargs):
             """Every scheduler call in SlurmProvider goes through here.
@@ -163,18 +179,83 @@ if SlurmProvider is not None:
             swapped = _swap(cmd, self._command_map)
             if swapped != cmd:
                 logger.debug("TianheSlurmProvider: %r -> %r", cmd, swapped)
-            return super().execute_wait(swapped, *args, **kwargs)
+            retcode, stdout, stderr = super().execute_wait(swapped, *args, **kwargs)
 
-        def render_only(self, path, job_name="openqha_render_check"):
+            # A wrong SUBMIT fails loudly by itself: no job id comes back and Parsl
+            # raises. A wrong STATUS does not -- the command is simply not found, the
+            # output is empty, no job matches, and every job stays PENDING for ever while
+            # the queue quietly stops. Three of the five names here are still UNVERIFIED
+            # (see TIANHE_CONFIRMED), so the failure that cannot be seen is the one worth
+            # converting into one that can.
+            if (retcode != 0 and getattr(self, "_status_check_armed", False)
+                    and self._is_status_call(swapped)):
+                raise RuntimeError(
+                    "Tianhe scheduler STATUS command failed (exit {}): {!r}\n"
+                    "  stdout: {!r}\n  stderr: {!r}\n"
+                    "This is raised rather than ignored on purpose. Parsl treats an "
+                    "unreadable status as 'still pending', so an unrecognised command "
+                    "name would stall every job with no error anywhere.\n"
+                    "  Check the name:  python -c \"import sys; sys.path.insert(0,'hpc');"
+                    " import providers, json; print(json.dumps("
+                    "providers.preflight('tianhe'), indent=1))\"\n"
+                    "  Then edit TIANHE_COMMANDS in hpc/providers.py.".format(
+                        retcode, swapped, (stdout or b"")[:200], (stderr or b"")[:200]))
+            return retcode, stdout, stderr
+
+        def _is_status_call(self, cmd):
+            """Is this command string one of the STATUS queries?
+
+            Matched against the SITE names, because `execute_wait` has already swapped
+            them by this point.
+            """
+            dst = COMMANDS[self.site]
+            names = [dst.get("status"), dst.get("status_fallback")]
+            first = (cmd or "").strip().split(None, 1)[0] if (cmd or "").strip() else ""
+            return any(n and first == n for n in names)
+
+        def render_only(self, path, job_name="openqha_render_check", tasks_per_node=1,
+                        nodes_per_block=None):
             """Write the job script Parsl WOULD submit, and submit nothing.
 
-            This is what branch E acceptance criterion 3 inspects.
+            This is what branch E acceptance criterion 3 inspects, and it must work
+            WITHOUT a scheduler -- the point is to read the script before there is a
+            cluster to submit it to.
+
+            `template_string` is a MODULE-level name in parsl
+            (`parsl.providers.slurm.slurm.template_string`), not an attribute of the
+            provider. Reading it as `self.template_string` made this method raise
+            AttributeError, so the check that was meant to precede every first submission
+            had never once run.
+
+            The job_config is assembled the way `SlurmProvider.submit` assembles it, so
+            what lands on disk is the script that would really be submitted rather than
+            something that merely resembles it.
             """
-            from parsl.utils import RepresentationMixin  # noqa: F401  (import check)
-            script = self._write_submit_script(
-                self.template_string, str(path), job_name,
-                self._get_job_config() if hasattr(self, "_get_job_config") else {})
-            return script
+            from parsl.providers.slurm.slurm import template_string
+
+            nodes = self.nodes_per_block if nodes_per_block is None else nodes_per_block
+            job_config = {
+                "submit_script_dir": self.script_dir,
+                "nodes": nodes,
+                "tasks_per_node": tasks_per_node,
+                "walltime": self.walltime,
+                "scheduler_options": self.scheduler_options,
+                "worker_init": self.worker_init,
+                "partition": self.partition,
+                "account": self.account,
+                "qos": getattr(self, "qos", None),
+                "constraint": getattr(self, "constraint", None),
+                # parsl validates these two even though the template body only
+                # substitutes ; without them _write_submit_script raises
+                # SchedulerMissingArgs.
+                "job_stdout_path": str(pathlib.Path(str(path)).with_suffix(".out")),
+                "job_stderr_path": str(pathlib.Path(str(path)).with_suffix(".err")),
+                "user_script": "echo 'render only -- nothing is executed'",
+            }
+            job_config["user_script"] = self.launcher(
+                job_config["user_script"], tasks_per_node, nodes)
+            self._write_submit_script(template_string, str(path), job_name, job_config)
+            return pathlib.Path(str(path)).read_text(encoding="utf-8")
 
 
 else:  # pragma: no cover

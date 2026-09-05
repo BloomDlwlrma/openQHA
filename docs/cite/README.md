@@ -14,7 +14,7 @@ We have not yet published a paper describing openQHA. Until then, please cite th
 ```bibtex
 @misc{openqha,
     title = {{openQHA}: conformational free energy for small organic molecules on a machine-learned potential},
-    author = {Zhang, Shiwei},  % replace with actual author list when known
+    author = {Zhang, Shiwei},  
     url = {https://github.com/BloomDlwlrma/openQHA},
     urldate = {2026-09-04},
     version = {0.1},

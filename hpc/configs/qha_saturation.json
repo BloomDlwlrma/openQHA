@@ -1,0 +1,115 @@
+{
+  "_what_this_is": [
+    "The saturation benchmark: how long a branch B trajectory has to be. It is the run",
+    "that DECIDES the production length, so until it has been done the length in",
+    "configs/openqha.yaml is provisional and every free energy computed from a shorter",
+    "trajectory is provisional with it.",
+    "",
+    "The SCIENCE settings are not here. The timestep, the thermostat and its coupling",
+    "time, the three prohibitions and the standard state live in the driver, in",
+    "configs/mdp/s0_qha_production.mdp and in configs/openqha.yaml."
+  ],
+  "driver": "scripts/production/s0_B_qha_trajectory.py",
+  "analysis": "scripts/production/s0_B_saturation_benchmark.py",
+  "granularity": "one task per (basin, seed)",
+
+  "_one_trajectory_not_a_ladder": [
+    "Run ONE long trajectory per seed and read the ladder off its PREFIXES. Running",
+    "200 ps, 500 ps and 1 ns as three separate jobs costs 1.7 ns of force calls to learn",
+    "what the 1 ns run already contains, and its three points would differ by both length",
+    "AND seed -- so a difference between them could not be attributed.",
+    "",
+    "The seeds still differ, and must: the spread BETWEEN seeds at a fixed prefix is",
+    "acceptance criterion 5, the blank control. Measured on the 25 ps run, that spread",
+    "shrinks from 0.9640 kcal/mol at 3 ps to 0.0533 at 25 ps -- a smooth curve from one",
+    "seed would have shown none of that, and a smooth curve can be smoothly wrong."
+  ],
+
+  "ladder_ps": [25, 50, 100, 200, 500, 1000],
+  "target_ps": 1000,
+  "seeds": 3,
+
+  "_what_the_literature_expects": [
+    "This is not a fast-converging quantity and the published record is blunt:",
+    "",
+    "  Andricioaei & Karplus 2001 (JCP 115, 6289), 256 Lennard-Jones particles:",
+    "  'convergence is not complete over 200 ps, and about 4 ns are needed'.",
+    "",
+    "  Rinaldo & Field 2003 (Biophys. J. 85, 3485), the protocol this branch follows:",
+    "  520 ps of EQUILIBRATION was necessary where 20 ps was planned; then 1.5 ns of",
+    "  data collection sampled every 0.5 ps -- and the entropies were still 'converging",
+    "  but have not yet converged'.",
+    "",
+    "Branch B's molecules are 10-19 atoms, not a solvated protein, so far fewer soft",
+    "modes have to be sampled and this should converge much sooner. SHOULD BE is not a",
+    "length, which is why this benchmark exists.",
+    "",
+    "Measured here so far: at 25 ps the last doubling still moved T*S by +0.4684",
+    "kcal/mol against a 0.3 budget. Not converged, exactly as above would predict."
+  ],
+
+  "cost": {
+    "_status": "EXTRAPOLATED from a measured unit rate. Read the warning.",
+    "measured_seconds_per_ps": 96.1,
+    "measured_conditions": "acetone (10 atoms), MACE-OFF23_medium, float64, 1 thread, CPU, uncontended, 2026-09-03",
+    "one_1ns_trajectory_hours": 26.7,
+    "three_seeds_serial_hours": 80.1,
+    "three_seeds_parallel_hours": 26.7,
+    "_warning": [
+      "96.1 s/ps is a SINGLE-TRAJECTORY, UNCONTENDED number for ONE species. The cost",
+      "with many concurrent trajectories on one node has not been measured, and this",
+      "figure must not be divided by a worker count to produce one (D0-P1-12, defects 34",
+      "and 56). On a contended machine this session measured up to 919 s/ps -- nearly ten",
+      "times worse -- so a walltime request built from 96.1 alone will be short.",
+      "",
+      "Request walltime for the 1 ns run at 3x the extrapolation, or run it in resumable",
+      "chunks, which the driver already supports."
+    ]
+  },
+
+  "walltime": {
+    "per_task_timeout_s": 0,
+    "wall_budget_fraction_of_job": 0.90,
+    "_why": [
+      "A 1 ns trajectory will not fit in one queue slot on most sites. The driver takes",
+      "--wall-budget-s, stops at a chunk boundary once past it, and leaves a resumable",
+      "state.npz + frames.npy; resubmitting continues rather than restarting. That is",
+      "what makes a 1 ns run practical under a 24 h limit.",
+      "",
+      "NOTE the route difference: the ASE driver checkpoints positions AND momenta, so a",
+      "resumed trajectory is bit-identical to an uninterrupted one. The OpenMM driver",
+      "flushes frames but does NOT checkpoint the Nose-Hoover chain's extended-system",
+      "variables, so a resumed trajectory there is a valid canonical sample but not the",
+      "same one. For a benchmark whose whole point is comparing prefixes, prefer the ASE",
+      "route or a walltime that fits the run."
+    ]
+  },
+
+  "resources": {
+    "device": "cpu",
+    "threads_per_task": 1,
+    "memory_gb_per_task": 4,
+    "_memory_why": [
+      "4 GB rather than the 3 of a 25 ps run: 1 ns at 8 fs sampling is 125000 frames,",
+      "which is 30 MB of float64 positions for a 10-atom molecule and about 60 MB for a",
+      "19-atom one, plus the analysis holding a fitted copy. Comfortable, not tight."
+    ]
+  },
+
+  "failure_policy": {
+    "retries": 0,
+    "_why": [
+      "As the production config. A trajectory that fails the molecular-integrity check",
+      "will fail it again from the same basin with the same seed. Cluster resource",
+      "configs raise this to 1 for pre-emption, which is not reproducible, and a",
+      "pre-empted task here resumes from its chunk rather than restarting."
+    ]
+  },
+
+  "acceptance": {
+    "saturation": "the last doubling of prefix length moves T*S by less than 0.3 kcal/mol on EVERY seed -- not on the mean, because a mean hides one bad seed",
+    "below_the_noise_floor": "that increment must also be smaller than the between-seed spread at the same prefix; an increment smaller than the budget but larger than the noise floor means the curve is still moving and the budget is too loose for this system",
+    "modes_stable": "the number of non-zero eigenvalues stays 3N-6 at every prefix. Rinaldo & Field's total entropy failed to converge because the MODE COUNT was still growing, not because the values were drifting -- 3000 frames gave 3000 eigenvalues where 7758 were expected. That is acceptance criterion 10 and it is why the count is printed at every point",
+    "the_answer_goes_in_config": "the shortest converged prefix is written into configs/openqha.yaml as the production length, citing this run's log. A length that lives only in a script's default is a length nobody can find"
+  }
+}

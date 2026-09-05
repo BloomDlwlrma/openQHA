@@ -23,7 +23,8 @@ that without a blank control you can only guess. So this script always runs:
   * the RIGID-MODE check and its separation ratio (criterion 4);
   * `S_QH <= S_Schlitter`, which is analytic and therefore catches implementation
     errors only (criterion 6);
-  * the GROMACS cross-check (criterion 2, see openqha/gmx_io.py for what survived of it);
+  * the GROMACS cross-check (criterion 2, now an EXTENSION -- see
+    openqha/extensions/gromacs.py and openqha/capabilities.py);
   * the trajectory identity assertion, which refuses biased, constrained or
     mass-repartitioned input (criterion 11).
 
@@ -48,7 +49,8 @@ def _repo_root():
 
 sys.path.insert(0, str(_repo_root()))
 
-from openqha import config, gmx_io, qha, report, thermo  # noqa: E402
+from openqha import capabilities, config, mdtraj_io, qha, report, thermo  # noqa: E402
+from openqha.extensions import gromacs as gmx_io                    # noqa: E402
 
 #: Criterion 1's budget on T*S, in kcal/mol. It is 30 percent of the 1.0 kcal/mol target
 #: accuracy: the saturation increment is the main term of the error bar, and a term that
@@ -237,6 +239,44 @@ def main():
                                   traceback=traceback.format_exc()))
                 print("   FAILED: {}: {}".format(type(exc).__name__, exc))
 
+    # ---- criterion 2, second independent implementation -------------------------------
+    # MDAnalysis, fitted MASS-WEIGHTED and ITERATED to the mean, which is our protocol
+    # exactly. What remains between the two is then the implementation alone -- our
+    # Kabsch/SVD against its Theobald QCP quaternion -- and that is the comparison worth
+    # making. Measured on a real 25 ps trajectory: 8.0e-09 kcal/mol.
+    #
+    # Run unconditionally where the library is present, because this one needs no
+    # external binary and no PATH.
+    superposition = None
+    try:
+        one = per_traj[0]
+        superposition = mdtraj_io.cross_check(
+            one["frames"], one["masses"], one["meta"]["symbols"],
+            temperature_K=temperature)
+        superposition["basin"], superposition["seed"] = one["basin"], one["seed"]
+        print("\n-- superposition cross-check on {} {}".format(
+            one["basin"], one["seed"]))
+        for c in superposition["comparisons"]:
+            if "TS_QH_kcal" in c:
+                print("   {:<24} T*S diff {:+.3e} kcal/mol   mass-weighted={}"
+                      .format(c["library"], c["TS_difference_kcal"],
+                              c["mass_weighted"]))
+            else:
+                print("   {:<24} {}".format(
+                    c["library"], c.get("skipped") or c.get("failed")))
+    except Exception as exc:                        # record it; do not lose the run
+        superposition = dict(error_type=type(exc).__name__, error=str(exc))
+        print("   superposition cross-check FAILED: {}: {}".format(
+            type(exc).__name__, exc))
+
+    #: The one comparison that isolates the implementation: same weighting, same
+    #: reference protocol. A difference here is OUR arithmetic, and nothing else.
+    mda_worst = None
+    if superposition and "comparisons" in superposition:
+        for c in superposition["comparisons"]:
+            if c.get("library") == "MDAnalysis (iterated)" and "TS_difference_kcal" in c:
+                mda_worst = abs(c["TS_difference_kcal"])
+
     # ---- verdicts --------------------------------------------------------------------
     sat_worst = max(abs(t["saturation"]["increment_over_last_doubling_kcal"])
                     for t in per_traj)
@@ -271,13 +311,18 @@ def main():
              "  -- SMOKE LENGTH: a trajectory this short has barely begun to rise, so "
              "this pass says nothing about production" if smoke else ""),
          sat_worst < SATURATION_BUDGET_KCAL and not smoke),
-        ("2  an independent implementation (gmx covar -mwa) reproduces T*S to within "
-         "{} kcal/mol".format(GMX_BUDGET_KCAL),
-         ("not run (--no-gmx): criterion 2 has no independent implementation behind it"
-          if args.no_gmx else
-          "no comparison produced" if gmx_worst is None else
-          "{:.2e} kcal/mol".format(gmx_worst)),
-         (gmx_worst is not None and gmx_worst < GMX_BUDGET_KCAL)),
+        ("2  an independent MASS-WEIGHTED implementation reproduces T*S to within "
+         "{} kcal/mol (gmx covar -mwa, or MDAnalysis fitted our way)"
+         .format(GMX_BUDGET_KCAL),
+         "  ".join(filter(None, [
+             ("gmx: not run (--no-gmx)" if args.no_gmx else
+              "gmx: no comparison produced" if gmx_worst is None else
+              "gmx: {:.2e}".format(gmx_worst)),
+             ("MDAnalysis: not available" if mda_worst is None else
+              "MDAnalysis: {:.2e}".format(mda_worst)),
+         ])) or "no comparison produced",
+         ((gmx_worst is not None and gmx_worst < GMX_BUDGET_KCAL)
+          or (mda_worst is not None and mda_worst < GMX_BUDGET_KCAL))),
         ("4  exactly the rigid-body modes are removed, and they separate cleanly from "
          "the first vibrational mode",
          "{} removed; smallest separation ratio {:.3e}".format(
@@ -429,6 +474,7 @@ def main():
                            analysis=t["analysis"], saturation=t["saturation"],
                            mode_batches=t["mode_batches"]) for t in per_traj],
         blank_control=blank, assembly=assembly, gromacs_cross_check=cross,
+        superposition_cross_check=superposition,
         criteria=[dict(criterion=c, measured=m, passed=p) for c, m, p in verdicts],
     ))
     log_path = r.write(str(out_stem) + ".log")

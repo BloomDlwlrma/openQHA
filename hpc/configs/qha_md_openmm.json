@@ -1,0 +1,178 @@
+{
+  "_what_this_is": [
+    "Branch B task configuration for the OPENMM route: how one (basin, seed)",
+    "quasi-harmonic trajectory is placed on a machine when it is produced by",
+    "scripts/production/s0_B_qha_trajectory_openmm.py rather than by the ASE driver.",
+    "",
+    "The SCIENCE settings are NOT here. The timestep, the coupling time, the temperature,",
+    "the sampling interval and the three prohibitions live in the driver and in",
+    "configs/mdp/s0_qha_production.mdp; the standard state lives in configs/openqha.yaml.",
+    "Choosing a machine must never change a result -- that is the whole point of branch E.",
+    "If a value appears both here and in one of those files, that file wins and this one",
+    "is wrong.",
+    "",
+    "Read hpc/configs/qha_md.json first. Everything there applies unless contradicted",
+    "below, and most of it is not contradicted: the granularity, the CPU ruling, the",
+    "one-thread ruling, the walltime policy and the failure policy are the same because",
+    "they are properties of the WORK, not of the library that does it."
+  ],
+  "driver": "scripts/production/s0_B_qha_trajectory_openmm.py",
+  "analysis": "scripts/production/s0_B_qha_analyse.py",
+  "granularity": "one task per (basin, seed)",
+
+  "interpreter": {
+    "_why": [
+      "This route does not run in the same environment as the other one, and that is not",
+      "an accident to be tidied away. `openqha` has ASE and MACE 0.3.16; `qm9fe` has",
+      "OpenMM, openmm-torch, openmmtools and mdtraj. openmm-torch has to match the",
+      "pytorch build it was compiled against, and putting both stacks in one environment",
+      "is the same class of hazard as two BLAS providers -- which this repository already",
+      "spent a measurement on (see environment.yml).",
+      "",
+      "So the executor for this task class must launch a DIFFERENT interpreter. A resource",
+      "config that ignores this will run the ASE stack and produce trajectories that are",
+      "not what this file describes."
+    ],
+    "env_name": "qm9fe",
+    "path_env_var": "S0_OPENMM_PYTHON",
+    "fallback": "/home/ubuntu/anaconda3/envs/qm9fe/bin/python",
+    "required_modules": ["openmm", "openmmtorch", "openmmtools", "mace", "ase"]
+  },
+
+  "thermostat": {
+    "_status": "openmmtools' OWN documented defaults, adopted rather than chosen",
+    "implementation": "openmmtools.integrators.NoseHooverChainVelocityVerletIntegrator",
+    "collision_frequency_per_ps": 50.0,
+    "tdamp_fs": 20.0,
+    "chain_length": 5,
+    "num_mts": 5,
+    "num_yoshidasuzuki": 5,
+    "_why": [
+      "The coupling time is the whole decision and it is measured, not preferred. On a",
+      "harmonic surface built from the production potential's own Hessian, where the",
+      "answer is known in closed form, a 100 fs coupling returns the softest mode at 179",
+      "cm^-1 against a true 79.7 and costs 1.15 kcal/mol on T*S; 419 fs -- the intuitive",
+      "choice, matched to that mode's period -- costs 1.23. The KINETIC temperature is",
+      "correct in every one of those runs, so nothing about them looks wrong.",
+      "",
+      "50 ps^-1 is openmmtools' default AND the value in the QHA reference paper this",
+      "branch cites (rinaldo2003). openqha.qha.assert_trajectory_identity refuses a",
+      "coupling time above 20 fs and a chain shorter than 3, so this is enforced rather",
+      "than documented.",
+      "",
+      "A fallback to openmm.NoseHooverIntegrator exists if openmmtools is missing. It is",
+      "NOT the same propagator -- 7-term Yoshida-Suzuki rather than 5 -- and the driver",
+      "records which one ran in every product rather than treating them as equivalent."
+    ]
+  },
+
+  "force": {
+    "implementation": "openqha/openmm_mace.py, a traced TorchForce",
+    "neighbour_list": "complete graph, precomputed and static",
+    "_why": [
+      "No neighbour search at all. Branch B's molecules have 10 to 19 atoms, so the exact",
+      "neighbour list IS the complete graph, and pairs beyond r_max contribute exactly",
+      "zero because MACE's radial cutoff function is exactly zero there -- measured",
+      "bit-identical with half the edges outside the cutoff.",
+      "",
+      "Two consequences worth stating. The graph is STATIC, which is what makes",
+      "torch.jit.trace sound (torch.jit.script FAILS: e3nn 0.4.4 is not scriptable). And",
+      "there is no box to anchor, so this route cannot have the origin-anchoring defect",
+      "that openqha/mace_patch.py guards the other route against -- which matters here",
+      "because in the qm9fe environment `import mace` resolves to the vendored develop",
+      "tree, which HAS that defect.",
+      "",
+      "NNPOps and openmm-ml are deliberately not dependencies."
+    ],
+    "verified_against_ase": {
+      "_status": "checked at the start of EVERY run; the driver refuses to continue if it fails",
+      "delta_energy_eV": 0.0,
+      "max_delta_force_eV_per_A": 4.773e-15,
+      "traced_vs_eager_force_eV_per_A": 1.527e-16
+    }
+  },
+
+  "resources": {
+    "device": "cpu",
+    "platform": "CPU",
+    "threads_per_task": 1,
+    "memory_gb_per_task": 4,
+    "_device_why": [
+      "CPU, for the same reason as the ASE route: a thermostatted trajectory is a serial",
+      "chain of single-structure force calls, which is the case D0-56 measured as not",
+      "filling a card. OpenMM's CUDA platform does not change that -- the cost is in the",
+      "MACE forward pass inside a TorchForce, not in the integration.",
+      "",
+      "OpenMM's platform name is passed separately (--platform) because 'Reference' is",
+      "useful for debugging and is 10x slower; CPU is the production choice."
+    ],
+    "_memory_why": [
+      "4 GB rather than the ASE route's 3: this process holds an OpenMM context, a torch",
+      "model AND its traced copy. Measured RSS on acetone was well under that; the margin",
+      "is for the 19-atom species, which has not been measured."
+    ]
+  },
+
+  "cost_measured": {
+    "_status": "MEASURED 2026-09-04 on this machine, acetone (10 atoms), 1 thread, CPU platform",
+    "seconds_per_ps": 100.0,
+    "conditions": "MACE-OFF23_medium, float64, openmm 8.4, contended machine",
+    "_warning": [
+      "The ASE route measured 96.1 s/ps uncontended on the same molecule. These two",
+      "numbers are close enough to plan with and NOT close enough to call equal: the",
+      "OpenMM figure was taken on a loaded machine, and neither has been measured with",
+      "many concurrent trajectories on one node. Do not divide either by a worker count",
+      "(D0-P1-12, defects 34 and 56).",
+      "",
+      "The production length is set by the saturation curve, not chosen in advance. At 25",
+      "ps acceptance criterion 1 FAILED (+0.4684 kcal/mol over the last doubling, budget",
+      "0.3), so the real per-task cost is larger than any figure here implies."
+    ]
+  },
+
+  "walltime": {
+    "per_task_timeout_s": 0,
+    "wall_budget_fraction_of_job": 0.90,
+    "_why": [
+      "Same policy as the ASE route, but note a difference that matters for pre-emption:",
+      "this driver flushes frames.npy every CHUNK_FRAMES samples and can resume from",
+      "them, but it does NOT yet checkpoint the Nose-Hoover chain's extended-system",
+      "variables. A resumed task therefore restarts the thermostat's internal state.",
+      "",
+      "That is recorded here rather than hidden because it is a real limitation: the",
+      "frames are still a valid canonical sample, but a resumed trajectory is not",
+      "bit-identical to an uninterrupted one, which the ASE route's state.npz does",
+      "achieve. Prefer a walltime that fits a whole trajectory on this route."
+    ]
+  },
+
+  "failure_policy": {
+    "retries": 0,
+    "_why": [
+      "As the ASE route. A trajectory that falls apart will fall apart again from the same",
+      "basin with the same seed, and there is no fallback of any kind: the driver refuses",
+      "to start if its force does not reproduce the ASE calculator, and",
+      "qha.assert_trajectory_identity refuses the product if the coupling time or chain",
+      "length is outside what was calibrated."
+    ]
+  },
+
+  "acceptance": {
+    "_note": [
+      "Placement must not change a number. The scientific criteria are plan_B's and",
+      "scripts/production/s0_B_qha_analyse.py tests all of them; the criteria here are",
+      "about the trajectories meaning the same thing wherever they ran.",
+      "",
+      "Cross-machine bit-reproducibility is NOT demanded, for the reason given in",
+      "qha_md.json: molecular dynamics is chaotic and a last-bit difference in one force",
+      "call separates two trajectories exponentially. Measured on this repository: a rigid",
+      "1e-14 A shift -- an exact symmetry of the potential -- grew to 2.5e-11 A over 3 ps,",
+      "an e-folding time of about 0.4 ps."
+    ],
+    "force_matches_ase": "openqha.openmm_mace.verify_against_ase agrees in energy to 1e-9 eV and in forces to 1e-6 eV/A, checked at the start of every run",
+    "same_machine_same_seed": "a (basin, seed) rerun uninterrupted on the same machine reproduces frames.npy byte for byte",
+    "cross_machine": "T*S_QH from the same (basin, seed) on another machine must agree within the seed-to-seed noise floor that acceptance criterion 5 measures",
+    "route_agreement": "T*S_QH from this route and from the ASE route, at the same length and species, must agree within that same noise floor -- this is the check the two-route design exists for",
+    "identity_assertion": "every trajectory's metadata passes qha.assert_trajectory_identity, including the Nose-Hoover coupling time and chain length"
+  }
+}

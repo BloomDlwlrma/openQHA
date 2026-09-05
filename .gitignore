@@ -28,6 +28,7 @@ analysis/
 runs/
 *.parquet
 *.h5
+*.zip
 
 # ---- scratch and backups ---------------------------------------------------------------
 _backup/

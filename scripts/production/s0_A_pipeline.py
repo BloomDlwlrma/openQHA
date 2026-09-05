@@ -461,12 +461,21 @@ def check_criteria(record, cfg_shake_fallback=None):
     # is a measured cost of this run" or "this reused a directory, so it is not a
     # cost of this run" -- and never leaves a reader to guess which. A wall clock
     # with no such flag beside it is the thing defect 34 was made of.
+    # Two ways to be unambiguous, and BOTH pass:
+    #   valid is True  -> the number is a cost of this run, so the number must be there
+    #   valid is False -> this reused a directory, so there is no cost to state, and a
+    #                     missing wall time is the honest record rather than a gap
+    # Requiring a wall time in both cases made every reused run fail for being correct
+    # (multibasin/dihydroxybutanone was recorded 22/23 on this alone). What still fails
+    # is silence: `wall_is_valid_cost` absent, or claimed valid with no number.
     wall, valid = c.get("wall_seconds"), c.get("wall_is_valid_cost")
-    add(2, "cost claim is unambiguous",
-        wall is not None and valid is not None,
-        "wall {} s, reused_scratch={}, wall_is_valid_cost={}".format(
+    ok2 = valid is not None and (wall is not None if valid else True)
+    add(2, "cost claim is unambiguous", ok2,
+        "wall {} s, reused_scratch={}, wall_is_valid_cost={}{}".format(
             None if wall is None else round(wall, 1),
-            c.get("reused_scratch"), valid))
+            c.get("reused_scratch"), valid,
+            "  [reused: no cost to state, and none claimed]"
+            if valid is False else ""))
 
     # 4 -- zero imaginary frequencies, exactly 6 rigid modes removed, clean gap.
     bad = [b["basin_index"] for b in basins if b["n_imaginary"]]

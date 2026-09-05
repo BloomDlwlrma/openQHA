@@ -48,7 +48,31 @@ def discover(groups):
             yield g, p
 
 
+def _enforce_declared_capabilities():
+    """Fail before any test runs if S0_REQUIRE_CAPS guarantees something absent.
+
+    Checking this FIRST matters: if it were checked per test, a run that declared a
+    capability and then collected no test for it would still go green.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+    # Search upward for the package rather than counting directories. `parents[1]` is
+    # the pattern that broke silently when scripts/ was reorganised, and this file is
+    # exactly as movable as those were.
+    for _p in _Path(__file__).resolve().parents:
+        if (_p / "openqha" / "__init__.py").is_file():
+            _sys.path.insert(0, str(_p))
+            break
+    from openqha import capabilities
+    declared = capabilities.check_declared()
+    if declared:
+        print("S0_REQUIRE_CAPS guarantees: {} -- a skip for any of these is an ERROR"
+              .format(", ".join(declared)))
+    return declared
+
+
 def main():
+    _enforce_declared_capabilities()
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--all", action="store_true", help="run every group, not just unit")

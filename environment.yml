@@ -76,31 +76,46 @@ dependencies:
   - pytorch>=2.0=*cpu*
 
 
-  # ---- branch B, the OpenMM route ----------------------------------------------------
-  # Branch B has TWO production routes for the same protocol, deliberately: ASE +
-  # Langevin, and OpenMM + a Nose-Hoover chain. They write the same frames.npy + meta.json
-  # contract and are read by the same analysis, so a disagreement between them is a
-  # measurement rather than a mystery.
+  # ---- branch B: OpenMM, openmmtools, MDAnalysis. CORE. --------------------------------
+  # These are what branch B's production number is made of, and they are in the ONE
+  # environment on a user ruling of 2026-09-05 that accepts what the solver requires:
   #
-  # The thermostat is why this is here. openmmtools' NoseHooverChainVelocityVerletIntegrator
-  # is the reference implementation, and its documented defaults -- collision_frequency
-  # 50/ps (a 20 fs coupling time), chain_length 5, num_mts 5, num_yoshidasuzuki 5 -- are
-  # what scripts/production/s0_B_qha_trajectory_openmm.py runs. The same 50 ps^-1 appears
-  # in the QHA reference paper this branch cites.
+  #     pytorch  2.13.0 -> 2.12.1     numpy   2.4.6 -> 1.26.4
+  #     libtorch 2.13.0 -> 2.12.1     pandas  3.0.5 -> 2.3.3
   #
-  # openmm-torch carries MACE into OpenMM. NNPOps and openmm-ml are deliberately NOT here:
-  # openqha/openmm_mace.py builds the graph itself, as the complete graph, which is exact
-  # for 10-19 atoms and needs no neighbour search.
+  # THE COST OF THAT WAS MEASURED, NOT ASSUMED, because a different pytorch is a
+  # different set of last bits in every MACE force call. Same geometry, same weights,
+  # same frames, before and after
+  # (scripts/calibration/s0_B_stack_fingerprint.py, analysis/qha/fingerprint_*.json):
   #
-  # mdtraj and mdanalysis are the independent superposition check (openqha/mdtraj_io.py).
-  # Read that module before trusting either: on a real 25 ps trajectory mdtraj's
-  # unweighted fit differed from ours by 2.41 kcal/mol and its float32 solver returned the
-  # IDENTITY rotation for 300 of 3125 frames without raising.
+  #     energy                       0.000e+00 eV
+  #     force rms and max            0.000e+00 eV/A
+  #     every Hessian frequency      0.000e+00 cm-1
+  #     T*S on 2000 fixed frames     0.000e+00 kcal/mol
+  #     every quasi-harmonic freq.   0.000e+00 cm-1
+  #
+  # Bit-identical. Re-run that fingerprint before and after any future change to this
+  # block; a stack change whose cost is unmeasured is a stack change nobody can defend.
+  #
+  # openmmtools is the one that fixes the thermostat: its
+  # NoseHooverChainVelocityVerletIntegrator defaults -- collision_frequency 50/ps (a 20 fs
+  # coupling), chain_length 5, num_mts 5, num_yoshidasuzuki 5 -- are what branch B runs,
+  # adopted rather than chosen. The same 50 ps^-1 is in the QHA reference paper.
+  #
+  # MDAnalysis is CORE, not a convenience: it is the independent implementation behind
+  # acceptance criterion 2. Fitted mass-weighted and iterated the way openqha/qha.py fits,
+  # it agreed to 8.020e-09 kcal/mol on 3125 real frames.
+  #
+  # NNPOps and openmm-ml are deliberately absent: openqha/openmm_mace.py builds the graph
+  # itself, as the complete graph, which is exact for 10-19 atoms.
   - openmm>=8.1
   - openmm-torch>=1.4
   - openmmtools>=0.23
-  - mdtraj>=1.9
   - mdanalysis>=2.4
+  # An EXTENSION, here because it is cheap. It CANNOT mass-weight, so it is never
+  # agreement -- it differed from us by 2.41 kcal/mol -- and its float32 solver returned
+  # the IDENTITY rotation for 300 of 3125 frames without raising.
+  - mdtraj>=1.9
 
   # ---- the conformer search itself ---------------------------------------------------
   - crest>=3.0.2
@@ -119,14 +134,17 @@ dependencies:
       - parsl>=2024.01
 
 # NOT IN HERE, and each for its own reason:
-#   gromacs   branch B's OTHER independent cross-check. `conda install -c conda-forge
-#             gromacs` if you want it; its activation hook fails under `set -u`. It is
-#             still the better of the two checks on the covariance spectrum, because
-#             `gmx covar -mwa` can be told to mass-weight and mdtraj cannot: measured
-#             1.27e-04 kcal/mol against us on the same trajectory where mdtraj differed
-#             by 2.41. openqha/gmx_io.py finds it in a sibling conda environment.
+#   gromacs   an EXTENSION since 2026-09-05 -- openqha/extensions/gromacs.py -- and no
+#             number depends on it. MDAnalysis above is the routine independent check
+#             (8.020e-09 kcal/mol against us, where GROMACS gave 1.27e-04) and needs no
+#             external binary. Install GROMACS only for a check by a program that shares
+#             no Python with openQHA at all:
+#                 conda install -c conda-forge gromacs
+#             Its activation hook fails under `set -u`. openqha/extensions/gromacs.py
+#             finds it in a sibling conda environment.
 #   NNPOps,
-#   openmm-ml the usual way to run MACE inside OpenMM. Not needed: see openqha/openmm_mace.py.
+#   openmm-ml the usual way to run MACE inside OpenMM. Not needed: see
+#             openqha/openmm_mace.py for the measurement that made them unnecessary.
 #   orca      registration required, installed by hand; branch C only.
 #   MACE-OFF weights   fetched by install_dependency.sh, not shipped and not a package.
 #                      openqha/engine.py recomputes their SHA-256 on every load.

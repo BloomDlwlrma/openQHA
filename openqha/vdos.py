@@ -49,6 +49,17 @@ kinetic energy, in eV.
 """
 import numpy as np
 
+#: numpy renamed `trapz` to `trapezoid` in 2.0 and kept the same function. The
+#: environment pins 1.26.4 (openmm-torch's pytorch pin settles it), so binding the name
+#: once here keeps this module working on both -- rather than on whichever numpy the
+#: author happened to have.
+#:
+#: Found by tests/unit/t_vdos_chain.py the moment the OpenMM stack was merged into the
+#: core environment. The stack fingerprint had reported that change as costing zero, and
+#: it does cost zero NUMERICALLY -- but a fingerprint compares numbers, and a function
+#: that no longer exists produces none to compare. Those are two different questions.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 from .thermo import HC_KCAL, KB_KCAL, T_REF
 
 C_LIGHT_CM_PER_FS = 2.99792458e-5      # cm/fs
@@ -299,7 +310,7 @@ def vacf_dos(vel_vib, masses, dt_fs, seg_ps=3.0, shift_ps=0.5,
     # leave the integral unchanged
     s_mean = spectra.mean(0) * C_LIGHT_CM_PER_FS
     s_std = spectra.std(0) * C_LIGHT_CM_PER_FS
-    raw = float(np.trapezoid(s_mean, nu_cm))
+    raw = float(_trapezoid(s_mean, nu_cm))
     target = 3 * n_at - 6
     return (nu_cm, s_mean * (target / raw), s_std * (target / raw),
             len(starts), raw / target)
@@ -318,9 +329,9 @@ def thermo_from_dos(nu_cm, dos, temperature_K=T_REF):
     w_a = 0.5 * x + np.log1p(-np.exp(-x))
     w_e = 0.5 * x + x / np.expm1(x)
     w_s = x / np.expm1(x) - np.log1p(-np.exp(-x))
-    return dict(A_vib_kcal=float(kt * np.trapezoid(ss * w_a, nu[ok])),
-                E_vib_kcal=float(kt * np.trapezoid(ss * w_e, nu[ok])),
-                S_vib_kcal_per_K=float(KB_KCAL * np.trapezoid(ss * w_s, nu[ok])),
+    return dict(A_vib_kcal=float(kt * _trapezoid(ss * w_a, nu[ok])),
+                E_vib_kcal=float(kt * _trapezoid(ss * w_e, nu[ok])),
+                S_vib_kcal_per_K=float(KB_KCAL * _trapezoid(ss * w_s, nu[ok])),
                 temperature_K=float(temperature_K))
 
 

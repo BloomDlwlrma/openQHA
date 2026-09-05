@@ -28,6 +28,7 @@
 baseline:
   snapshot: "_backup/baseline_2026-09-04"
   created: "2026-09-04"
+  refreshed: "2026-09-04 (after configs/*.sh moved to configs/init_template/; see superseded.accounting)"
   reason: >
     Re-anchored after the openQHA -> openqha package rename, the
     stage0_production.yaml -> openqha.yaml rename, and the split of openqha.yaml into
@@ -84,6 +85,18 @@ superseded:
       reported: "LOST (D0-C-30, 1.0)"
       finding: "Both tokens present elsewhere in the current tree."
       status: "resolved -- accounted for elsewhere"
+
+    - path: "configs/env_orca611.sh, configs/init_conda_tianhe.sh, configs/init_orca.sh"
+      reported: "MISSING (against the 2026-09-04 snapshot, after it was taken)"
+      finding: >
+        Moved into configs/init_template/ on 2026-09-04, after the snapshot. Verified by
+        diff: all three exist at the new path with byte-identical content, so no token
+        was lost -- only the path changed.
+      resolution: >
+        Snapshot retaken so the baseline reflects the new paths. Not a rename map entry:
+        re-anchoring is what the ruling asked for, and a checked move is exactly the
+        case it handles.
+      status: "resolved -- moved, content identical, snapshot refreshed"
 
 # Losses that are NOT translation losses, acknowledged one at a time with a reason.
 # An entry that stops matching is itself reported, so the list cannot outlive its reason.
