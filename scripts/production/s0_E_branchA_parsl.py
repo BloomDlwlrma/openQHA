@@ -23,8 +23,21 @@ not parallel -- they queue on the lock, and the fan-out is imaginary while looki
 real in every log. Each worker therefore starts its own server on its own socket
 and stops it when its molecule is done.
 
-`--dry-run` renders the plan and touches nothing. Use it to see what would be
-submitted, which is the habit branch E acceptance criterion 3 is built around.
+Two ways to look before you leap, and only one of them is the gate
+------------------------------------------------------------------
+`--dry-run` prints the plan and touches nothing. It is useful for reading what would be
+submitted, and it is NOT the gate before production.
+
+**The gate is `--debug`** (user ruling 2026-09-07): the same command, on the site's short
+partition, at a 30-minute walltime, capped at one allocation.
+
+    --debug on tianhe_cpu   partition debug, 00:30:00, 1 node   (production: deimos, 3 days)
+    --debug on tianhe_a     partition temp,  00:30:00, 1 node   (production: ai, 7 days)
+
+A real short job tests what a rendered plan cannot: that the modules load, that conda
+activates on a compute node, that the weights hash matches there, that the scheduler
+accepts the directives, and that Parsl can read its own status query. Run one edge under
+`--debug`, read the product, then drop the flag.
 """
 import argparse
 import json
@@ -72,6 +85,17 @@ def _hpc_root(repo):
         "configurations are missing, not merely moved".format(repo))
 
 sys.path.insert(0, str(_hpc_root(HERE)))
+
+
+def _accepted_kwargs(fn):
+    """Parameter names a resource config's `config()` will accept.
+
+    Asked rather than assumed: the resource configs are separate modules with slightly
+    different signatures, and passing a keyword one of them does not take raises
+    TypeError from inside Parsl's construction, where it reads as a Parsl problem.
+    """
+    import inspect
+    return set(inspect.signature(fn).parameters)
 
 from openqha import S0_ROOT, config  # noqa: E402
 
@@ -231,6 +255,10 @@ def main():
     ap.add_argument("--partition", default=None)
     ap.add_argument("--dry-run", action="store_true",
                     help="print the plan and submit nothing")
+    ap.add_argument("--debug", action="store_true",
+                    help="submit for real, on the site's short partition, at its debug "
+                         "walltime, capped at ONE allocation. This -- not --dry-run -- "
+                         "is the gate before production.")
     args = ap.parse_args()
 
     cfg = config.load()
@@ -276,10 +304,21 @@ def main():
             print(" " * 48, end="\r")
             source = "indices {}..{} minus what is already complete".format(start, end)
 
+    described = res.describe()
     plan = dict(
         generated_by="scripts/production/s0_E_branchA_parsl.py",
         branch="E (execution layer for branch A)",
-        resource=res.describe(),
+        resource=described,
+        # WHICH QUEUE THIS RUN ACTUALLY USED. Without it a --debug run and a production
+        # run record the same `resource` block and become indistinguishable afterwards.
+        submission=dict(
+            debug=bool(args.debug),
+            partition=(args.partition
+                       or (described.get("debug_partition") if args.debug
+                           else described.get("partition"))),
+            walltime=(described.get("debug_walltime") if args.debug
+                      else described.get("walltime")),
+            max_blocks=(1 if args.debug else described.get("max_blocks"))),
         n_species=len(species), species=species, species_source=source,
         tag=tag, threads_per_task=threads,
         hessian_mode=hessian_mode, timeout_s=timeout_s,
@@ -298,8 +337,12 @@ def main():
     print("Branch E -- branch A over Parsl")
     print("=" * 92)
     print("resource     {}  ({} workers x {} threads)".format(
-        args.resource, res.describe().get("max_workers")
-        or res.describe().get("workers_per_node"), threads))
+        args.resource, described.get("max_workers")
+        or described.get("workers_per_node"), threads))
+    print("queue        {} partition={} walltime={} max_blocks={}".format(
+        "DEBUG (smoke test)" if args.debug else "production",
+        plan["submission"]["partition"], plan["submission"]["walltime"],
+        plan["submission"]["max_blocks"]))
     print("molecules    {}  ({})".format(len(species), source))
     if worklist_record and worklist_record.get("n_already_done") is not None:
         print("resume       {} already complete, {} dropped (no geometry {}, gates {})"
@@ -320,13 +363,24 @@ def main():
         print(json.dumps(plan, indent=2, ensure_ascii=False))
         return 0
 
-    kw = {}
+    kw = dict(role="crest")
     if args.max_workers:
         kw["max_workers"] = args.max_workers
     if args.account:
         kw["account"] = args.account
     if args.partition:
         kw["partition"] = args.partition
+    if args.debug:
+        # Refused rather than ignored. A resource config with no debug partition has no
+        # short queue to fall back to, and silently running the production settings
+        # under a flag that says "debug" is how a 30-minute intention becomes a 3-day
+        # allocation.
+        if "debug" not in _accepted_kwargs(res.config):
+            raise SystemExit(
+                "--debug is not supported by resource config {!r}. Sites that have a "
+                "short partition accept it (tianhe_cpu: debug/00:30:00, tianhe_a: "
+                "temp/00:30:00).".format(args.resource))
+        kw["debug"] = True
     parsl_config = res.config(**kw)
 
     import parsl

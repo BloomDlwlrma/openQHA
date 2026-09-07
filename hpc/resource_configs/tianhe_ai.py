@@ -45,6 +45,26 @@ ACCOUNT = None
 PARTITION = "h100x"            #: hx | h100x | a100x | a800x | v100x
 GPUS_PER_JOB = 1
 
+#: CUDA. 12.3 because that is the version BOTH GPU clusters have -- TianheXY-A has no
+#: 12.4 -- so one `environment-tianhe-gpu.yml` serves both. The conda side pins the same
+#: number. Change them together or neither.
+#:
+#: **Check this exists before the first GPU job here**: the recorded module listing for
+#: this cluster was elided (`CUDA/11.8 ... CUDA/13.2`), so 12.3 is inside the recorded
+#: range but was never read off the screen.
+#:     module avail CUDA 2>&1 | grep -o "CUDA/12[.][0-9]*"
+CUDA_VERSION = "12.3"
+
+#: Recorded, NOT loaded. These are the modules built against 12.4; they are what a DDP
+#: job would need, and openQHA runs none.
+MPI_MODULE_RECORDED = "mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4"
+NCCL_MODULE_RECORDED = "nccl/2.23.4-cuda-12.4"
+
+#: TianheXY-A is preferred for GPU work (user ruling 2026-09-07): 8 cards per allocation
+#: against this cluster's one. Use this cluster when A is full, or for a job that wants a
+#: specific card type from the PACKAGE table below.
+PREFER_INSTEAD = "tianhe_a"
+
 #: CPUs and memory that come with one card, from the manual's table. Used to keep the
 #: job inside its package -- exceeding either is a rejected submission, not a slow job.
 PACKAGE = {
@@ -79,16 +99,23 @@ def cpus_for(partition):
 
 
 def _worker_init(here, partition):
-    """Modules, then the environment. CUDA 12.4 and the matching openmpi, per the user.
+    """Modules, then the environment. CUDA 12.3 -- and nothing else.
 
-    The module set is the site's own: `CUDA/12.4` with
-    `mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4`, which is the openmpi built against that
-    CUDA. Mixing an openmpi built for one CUDA with another CUDA is the same class of
-    mistake as two BLAS builds in one environment, and it fails later and less clearly.
+    **12.3, not 12.4** (user ruling 2026-09-07). 12.4 exists here and does not exist on
+    TianheXY-A; 12.3 exists on both. Pinning the version the two clusters share is what
+    let `environment-tianhe-cuda.yml` and `environment-tianhe-a-cuda.yml` collapse into
+    one `environment-tianhe-gpu.yml`.
 
-    `nccl/2.23.4-cuda-12.4` and `gdrcopy/2.4-cuda-12.4` are the matching collectives and
-    RDMA-copy modules; loaded only because they are the ones built for 12.4, and harmless
-    for a single-card job.
+    **No MPI, and no NCCL.** They used to be loaded here because they were the modules
+    built against 12.4, and they were the other thing that differed between the two GPU
+    clusters. Nothing openQHA runs on a card needs collectives: training is one model per
+    allocation and branch B is one trajectory per card. An openmpi built against a
+    different CUDA than the one loaded fails at the first collective rather than at
+    import -- so the safest version of that dependency is not having it. The matched
+    module names stay recorded in `describe()` for the day a real DDP job appears.
+
+    The module load is NOT silenced: a missing CUDA here means the task falls back to the
+    CPU and takes far longer for a reason that appears nowhere in the product.
     """
     cpus = cpus_for(partition)
     threads = "export OMP_NUM_THREADS=1" if cpus is None else (
@@ -97,9 +124,8 @@ def _worker_init(here, partition):
         "mkdir -p ${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs",
         "module purge 2>/dev/null || true",
         "module load anaconda3/2023.09 2>/dev/null || true",
-        "module load CUDA/12.4 2>/dev/null || true",
-        "module load mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4 2>/dev/null || true",
-        "module load nccl/2.23.4-cuda-12.4 2>/dev/null || true",
+        "module load CUDA/{0} || echo 'openQHA: module load CUDA/{0} FAILED -- this "
+        "block will not see a card' >&2".format(CUDA_VERSION),
         "for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM)_'); do "
         "unset $v; done",
         threads,
@@ -177,8 +203,10 @@ def describe():
         max_trainings_in_flight=MAX_BLOCKS * WORKERS_PER_NODE,
         walltime=WALLTIME,
         exclusive=False, filesystem="XYAIFS00 (lustre, 1 TB, NO BACKUP)",
-        modules=["anaconda3/2023.09", "CUDA/12.4",
-                 "mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4", "nccl/2.23.4-cuda-12.4"],
+        modules=["anaconda3/2023.09", "CUDA/" + CUDA_VERSION],
+        modules_recorded_not_loaded=[MPI_MODULE_RECORDED, NCCL_MODULE_RECORDED],
+        environment_file="environment-tianhe-gpu.yml",
+        prefer_instead=PREFER_INSTEAD, cuda=CUDA_VERSION,
         labels=[_labels.label("train")],
         scheduler_commands=commands, scheduler_commands_confirmed=confirmed,
         site_rules=[
@@ -189,7 +217,10 @@ def describe():
         ],
         assumptions=[
             "a800x and v100x packages are not in the manual's table.",
-            "Nothing has been submitted to either Tianhe cluster yet.",
+            "CUDA/12.3 is ASSUMED present here. The recorded module listing was elided "
+            "(CUDA/11.8 ... CUDA/13.2); confirm with `module avail CUDA` before the "
+            "first GPU job, because the conda side is pinned to it.",
+            "Nothing has been submitted to any Tianhe cluster yet.",
         ],
         verified=False,
     )

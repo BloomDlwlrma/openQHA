@@ -1,0 +1,188 @@
+# openQHA -- ONE environment for BOTH Tianhe GPU clusters. CUDA 12.3.
+#
+#     module load anaconda3/2023.09
+#     module load CUDA/12.3
+#     conda env create -f environment-tianhe-gpu.yml
+#     conda activate openqha-gpu
+#
+# or:  bash install_dependency.sh --tianhe-cuda    # TianheXY-AI
+#      bash install_dependency.sh --tianhe-a       # TianheXY-A
+#
+# Both flags now build THIS file. They differ only in which modules they load.
+#
+# ---------------------------------------------------------------------------------------
+# WHY ONE FILE, WHEN THERE ARE TWO CLUSTERS (user ruling 2026-09-07)
+# ---------------------------------------------------------------------------------------
+# There were two: environment-tianhe-cuda.yml pinned 12.4 for TianheXY-AI and
+# environment-tianhe-a-cuda.yml pinned 12.3 for TianheXY-A. Both are now in
+# `_superseded/`. The split had exactly one cause, and it is removable:
+#
+#     TianheXY-A module tree tops out at CUDA/12.3. TianheXY-AI has 12.3 as well.
+#
+# **12.3 is the version both machines have**, so pinning 12.3 fits both and the second
+# file has nothing left to say. Going the other way -- 12.4 everywhere -- does not work:
+# `module load CUDA/12.4` fails on A, and worse, a conda CUDA pinned newer than the
+# runtime imports perfectly cleanly and dies at the first kernel launch.
+#
+# **The one thing to check before the first GPU job on TianheXY-AI**: that CUDA/12.3 is
+# really in its module tree. The listing recorded here was elided (`CUDA/11.8 ...
+# CUDA/13.2`), so 12.3 is inside the recorded range but was never read off the screen:
+#
+#     module avail CUDA 2>&1 | tr ' ' '\n' | grep -i "^CUDA/12"
+#
+# If it is absent, the fix is one line -- CUDA_VERSION in hpc/resource_configs/tianhe_ai.py
+# and the pin below -- not a second file.
+#
+# ---------------------------------------------------------------------------------------
+# NO MPI IN HERE, AND THAT IS WHAT MAKES ONE FILE POSSIBLE
+# ---------------------------------------------------------------------------------------
+# The earlier files each loaded the openmpi built against their own CUDA, and those two
+# module names are the other thing that differed:
+#
+#     TianheXY-AI   mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4
+#     TianheXY-A    mpi/openmpi/5.0.0-gcc-11.4.0-cuda12.2
+#
+# **Neither is needed.** MPI buys inter-process collectives across nodes. openQHA runs
+# nothing of the kind on a GPU: branch C training is one model per card, and branch B
+# OpenMM trajectories are one trajectory per card. Eight independent single-card workers
+# on one node communicate through the filesystem and the Parsl worker pool, not through
+# MPI (hpc/resource_configs/tianhe_a.py).
+#
+# So no openmpi is loaded, no mpi4py is installed, and the version skew that forced two
+# files does not arise. If a genuine multi-GPU DDP job is ever added, load NCCL -- and
+# only then -- from that cluster own matched module:
+#
+#     TianheXY-AI   nccl/2.23.4-cuda-12.4
+#     TianheXY-A    nccl/2.19.3-cuda-12.3
+#
+# ---------------------------------------------------------------------------------------
+# WHAT RUNS HERE
+# ---------------------------------------------------------------------------------------
+#   branch C   MACE fine-tuning with the PHL loss. Genuinely faster on a GPU.
+#   branch B   quasi-harmonic trajectories through OpenMM + openqha/openmm_mace.py,
+#              one trajectory per card (user ruling 2026-09-07). That is why openmm,
+#              openmm-torch and openmmtools are in this file and were in neither of the
+#              two it replaces.
+#
+#              CAVEAT, recorded rather than buried: this repository only GPU measurement
+#              of branch B is D0-C-5, where the same trajectory ran 3.5x SLOWER on the
+#              GPU than on the CPU. That was a T400 -- a 2 GB entry-level card -- against
+#              an H100 or A100 here, so the number does not transfer. It has also not
+#              been re-measured. Take the per-ps cost from the temp-partition smoke test
+#              before planning a campaign on it.
+#
+#   NOT branch A. CREST workhorse is GFN2-xTB and xtb has no GPU path at all. Branch A
+#   belongs on TianheXY-C with environment-tianhe.yml.
+# ---------------------------------------------------------------------------------------
+name: openqha-gpu
+channels:
+  - conda-forge
+  # `channels: [conda-forge]` alone does NOT mean conda-forge only -- conda merges the
+  # configured channels, and `anaconda3/2023.09` ships with `defaults` configured.
+  # Measured 2026-09-04: without this the solver pulled a `defaults` pytorch into an
+  # otherwise conda-forge stack AND hid a real solver conflict behind it.
+  - nodefaults
+dependencies:
+  # ---- match the module ---------------------------------------------------------------
+  # Same major.minor as `module load CUDA/12.3`, on both clusters. Change both together
+  # or neither.
+  #
+  # Verified by dry run 2026-09-05 with CONDA_OVERRIDE_CUDA=12.3:
+  #     cuda-version 12.3   cuda-cudart 12.3.101   pytorch 2.5.1 cuda120_py311
+  #
+  # **The torch build tag reads `cuda120`, not `cuda123`, and that is correct.** CUDA 12
+  # has minor-version compatibility: a binary built against 12.0 runs on any 12.x
+  # runtime. conda-forge ships no cuda123 build; the pinned `cuda-version` is what
+  # governs the runtime. Do not "fix" this by hunting for one.
+  #
+  # Driver note: TianheXY-A reports driver 535.104.12, which is a CUDA 12.2 driver. Minor
+  # version compatibility covers a 12.3 runtime on it. Do not read a driver number as a
+  # CUDA ceiling -- and do not raise the pin above what `module avail` offers.
+  - cuda-version=12.3
+
+  # ---- BLAS: NO PINS HERE, AND THAT IS DELIBERATE ---------------------------------------
+  # Everywhere else in this repository the three OpenMP-OpenBLAS pins appear, because
+  # conda-forge's `crest` links the pthreads build while CREST itself is OpenMP-parallel,
+  # and the mismatch cost 4164 warning lines and 20 s per molecule (measured 2026-09-04).
+  #
+  # **There is no crest and no xtb in this environment.** They are CPU tools and live in
+  # environment-tianhe.yml. The defect the pins prevent cannot occur here, so the pins
+  # were being carried over out of habit -- and they were not free:
+  #
+  #     openmmtools + BLAS pins, no CUDA                       SOLVES
+  #     openmmtools + CUDA torch, no BLAS pins                 SOLVES
+  #     openmmtools + CUDA torch + cuda-version=12.3 + pins    FAILS
+  #     this file as it now stands                             SOLVES
+  #
+  # (Measured 2026-09-07 by dry run, one variable at a time. The three requirements are
+  # each satisfiable in pairs and not as a triple.) `nomkl` is absent for the separate
+  # reason that CUDA builds of pytorch depend on MKL, so the two cannot both hold.
+  #
+  # WHAT DROPPING THEM ACTUALLY CHANGES, stated rather than assumed: the solver then
+  # picks `libblas 3.9.0 *_mkl` and links numpy against MKL, where the CPU environments
+  # link it against OpenBLAS. That is a real divergence and here is why it is acceptable:
+  #
+  #   * the quasi-harmonic diagonalisation -- the one place a BLAS could move a number --
+  #     runs in the COLLECTION pass, on the CPU cluster, in `openqha`, against OpenBLAS.
+  #     It never runs in this environment.
+  #   * what numpy does here is array handling around OpenMM and torch, both of which
+  #     carry their own kernels either way.
+  #   * CUDA builds of pytorch depend on MKL regardless, so MKL is in this environment
+  #     whether or not numpy uses it. `nomkl` is unsatisfiable here for the same reason.
+  #
+  # If a BLAS-threading problem ever does show up on a GPU node, hpc/env/common.sh still
+  # exports OPENBLAS_NUM_THREADS=1 -- which is what actually fixed the measured case, the
+  # pins merely made it unnecessary.
+  #
+  # SOLVED VERSIONS (dry run 2026-09-07, CONDA_OVERRIDE_CUDA=12.3, linux-64):
+  #     cuda-version   12.3            cuda-cudart   12.3.101
+  #     python         3.11.16         numpy         1.26.4
+  #     pytorch        2.5.1  cuda120_py311h7a71dd8_303
+  #     openmm         8.2.0           openmm-torch  1.5  cuda120py311hc49b99e_0
+  #     openmmtools    0.25.0          mdanalysis    2.10.0
+  #     libblas        3.9.0  37_h5875eb1_mkl        mkl  2024.2.2
+  #
+  # openmm-torch resolves to a **cuda120** build, matching torch. If that ever comes back
+  # as a `cpu` build the environment is silently useless for the thing it exists for --
+  # the `=*cuda*` constraint above is what turns that into a solver error instead.
+
+  - python=3.11
+  - numpy>=1.24
+  - scipy>=1.10
+  - pyyaml>=6.0
+  - pandas>=1.5
+  - pyarrow>=10.0
+  - h5py>=3.8            # branch C datasets
+  - ase>=3.22
+  - rdkit>=2023.03
+
+  # The CUDA build. `cuda-version=12.3` above selects it; asking for a *cuda* build here
+  # as well turns "the solver quietly handed me the CPU build" into a solver error.
+  - pytorch>=2.0=*cuda*
+
+  # ---- branch B on a card (user ruling 2026-09-07) --------------------------------------
+  # openmm-torch is what carries openqha/openmm_mace.py traced MACE module into an OpenMM
+  # context; the CUDA build is what lets that context use the CUDA platform. openmmtools
+  # supplies NoseHooverChainVelocityVerletIntegrator at ITS OWN documented defaults
+  # (50/ps, chain 5, MTS 5, YS 5) -- those defaults ARE branch B thermostat, adopted
+  # rather than chosen, so the package is not interchangeable with plain OpenMM.
+  - openmm>=8.1
+  - openmm-torch>=1.4=*cuda*
+  - openmmtools>=0.23
+  # The independent implementation behind branch B acceptance criterion 2. Mass-weighted
+  # and iterable to the mean structure, which is openqha/qha.py protocol exactly.
+  - mdanalysis>=2.4
+
+  - pip
+  - pip:
+      - mace-torch>=0.3.6
+      - pymsym>=0.3.5
+      - parsl>=2024.01
+
+# NOT IN HERE:
+#   openmpi / mpi4py   see the header -- nothing openQHA runs on a GPU needs collectives,
+#                      and dropping them is what let two files become one.
+#   crest / xtb        CPU tools. They belong in environment-tianhe.yml on TianheXY-C.
+#   gromacs, orca      not part of branch B or branch C on a GPU.
+#   MACE-OFF weights   NOT downloaded on a login node. See docs/branchA_production.md
+#                      section 4 for what that sentence actually asks you to do.

@@ -1,0 +1,610 @@
+# Branch A in production, and branch E under it
+
+What actually runs, where each setting lives, how to submit it both ways, and where the
+answer lands. Written 2026-09-07, after the rulings that moved branch B's trajectories to
+the GPU and cut the CPU cluster down to two partitions.
+
+**Nothing in this repository has ever been submitted to Tianhe.** Everything below is
+either verified locally (the configs build, the job scripts render and parse, the
+environment solves) or marked as unverified. Read section 6 before spending an allocation.
+
+---
+
+## 1. The two halves, and why they are two
+
+Branch A **searches** for conformers. Branch E **places** that search on a machine.
+The dividing line is a rule, not a style:
+
+> Replacing the execution layer with a `for` loop must not change a single number.
+
+That is branch E acceptance criterion 1. It is what lets the same code run on a laptop, on
+`deimos` through `yhbatch`, and on `deimos` through Parsl, and be compared afterwards. Every
+file below is on one side of that line.
+
+```
+BRANCH A -- the science. Changing anything here changes the answer.
+  configs/openqha.yaml          global settings + the include index
+  configs/conformers.yaml       crest:, package1:      <- the CREST protocol
+  configs/filters.yaml          species_filter         <- the F0-F7 gates
+  configs/edges_testset.yaml    edges:, species:       <- which molecules
+  configs/hessian.yaml          package2               <- frequencies
+  openqha/crest.py              writes the CREST input, parses its output
+  openqha/conformers.py         dedup, ordering, basin construction
+  openqha/crest_census.py       the census a product is built from
+  openqha/engine.py             THE POTENTIAL: registry, path, SHA-256
+  openqha/mace_server.py        the resident MACE server CREST talks to
+  openqha/mace_patch.py         translation-invariant neighbour list
+  openqha/symmetry.py           sigma per basin
+  openqha/hessian.py            analytic / finite-difference Hessians
+  openqha/thermo.py             partition functions
+  openqha/filters.py            F0-F7
+  openqha/basin_store.py        WHERE results go (sharded)
+  openqha/record.py             the product record
+  scripts/production/s0_A_pipeline.py    the driver: ONE molecule, start to finish
+
+BRANCH E -- the execution layer. Changing anything here must change NO number.
+  hpc/labels.py                 executor labels, defined once
+  hpc/providers.py              TianheSlurmProvider (yhbatch/yhrun)
+  hpc/resource_configs/         one module per machine
+      local.py                  this workstation -- step 0
+      tianhe_cpu.py             TianheXY-C: debug + deimos
+      tianhe_a.py               TianheXY-A: temp + ai (8 cards/node)
+      tianhe_ai.py              TianheXY-AI: one card per allocation
+  hpc/env/common.sh             what every job sources, on every machine
+  hpc/env/tianhe.sh             what only Tianhe needs
+  hpc/slurm/                    the plain yhbatch route (no Parsl)
+  openqha/worklist.py           what is left to compute, and how it decided
+  scripts/production/s0_E_worklist.py       that, as a command
+  scripts/production/s0_E_branchA_parsl.py  branch A over Parsl
+```
+
+If you are ever unsure which side a change belongs on, ask whether a person reproducing
+the result needs to know about it. The queue name: no. The dedup threshold: yes.
+
+---
+
+## 2. One molecule, end to end
+
+This is what `s0_A_pipeline.py --species dsgdb9nsd_000018` does. Every arrow is a function
+you can call yourself.
+
+```
+QM9 geometry                config.qm9_xyz()          data/qm9/xyz_files/ or the
+                                                      7 vendored ones or curatedQM9
+      |
+      v  filters.screen()   F0-F7. A molecule that fails is dropped HERE, with the
+      |                     gate that dropped it recorded -- never silently.
+      v
+CREST iMTD-GC               crest.py builds the input
+   workhorse GFN2-xTB       configs/conformers.yaml: crest.workhorse
+   SHAKE all bonds,         crest.shake = 2, crest.tstep_fs = 5.0
+   5 fs, H mass 2 amu       ONE PACKAGE from Grimme JCTC 2019, 15, 2847 --
+                            they were measured together and are not separable
+   refine = "sp"            single points on MACE, NOT optimisation.
+      |                     `opt` costs 14 of 37 basins and 0.4023 kcal/mol.
+      v
+MACE-OFF23_medium           mace_server.py holds ONE model behind ONE lock and
+   over a unix socket       serves it over $S0_MACE_SOCKET. One server per
+                            molecule, never one per machine -- see section 5.
+      |
+      v  CREGEN dedup       RTHR 0.125 A AND ETHR 0.05 kcal/mol AND BTHR 1%
+      |                     (CREST's own published defaults; all three must hold)
+      v
+basins                      conformers.py
+      |
+      +--> symmetry.py      sigma per basin
+      +--> hessian.py       frequencies (--hessian-mode analytic)
+      +--> thermo.py        q_rot, q_vib, and the conformational correction
+      |
+      v
+PRODUCT
+   data/basins/<tag>/<range>/<chunk>/<qid>.basins.json     the record
+                                    /<qid>.basins.xyz      the geometries
+   analysis/branchA/<tag>/<qid>/basins.json                the full driver record
+   analysis/branchA/<tag>/<qid>/driver.log                 its stdout, verbatim
+```
+
+**Report the correction, not the basin count.** Five repeats on one molecule: the basin
+count varies by 14% run to run (iMTD-GC is a stochastic search), while the conformational
+correction varies by 0.0034 kcal/mol -- 3.4% of the 1 kcal/mol target. The deliverable is
+reproducible; the count is one draw.
+
+---
+
+## 3. Environments: which file, which machine
+
+| file | env name | machine | what it is for |
+|---|---|---|---|
+| `environment.yml` | `openqha` | workstation | everything, including branch B's OpenMM |
+| `environment-tianhe.yml` | `openqha` | **TianheXY-C** | branch A + collection. CPU torch, CREST, xtb |
+| `environment-tianhe-gpu.yml` | `openqha-gpu` | **TianheXY-A and TianheXY-AI** | branch B trajectories + branch C training. CUDA 12.3 |
+| `environment-cuda.yml` | `openqha-cuda` | any GPU box | CUDA without the Tianhe specifics |
+| `environment-openmm.yml` | `openqha-openmm` | anywhere | branch B only, ~2 GB smaller |
+
+```bash
+bash install_dependency.sh --tianhe        # TianheXY-C  -> openqha
+bash install_dependency.sh --tianhe-a      # TianheXY-A  -> openqha-gpu, CUDA/12.3
+bash install_dependency.sh --tianhe-cuda   # TianheXY-AI -> openqha-gpu, CUDA/12.3
+```
+
+### One GPU environment, not two (changed 2026-09-07)
+
+`environment-tianhe-cuda.yml` (12.4) and `environment-tianhe-a-cuda.yml` (12.3) are now in
+`_superseded/`. They differed in two things and both went away:
+
+* **CUDA version.** TianheXY-A's module tree tops out at 12.3 and TianheXY-AI has 12.3 too,
+  so 12.3 fits both. Going the other way does not: `module load CUDA/12.4` fails on A, and
+  a conda CUDA pinned above the runtime imports cleanly and dies at the first kernel launch.
+* **The openmpi built against that CUDA.** Removed entirely — **nothing openQHA runs on a
+  card needs collectives.** Training is one model per allocation; branch B is one trajectory
+  per card. Eight independent single-card workers talk through the filesystem, not MPI. Not
+  needing MPI is what made one file possible.
+
+**One thing to confirm before the first GPU job on TianheXY-AI:** that CUDA/12.3 is really
+there. The recorded listing was elided (`CUDA/11.8 ... CUDA/13.2`), so 12.3 is inside the
+recorded range but was never read off the screen.
+
+```bash
+module avail CUDA 2>&1 | grep -o "CUDA/12[.][0-9]*"
+```
+
+If it is absent, change `CUDA_VERSION` in `hpc/resource_configs/tianhe_ai.py` and the pin in
+the yml. Not a second file.
+
+### The BLAS pins are absent from the GPU file on purpose
+
+Every other environment file pins `libopenblas=*=openmp*`, because conda-forge's `crest`
+links the pthreads build while CREST is OpenMP-parallel, and the mismatch cost 4164 warning
+lines and 20 s per molecule. **There is no crest in the GPU environment**, so the defect
+cannot occur — and the pins were not free. Measured 2026-09-07, one variable at a time:
+
+```
+openmmtools + BLAS pins, no CUDA                       SOLVES
+openmmtools + CUDA torch, no BLAS pins                 SOLVES
+openmmtools + CUDA torch + cuda-version=12.3 + pins    FAILS
+the file as it now stands                              SOLVES
+```
+
+Dropping `openmmtools` instead was not an option: its `NoseHooverChainVelocityVerlet`
+defaults **are** branch B's thermostat (50/ps, chain 5, MTS 5, YS 5), adopted rather than
+chosen. Plain OpenMM's integrator defaults to a 7-term Yoshida–Suzuki decomposition, so
+substituting it would change the thermostat silently.
+
+---
+
+## 4. MACE-OFF weights — what that warning actually asks you to do
+
+The line that is confusing:
+
+> **MACE-OFF weights** — NOT downloaded on a login node — outbound traffic goes through a
+> proxy and a 100 MB pull from a login node is antisocial. Fetch them where you have
+> bandwidth and rsync them in; the SHA-256 is recomputed on load, so a truncated transfer
+> fails loudly.
+
+Unpacked, it is four separate facts:
+
+**1. The weights are not in this repository and never will be.** MACE-OFF is under the
+Academic Software Licence — academic, non-commercial, no redistribution. openQHA ships
+only *paths and SHA-256 digests*. `openqha/engine.py` says this in the code.
+
+**2. `install_dependency.sh` downloads them for you — except in `--tianhe` mode.**
+On a workstation it fetches `MACE-OFF23_medium.model` (~100 MB) from
+`github.com/ACEsuit/mace-off`, checks the digest, and only then renames it into place.
+Under `--tianhe` it deliberately does not, and prints the rsync line instead.
+
+**3. Why not on a login node.** The login node reaches the internet only through the site
+proxy (`source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138`). Three reasons,
+in increasing order of how much they will cost you:
+   - it is slow and shared — a login node is for everyone;
+   - `conda` and `pip` *hang* rather than fail without the proxy set, and a hung job is
+     charged for its whole walltime;
+   - **a proxy can return an HTML error page under a 200 status.** That is a perfectly
+     valid file and a completely wrong potential, and it looks like a successful download.
+
+**4. The check is automatic and it is not optional.** `engine.provenance()` recomputes the
+SHA-256 on *every load* and raises on a mismatch. So a truncated rsync fails at the first
+molecule of the first job, with the expected and computed digests printed — not three
+hours into a campaign, and never as a puzzling number.
+
+### The actual procedure
+
+```bash
+# --- on your workstation, where you have bandwidth -----------------------------------
+cd openQHA
+bash install_dependency.sh                    # downloads + hash-checks the default
+# or:  bash install_dependency.sh --all-weights   # the whole committee, for branch C
+
+ls -l data/potentials/mace_off23/
+#   MACE-OFF23_medium.model
+
+# --- copy it in ----------------------------------------------------------------------
+rsync -a --progress data/potentials/ <you>@tianhe:~/openQHA/data/potentials/
+
+# --- on Tianhe: prove it arrived intact ----------------------------------------------
+cd ~/openQHA && source env_openqha.sh
+python -c "
+from openqha import engine, json
+print(json.dumps(engine.provenance(), indent=1, default=str))"
+```
+
+Expect `sha256_pinned: true` and no exception. If the digest disagrees, the file is wrong —
+re-copy it; do not "fix" the pin.
+
+### Where the model setting lives
+
+| what | where | note |
+|---|---|---|
+| the registry | `openqha/engine.py` → `ENGINES` | name → path, sha256, licence, source, note |
+| production default | `openqha/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` since 2026-09-03 (S0-A-16) |
+| select another | `S0_ENGINE=MACE-OFF23_large` | must be a registered name; unknown names raise |
+| move the tree | `S0_MACE_ROOT=/path/to/potentials` | overrides the search |
+| one file | `S0_MACE_MODEL=/path/to/x.model` | overrides one path |
+| what the run used | `configs/openqha.yaml` → `engine:` | records *which* weights, **not authoritative for the path** |
+
+The path is a **search**, not a literal, because a literal has already broken twice here:
+`scripts/` moved and every `parents[1]` broke; then the reference tree moved out to
+`../source-code/` and every engine path broke. A name written into a string does not move
+with the thing it names.
+
+Expected layout after `install_dependency.sh`:
+
+```
+$S0_MACE_ROOT/                 # default: <repo>/data/potentials
+    mace_off23/MACE-OFF23_medium.model      <- the production default
+    mace_off23/MACE-OFF23_small.model       <- committee, with --all-weights
+    mace_off23/MACE-OFF23_large.model
+    mace_off23/MACE-OFF23b_medium.model
+    mace_off24/MACE-OFF24_medium.model
+```
+
+**Never falls back.** A missing or altered weight file raises. Silently swapping the
+potential strips every downstream number of the level it claims to be at, and level
+consistency is the only condition under which the composite decomposition holds.
+
+---
+
+## 5. One MACE server per molecule, never one per machine
+
+CREST's quality layer reaches MACE over a unix socket held by a resident process. That
+process holds **one model behind one lock**. N workers sharing one socket are therefore not
+parallel — they queue on the lock, and the fan-out is imaginary while looking real in every
+log.
+
+Both routes handle this, differently, and neither needs configuring:
+
+* **Parsl route** — `s0_E_branchA_parsl.py` starts a server per task, on a socket named
+  after `(molecule, pid)` so two workers can never collide, and stops it when the molecule
+  is done.
+* **yhbatch route** — `s0_A_pipeline.py` starts its own when `S0_MACE_SOCKET` is not
+  already exported. Under `xargs -P 16` that is 16 servers, one per molecule.
+
+The cost is 16 copies of a ~100 MB model in RAM on a 512 GB node. That is the correct
+trade.
+
+---
+
+## 6. Submitting: `debug` first, then `deimos`
+
+**There is no `--dry-run` gate any more** (user ruling 2026-09-07). A 30-minute real job on
+the short partition tests five things a rendered plan cannot: that the module loads, that
+conda activates on a *compute* node, that the weights are there and hash correctly, that the
+scheduler accepts the directives, and that Parsl can read its own status query.
+
+`--dry-run` still exists and still prints the plan. It is for reading, not for gating.
+
+| cluster | smoke | production |
+|---|---|---|
+| TianheXY-C | `debug`, **00:30:00**, 1 node | `deimos`, **3-00:00:00**, 12 nodes |
+| TianheXY-A | `temp`, **00:30:00**, 1 node | `ai`, **7-00:00:00**, 5 nodes |
+
+`xyfree`, `mars` and `e9` exist on the CPU cluster and are deliberately unused: one
+production queue means one set of costs to compare against. They are recorded in
+`tianhe_cpu.PARTITIONS_NOT_USED` so "why not mars" has an answer.
+
+### 6.0 Before anything: first login
+
+```bash
+ssh <you>@tianhe
+source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138
+curl -sI https://conda.anaconda.org | head -1      # expect 200 or 301
+```
+
+If that hangs, stop — everything after it will hang too, and a hung job is charged.
+
+```bash
+type -a yhbatch yhrun sacct squeue scancel        # all five exist (measured 2026-09-05)
+sinfo -o "%P %c %m %D"                            # confirm `debug` and `deimos`
+```
+
+`sbatch` is **not** present; `yhbatch` is. `sacct`/`squeue`/`scancel` are used rather than
+their `yh*` variants because Parsl *parses* their output and nobody has read `yhacct`'s
+format.
+
+### 6.1 Install
+
+```bash
+cd ~/openQHA
+bash install_dependency.sh --tianhe        # builds `openqha` from environment-tianhe.yml
+rsync -a data/potentials/ <tianhe>:~/openQHA/data/potentials/    # section 4
+source env_openqha.sh
+python check_dependency.py                 # ends: branch A READY / NOT READY
+```
+
+### 6.2 Smoke test — one edge, 30 minutes
+
+**Parsl:**
+
+```bash
+mkdir -p $HOME/HDD_POOL/runs/openQHA/logs
+python -u scripts/production/s0_E_branchA_parsl.py \
+    --species dsgdb9nsd_000018 dsgdb9nsd_000035 \
+    --resource tianhe_cpu --tag tianhe_debug --debug
+```
+
+`--debug` swaps in `debug` / `00:30:00` and caps the run at one allocation. It is **refused**
+on a resource config that has no short partition, rather than quietly running production
+settings under a flag that says debug.
+
+**yhbatch:**
+
+```bash
+mkdir -p $HOME/HDD_POOL/runs/openQHA/logs
+EDGE=C3H6O1N0_18_35 TAG=tianhe_debug yhbatch hpc/slurm/branchA_debug.slurm
+```
+
+Both should end with 9/9 acceptance criteria per molecule. **Then compare the two
+products** — if a molecule run through Parsl differs from the same molecule run through
+`xargs`, the execution layer is doing something it must not.
+
+### 6.3 Production — 4 threads × 16 concurrent × 12 nodes
+
+**192 molecules in flight.** The quota allows 32 nodes; 12 is what is configured, and
+`MAX_BLOCKS` in `hpc/resource_configs/tianhe_cpu.py` is the one number to change.
+
+**Parsl** — settings live in the config, not the command line:
+
+```bash
+python -u scripts/production/s0_E_branchA_parsl.py \
+    --range 1 16000 --resource tianhe_cpu --tag prod \
+    2>&1 | tee $HOME/HDD_POOL/runs/openQHA/logs/prod_$(date +%Y%m%d_%H%M).log
+```
+
+`--range` resumes: molecules already complete under that tag are subtracted, and molecules
+with no geometry or that fail F0–F7 are dropped, each with a count and a reason in the plan
+record. Re-running the same command does the remainder.
+
+**yhbatch** — twelve shards, one per node:
+
+```bash
+bash hpc/slurm/submit_branchA_deimos.sh 1 16000 prod
+```
+
+The submitter makes the log directory first (Slurm opens `--output` *before* the job script
+runs, so a directory the script creates is created too late), scans once and refuses to
+submit twelve jobs for nothing, and records shards + tag + job ids next to the logs.
+
+Each shard **re-scans when it starts**, not when it was submitted. A job that waited six
+hours in the queue therefore does not redo what its neighbours finished. `--shard K/N` takes
+every N-th entry of the *already filtered* list, not a slice of the index range: QM9 indices
+are not contiguous and the gates drop molecules unevenly, so splitting the range gives one
+node an hour of work and another three days.
+
+### 6.4 Watching it
+
+```bash
+yhq -a                 # queue (works even with no allocation left)
+yhi                    # node states: idle / mix / alloc
+yhcancel <jobid>
+
+python -c "
+from openqha import basin_store
+c = basin_store.census(tag='prod')
+print(c['total'], 'molecules done across', len(c['chunks']), 'chunks')"
+
+python scripts/production/s0_E_worklist.py --range 1 16000 --tag prod --explain \
+    > /dev/null          # the decision record on stderr: done / no geometry / gated
+```
+
+Scale with `MAX_BLOCKS`. `init_blocks=0` and `min_blocks=0` mean nothing is requested until
+there is work and an idle allocation is given back — **a held node is charged whether or not
+it computes.**
+
+### 6.5 What the two routes do differently — and what they must not
+
+| | Parsl | yhbatch |
+|---|---|---|
+| unit submitted | a *block* (one node), grown on demand | one job per shard |
+| worklist | `openqha/worklist.py`, in the driver | `s0_E_worklist.py`, in the job |
+| resume | subtract completed under the tag | same code, same criterion |
+| failure of one molecule | task recorded, batch continues | `FAILED <id>` appended, `xargs` continues |
+| card/thread pinning | `cores_per_worker` | `xargs -P` |
+| **any number in the product** | **identical** | **identical** |
+
+The last row is the only one that matters. Both call `s0_A_pipeline.py` with the same
+arguments; neither touches chemistry.
+
+---
+
+## 7. Where the answer lands, and how to read it
+
+### The basin store — sharded, because 133 885 molecules is not one directory
+
+```
+data/basins/<tag>/<range>/<chunk>/<qid>.basins.json
+                                 /<qid>.basins.xyz
+
+data/basins/prod/1_16000/1_4000/dsgdb9nsd_000018.basins.json
+data/basins/prod/1_16000/1_4000/dsgdb9nsd_000018.basins.xyz
+```
+
+Two files per molecule, at most 4000 molecules per leaf, so at most 8000 entries per
+directory — comfortable on ext4, on Lustre and for `ls`. The chunk that owns a molecule is
+arithmetic on its index (`basin_store.shard()`), so nothing has to search and no index file
+is needed to find one result.
+
+Each file is written to `.part` and **renamed**, so a job killed at its walltime leaves a
+missing result rather than a corrupt one. A missing result is resumable; a corrupt one has
+to be found first. `worklist.COMPLETION` therefore requires **both** files: the JSON is the
+record and the xyz is the deliverable, and a run killed between the two renames must not
+count as done.
+
+### The full record
+
+```
+analysis/branchA/<tag>/<qid>/basins.json     everything: census, criteria, provenance
+analysis/branchA/<tag>/<qid>/driver.log      the driver's stdout, verbatim
+analysis/branchE/<tag>/batch.json            the Parsl batch: plan + per-task results
+```
+
+`batch.json` carries the plan, including `settings_source` (which value came from the
+command line, which from the resource config, which from a built-in default) and
+`submission` (which partition and walltime this run actually used). Without the latter a
+`--debug` run and a production run record the same `resource` block and become
+indistinguishable afterwards.
+
+### Reading it
+
+```python
+from openqha import basin_store
+
+# how far has the campaign got?
+c = basin_store.census(tag="prod")
+print(c["total"], "molecules;", len(c["chunks"]), "chunks")
+
+# one molecule
+rec = basin_store.read("dsgdb9nsd_000018", tag="prod")
+print(rec["census"]["n_basins"], "basins")
+print(rec["all_criteria_passed"])
+for b in rec["basins"]:
+    print(b["symmetry"]["sigma"], b["energy_kcal"])
+
+# where is it on disk?
+print(basin_store.paths_for("dsgdb9nsd_000018", tag="prod"))
+```
+
+```bash
+# the geometries, as an ordinary trajectory
+python -c "
+from ase.io import read
+from openqha import basin_store
+_, x = basin_store.paths_for('dsgdb9nsd_000018', tag='prod')[:2]
+print(len(read(str(x), index=':')), 'basins')"
+```
+
+### Analysis
+
+```bash
+# per-molecule summary tables (parquet) from the whole store
+python scripts/production/s0_package1_collect.py --tag prod
+python scripts/production/s0_package1_crest_summarise.py --tag prod
+
+# why refine=opt is worse than refine=sp, with the mechanism
+python scripts/calibration/s0_A_refine_mechanism.py --species dsgdb9nsd_000018
+```
+
+**What to report, and what not to.** Wall clock, single-job time and slot extrapolation are
+three separate numbers and must stay separate (branch E acceptance criterion 5). The batch
+record computes the first two and deliberately refuses to compute the third: dividing a
+batch wall clock by a worker count describes neither one molecule nor the batch. The only
+cost figure this repository has is **285 s per species, 4 threads, uncontended, on a
+workstation** — not on Tianhe, and not under contention with 15 neighbours sharing memory
+bandwidth. Replace it with a real one from the first production shard.
+
+---
+
+## 8. Branch B, since it changed at the same time
+
+Branch B's two halves now run on different machines (user ruling 2026-09-07):
+
+```
+trajectories   TianheXY-A, GPU, ONE TRAJECTORY PER CARD
+               8 cards/allocation x 5 allocations = 40 concurrent
+               python scripts/production/s0_E_branchB_parsl.py --edges \
+                   --resource tianhe_a --route openmm
+               bash hpc/slurm/submit_branchB_tianhe_a.sh prod ai
+
+collection     TianheXY-C, CPU, ONE MOLECULE PER CORE, 64 at a time, ONE NODE
+               python scripts/production/s0_E_branchB_collect_parsl.py --edges \
+                   --resource tianhe_cpu --tag prod
+               TAG=prod yhbatch hpc/slurm/branchB_collect.slurm
+```
+
+**One node for collection, not twelve.** The pass reads frames and diagonalises a 3N×3N
+covariance per molecule: small, serial, float64 — a card buys nothing, and its real cost is
+metadata traffic on Lustre, so more nodes would buy contention rather than throughput. If it
+ever becomes the bottleneck, batch more molecules per task.
+
+**The GPU cost of branch B is unmeasured.** The only GPU figure this repository has is
+D0-C-5: the same trajectory ran **3.5× slower** on the GPU than on the CPU. That was a
+T400 — a 2 GB entry-level card — against 80 GB HBM2e here, so it does not transfer; but
+nothing has replaced it either. Run the `temp` smoke test and read
+`seconds_per_ps_this_run` out of `meta.json` before sizing a campaign. Do not assume the
+card is faster because it is a card.
+
+The CPU route is kept, not deprecated: `--route ase --resource tianhe_cpu` is the
+independent implementation pair that makes the OpenMM numbers checkable. Both write the
+same `frames.npy` + `meta.json` contract, so the analysis reads either without knowing
+which produced it.
+
+---
+
+## 9. Executor labels
+
+One place, `hpc/labels.py`, because a label repeated in two files is a defect waiting for
+someone to edit one of them. **A Parsl app that names an executor the config does not
+provide builds cleanly, renders cleanly, and then schedules nothing.**
+
+| role | label | runs | where |
+|---|---|---|---|
+| `crest` | `openqha_crest_executor` | branch A conformer search | TianheXY-C, 16 × 4 threads |
+| `qha` | `openqha_qha_executor` | branch B trajectories | TianheXY-A, 8 × 1 card |
+| `collect` | `openqha_collect_executor` | branch B analysis | TianheXY-C, 64 × 1 core |
+| `qm` | `openqha_qm_executor` | branch C ORCA reference | TianheXY-C |
+| `train` | `openqha_train_executor` | branch C MACE fine-tuning | TianheXY-A / -AI |
+
+Each has a `_standby_executor` variant (ALF's convention) for a cheaper or shorter queue;
+omitting one is valid, and nothing schedules to a label that does not exist.
+
+**A label never names a machine.** `openqha_crest_tianhe` was wrong twice over: it named the
+site, and it did not match what the driver bound. When branch B's trajectories moved from
+the CPU cluster to the GPU one, `openqha_qha_executor` did not have to change.
+
+```bash
+python hpc/labels.py            # the table
+```
+
+---
+
+## 10. Verified here, and not
+
+| checked without Tianhe | result |
+|---|---|
+| every config builds, every role, debug and production | **8/8 pass** |
+| every job script renders (`#SBATCH` directives read) | **pass** |
+| `--gpus=8` present, `--exclusive` absent on the GPU clusters | **pass** |
+| `--exclusive` present on the CPU cluster | **pass** |
+| per-card pinning gives `['0'…'7']` | **pass** |
+| all four `.slurm` and two `.sh` parse (`bash -n`) | **pass** |
+| every changed Python file compiles and renders `--help` | **pass** |
+| `--debug` refused where there is no short partition | **pass** |
+| the GPU environment solves at CUDA 12.3 | **pass** (dry run) |
+| the wall budget follows `--debug` (1620 s, not 544 320) | **fixed here** |
+
+Defects found this way in code that had been written and never executed: the provider's
+`_command_map` built after `super().__init__()`; `render_only` reading a module attribute
+as an instance one; a duplicated `--ntasks-per-node`; an executor label that matched
+nothing; `--exclusive` defaulted on by Parsl and banned by the site; a per-block
+`CUDA_VISIBLE_DEVICES` that would have put all 8 workers on card 0; the branch B Parsl
+driver still asking for the retired label `openqha_qha`; the OpenMM driver having no way to
+address one `(basin, seed)` and writing to `$HOME` instead of `S0_RUNS_ROOT`.
+
+**Still unverified, and only the machine can settle it:**
+
+* the `debug` partition name and both walltimes are the user's, not read off `sinfo` here;
+* CUDA/12.3 on TianheXY-AI (section 3);
+* whether `--exclusive` is actually required on TianheXY-A — its manual says its nodes are
+  exclusive and its `yhbatch --help` lists the flag, while the 2026-09-05 ruling says not to
+  pass it. If a submission is refused for want of exclusivity, `EXCLUSIVE` in
+  `hpc/resource_configs/tianhe_a.py` is the line to change;
+* every cost, on every cluster;
+* `tianhexy-i` appears in the quota table and this repository knows nothing about it.

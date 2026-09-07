@@ -1,4 +1,7 @@
-# openQHA -- Tianhe (TianheXY-AI, Xingyi AI cluster, NSCC-GZ).
+# openQHA -- Tianhe **CPU** cluster (TianheXY-C, Xingyi, NSCC-GZ).
+#
+# BRANCH A AND THE BRANCH B COLLECTION PASS. Not the GPU work -- that is
+# environment-tianhe-gpu.yml, which serves both GPU clusters at CUDA 12.3.
 #
 #     module load anaconda3/2023.09
 #     conda env create -f environment-tianhe.yml
@@ -9,17 +12,21 @@
 # ---------------------------------------------------------------------------------------
 # WHY A THIRD ENVIRONMENT FILE
 # ---------------------------------------------------------------------------------------
-# environment.yml is CPU and environment-cuda.yml pins CUDA 12 for branch C training.
-# Neither fits this machine, for one reason that is not about preference:
+# environment.yml is this project's workstation environment and carries a notebook stack,
+# GROMACS activation hooks and other things a compute node never touches.
 #
-#   **Every partition on this cluster is a GPU partition** (measured 2026-09-05: hx,
-#   h100x, a100x, a800x, v100x -- and no CPU queue). Branch A is CPU work, so it takes a
-#   GPU allocation and does not use the card. There is no point pulling a 2 GB CUDA torch
-#   to leave it idle, so this file pins the **CPU** build of torch even though the job
-#   holds a GPU.
+# **CORRECTION, 2026-09-05.** An earlier version of this header said "every partition on
+# this cluster is a GPU partition". That was true of TianheXY-**AI**; this file is for
+# TianheXY-**C**, the CPU machine -- 64-core nodes, whole-node exclusive allocation,
+# partitions `debug` and `deimos`. The mistake was not cosmetic: it is what put branch A
+# on a GPU cluster, holding a card it could not use.
 #
-# Branch C training on this machine is the case that wants CUDA -- use
-# `environment-cuda.yml` for that, with `cuda-version` matched to a module below.
+# So the CPU build of torch below is not a compromise around a wasted GPU. It is simply
+# correct: branch A is ~1e5 GFN2-xTB gradient calls and xtb has no GPU path at all, while
+# MACE refines 10-20 atom structures that cannot fill a card.
+#
+# The GPU work -- branch B trajectories, branch C training -- uses
+# `environment-tianhe-gpu.yml` on TianheXY-A (preferred) or TianheXY-AI.
 #
 # ---------------------------------------------------------------------------------------
 # WHAT COMES FROM MODULES AND WHAT COMES FROM CONDA

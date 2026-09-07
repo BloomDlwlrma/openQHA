@@ -3,9 +3,30 @@
 PRODUCTION. This is the execution layer: it decides where branch B's trajectories run and
 how many run at once. **It computes nothing.** Every scientific decision -- the timestep,
 the friction, the temperature, the sampling interval, the three prohibitions -- is made
-inside `scripts/production/s0_B_qha_trajectory.py`, and this script must be replaceable by
-a for-loop without changing a single number. That is branch E acceptance criterion 1, and
-the only way to keep it true is to keep this file free of chemistry.
+inside the trajectory drivers, and this script must be replaceable by a for-loop without
+changing a single number. That is branch E acceptance criterion 1, and the only way to
+keep it true is to keep this file free of chemistry.
+
+WHERE BRANCH B RUNS, SINCE 2026-09-07
+--------------------------------------
+User ruling: the trajectories are a GPU job.
+
+    trajectories   TianheXY-A, `--resource tianhe_a --route openmm --platform CUDA`
+                   ONE TRAJECTORY PER CARD, 8 cards per allocation, 5 allocations =
+                   40 concurrent trajectories.
+    collection     TianheXY-C, `s0_E_branchB_collect_parsl.py`
+                   one molecule per core, 64 at a time, ONE node.
+
+The CPU route has not been deleted and is not deprecated: `--route ase --resource
+tianhe_cpu` is the independent implementation pair that makes the OpenMM numbers
+checkable. It is simply no longer the production route.
+
+    CAVEAT, stated rather than buried: this repository's only GPU measurement of branch B
+    is D0-C-5, where the same trajectory ran 3.5x SLOWER on the GPU than on the CPU. That
+    was a T400 -- a 2 GB entry-level card -- against 80 GB HBM2e on TianheXY-A, so the
+    number does not transfer. It has also not been replaced. **Take seconds-per-ps off a
+    `--debug` run before sizing a campaign**, and do not assume the card is faster
+    because it is a card.
 
 Why the unit of work is (basin, seed) and not (species)
 -------------------------------------------------------
@@ -18,15 +39,18 @@ costs at most one chunk.
 
 Executor
 --------
-`openqha_qha`, not `openqha_crest`. They differ in cores per worker for a measured reason:
-CREST parallelises its own metadynamics runs, so it gets 4 threads; a quasi-harmonic
-trajectory is a serial chain of single-structure MACE calls, and MACE's thread scaling on a
-10-atom molecule is 111/90/72/101 ms at 1/2/4/8 threads. Four threads buy 1.54x, four
-trajectories buy 4x. Sending branch B work to the CREST executor would hold three idle
-cores per trajectory.
+`openqha_qha_executor`, from hpc/labels.py -- never a literal. A Parsl app that names an
+executor the config does not provide builds cleanly, renders cleanly and then schedules
+nothing; that is exactly how this file was broken until 2026-09-07, when it still asked
+for the retired label `openqha_qha`.
 
-    python scripts/production/s0_E_branchB_parsl.py --species dsgdb9nsd_000018 --dry-run
-    python scripts/production/s0_E_branchB_parsl.py --edges --resource deimos --account X
+    # smoke test: one species, one basin, one seed, 30 minutes on the short queue
+    python -u scripts/production/s0_E_branchB_parsl.py --species dsgdb9nsd_000018 \
+        --resource tianhe_a --route openmm --seeds 1 --prod-ps 2 --debug
+
+    # production
+    python -u scripts/production/s0_E_branchB_parsl.py --edges \
+        --resource tianhe_a --route openmm
 """
 import argparse
 import json
@@ -72,18 +96,60 @@ sys.path.insert(0, str(_hpc_root(ROOT)))
 
 from openqha import config  # noqa: E402
 
+#: route -> the production driver that implements it.
+ROUTES = {
+    "openmm": "s0_B_qha_trajectory_openmm.py",
+    "ase": "s0_B_qha_trajectory.py",
+}
+
+
+def _walltime_seconds(text):
+    """Slurm walltime -> seconds. Accepts D-HH:MM:SS, HH:MM:SS, MM:SS and MM.
+
+    Written out rather than guessed at, because the two spellings this repository uses
+    are `3-00:00:00` and `00:30:00`, and a parser that handles only one of them silently
+    returns a budget three orders of magnitude wrong.
+    """
+    text = str(text).strip()
+    days = 0
+    if "-" in text:
+        d, _, text = text.partition("-")
+        days = int(d)
+    parts = [int(x) for x in text.split(":")] if text else [0]
+    while len(parts) < 3:
+        parts.insert(0, 0)                      # MM:SS -> 0:MM:SS, MM -> 0:0:MM
+    h, m, s = parts[-3:]
+    return days * 86400 + h * 3600 + m * 60 + s
+
+
+def _accepted_kwargs(fn):
+    """Parameter names a resource config's `config()` will accept.
+
+    Asked rather than assumed: the resource configs are separate modules with slightly
+    different signatures, and passing a keyword one of them does not take raises
+    TypeError from inside Parsl's construction, where it reads as a Parsl problem.
+    """
+    import inspect
+    return set(inspect.signature(fn).parameters)
+
 
 # ======================================================================================
 # The task. It runs in a worker process, so it must be self-contained.
 # ======================================================================================
 def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_ps,
-                       equil_ps, wall_budget_s, basins_file=None, env=None):
+                       equil_ps, wall_budget_s, route="ase", platform=None,
+                       basins_file=None, env=None):
     """One (basin, seed) trajectory, as a SUBPROCESS of the branch B driver.
 
     A subprocess rather than an import, for the same three reasons branch A uses one:
     a crash or an out-of-memory kill takes down one task and not the worker's whole queue;
     the driver's stdout is captured verbatim per trajectory; and the command line that
     produced a result is recorded literally, which is what defect 57 was missing.
+
+    `route` picks which of the two production drivers runs. They write the same
+    `frames.npy` + `meta.json` contract, so the analysis reads either without knowing
+    which produced it -- that is what makes them an implementation pair rather than a
+    fork.
     """
     import json as _json
     import os as _os
@@ -92,21 +158,39 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
     import time as _time
     from pathlib import Path as _Path
 
+    ROUTE_SCRIPTS = {"openmm": "s0_B_qha_trajectory_openmm.py",
+                     "ase": "s0_B_qha_trajectory.py"}
+    if route not in ROUTE_SCRIPTS:
+        raise ValueError("unknown route {!r}; known: {}".format(
+            route, sorted(ROUTE_SCRIPTS)))
+
     repo_root = _Path(repo_root)
     started = _time.time()
     e = dict(_os.environ)
     e.update(env or {})
-    # One thread per trajectory. Set here as well as in hpc/env/common.sh, because a
+    # One CPU thread per trajectory. Set here as well as in hpc/env/common.sh, because a
     # worker that inherited a different environment would silently oversubscribe and
     # every cost measured in that run would be meaningless.
+    #
+    # This stays 1 on the GPU route too. There the force call happens on the card and the
+    # CPU thread only feeds it, so extra threads buy contention with the seven other
+    # workers on the node rather than speed.
     e.update(OMP_NUM_THREADS="1", MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
 
+    # Which card this worker was given. parsl sets CUDA_VISIBLE_DEVICES per worker via
+    # `available_accelerators`; recorded here so a product says which card produced it
+    # and a mis-pinning (all workers on card 0) is visible in the record rather than only
+    # in the wall clock.
+    visible = e.get("CUDA_VISIBLE_DEVICES")
+
     cmd = [_sys.executable, str(repo_root / "scripts" / "production"
-                                / "s0_B_qha_trajectory.py"),
+                                / ROUTE_SCRIPTS[route]),
            "--species", species, "--tag", tag,
            "--basin", str(basin), "--seed-index", str(seed_index),
            "--seed0", str(seed0),
            "--prod-ps", str(prod_ps), "--equil-ps", str(equil_ps)]
+    if platform and route == "openmm":
+        cmd += ["--platform", str(platform)]
     if wall_budget_s:
         cmd += ["--wall-budget-s", str(wall_budget_s)]
     if basins_file:
@@ -115,6 +199,8 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
     proc = _sp.run(cmd, cwd=str(repo_root), env=e, text=True,
                    stdout=_sp.PIPE, stderr=_sp.PIPE)
     summary = dict(species=species, basin=basin, seed_index=seed_index,
+                   route=route, platform=platform,
+                   cuda_visible_devices=visible,
                    command=" ".join(cmd), returncode=proc.returncode,
                    seconds=_time.time() - started)
 
@@ -167,6 +253,13 @@ def main():
                     help="run every species named by the configured edge set")
     ap.add_argument("--resource", default="local",
                     help="hpc/resource_configs/<name>.py (default: local -- step 0)")
+    ap.add_argument("--route", default=None, choices=sorted(ROUTES),
+                    help="openmm (production since 2026-09-07) or ase (the independent "
+                         "implementation pair). Default: the resource config's "
+                         "QHA_ROUTE, else openmm on a GPU site and ase elsewhere.")
+    ap.add_argument("--platform", default=None,
+                    help="OpenMM platform for --route openmm. Default: the resource "
+                         "config's OPENMM_PLATFORM, else CPU.")
     ap.add_argument("--tag", default="prod")
     ap.add_argument("--basins", type=int, default=1,
                     help="how many basins per species to run (branch A supplies the "
@@ -184,6 +277,10 @@ def main():
     ap.add_argument("--partition", default=None)
     ap.add_argument("--dry-run", action="store_true",
                     help="print the plan and submit nothing")
+    ap.add_argument("--debug", action="store_true",
+                    help="submit for real, on the site's short partition, at its debug "
+                         "walltime, capped at ONE allocation. This -- not --dry-run -- "
+                         "is the gate before production.")
     args = ap.parse_args()
 
     cfg = config.load()
@@ -192,9 +289,28 @@ def main():
     import resource_configs
     res = resource_configs.load(args.resource)
     described = res.describe()
+
+    # The per-task budget must follow the QUEUE, not the site. QHA_WALL_BUDGET_S is
+    # 90% of the production walltime; under --debug the walltime is 30 minutes, and
+    # handing a debug task a seven-day budget means it never stops itself and gets
+    # killed by the queue instead -- the one thing the budget exists to prevent.
     budget = args.wall_budget_s
     if budget is None:
-        budget = getattr(res, "QHA_WALL_BUDGET_S", 0)
+        if args.debug and described.get("debug_walltime"):
+            budget = int(0.90 * _walltime_seconds(described["debug_walltime"]))
+        else:
+            budget = getattr(res, "QHA_WALL_BUDGET_S", 0)
+
+    # Route and platform come from the resource config unless overridden, so that
+    # "which machine" and "which implementation" are decided in one place. A GPU site
+    # declares OPENMM_PLATFORM = "CUDA"; a CPU site declares nothing and gets CPU.
+    route = args.route or getattr(res, "QHA_ROUTE", None)
+    if route is None:
+        route = "openmm" if getattr(res, "OPENMM_PLATFORM", None) else "ase"
+    platform = args.platform or getattr(res, "OPENMM_PLATFORM", None) or "CPU"
+    if route == "ase" and args.platform:
+        raise SystemExit("--platform applies to --route openmm only; the ASE route has "
+                         "no platform concept.")
 
     tasks = [(s, b, k) for s in species
              for b in range(args.basins) for k in range(args.seeds)]
@@ -203,27 +319,54 @@ def main():
         generated_by="scripts/production/s0_E_branchB_parsl.py",
         branch="E (execution layer for branch B)",
         resource=described,
-        executor="openqha_qha",
+        route=route, route_script=ROUTES[route],
+        openmm_platform=platform if route == "openmm" else None,
+        # WHICH QUEUE THIS RUN ACTUALLY USED. Without it a --debug run and a production
+        # run record the same `resource` block and become indistinguishable afterwards.
+        submission=dict(
+            debug=bool(args.debug),
+            partition=(args.partition
+                       or (described.get("debug_partition") if args.debug
+                           else described.get("partition"))),
+            walltime=(described.get("debug_walltime") if args.debug
+                      else described.get("walltime")),
+            max_blocks=(1 if args.debug else described.get("max_blocks"))),
         n_species=len(species), species=species, species_source=source,
         n_tasks=len(tasks), basins_per_species=args.basins, seeds_per_basin=args.seeds,
         tag=args.tag, prod_ps=args.prod_ps, equil_ps=args.equil_ps,
         wall_budget_s=budget,
-        science_settings_source=("scripts/production/s0_B_qha_trajectory.py and "
-                                 "configs/openqha.yaml -- NOT this script"),
+        science_settings_source=("scripts/production/{} and configs/openqha.yaml -- "
+                                 "NOT this script".format(ROUTES[route])),
         prohibitions="no bias, no constraints, real hydrogen mass, fixcm=False",
-        cost_note=("96.1 s/ps measured on this machine for a 10-atom molecule at 1 "
-                   "thread, uncontended. It must NOT be divided by a worker count to "
-                   "produce a cluster estimate (D0-P1-12, defects 34 and 56)."),
+        cost_note=("96.1 s/ps (ASE) and 100 s/ps (OpenMM) measured on this project's "
+                   "workstation for a 10-atom molecule at 1 CPU thread. NEITHER is a "
+                   "GPU number, and neither may be divided by a worker count to produce "
+                   "a cluster estimate (D0-P1-12, defects 34 and 56)."),
+        gpu_cost_status=("UNMEASURED on TianheXY-A. The only GPU figure this repository "
+                         "has is D0-C-5, 3.5x SLOWER than CPU on a T400. Measure with "
+                         "--debug before sizing a campaign."),
         estimated_single_task_seconds=round(96.1 * args.prod_ps, 1),
     )
 
     print("=" * 92)
     print("Branch E -- branch B over Parsl")
     print("=" * 92)
-    print("resource     {}  ({} qha workers x {} thread)".format(
-        args.resource, described.get("qha_max_workers")
+    # The role's OWN layout, not the site's default one. Reading `workers_per_node`
+    # printed the CREST layout (16 x 4) for a branch B run that uses 64 x 1.
+    _lay = (described.get("layouts") or {}).get("qha") or {}
+    print("resource     {}  ({} workers x {} cores)".format(
+        args.resource,
+        _lay.get("workers_per_node") or described.get("workers_per_node")
         or described.get("qha_workers_per_node"),
-        described.get("qha_threads_per_job", 1)))
+        _lay.get("cores_per_worker") or described.get("cpus_per_worker")
+        or described.get("qha_threads_per_job", 1)))
+    print("route        {}  ({}{})".format(
+        route, ROUTES[route],
+        ", platform " + platform if route == "openmm" else ""))
+    print("queue        {} partition={} walltime={} max_blocks={}".format(
+        "DEBUG (smoke test)" if args.debug else "production",
+        plan["submission"]["partition"], plan["submission"]["walltime"],
+        plan["submission"]["max_blocks"]))
     print("tasks        {}  ({} species x {} basins x {} seeds)".format(
         len(tasks), len(species), args.basins, args.seeds))
     print("length       {} ps equilibration + {} ps production".format(
@@ -231,8 +374,8 @@ def main():
     print("wall budget  {}".format(
         "{} s per task".format(int(budget)) if budget else
         "none -- a task runs to completion (this machine has no queue to be killed by)"))
-    print("single task  about {:.0f} s at the measured 96.1 s/ps (10 atoms, "
-          "uncontended)".format(96.1 * args.prod_ps))
+    print("single task  about {:.0f} s at the measured 96.1 s/ps (10 atoms, CPU, "
+          "uncontended). NOT a GPU estimate.".format(96.1 * args.prod_ps))
     print("tag          {}".format(args.tag))
     print()
 
@@ -240,19 +383,47 @@ def main():
         print(json.dumps(plan, indent=2, ensure_ascii=False))
         return 0
 
+    import labels as _labels
+    qha_label = _labels.label("qha")
+
+    accepted = _accepted_kwargs(res.config)
     kw = {}
+    if "role" in accepted:
+        kw["role"] = "qha"
     if args.max_workers:
-        kw["qha_max_workers"] = args.max_workers
+        kw["max_workers" if "max_workers" in accepted else "qha_max_workers"] = \
+            args.max_workers
     if args.account:
         kw["account"] = args.account
     if args.partition:
         kw["partition"] = args.partition
+    if args.debug:
+        # Refused rather than ignored. Silently running production settings under a flag
+        # that says "debug" is how a 30-minute intention becomes a 7-day allocation.
+        if "debug" not in accepted:
+            raise SystemExit(
+                "--debug is not supported by resource config {!r}. Sites with a short "
+                "partition accept it (tianhe_a: temp/00:30:00, tianhe_cpu: "
+                "debug/00:30:00).".format(args.resource))
+        kw["debug"] = True
     parsl_config = res.config(**kw)
 
     import parsl
     from parsl import python_app
     parsl.load(parsl_config)
-    app = python_app(run_one_trajectory, executors=["openqha_qha"])
+
+    # The config is checked against the label BEFORE anything is submitted. A Parsl app
+    # that names an executor the config does not provide fails at neither build nor
+    # render time -- it simply never schedules. Until 2026-09-07 this file asked for the
+    # retired label `openqha_qha` and would have done exactly that.
+    report = _labels.check(parsl_config, expect=qha_label)
+    if report["legacy"]:
+        print("NOTE: this resource config uses retired executor labels {} -> {}. "
+              "They still resolve; update the config.".format(
+                  report["legacy"], report["legacy_map"]))
+    print("executor     {}".format(qha_label))
+
+    app = python_app(run_one_trajectory, executors=[qha_label])
 
     passthrough = {k: os.environ[k] for k in
                    ("S0_RUNS_ROOT", "S0_ENGINE", "S0_MACE_MODEL", "S0_CONFIG",
@@ -261,7 +432,8 @@ def main():
 
     started = time.time()
     futures = [app(s, b, k, args.seed0, str(ROOT), args.tag, args.prod_ps, args.equil_ps,
-                   budget, env=passthrough) for s, b, k in tasks]
+                   budget, route=route, platform=platform, env=passthrough)
+               for s, b, k in tasks]
     results = []
     for f in futures:
         try:
@@ -273,26 +445,43 @@ def main():
     wall = time.time() - started
     parsl.dfk().cleanup()
 
-    print("{:<20} {:>6} {:>8} {:>8} {:>10} {:>10}  {}".format(
-        "species", "basin", "seed", "frames", "T mean K", "seconds", "complete"))
+    print("{:<20} {:>6} {:>6} {:>8} {:>9} {:>10} {:>5}  {}".format(
+        "species", "basin", "seed", "frames", "T mean K", "seconds", "card",
+        "complete"))
     for r in results:
         if r.get("error"):
             print("{:<20} {}".format(r.get("species", "?"), str(r["error"])[:60]))
             continue
-        print("{:<20} {:>6} {:>8} {:>8} {:>10} {:>10.1f}  {}".format(
+        print("{:<20} {:>6} {:>6} {:>8} {:>9} {:>10.1f} {:>5}  {}".format(
             r["species"], r["basin"], r["seed_index"], r.get("n_frames", "-"),
             "-" if r.get("temperature_mean_K") is None
             else "{:.2f}".format(r["temperature_mean_K"]),
-            r["seconds"], r.get("complete")))
+            r["seconds"], r.get("cuda_visible_devices") or "-", r.get("complete")))
+
+    # If every task reports the same card, the per-worker pinning is broken and the run
+    # was 8x slower for a reason that would otherwise show up only as "the GPU is slow".
+    cards = sorted({r.get("cuda_visible_devices") for r in results
+                    if r.get("cuda_visible_devices")})
+    if len(cards) == 1 and len(results) > 1:
+        print()
+        print("WARNING: every task ran on card {} -- if this allocation had more than "
+              "one, the workers were not pinned per card and the run used one of "
+              "them. Check `available_accelerators` in the resource config.".format(
+                  cards[0]))
 
     # Branch E acceptance criterion 5: three numbers, kept apart. The third one is
     # deliberately NOT computed -- a slot extrapolation is a claim about contention that
     # nothing here has measured.
     single = [r["seconds"] for r in results if not r.get("error")]
+    per_ps = [r["seconds_per_ps"] for r in results if r.get("seconds_per_ps")]
     print()
     print("wall_seconds_for_the_whole_batch  {:.1f}".format(wall))
     print("single_task_seconds_median        {:.1f}".format(
         sorted(single)[len(single) // 2] if single else float("nan")))
+    if per_ps:
+        print("seconds_per_ps_median             {:.1f}   <- the number to plan the "
+              "campaign with, measured on THIS machine".format(
+                  sorted(per_ps)[len(per_ps) // 2]))
     print("slot_extrapolation                NOT COMPUTED -- the per-task cost under "
           "contention has not been measured (D0-P1-12, defects 34 and 56)")
 

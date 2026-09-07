@@ -24,6 +24,11 @@ conformer search whether that is a laptop, the CPU cluster or a login node -- wh
 the whole point of the execution layer: replacing it with a for-loop must not change a
 single number.
 
+This is not a technicality. On 2026-09-07 branch B trajectories moved from the CPU
+cluster to the GPU one and `openqha_qha_executor` did not have to change, because it
+never named a machine. The `cluster` column below is a note about where the role is
+USUALLY scheduled, not part of the contract.
+
 **A label never names a machine.** `openqha_crest_tianhe` was wrong twice over: it named
 the site, and it did not match.
 """
@@ -38,9 +43,19 @@ ROLES = {
     ),
     "qha": (
         "openqha_qha_executor",
-        "Branch B: unbiased quasi-harmonic trajectories. One core per trajectory -- "
-        "MACE on a 10-atom molecule runs 111/90/72/101 ms at 1/2/4/8 threads, so "
-        "parallelism belongs between trajectories, not inside one.",
+        "Branch B: unbiased quasi-harmonic trajectories, through OpenMM with "
+        "openqha/openmm_mace.py on the CUDA platform. ONE TRAJECTORY PER CARD -- "
+        "parallelism belongs between trajectories, never inside one.",
+        "GPU cluster (TianheXY-A), 8 cards per allocation. The CPU cluster still "
+        "offers this role for the ASE fallback route, which is the implementation "
+        "pair that makes the OpenMM numbers checkable.",
+    ),
+    "collect": (
+        "openqha_collect_executor",
+        "Branch B: turning trajectories into a number. Reads frames, does the "
+        "quasi-harmonic analysis, writes one result per molecule. ONE CORE PER "
+        "MOLECULE, 64 at a time, on ONE node -- it is short and I/O-bound on Lustre, "
+        "so more nodes would buy metadata contention rather than throughput.",
         "CPU cluster (TianheXY-C)",
     ),
     "qm": (

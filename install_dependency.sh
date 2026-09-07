@@ -9,12 +9,17 @@
 #     bash install_dependency.sh --no-weights # skip the MACE-OFF download
 #     bash install_dependency.sh --all-weights# fetch the whole MACE-OFF family, not one
 #     bash install_dependency.sh --cuda       # CUDA build, without the Tianhe specifics
-#     bash install_dependency.sh --tianhe-cuda# Tianhe GPU cluster, branch C training
+#     bash install_dependency.sh --tianhe-cuda# TianheXY-AI (GPU) -- one CUDA 12.3 env
+#     bash install_dependency.sh --tianhe-a   # TianheXY-A  (GPU) -- the same env
 #
-# THERE ARE TWO TIANHE CLUSTERS and they need different environments:
-#   --tianhe       TianheXY-C  (CPU: xyfree/mars/deimos/e9)  -> branches A and B
-#   --tianhe-cuda  TianheXY-AI (GPU: hx/h100x/a100x/...)     -> branch C, CUDA 12.4
-#   --tianhe-a     TianheXY-A  (GPU: ai/temp, 8 cards/node)  -> branch C, CUDA 12.3
+# THERE ARE THREE TIANHE CLUSTERS. The two GPU ones share an environment; the CPU
+# one does not:
+#   --tianhe       TianheXY-C  (CPU: debug/deimos)          -> branch A + result collection
+#   --tianhe-cuda  TianheXY-AI (GPU: hx/h100x/a100x/...)     -> branch C training
+#   --tianhe-a     TianheXY-A  (GPU: temp/ai, 8 cards/node)  -> branch B trajectories, C
+#
+# The two GPU flags build ONE file, environment-tianhe-gpu.yml, pinned at CUDA 12.3 --
+# the version both module trees have. They differ only in which config submits the work.
 #     bash install_dependency.sh --lean       # branch B production only, `openqha-openmm`
 #
 # ONE environment runs everything, including branch B's OpenMM route. That is a ruling of
@@ -65,8 +70,11 @@ ENV_FILE="environment.yml"
 REQ="requirements.txt"
 DO_INSTALL=1
 WEIGHTS="default"          # default | all | none
-#: Extra modules for --tianhe-cuda. CUDA and the openmpi BUILT AGAINST IT must be loaded
-#: together: an openmpi from a different CUDA fails at the first collective, not at import.
+#: Extra modules for the GPU modes. CUDA only: openQHA loads no MPI on a GPU cluster,
+#: because nothing it runs there needs collectives. That is what removed the one real
+#: difference between the two GPU environment files -- an openmpi built against a
+#: different CUDA fails at the first collective rather than at import, so the safest
+#: version of that dependency is not having it.
 TIANHE_MODULES=""
 
 for arg in "$@"; do
@@ -75,14 +83,16 @@ for arg in "$@"; do
                          PY_ENV="${OPENQHA_ENV:-openqha}" ;;
         --cuda)          ENV_FILE="environment-cuda.yml"
                          PY_ENV="${OPENQHA_ENV:-openqha-cuda}" ;;
-        --tianhe-cuda)   MODE="tianhe"; ENV_FILE="environment-tianhe-cuda.yml"
-                         PY_ENV="${OPENQHA_ENV:-openqha-cuda}"
-                         TIANHE_MODULES="CUDA/12.4 mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4 nccl/2.23.4-cuda-12.4" ;;
-        --tianhe-a)      MODE="tianhe"; ENV_FILE="environment-tianhe-a-cuda.yml"
-                         PY_ENV="${OPENQHA_ENV:-openqha-cuda-a}"
-                         # CUDA 12.3 is the CEILING on TianheXY-A; 12.4 does not
-                         # exist there. The MPI is the one built against this CUDA.
-                         TIANHE_MODULES="CUDA/12.3 mpi/openmpi/5.0.0-gcc-11.4.0-cuda12.2 nccl/2.19.3-cuda-12.3" ;;
+        # BOTH GPU clusters build the SAME environment file (user ruling 2026-09-07).
+        # 12.3 is the version both module trees carry, and no MPI is loaded because
+        # nothing openQHA runs on a card needs collectives -- which is exactly what let
+        # the two files become one. See environment-tianhe-gpu.yml.
+        --tianhe-cuda)   MODE="tianhe"; ENV_FILE="environment-tianhe-gpu.yml"
+                         PY_ENV="${OPENQHA_ENV:-openqha-gpu}"
+                         TIANHE_MODULES="CUDA/12.3" ;;
+        --tianhe-a)      MODE="tianhe"; ENV_FILE="environment-tianhe-gpu.yml"
+                         PY_ENV="${OPENQHA_ENV:-openqha-gpu}"
+                         TIANHE_MODULES="CUDA/12.3" ;;
         --local)         MODE="local" ;;
         --minimal)       REQ="requirements-minimal.txt" ;;
         --lean)          ENV_FILE="environment-openmm.yml"; PY_ENV="openqha-openmm";
@@ -174,19 +184,25 @@ if [ "$MODE" = "tianhe" ]; then
     export S0_RUNS_ROOT="${S0_RUNS_ROOT:-${TMPDIR:-$HOME}/runs/openQHA}"
     echo "runs root   : $S0_RUNS_ROOT"
     echo
-    echo "NOT DONE BY THIS SCRIPT, and needed before you submit anything:"
-    echo "  1. confirm the scheduler command names -- three of five are UNVERIFIED:"
+    echo "NOT DONE BY THIS SCRIPT. Read docs/branchA_production.md, then:"
+    echo "  1. copy the MACE-OFF weights in -- this script does NOT download them on a"
+    echo "     login node (section 4 of that document says exactly why, and how):"
+    echo "       rsync -a data/potentials/ <tianhe>:$HERE/data/potentials/"
+    echo "  2. confirm the scheduler commands are still where they were on 2026-09-05:"
     echo "       python -c \"import sys; sys.path.insert(0,'hpc'); import providers, json;"
     echo "                   print(json.dumps(providers.preflight('tianhe'), indent=1))\""
     echo "     A wrong SUBMIT command fails loudly. A wrong STATUS command does not:"
     echo "     Parsl believes every job is pending and the queue silently stops."
-    echo "  2. write hpc/resource_configs/tianhe_cpu.py -- see docs/branchA_workflow.md §6."
-    echo "  3. THERE IS NO CPU PARTITION on this site (measured 2026-09-05): hx, h100x,"
-    echo "     a100x, a800x and v100x are all GPU partitions. Branch A therefore takes a"
-    echo "     GPU allocation it does not use; hpc/resource_configs/tianhe.py defaults to"
-    echo "     v100x, the oldest card and the least contended."
-    echo "  4. -G/--gpus is MANDATORY and --exclusive is BANNED (site manual 6.2.2)."
-    echo "     parsl defaults exclusive=True, so a stock SlurmProvider would be rejected."
+    echo "  3. run the 30-minute smoke job BEFORE production. That -- not a dry run --"
+    echo "     is the gate (user ruling 2026-09-07):"
+    echo "       CPU  yhbatch hpc/slurm/branchA_debug.slurm     # debug partition, 00:30:00"
+    echo "       GPU  bash hpc/slurm/submit_branchB_tianhe_a.sh a_debug temp"
+    echo "  4. THREE CLUSTERS, three sets of rules:"
+    echo "       TianheXY-C   CPU, whole-node --exclusive, partitions debug + deimos"
+    echo "       TianheXY-AI  GPU per card, --gpus MANDATORY, --exclusive BANNED"
+    echo "       TianheXY-A   GPU, 8 cards/node, -AI rules by the 2026-09-05 ruling"
+    echo "     parsl defaults exclusive=True, so a stock SlurmProvider is refused by both"
+    echo "     GPU clusters. hpc/resource_configs/ already handles this."
 fi
 
 if [ "$DO_INSTALL" -eq 0 ]; then

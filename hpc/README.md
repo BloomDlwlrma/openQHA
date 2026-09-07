@@ -16,20 +16,31 @@ copyright and disclaimer travel with the code adapted from it.
 
 ```
 hpc/
-├── providers.py                 schedulers Parsl does not already know
+├── labels.py                    executor labels — defined ONCE, checked before submit
+├── providers.py                 schedulers Parsl does not already know (yhbatch/yhrun)
 ├── resource_configs/
 │   ├── local.py                 this machine — branch E step 0
-│   └── deimos.py                64-core CPU nodes — branches A and B production
+│   ├── deimos.py                the group's own 64-core CPU nodes
+│   ├── tianhe_cpu.py            TianheXY-C   debug + deimos   branch A, collection
+│   ├── tianhe_a.py              TianheXY-A   temp + ai        branch B traj, branch C
+│   └── tianhe_ai.py             TianheXY-AI  per GPU card     branch C
 ├── env/
 │   ├── common.sh                three measured settings, every machine
-│   └── deimos.sh                conda root, CREST path, scratch
+│   ├── deimos.sh                conda root, CREST path, scratch
+│   └── tianhe.sh                the same for Tianhe, plus the proxy
+├── slurm/                       the plain yhbatch route — same work, no Parsl
 └── configs/
     ├── master.json              ties the stages together
     ├── crest.json               branch A placement (not its science)
     └── qha_md.json              branch B placement (not its science)
 ```
 
-**Branches A and B are live; C is not.** `tianhe_h100x.py`, `qm_label.json` and
+**Two routes, one set of numbers.** `resource_configs/` + the `s0_E_*_parsl.py` drivers
+are the Parsl route; `slurm/` is the same work through `yhbatch` and `xargs`. Both call
+the same production drivers with the same arguments, so a product must not differ between
+them — comparing the two on one molecule is the cheapest test of criterion 1 there is.
+
+**Branches A and B are live; C is not.** `qm_label.json` and
 `train.json` are named in `master.json` as disabled, because the workloads they would
 describe have no measured unit cost yet — and writing a resource description for a
 cost you have not measured is how you get a plan that reads well and does not run.
@@ -52,7 +63,17 @@ python scripts/production/s0_B_qha_analyse.py --species dsgdb9nsd_000018 --tag p
 Local first is not a formality. `D0-C-20` rules that the first thing done on a
 cluster is a benchmark, not a production run, and debugging a Parsl workflow on a
 cluster costs far more than debugging it here. Once the chain runs locally, going
-to a cluster changes one argument: `--resource deimos`.
+to a cluster changes one argument: `--resource tianhe_cpu`.
+
+**On a cluster the gate is `--debug`, not `--dry-run`** (user ruling 2026-09-07): the same
+command, on the site's short partition, at a 30-minute walltime, capped at one
+allocation. A real short job tests what a rendered plan cannot — that the module loads,
+that conda activates on a *compute* node, that the weights hash correctly there, and that
+Parsl can read its own status query. `--debug` is **refused** on a resource config that
+has no short partition, rather than quietly running production settings.
+
+See [`../docs/branchA_production.md`](../docs/branchA_production.md) for the whole
+production shape and [`slurm/README.md`](slurm/README.md) for the non-Parsl route.
 
 ## The four workloads have four different resource profiles
 
@@ -61,8 +82,9 @@ specification guarantees that one of them is wasted.
 
 | workload | branch | parallel over | device | per task | source |
 |---|---|---|---|---|---|
-| conformer search — CREST(GFN2-xTB) + MACE `refine=opt` | A | molecules | **CPU** | 4 threads | 285 s/species measured, `S0-A-8` |
-| quasi-harmonic trajectories — unbiased MACE MD | B | basin × seed | **CPU** | **1 thread** | 96.1 s/ps measured (10 atoms, 1 thread, uncontended); GPU rejected on `D0-48`, `D0-C-5` |
+| conformer search — CREST(GFN2-xTB) + MACE `refine=sp` | A | molecules | **CPU** (TianheXY-C) | 4 threads, 16/node | 285 s/species measured, `S0-A-8` |
+| quasi-harmonic trajectories — unbiased MACE MD | B | basin × seed | **GPU** (TianheXY-A) | **1 card**, 8/node | user ruling 2026-09-07. **Cost UNMEASURED there** — see below |
+| collection — quasi-harmonic analysis of finished trajectories | B | molecules | **CPU** (TianheXY-C) | **1 core**, 64 on **one** node | small, serial, float64; its real cost is Lustre metadata |
 | QM labels — `xtb --hess`, ORCA RI-MP2 | C | structures | CPU | xtb 1 core; ORCA 4 processes | `NumFreq` parallelises over displacements; ORCA 1.85 GB/process measured |
 | training — MACE + PHL loss | C | data-parallel | **GPU** | 1 card | the first workload here that batches naturally |
 
@@ -73,11 +95,19 @@ Three things follow directly, and only one of them is a preference:
    arithmetic, not taste (`D0-56`).
 2. **Training is the only workload that certainly wants a GPU.** The other three
    need a benchmark before anyone decides.
-3. **The quasi-harmonic device is settled, and its condition is written down.** A
-   10-atom structure fed one at a time fills no card (`D0-56`), and on this repo's
-   T400 the same trajectory ran 3.5× *slower* than on the CPU (`D0-C-5`). Branch B
-   is CPU until a batched force interface exists — `D0-54` criterion (ii) — and the
-   question reopens then, not before.
+3. **The quasi-harmonic device was reopened, by ruling rather than by measurement.**
+   Until 2026-09-07 branch B was CPU, on two measurements: a 10-atom structure fed one
+   at a time fills no card (`D0-56`), and on this repo's T400 the same trajectory ran
+   3.5× *slower* than on the CPU (`D0-C-5`). The user has ruled that the trajectories
+   run on TianheXY-A, one per card, through OpenMM.
+
+   That ruling is followed and the state of the evidence is stated rather than
+   dressed up: **a T400 is a 2 GB entry-level card and 80 GB HBM2e is not, so D0-C-5
+   does not transfer — but nothing has replaced it either, and no batched force
+   interface exists yet (`D0-54` criterion (ii)).** Run the 30-minute `temp` smoke test
+   and read `seconds_per_ps_this_run` out of `meta.json` before sizing a campaign. The
+   CPU route is kept as `--route ase`, which is also the independent implementation pair
+   that makes the OpenMM numbers checkable.
 
    Branch B also takes **one** thread per task where branch A takes four, from the
    same thread-scaling measurement in the next section: four threads buy 1.54×, four

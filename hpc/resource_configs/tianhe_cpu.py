@@ -1,48 +1,53 @@
-"""Parsl resource configuration: Tianhe CPU cluster (TianheXY-C, Xingyi). Branches A/B/C-QM.
+"""Parsl resource configuration: Tianhe CPU cluster (TianheXY-C). Branch A + collection.
 
 Edit SETTINGS, not the command line. Production is then
 
     python -u scripts/production/s0_E_branchA_parsl.py --edges --resource tianhe_cpu
 
-THIS IS THE CPU CLUSTER, AND IT IS A DIFFERENT MACHINE FROM TianheXY-AI
-----------------------------------------------------------------------
-There are two clusters, with separate partitions, separate allocation policies and
-separate filesystems. An earlier version of this repository conflated them and put branch
-A on the GPU cluster; that was wrong.
+TWO PARTITIONS, AND ONLY TWO (user ruling 2026-09-07)
+-----------------------------------------------------
+    debug    30 minutes    the smoke test. One edge, real work, a real queue.
+    deimos   3 days        production. **The only partition production uses.**
 
-    TianheXY-C   (this file)      CPU. Partitions xyfree / mars / deimos / e9.
-                                  Node = 2 x 32 cores, 512 GB. Filesystem XYFS01.
-                                  Normal partitions allocate a WHOLE NODE (exclusive).
-    TianheXY-AI  (tianhe_ai.py)   GPU. Partitions hx / h100x / a100x (and a800x, v100x).
-                                  Allocated per GPU card. Filesystem XYAIFS00.
-                                  `-G` mandatory, `--exclusive` BANNED.
+`xyfree`, `mars` and `e9` exist on this machine and are deliberately not used: one
+production queue means one set of costs to compare against, and a run that lands in a
+different queue is not comparable with the one before it. They are recorded in
+`PARTITIONS_NOT_USED` so that "why not mars" has an answer.
 
-**Branch A belongs here.** Its cost is ~1e5 GFN2-xTB gradient calls and xtb has no GPU
-path; MACE refines 10-20 atom structures that cannot fill a card. Sending it to the GPU
-cluster would take a card to do CPU work.
+**There is no `--dry-run` step in this workflow any more.** A 30-minute `debug` job is
+cheaper than the argument about whether a rendered plan would have worked, and it tests
+the things a plan cannot: that the modules load, that conda activates on a compute node,
+that the weights hash matches there, and that Parsl's status query is understood. Render
+the script if you want to read it (`providers.TianheSlurmProvider.render_only`), but the
+gate before production is a debug job that finished.
 
-PARTITIONS (manual section 1.1)
--------------------------------
-    xyfree   64 cores  512 GB   trial-user partition
-    mars     64 cores  512 GB   long queue -- no runtime limit
-    deimos   64 cores  512 GB   short queue -- 7 days maximum
-    e9       64 cores  512 GB   fine-grained: allocated per CPU, not per node
+WHAT RUNS HERE, AFTER THE 2026-09-07 RULING
+-------------------------------------------
+    role       layout            what it is
+    crest      16 x 4 threads    branch A. CREST iMTD-GC, GFN2-xTB workhorse.
+    collect    64 x 1 core       branch B results: one molecule per core, 64 at a time,
+                                 ON ONE NODE. This is the analysis pass that turns
+                                 frames into a conformational correction -- not the
+                                 trajectories, which now run on GPU (tianhe_a.py).
+    qha        64 x 1 core       the ASE-route CPU fallback for branch B trajectories.
+                                 KEPT, not deleted: it is the implementation pair that
+                                 makes the OpenMM route checkable. Not the production
+                                 route.
 
-`deimos` is the default: 7 days is far more than one openQHA block needs, and a queue
-with a limit schedules sooner than one without. Use `mars` only for something that
-genuinely cannot be cut into blocks. **`e9` is the one to reach for if whole-node
-exclusive allocation is wasteful** -- branch A fills 64 cores with 16 molecules, so it
-is not, but branch B's single-core trajectories might be.
+Branch A belongs here and cannot move: its cost is ~1e5 GFN2-xTB gradient calls and xtb
+has no GPU path at all.
 
-THE ARITHMETIC
---------------
-    64 cores per node       manual section 1.1, 2 x 32
-    4 threads per molecule  the condition the 285 s/species cost was measured under
+THE ARITHMETIC PRODUCTION IS SIZED TO
+-------------------------------------
+    64 cores per node        manual section 1.1, 2 x 32
+    4 threads per molecule   the condition the 285 s/species cost was measured under
     -> 16 molecules per node, no oversubscription
+    x 12 nodes               MAX_BLOCKS
+    = 192 molecules in flight
 
-    285 s per species       measured, 4 threads, UNCONTENDED, on this project's
-                            workstation (S0-A-8). NOT measured here, and not under
-                            contention: 16 concurrent jobs share memory bandwidth.
+    285 s per species        measured, 4 threads, UNCONTENDED, on this project's
+                             workstation (S0-A-8). NOT measured here, and not under
+                             contention: 16 concurrent jobs share memory bandwidth.
 
 A per-node capacity is not a speed-up. Branch E acceptance criterion 5 wants wall clock,
 single-job time and slot extrapolation reported as three separate numbers.
@@ -63,7 +68,27 @@ import labels as _labels  # noqa: E402
 # SETTINGS -- the only block most people should edit
 # =========================================================================================
 ACCOUNT = None                 #: scheduler account; None lets the site choose
-PARTITION = "deimos"           #: xyfree | mars | deimos | e9  (see the docstring)
+
+#: Production partition and its walltime. User ruling 2026-09-07: production is deimos,
+#: 3 days, and nothing else.
+PARTITION = "deimos"
+WALLTIME = "3-00:00:00"
+
+#: Smoke-test partition and its walltime. `--debug` on the drivers selects this pair.
+#: 30 minutes is enough for one edge (two molecules at ~285 s each, uncontended) and
+#: short enough that the queue schedules it almost at once.
+DEBUG_PARTITION = "debug"
+DEBUG_WALLTIME = "00:30:00"
+
+#: Present on the machine, deliberately unused. Recorded so the choice is auditable.
+PARTITIONS_NOT_USED = {
+    "xyfree": "trial-user partition",
+    "mars": "no runtime limit; only worth it for something that cannot be cut into blocks",
+    "e9": "fine-grained, allocated per CPU rather than per node. Would matter for a run "
+          "that cannot fill 64 cores -- neither of ours is: crest fills it with 16 "
+          "molecules and collect with 64.",
+}
+
 CORES_PER_NODE = 64            #: manual section 1.1: 2 x 32
 THREADS_PER_JOB = 4            #: CREST threads per molecule; changing it invalidates 285 s
 WORKERS_PER_NODE = CORES_PER_NODE // THREADS_PER_JOB      # 16
@@ -76,30 +101,54 @@ NODES_PER_BLOCK = 1
 NODE_QUOTA = 32
 JOB_QUOTA = 32
 
-#: Allocations held at once. Set to the quota: branch A at 16 workers/node is then 512
-#: molecules in flight, branch B at 64 workers/node is 2048. `init_blocks=0` and
-#: `min_blocks=0` still mean nothing is requested until there is work.
-MAX_BLOCKS = 32
+#: Allocations held at once for branch A. **12, not the 32 the quota allows** (user
+#: ruling 2026-09-07): 12 x 16 = 192 molecules in flight. Raising it to the quota is one
+#: number, but do it after a campaign has shown the queue rather than the node count is
+#: the limit. `init_blocks=0` and `min_blocks=0` still mean nothing is requested until
+#: there is work, and an idle allocation is given back -- a held node is charged whether
+#: or not it computes.
+MAX_BLOCKS = 12
 
-#: Walltime. `deimos` allows 7 days; this is deliberately far below it. Branch A writes
-#: one product per molecule, so a killed job loses only what was in flight, and a short
-#: request schedules sooner. Raise it once a campaign shows the queue is not the problem.
-WALLTIME = "11:24:00"
-
-#: Branch B: ONE core per trajectory, so one node runs 64 at a time.
+#: Branch B: ONE core per molecule, 64 on ONE node (user ruling 2026-09-07).
 #:
 #: Not a preference -- measured. A quasi-harmonic trajectory is a serial chain of MACE
 #: force calls, and MACE on a 10-atom molecule runs 111/90/72/101 ms at 1/2/4/8 threads
-#: (D0-P1-27, D0-P1-32). Four threads buy 1.54x; four independent trajectories buy 4x.
-#: Branch B has (basins x seeds) of independent work per species, so it never runs short.
+#: (D0-P1-27, D0-P1-32). Four threads buy 1.54x; four independent tasks buy 4x.
 QHA_THREADS_PER_JOB = 1
 QHA_WORKERS_PER_NODE = CORES_PER_NODE // QHA_THREADS_PER_JOB      # 64
 
+#: The collection pass is deliberately ONE node. It reads frames and writes a number per
+#: molecule; it is short, it is I/O-bound on Lustre, and 64 concurrent readers on one
+#: node is already more metadata traffic than the filesystem enjoys. Widening this is the
+#: wrong lever -- if collection is the bottleneck, batch more molecules per task.
+COLLECT_MAX_BLOCKS = 1
+
 #: Driver defaults, so the command line stays `--edges --resource tianhe_cpu`.
 TAG = "prod"
-TIMEOUT_S = 14400
+TIMEOUT_S = 14400              #: per MOLECULE, not per job. 4 h; the job gets 3 days.
 HESSIAN_MODE = "analytic"
+
+#: Per-task budget for branch B tasks, at 90% of the walltime so a task stops and flushes
+#: rather than being killed mid-chunk.
+QHA_WALL_BUDGET_S = int(0.90 * 3 * 24 * 3600)
 # =========================================================================================
+
+#: role -> (workers per node, cores per worker, max blocks)
+_LAYOUT = {
+    "crest":   (WORKERS_PER_NODE, THREADS_PER_JOB, MAX_BLOCKS),
+    "qha":     (QHA_WORKERS_PER_NODE, QHA_THREADS_PER_JOB, MAX_BLOCKS),
+    "collect": (QHA_WORKERS_PER_NODE, QHA_THREADS_PER_JOB, COLLECT_MAX_BLOCKS),
+}
+
+
+def layout(role):
+    """(workers_per_node, cores_per_worker, max_blocks) for a role. Unknown roles raise."""
+    if role not in _LAYOUT:
+        raise KeyError(
+            "role {!r} has no layout on this cluster. Known: {}.\n"
+            "Branch C training and branch B trajectories run on the GPU clusters -- "
+            "see hpc/resource_configs/tianhe_a.py.".format(role, sorted(_LAYOUT)))
+    return _LAYOUT[role]
 
 
 def _worker_init(here):
@@ -113,11 +162,17 @@ def _worker_init(here):
       workers and is exposed to the same thing.
     * `mkdir -p` the log directory -- Slurm opens `--output` BEFORE the script runs, so
       creating it inside the script is too late (rule 6 of the same skill).
+
+    The module load is NOT silenced. A missing module here means the whole allocation
+    computes nothing; `2>/dev/null || true` would turn that into an unexplained
+    ModuleNotFoundError several minutes later, in a worker log nobody is reading.
     """
     return "; ".join([
         "mkdir -p ${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs",
         "module purge 2>/dev/null || true",
-        "module load anaconda3/2023.09 2>/dev/null || true",
+        "module load anaconda3/2023.09 || "
+        "echo 'openQHA: module load anaconda3/2023.09 FAILED -- conda will not be on "
+        "PATH and every task in this block will fail' >&2",
         "for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM)_'); do "
         "unset $v; done",
         "source {0}/env/common.sh".format(here),
@@ -128,19 +183,18 @@ def _worker_init(here):
 
 def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
            walltime=None, run_dir=None, worker_init=None, max_workers=None,
-           role="crest"):
+           role="crest", debug=False):
     """Parsl Config for the Tianhe CPU cluster. Every argument defaults to SETTINGS.
 
-    `role` selects the layout, because the two branches want opposite things from the
-    same node:
+    `role` selects the layout, because the jobs want opposite things from the same node:
 
-        crest  16 workers x 4 threads   branch A: CREST is internally parallel
-        qha    64 workers x 1 thread    branch B: a trajectory is a serial chain of
-                                        force calls, so parallelism goes between them
+        crest    16 workers x 4 threads   CREST is internally parallel
+        collect  64 workers x 1 core      one molecule per core, one node
+        qha      64 workers x 1 core      the CPU fallback route for trajectories
 
-    Whole-node allocation suits `crest` -- 16 x 4 fills 64 cores exactly. It suits `qha`
-    too at 64 x 1. **What it does not suit is a partial job**, and that is what the `e9`
-    fine-grained partition is for; pass `partition="e9"` if a run cannot fill a node.
+    `debug=True` swaps in DEBUG_PARTITION and DEBUG_WALLTIME and caps the run at one
+    allocation. That is the smoke test: real modules, real conda activation, real
+    scheduler, 30 minutes, one node. An explicit `partition`/`walltime` still wins.
     """
     from parsl.config import Config
     from parsl.executors import HighThroughputExecutor
@@ -149,6 +203,11 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
     from providers import TianheSlurmProvider
 
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    workers, cores, role_blocks = layout(role)
+    if debug:
+        partition = partition or DEBUG_PARTITION
+        walltime = walltime or DEBUG_WALLTIME
+        role_blocks = 1
 
     cfg = Config(
         executors=[
@@ -157,26 +216,22 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                 # one the app asks for builds and renders cleanly, then schedules
                 # nothing. That is how it failed on 2026-09-05.
                 label=_labels.label(role),
-                max_workers_per_node=int(
-                    max_workers or (QHA_WORKERS_PER_NODE if role == "qha"
-                                    else WORKERS_PER_NODE)),
-                cores_per_worker=float(QHA_THREADS_PER_JOB if role == "qha"
-                                       else THREADS_PER_JOB),
+                max_workers_per_node=int(max_workers or workers),
+                cores_per_worker=float(cores),
                 provider=TianheSlurmProvider(
                     partition or PARTITION,
                     account=account if account is not None else ACCOUNT,
                     nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
                     init_blocks=0, min_blocks=0,
                     # Capped at the site quota, whatever the caller asks for.
-                    max_blocks=min(int(max_blocks or MAX_BLOCKS),
+                    max_blocks=min(int(max_blocks or role_blocks),
                                    NODE_QUOTA // int(nodes_per_block or NODES_PER_BLOCK),
                                    JOB_QUOTA),
                     scheduler_options="",
-                    # THIS CLUSTER IS THE OPPOSITE OF THE AI ONE. Its normal partitions
-                    # allocate a whole node -- the manual calls this exclusive
-                    # mode -- so `exclusive=True` is correct here,
-                    # while on TianheXY-AI the flag is banned outright. Two clusters, two
-                    # answers; that is why they are two files.
+                    # THIS CLUSTER IS THE OPPOSITE OF THE GPU ONES. Its normal partitions
+                    # allocate a whole node -- the manual calls this exclusive mode -- so
+                    # `exclusive=True` is correct here, while on TianheXY-AI the flag is
+                    # banned outright. Two policies; that is why they are separate files.
                     exclusive=True,
                     launcher=SimpleLauncher(),
                     worker_init=worker_init or _worker_init(here),
@@ -205,29 +260,42 @@ def describe():
         commands, confirmed = {}, []
     return dict(
         site="tianhe_cpu", cluster="TianheXY-C", partition=PARTITION,
-        partitions_available=["xyfree", "mars", "deimos", "e9"],
+        walltime=WALLTIME,
+        debug_partition=DEBUG_PARTITION, debug_walltime=DEBUG_WALLTIME,
+        partitions_used=[DEBUG_PARTITION, PARTITION],
+        partitions_not_used=dict(PARTITIONS_NOT_USED),
         cores_per_node=CORES_PER_NODE, threads_per_job=THREADS_PER_JOB,
         workers_per_node=WORKERS_PER_NODE,
         qha_workers_per_node=QHA_WORKERS_PER_NODE,
         qha_threads_per_job=QHA_THREADS_PER_JOB,
+        layouts={r: dict(workers_per_node=w, cores_per_worker=c, max_blocks=b)
+                 for r, (w, c, b) in _LAYOUT.items()},
         max_blocks=MAX_BLOCKS, node_quota=NODE_QUOTA, job_quota=JOB_QUOTA,
-        max_molecules_in_flight=dict(crest=MAX_BLOCKS * WORKERS_PER_NODE,
-                                     qha=MAX_BLOCKS * QHA_WORKERS_PER_NODE),
-        walltime=WALLTIME,
+        max_in_flight={r: w * min(b, NODE_QUOTA) for r, (w, _c, b) in _LAYOUT.items()},
         exclusive=True, filesystem="XYFS01 (lustre, 1 TB, NO BACKUP)",
-        labels=[_labels.label("crest"), _labels.label("qha")],
+        labels=[_labels.label(r) for r in sorted(_LAYOUT)],
         tag=TAG, timeout_s=TIMEOUT_S, hessian_mode=HESSIAN_MODE,
+        qha_wall_budget_s=QHA_WALL_BUDGET_S,
         scheduler_commands=commands, scheduler_commands_confirmed=confirmed,
         notes=[
+            "Production uses `deimos` only, at 3 days; `debug` at 30 minutes is the "
+            "smoke test. The other three partitions are recorded and unused.",
+            "Branch A production is 12 nodes x 16 molecules = 192 in flight, which is "
+            "below the 32-node quota on purpose.",
+            "Branch B TRAJECTORIES are no longer a CPU job -- they run on TianheXY-A, "
+            "one card per trajectory. What stays here is the collection pass: one "
+            "molecule per core, 64 at a time, one node.",
             "Normal partitions allocate a whole node (manual 1.1); `e9` is the "
-            "fine-grained per-CPU partition if that is wasteful.",
+            "fine-grained per-CPU partition if that were ever wasteful.",
             "Home is 100 GB and for configuration only -- run out of HDD_POOL.",
             "XYFS01 has no backup: a deleted file cannot be recovered.",
         ],
         assumptions=[
+            "The `debug` partition and both walltimes are the user's (2026-09-07); "
+            "they have not been read off `sinfo` here.",
             "285 s/species was measured on this project's workstation, not here, and "
             "not under contention.",
-            "Nothing has been submitted to either Tianhe cluster yet.",
+            "Nothing has been submitted to any Tianhe cluster yet.",
         ],
         verified=False,
     )

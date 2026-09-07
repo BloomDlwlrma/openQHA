@@ -13,6 +13,16 @@ The two run in different environments and neither can import the other's stack:
     qm9fe     OpenMM 8.4, openmm-torch, openmmtools, mdtraj,      -- this route
               MACE 0.3.17 (an EDITABLE install pointing at the vendored develop tree)
 
+One (basin, seed) at a time, which is what the execution layer fans out
+------------------------------------------------------------------------
+    --basins <qid>.basins.xyz   the basin list branch A wrote
+    --basin K --seed-index S    ONE task; the seed is seed0 + 1000*K + S
+    --wall-budget-s N           stop and flush before the queue kills the job
+    --platform CUDA             one trajectory per card (TianheXY-A, ruling 2026-09-07)
+
+Without --basin/--seed-index it still runs every basin and every seed in one process,
+which is what you want on a workstation.
+
 Run this one as:
 
     /home/ubuntu/anaconda3/envs/qm9fe/bin/python \\
@@ -193,10 +203,17 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
 
     # ---- production, flushed in chunks so a killed run is resumable -----------------
     t0 = time.time()
+    n_start = len(have)
     temps, com_drift = [], []
     com0 = None
+    stopped_on_budget = False
+    budget = float(getattr(args, "wall_budget_s", 0.0) or 0.0)
+    # At least four flushes per run, however short. A single flush at the very end means
+    # a job killed at its walltime loses everything it computed, and a short job is
+    # exactly where that gets discovered too late to matter.
+    chunk = max(1, min(CHUNK_FRAMES, (n_target - len(have)) // 4 or 1))
     while len(have) < n_target:
-        want = min(CHUNK_FRAMES, n_target - len(have))
+        want = min(chunk, n_target - len(have))
         for _ in range(want):
             integ.step(args.sample_every)
             st = context.getState(getPositions=True, getEnergy=True)
@@ -209,13 +226,37 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
             if com0 is None:
                 com0 = com
             com_drift.append(float(np.linalg.norm(com - com0)))
-        np.save(frames_path, np.array(have))
+        # Written to a temporary name and renamed, so a job killed mid-write leaves the
+        # previous complete file rather than a truncated array that reads as corrupt.
+        tmp = frames_path.with_suffix(frames_path.suffix + ".part")
+        np.save(tmp, np.array(have))
+        tmp.replace(frames_path)
+        if budget and (time.time() - t0) > budget:
+            stopped_on_budget = True
+            break
     wall = time.time() - t0
+    generated = int(len(have) - n_start)
 
     prod_record = dict(
-        ps=float(prod_ps), n_frames=int(len(have)), wall_seconds=float(wall),
+        ps=float(prod_ps), n_frames=int(len(have)), n_target=int(n_target),
+        wall_seconds=float(wall),
+        # `complete` is what a resume and the analysis both ask. Without it a run stopped
+        # by its wall budget is indistinguishable from one that finished.
+        complete=bool(len(have) >= n_target),
+        stopped_on_wall_budget=bool(stopped_on_budget),
+        resumed=bool(n_start > 0), n_frames_already_on_disk=int(n_start),
+        n_frames_generated_this_run=generated,
+        # THE SAME KEY NAMES THE ASE ROUTE USES. The two drivers are an implementation
+        # pair only if the same reader can read both; `seconds_per_ps` and
+        # `temperature_error_K` were names nothing downstream looked for.
+        seconds_per_ps_this_run=(
+            float(wall / (generated * args.sample_every * args.timestep_fs / 1000.0))
+            if generated else None),
+        seconds_per_frame_this_run=(float(wall / generated) if generated else None),
         seconds_per_ps=float(wall / max(1e-9, prod_ps)),
         temperature_mean_K=float(np.mean(temps)) if temps else None,
+        temperature_deviation_K=(float(np.mean(temps) - temperature_K)
+                                 if temps else None),
         temperature_error_K=(float(np.mean(temps) - temperature_K) if temps else None),
         centre_of_mass_drift_A=float(np.max(com_drift)) if com_drift else 0.0)
     return np.array(have), equil_record, prod_record, force_record, thermo_record
@@ -226,8 +267,21 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", default="dsgdb9nsd_000018")
     ap.add_argument("--tag", default="omm")
+    ap.add_argument("--basins", default=None,
+                    help="branch A basin file (<qid>.basins.xyz). Without it there is "
+                         "ONE geometry -- the QM9 reference -- and it is not a basin "
+                         "list; the record says so.")
+    ap.add_argument("--basin", type=int, default=None,
+                    help="run only this basin index. This and --seed-index are what "
+                         "make one (basin, seed) addressable by the execution layer.")
+    ap.add_argument("--seed-index", type=int, default=None,
+                    help="run only this seed index")
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--seed0", type=int, default=20260903)
+    ap.add_argument("--wall-budget-s", type=float, default=0.0,
+                    help="stop production and flush after this many seconds. Set it "
+                         "below the queue walltime so a task stops itself instead of "
+                         "being killed between a write and a rename.")
     ap.add_argument("--equil-ps", type=float, default=EQUIL_PS)
     ap.add_argument("--prod-ps", type=float, default=PROD_PS)
     ap.add_argument("--temperature", type=float, default=None)
@@ -253,7 +307,15 @@ def main():
     model_path = engine.model_path()
 
     from ase.io import read
-    atoms = read(str(config.qm9_xyz(args.species, cfg)))
+    if args.basins:
+        frames_in = read(args.basins, index=":")
+        geometry_source = "branch A basins: {}".format(args.basins)
+    else:
+        frames_in = [read(str(config.qm9_xyz(args.species, cfg)))]
+        geometry_source = (
+            "QM9 reference geometry -- branch A has NOT been run for this species, so "
+            "this is one geometry and not a basin list")
+    atoms = frames_in[0]
 
     print("=" * 92)
     print("Branch B production -- OpenMM route (MACE + Nose-Hoover chain)")
@@ -280,63 +342,91 @@ def main():
     print("protocol    dt = {} fs, frame every {} fs, T = {} K".format(
         args.timestep_fs, args.sample_every * args.timestep_fs, temperature))
     print("length      {} ps equilibration + {} ps production x {} seeds".format(
-        args.equil_ps, args.prod_ps, args.seeds))
+        args.equil_ps, args.prod_ps,
+        1 if args.seed_index is not None else args.seeds))
+    print("platform    {}{}".format(
+        args.platform,
+        "   (CUDA: one trajectory per card -- see hpc/resource_configs/tianhe_a.py)"
+        if args.platform.upper() == "CUDA" else ""))
 
-    outroot = Path(args.outroot) if args.outroot else (
-        Path.home() / "runs" / "openQHA" / "qha" / args.tag / args.species)
+    # config.runs_dir honours S0_RUNS_ROOT, which on a cluster points at node-local
+    # scratch. The previous default wrote straight into $HOME -- on Tianhe that is the
+    # 100 GB quota'd home on Lustre, which is the one place the site manual asks you not
+    # to put job output.
+    outroot = (Path(args.outroot) if args.outroot
+               else Path(config.runs_dir("qha", cfg)) / args.tag / args.species)
+    print("geometry    {}".format(geometry_source))
     print("output      {}".format(outroot))
     print()
 
-    relaxed_A, relax_record = relax(atoms, model_path)
-    print("relaxed     dropped {:.4f} kcal/mol".format(relax_record["energy_drop_kcal"]))
+    basins = ([(args.basin, frames_in[args.basin])] if args.basin is not None
+              else list(enumerate(frames_in)))
+    seed_indices = ([args.seed_index] if args.seed_index is not None
+                    else list(range(args.seeds)))
 
     summary = []
-    for k in range(args.seeds):
-        seed = args.seed0 + k
-        outdir = outroot / "basin00" / "seed{:02d}".format(k)
-        frames, equil, prod, force_record, thermo = run_one(
-            args.species, relaxed_A, atoms.get_atomic_numbers(), atoms.get_masses(),
-            model_path, outdir, temperature, seed, args.equil_ps, args.prod_ps, args)
+    for b, geom in basins:
+        relaxed_A, relax_record = relax(geom, model_path)
+        print("basin {:>2}    relaxed, dropped {:.4f} kcal/mol".format(
+            b, relax_record["energy_drop_kcal"]))
+        for k in seed_indices:
+            # The seed is a pure function of (basin, seed index, seed0), exactly as in
+            # the ASE route, so a task fanned out by the execution layer and the same
+            # task run by hand produce the same trajectory. Nothing about placement may
+            # enter it. For basin 0 this is the same number the old `seed0 + k` gave, so
+            # no existing trajectory changes.
+            seed = args.seed0 + 1000 * b + k
+            outdir = outroot / "basin{:02d}".format(b) / "seed{:02d}".format(k)
+            frames, equil, prod, force_record, thermo = run_one(
+                args.species, relaxed_A, geom.get_atomic_numbers(), geom.get_masses(),
+                model_path, outdir, temperature, seed, args.equil_ps, args.prod_ps,
+                args)
 
-        meta = dict(
-            # ---- the identity assertion's inputs --------------------------------------
-            bias_potential=None,
-            constraints=None,
-            hydrogen_mass_amu=float(next(
-                (m for m, z in zip(atoms.get_masses(), atoms.get_atomic_numbers())
-                 if int(z) == 1), qha.HYDROGEN_MASS_AMU)),
-            timestep_fs=float(args.timestep_fs),
-            thermostat="openmmtools Nose-Hoover chain ({})".format(
-                thermo["implementation"]),
-            thermostat_tdamp_fs=float(tdamp_fs(args.collision_frequency)),
-            thermostat_chain_length=int(args.chain_length),
-            source="openQHA.branchB.openmm_nose_hoover",
-            # ---- everything else ------------------------------------------------------
-            qm9_index=args.species, basin_index=0, seed=int(seed),
-            symbols=list(atoms.get_chemical_symbols()),
-            masses_amu=[float(x) for x in atoms.get_masses()],
-            temperature_K=float(temperature),
-            sample_every_steps=int(args.sample_every),
-            frame_spacing_fs=float(args.sample_every * args.timestep_fs),
-            ensemble="canonical (Nose-Hoover chain, OpenMM)",
-            integrator=thermo,
-            route="openmm",
-            platform=args.platform,
-            force=force_record,
-            force_check_against_ase=check,
-            centre_of_mass_pinned_to_origin=False,
-            engine=engine.provenance(),
-            relaxation=relax_record,
-            equilibration=equil, production=prod)
-        qha.assert_trajectory_identity(meta)
-        (outdir / "meta.json").write_text(
-            json.dumps(meta, indent=2, default=str), encoding="utf-8")
-        summary.append(dict(seed=int(seed), n_frames=int(len(frames)),
-                            wall_seconds=prod["wall_seconds"],
-                            temperature_mean_K=prod["temperature_mean_K"],
-                            com_drift_A=prod["centre_of_mass_drift_A"]))
-        print("  seed {:>2}  {:>5} frames  {:8.1f} s  T = {:7.2f} K  COM drift {:8.2f} A"
-              .format(k, len(frames), prod["wall_seconds"],
+            meta = dict(
+                # ---- the identity assertion's inputs ----------------------------------
+                bias_potential=None,
+                constraints=None,
+                hydrogen_mass_amu=float(next(
+                    (m for m, z in zip(geom.get_masses(), geom.get_atomic_numbers())
+                     if int(z) == 1), qha.HYDROGEN_MASS_AMU)),
+                timestep_fs=float(args.timestep_fs),
+                thermostat="openmmtools Nose-Hoover chain ({})".format(
+                    thermo["implementation"]),
+                thermostat_tdamp_fs=float(tdamp_fs(args.collision_frequency)),
+                thermostat_chain_length=int(args.chain_length),
+                source="openQHA.branchB.openmm_nose_hoover",
+                # ---- everything else --------------------------------------------------
+                qm9_index=args.species, basin_index=int(b), seed=int(seed),
+                seed_formula="seed0 + 1000*basin + seed_index",
+                geometry_source=geometry_source,
+                symbols=list(geom.get_chemical_symbols()),
+                masses_amu=[float(x) for x in geom.get_masses()],
+                temperature_K=float(temperature),
+                sample_every_steps=int(args.sample_every),
+                frame_spacing_fs=float(args.sample_every * args.timestep_fs),
+                ensemble="canonical (Nose-Hoover chain, OpenMM)",
+                integrator=thermo,
+                route="openmm",
+                platform=args.platform,
+                force=force_record,
+                force_check_against_ase=check,
+                centre_of_mass_pinned_to_origin=False,
+                engine=engine.provenance(),
+                relaxation=relax_record,
+                equilibration=equil, production=prod)
+            qha.assert_trajectory_identity(meta)
+            (outdir / "meta.json").write_text(
+                json.dumps(meta, indent=2, default=str), encoding="utf-8")
+            summary.append(dict(basin=int(b), seed_index=int(k), seed=int(seed),
+                                n_frames=int(len(frames)),
+                                complete=prod["complete"],
+                                stopped_on_wall_budget=prod["stopped_on_wall_budget"],
+                                wall_seconds=prod["wall_seconds"],
+                                temperature_mean_K=prod["temperature_mean_K"],
+                                com_drift_A=prod["centre_of_mass_drift_A"]))
+            print("  basin {:>2} seed {:>2}  {:>5} frames  complete={}  {:8.1f} s  "
+                  "T = {:7.2f} K  COM drift {:8.2f} A".format(
+                      b, k, len(frames), prod["complete"], prod["wall_seconds"],
                       prod["temperature_mean_K"], prod["centre_of_mass_drift_A"]))
 
     (outroot / "summary.json").write_text(
