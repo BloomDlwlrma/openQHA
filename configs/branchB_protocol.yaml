@@ -1,0 +1,115 @@
+# Branch B production protocol -- **the single source of truth for how long and how often**
+#
+# Included by configs/openqha.yaml. Both trajectory drivers read it, so the ASE route and
+# the OpenMM route cannot drift apart. Until 2026-09-07 they had: the ASE driver ran
+# 50 ps + 200 ps and the OpenMM driver 2 ps + 25 ps, while the two are supposed to be an
+# INDEPENDENT IMPLEMENTATION PAIR of one protocol. Two implementations of two different
+# protocols measure nothing.
+#
+# =======================================================================================
+# WHERE THESE NUMBERS COME FROM
+# =======================================================================================
+# User ruling 2026-09-07: use the published protocol from the papers this branch already
+# cites, at production level.
+#
+# Rinaldo & Field, *Biophysical Journal* 2003 -- "A Computational Study of the Open and
+# Closed Forms of the N-Lobe Human Serum Transferrin" (the paper `openqha/qha.py` already
+# cites for the 50 ps^-1 coupling and for the two convergence diagnostics). Its methods
+# section fixes the whole protocol, quoted rather than paraphrased:
+#
+#   "The timestep for the simulation was 1 fs ... a friction coefficient of 50 ps^-1 was
+#    employed for each atom"                                                        (p2)
+#   "Initially 20 ps of equilibration was performed but, in the end, it was found that
+#    520 ps were necessary."                                                        (p2)
+#   "The equilibration was followed by a simulation of 1.5 ns during which data were
+#    collected every 0.5 ps."                                                       (p2)
+#   "we could only use 3000 structures for each analysis (those obtained during the last
+#    1.5 ns of our simulations)"                                                    (p3)
+#   "First, global translations and rotations were removed ... by superimposing the
+#    nonhydrogen atoms of each structure on the first structure"                    (p3)
+#
+# =======================================================================================
+# THE ONE CONSTRAINT THAT DEFEATED THE PAPER, AND WHY IT CANNOT REACH US
+# =======================================================================================
+# Rinaldo & Field could not converge their entropy, and they say exactly why (p11):
+#
+#   "as the length of the trajectory increases, the number of nonzero modes contributing
+#    to the entropy increases. To include all such modes in our calculation we would need
+#    a minimum of 7758 dynamical structures -- which would imply a simulation of at least
+#    4 ns, a length that is currently beyond our computational resources."
+#
+# **The covariance matrix cannot have more non-zero eigenvalues than it has frames.** They
+# had 3N = 7758 degrees of freedom and 3000 frames, so at most 3000 modes could appear and
+# 4758 were missing by construction.
+#
+# openQHA's molecules have 10 to 19 atoms:  3N-6 = 24 to 51.
+# At 0.5 ps over 1.5 ns that is **3000 frames against at most 51 modes -- 59x the rank
+# requirement.** The mechanism that stopped the protein calculation is three orders of
+# magnitude away from us, which is what makes this protocol cheap here and is exactly why
+# the user asked for it: "as is quick for small molecules to qha".
+#
+# `openqha.qha.mode_batch_convergence` implements their second diagnostic and the note
+# there already predicted this. This file is where the prediction gets acted on.
+#
+# =======================================================================================
+# WHY 0.5 ps AND NOT THE 8 fs WE USED BEFORE
+# =======================================================================================
+# The quasi-harmonic covariance is an EQUAL-TIME average, <(x_i - <x_i>)(x_j - <x_j>)>.
+# The sampling interval therefore does not alias anything -- it only decides how many
+# INDEPENDENT samples the estimate is built from.
+#
+#   before   200 ps at 8 fs   = 25 000 frames, spaced far inside the correlation time.
+#                              Storage and analysis cost scale with 25 000; the
+#                              statistical information does not.
+#   now     1500 ps at 0.5 ps =  3000 frames, spaced at the published interval, over a
+#                              trajectory 7.5x longer.
+#
+# Fewer frames, more information, and 8x less to write. The old 25 ps default is also
+# known to FAIL this branch's own acceptance criterion 1: the saturation curve moved
+# +0.4684 kcal/mol over the last doubling against a 0.3 budget.
+#
+# =======================================================================================
+# THESE ARE STARTING VALUES; THE SATURATION CURVE HAS THE LAST WORD
+# =======================================================================================
+# `production_ps` is not a claim that 1.5 ns is enough -- it is the published length and
+# the point at which to start asking. Acceptance criterion 1 is measured by
+# `openqha.qha.saturation_curve` on the trajectory that was actually produced, and if the
+# last doubling still moves T*S by more than `saturation_budget_kcal`, the answer is to
+# run longer, not to report the number.
+# =======================================================================================
+branch_b:
+  _source: "Rinaldo & Field, Biophysical Journal 2003 (10.1016/S0006-3495(03)70023-0)"
+  _status: "published protocol, adopted 2026-09-07 by user ruling"
+
+  # ---- integration -------------------------------------------------------------------
+  timestep_fs: 1.0                 # literature_value: paper p2; also D0-C-30
+  temperature_K: null              # null -> thermodynamics.temperature_K (298.15)
+
+  # ---- length ------------------------------------------------------------------------
+  equilibration_ps: 520.0          # literature_value: paper p2. 20 ps was NOT enough.
+  production_ps: 1500.0            # literature_value: paper p2 ("a simulation of 1.5 ns")
+
+  # ---- sampling ----------------------------------------------------------------------
+  sampling_interval_ps: 0.5        # literature_value: paper p2 ("every 0.5 ps")
+  # Derived, and asserted by the drivers rather than written twice:
+  #     sample_every_steps = sampling_interval_ps * 1000 / timestep_fs = 500
+  expected_frames: 3000            # derived_criterion: production_ps / sampling_interval_ps
+
+  # ---- what the frames have to satisfy -------------------------------------------------
+  # derived_criterion. The covariance cannot have more non-zero eigenvalues than frames;
+  # this is the constraint that defeated the source paper, stated so it is checked here.
+  min_frames_rule: "n_frames >= 3 * n_atoms"
+  saturation_budget_kcal: 0.3      # derived_criterion: acceptance criterion 1
+
+  # ---- superposition -------------------------------------------------------------------
+  # The paper superimposes NON-HYDROGEN atoms on the first structure. openQHA superimposes
+  # MASS-WEIGHTED and iterates to the mean structure (openqha/qha.py), which is the
+  # stricter procedure and the one MDAnalysis reproduces to 8.020e-09 kcal/mol. Recorded
+  # as a deliberate difference from the source, not an oversight.
+  superposition: "mass-weighted, iterated to the mean structure (openqha.qha)"
+  superposition_in_source: "non-hydrogen atoms onto the first structure of the segment"
+
+  # ---- flushing ------------------------------------------------------------------------
+  # resource_budget. Frames per chunk written to disk. At 0.5 ps spacing a chunk of 250 is
+  # 125 ps of trajectory, so a killed job loses at most that.
+  chunk_frames: 250
