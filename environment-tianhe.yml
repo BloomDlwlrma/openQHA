@@ -1,0 +1,101 @@
+# openQHA -- Tianhe (TianheXY-AI, Xingyi AI cluster, NSCC-GZ).
+#
+#     module load anaconda3/2023.09
+#     conda env create -f environment-tianhe.yml
+#     conda activate openqha
+#
+# or just:  bash install_dependency.sh --tianhe
+#
+# ---------------------------------------------------------------------------------------
+# WHY A THIRD ENVIRONMENT FILE
+# ---------------------------------------------------------------------------------------
+# environment.yml is CPU and environment-cuda.yml pins CUDA 12 for branch C training.
+# Neither fits this machine, for one reason that is not about preference:
+#
+#   **Every partition on this cluster is a GPU partition** (measured 2026-09-05: hx,
+#   h100x, a100x, a800x, v100x -- and no CPU queue). Branch A is CPU work, so it takes a
+#   GPU allocation and does not use the card. There is no point pulling a 2 GB CUDA torch
+#   to leave it idle, so this file pins the **CPU** build of torch even though the job
+#   holds a GPU.
+#
+# Branch C training on this machine is the case that wants CUDA -- use
+# `environment-cuda.yml` for that, with `cuda-version` matched to a module below.
+#
+# ---------------------------------------------------------------------------------------
+# WHAT COMES FROM MODULES AND WHAT COMES FROM CONDA
+# ---------------------------------------------------------------------------------------
+# `module avail` on this site (2026-09-05) offers, among others:
+#
+#     anaconda3/2023.09          python/3.10.10        cmake/3.30.0-rc4
+#     CUDA/11.8 ... CUDA/13.2    Pytorch/2.1.2-py3.11_cuda11.8
+#     gromacs/2019.06, 2022.06   hdf5/1.14.3-gcc-11.4.0    fftw/3.3.8-gcc-11.4.0
+#     mpi/openmpi/4.1.5-gcc-11.4.0 and several others
+#
+# **Only `anaconda3/2023.09` is used**, and only to get `conda` itself. Everything else
+# comes from conda-forge, for a reason this repository has already paid for: the site's
+# `Pytorch/2.1.2` module is built against its own Python and CUDA, and mixing a
+# module-provided torch with conda-provided numpy/ase/rdkit gives a stack where one of
+# the two is wrong. The measured version of that mistake is in `environment.yml`: two
+# OpenBLAS builds in one environment cost 4164 warning lines and 20 s per molecule.
+#
+# There is **no CREST or xtb module** on this site, so those must come from conda anyway,
+# and once they do, the BLAS pins below have to hold for everything else too.
+#
+# The site manual is explicit that users have no root and should install under their
+# own account (section 5.3). Create the env under $HOME/.conda, or set
+# CONDA_ENVS_PATH into HDD_POOL if your home quota is small.
+# ---------------------------------------------------------------------------------------
+name: openqha
+channels:
+  - conda-forge
+  # `channels: [conda-forge]` alone does NOT mean conda-forge only -- conda merges the
+  # user's configured channels, and `anaconda3/2023.09` ships with `defaults` configured.
+  # Without this line the solver mixes channels; measured on 2026-09-04, that pulled a
+  # `defaults` pytorch into an otherwise conda-forge stack AND hid a real solver conflict.
+  - nodefaults
+dependencies:
+  # ---- BLAS: OpenMP OpenBLAS, no MKL. Identical to environment.yml, same reason. ------
+  # conda-forge's `crest` pulls the pthreads OpenBLAS while CREST is OpenMP-parallel.
+  # Measured: 4164 warning lines and 38.0 s against 0 lines and 18.5 s on one molecule,
+  # same 2 conformers from both.
+  - nomkl
+  - libopenblas=*=openmp*
+  - libblas=*=*openblas
+  - liblapack=*=*openblas
+
+  - python=3.11
+  - numpy>=1.24
+  - scipy>=1.10
+  - pyyaml>=6.0
+  - pandas>=1.5
+  - pyarrow>=10.0
+  - matplotlib>=3.5
+  - h5py>=3.8
+  - ase>=3.22
+  - rdkit>=2023.03
+
+  # CPU torch, deliberately, on a machine where every job holds a GPU. Branch A's cost is
+  # ~1e5 GFN2-xTB gradient calls and xtb has no GPU path; MACE refines 10-20 atom
+  # structures that cannot fill a card. Both branches A and B are MEASURED slower on this
+  # project's GPU than on its CPU (D0-48, D0-C-5).
+  - pytorch>=2.0=*cpu*
+
+  # ---- the conformer search. No site module provides these. --------------------------
+  - crest>=3.0.2
+  - xtb>=6.6
+
+  - pip
+  - pip:
+      - mace-torch>=0.3.6
+      - pymsym>=0.3.5
+      - parsl>=2024.01
+
+# NOT IN HERE:
+#   jupyter/nbconvert  the tutorials are read on a workstation, not on a login node.
+#   gromacs            the site has modules (gromacs/2019.06, 2022.06) if branch B's
+#                      cross-check is ever wanted here; do not also install it by conda.
+#   orca               registration required; branch C only.
+#   MACE-OFF weights   NOT downloaded on a login node -- outbound traffic goes through a
+#                      proxy and a 100 MB pull from a login node is antisocial. Fetch them
+#                      where you have bandwidth and rsync them in; the SHA-256 is
+#                      recomputed on load, so a truncated transfer fails loudly.

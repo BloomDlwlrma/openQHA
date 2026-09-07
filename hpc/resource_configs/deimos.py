@@ -25,6 +25,10 @@ the single-job time and the slot extrapolation to be reported as three separate
 numbers, precisely so that nobody divides one by the other later (defect 34, 56).
 """
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import labels as _labels  # noqa: E402
 
 #: Physical cores per deimos node (D0-C-26).
 CORES_PER_NODE = 64
@@ -80,7 +84,7 @@ def config(partition="cpu", account=None, nodes_per_block=1, max_blocks=8,
     return Config(
         executors=[
             HighThroughputExecutor(
-                label="openqha_crest",
+                label=_labels.label("crest"),
                 max_workers_per_node=WORKERS_PER_NODE,
                 cores_per_worker=float(THREADS_PER_JOB),
                 provider=SlurmProvider(

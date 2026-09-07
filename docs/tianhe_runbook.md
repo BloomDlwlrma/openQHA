@@ -10,21 +10,23 @@ spend an allocation.
 
 ## 0. What was already checked here, and what could not be
 
-Building the Tianhe configuration on a workstation found **three real defects** in code
-that had been written and never executed. That is the argument for doing steps 1–4 before
-step 5 rather than after.
+Building the Tianhe configuration on a workstation found **four real defects** in code
+that had been written and never executed, and the site manual then exposed a fifth in an
+upstream default. That is the argument for doing steps 1–4 before step 5 rather than
+after.
 
 | checked without Tianhe | result |
 |---|---|
 | the Parsl config constructs | **fixed** — `_command_map` was built *after* `super().__init__()`, and parsl probes the scheduler *inside* it. Every construction raised `AttributeError`. |
 | the job script renders | **fixed** — `render_only()` read `self.template_string`; in parsl 2026.08.10 that is a *module* attribute. The check meant to precede every first submission had never once run. |
 | the rendered directives | **fixed** — `#SBATCH --ntasks-per-node=1` appeared twice; parsl emits it already. |
+| the executor label | **fixed** — the config labelled it `openqha_crest_tianhe` while the driver binds `executors=["openqha_crest"]`. It would have built cleanly and matched no executor at run time. |
+| `--exclusive` in the rendered script | **fixed** — parsl sets `exclusive=True` by default and the site **bans** the flag. Every job would have been rejected. |
 | a failing status query is loud | **works** — raises with the command and what to edit. |
 | env scripts parse | **works** |
 
-**What cannot be checked from here:** the scheduler command names, the CPU partition's
-name, cores per node, whether the proxy line is current, and any real cost. Those are
-steps 1–3.
+**What still cannot be checked from here:** whether the proxy line is current, the exact
+CPU package behind one GPU, and any real cost.
 
 ---
 
@@ -43,31 +45,54 @@ If that `curl` hangs, stop. Everything after it will hang too, and a hung job is
 
 ---
 
-## 2. Answer the three open questions  **[unverified — this is the point of the step]**
+## 2. What the site actually is  **[measured 2026-09-05]**
+
+These were open questions until the first login. They are answered now, and the answers
+changed the configuration substantially.
 
 ```bash
-# a) the scheduler command names. THREE OF FIVE ARE ASSUMPTIONS.
-type -a yhbatch yhrun sacct squeue scancel yhacct yhqueue yhcancel yhinfo 2>&1
-
-# b) the CPU partition's name -- the site information records only GPU partitions
-sinfo -s 2>/dev/null || yhinfo -s 2>/dev/null || scontrol show partition 2>/dev/null
-
-# c) cores per node on that partition
-sinfo -o "%P %c %m %D" 2>/dev/null
+type -a yhbatch yhrun sacct squeue scancel yhacct yhqueue yhcancel
+sinfo -o "%P %c %m %D"
 ```
 
-Write the answers into two places:
+**All five scheduler commands exist**, and so do the `yh*` variants:
 
-* `hpc/providers.py` → `TIANHE_COMMANDS`, and add each newly confirmed key to
-  `TIANHE_CONFIRMED` so the record stops calling it an assumption;
-* `hpc/resource_configs/tianhe_cpu.py` → `PARTITION`, `CORES_PER_NODE`, and set
-  `PARTITION_IS_ASSUMED` / `CORES_PER_NODE_IS_ASSUMED` to `False`.
+| role | used | why |
+|---|---|---|
+| submit | `yhbatch` | `sbatch` is **not** present |
+| launcher | `yhrun` | |
+| status | `sacct` | `yhacct` exists too, but parsl **parses** this output and nobody has read `yhacct`'s format |
+| status fallback | `squeue` | same reason as `sacct` |
+| cancel | `scancel` | same |
 
-> **Why this matters more than it looks.** A wrong SUBMIT name fails loudly. A wrong
-> STATUS name did not: Parsl read the empty output, matched no job, and left everything
-> `PENDING` for ever while the queue quietly stopped. Since 2026-09-05 that raises
-> instead — but only *after* the provider is built, so it cannot tell you the name is
-> wrong before you submit. This step can.
+**There is no CPU partition.** All five are GPU partitions:
+
+```
+hx     128 CPUs   2 nodes      h100x  128 CPUs  11 nodes
+a100x  112 CPUs  10 nodes      a800x  112 CPUs   4 nodes
+v100x   56 CPUs  15 nodes   <- the default
+```
+
+Branch A is CPU work but must hold a card anyway, so the question is which card to waste.
+`v100x`: oldest, most nodes, least contended. Burning an H100 to run xTB is worse in
+every direction.
+
+### Three site rules, from the manual (§6.2.2) — two of them are showstoppers
+
+| rule | text | what would have happened |
+|---|---|---|
+| `-G`/`--gpus` **mandatory** | 提交作业时必须使用 --gpus 或 -G 参数 | job never starts |
+| `--exclusive` **banned** | 该参数已被集群调度系统禁用 | **parsl defaults `exclusive=True`** — every job rejected |
+| memory **must not be set** | 禁止指定内存大小 | we never set it; compliant by luck |
+
+The middle one is the one to remember: the defect was in an upstream default, and only
+rendering the script showed it.
+
+### Still to confirm before a large campaign
+
+`CPUS_PER_GPU = 14` comes from the manual's own "1GPU/14CPUs" example and v100x's 56
+CPUs/node = 4×14. **Check it against your own allocation** (`yhi`, or the Starlight
+resource page) — if the package differs, the worker count is wrong.
 
 ---
 
@@ -78,8 +103,10 @@ git clone <this repo> openQHA && cd openQHA     # or rsync it in
 bash install_dependency.sh --tianhe
 ```
 
-`--tianhe` builds `openqha-cuda` from `environment-cuda.yml` and **deliberately does not
-download the MACE-OFF weights** — a 100 MB pull through the proxy from a login node is
+`--tianhe` loads `anaconda3/2023.09` (conda is not on PATH until you do) and builds
+`openqha` from `environment-tianhe.yml` — the **CPU** torch build, deliberately, on a
+machine where every job holds a GPU it does not use. It **does not download the MACE-OFF
+weights** — a 100 MB pull through the proxy from a login node is
 antisocial. Fetch them where you have bandwidth and copy them in:
 
 ```bash
@@ -110,12 +137,12 @@ python - <<'PY'
 import sys, pathlib
 sys.path.insert(0, "hpc")
 from resource_configs import load
-m = load("tianhe_cpu")
+m = load("tianhe")
 
 import json
 print(json.dumps(m.describe(), indent=1))          # what is measured, what is assumed
 
-p = m.config(partition="<YOUR PARTITION>", account="<YOUR ACCOUNT>").executors[0].provider
+p = m.config().executors[0].provider    # SETTINGS supply partition and account
 print(p.render_only(pathlib.Path("/tmp/openqha_render_check.sh")))
 PY
 ```
@@ -159,8 +186,7 @@ rather than the science:
 ```bash
 python -u scripts/production/s0_E_branchA_parsl.py \
     --species dsgdb9nsd_000018 \
-    --resource tianhe_cpu --partition <YOUR PARTITION> --account <YOUR ACCOUNT> \
-    --tag tianhe_smoke_parsl --threads 4
+    --resource tianhe --tag tianhe_smoke_parsl
 ```
 
 **Replacing Parsl with a for-loop must not change a single number.** Compare the two
@@ -170,21 +196,32 @@ products; if they differ, the execution layer is doing something it should not.
 
 ## 6. Production  **[unverified]**
 
+**Settings live in the config, not the command line** (user ruling 2026-09-05). Edit the
+SETTINGS block at the top of `hpc/resource_configs/tianhe.py` — `ACCOUNT`, `PARTITION`,
+`GPUS_PER_JOB`, `MAX_BLOCKS`, `TAG`, `TIMEOUT_S` — then:
+
 ```bash
 cd $HOME/openQHA && source env_openqha.sh
 
-python -u scripts/production/s0_E_branchA_parsl.py \
-    --edges \
-    --resource tianhe_cpu \
-    --partition <YOUR PARTITION> --account <YOUR ACCOUNT> \
-    --tag prod --threads 4 --timeout-s 14400 \
+python -u scripts/production/s0_E_branchA_parsl.py --edges --resource tianhe \
     2>&1 | tee $HOME/openQHA_prod_$(date +%Y%m%d_%H%M).log
 ```
 
-Scale up by editing `max_blocks` (nodes requested at once) in `tianhe_cpu.py`, or pass
-`--max-workers` to override the assumed workers-per-node. `init_blocks=0` and
-`min_blocks=0` mean nothing is requested until there is work and an idle allocation is
-given back — **a held node is charged whether or not it computes.**
+A flag still wins where you give one, for a one-off. The plan record says **where each
+value came from** (`settings_source`), so "why 14400" has an answer later. A campaign
+whose parameters live in a shell history is a campaign nobody can reproduce.
+
+Scale with `MAX_BLOCKS` (allocations held at once). `init_blocks=0` and `min_blocks=0`
+mean nothing is requested until there is work and an idle allocation is given back —
+**a held node is charged whether or not it computes.**
+
+### Watching it
+
+```bash
+yhq -a                 # recommended by the manual; works even with no allocation left
+yhi                    # node states: idle / mix / alloc
+yhcancel <jobid>
+```
 
 ### Where the results land
 

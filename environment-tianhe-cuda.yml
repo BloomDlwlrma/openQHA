@@ -1,0 +1,115 @@
+# openQHA -- Tianhe GPU cluster (TianheXY-AI). Branch C training only.
+#
+#     module load anaconda3/2023.09
+#     module load CUDA/12.4
+#     module load mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4
+#     conda env create -f environment-tianhe-cuda.yml
+#     conda activate openqha-cuda
+#
+# or:  bash install_dependency.sh --tianhe-cuda
+#
+# ---------------------------------------------------------------------------------------
+# THE DIVISION OF LABOUR: MODULES PROVIDE CUDA AND MPI, CONDA PROVIDES EVERYTHING ELSE
+# ---------------------------------------------------------------------------------------
+# User ruling 2026-09-05. The site's module tree carries a matched CUDA/openmpi pair, and
+# those are exactly the two things that must agree with the machine's driver and its
+# interconnect:
+#
+#     CUDA/12.4
+#     mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4    <- built against CUDA 12.4
+#     nccl/2.23.4-cuda-12.4                     <- collectives for 12.4
+#     gdrcopy/2.4-cuda-12.4                     <- RDMA copy for 12.4
+#
+# **Load the CUDA and the openmpi that were built together.** An openmpi built against a
+# different CUDA than the one loaded is the same class of mistake as two BLAS builds in
+# one environment, except that it fails later and less clearly -- at the first collective
+# rather than at import.
+#
+# Everything above that line -- python, torch, ase, rdkit, mace-torch -- comes from
+# conda-forge, because mixing a module-provided Python stack with a conda one gives an
+# environment where one of the two is wrong. The site does ship `Pytorch/2.1.2-py3.11_
+# cuda11.8`; it is deliberately NOT used, both because it is CUDA 11.8 and because it
+# would drag its own Python.
+#
+# `cuda-version=12.4` pins the conda side to the SAME major.minor as the module, so the
+# torch build and the loaded toolkit agree. Verified by dry run 2026-09-05 with
+# CONDA_OVERRIDE_CUDA=12.4, and again with 12.9 to check the pin holds:
+#
+#     cuda-version  12.4          cuda-cudart  12.4.127
+#     pytorch       2.5.1 cuda120_py311h7a71dd8_303
+#     libopenblas   0.3.34 openmp_*            defaults-channel packages: 0
+#
+# **The torch build tag says `cuda120`, not `cuda124`, and that is correct.** CUDA 12 has
+# minor-version compatibility: a binary built against 12.0 runs on any 12.x runtime. What
+# had to match is the MAJOR version and the runtime actually present, and both do. Do not
+# "fix" this by hunting for a cuda124 build -- conda-forge does not ship one, and the
+# pinned `cuda-version` is what governs the runtime.
+#
+# Note also that both overrides resolve to the same thing: the pin, not the driver, is
+# what decides. That is the point of pinning it.
+#
+# ---------------------------------------------------------------------------------------
+# WHAT THIS IS FOR, AND WHAT IT IS NOT
+# ---------------------------------------------------------------------------------------
+# Branch C: MACE fine-tuning with the PHL loss -- the one part of this repository that is
+# genuinely faster on a GPU.
+#
+# **NOT branch A.** Branch A is ~1e5 GFN2-xTB gradient calls and xtb has no GPU path; it
+# belongs on the CPU cluster (TianheXY-C: xyfree / mars / deimos / e9) with
+# `environment-tianhe.yml`. The two clusters have separate partitions, separate
+# allocation policies and separate filesystems.
+# ---------------------------------------------------------------------------------------
+name: openqha-cuda
+channels:
+  - conda-forge
+  # `channels: [conda-forge]` alone does NOT mean conda-forge only -- conda merges the
+  # user's configured channels, and `anaconda3/2023.09` ships with `defaults` configured.
+  # Measured 2026-09-04: without this the solver pulled a `defaults` pytorch into an
+  # otherwise conda-forge stack AND hid a real solver conflict behind it.
+  - nodefaults
+dependencies:
+  # ---- match the module ---------------------------------------------------------------
+  # Same major.minor as `module load CUDA/12.4`. Change both together or neither.
+  - cuda-version=12.4
+
+  # ---- BLAS ---------------------------------------------------------------------------
+  # The OpenMP OpenBLAS build, as everywhere else in this repository: conda-forge's crest
+  # pulls the pthreads build, and calling a pthreads OpenBLAS from inside an OpenMP region
+  # costs 4164 warning lines and 20 s per molecule (measured 2026-09-04).
+  #
+  # NOTE `nomkl` is absent here and present in environment.yml. That is not an oversight:
+  # CUDA builds of pytorch depend on MKL, so `nomkl` and a CUDA torch cannot both be
+  # satisfied. The three pins below still hold, so `libblas` -- which is what CREST uses --
+  # remains the OpenMP OpenBLAS while torch links MKL for its own kernels.
+  - libopenblas=*=openmp*
+  - libblas=*=*openblas
+  - liblapack=*=*openblas
+
+  - python=3.11
+  - numpy>=1.24
+  - scipy>=1.10
+  - pyyaml>=6.0
+  - pandas>=1.5
+  - pyarrow>=10.0
+  - h5py>=3.8            # branch C datasets -- the reason this environment exists
+  - ase>=3.22
+  - rdkit>=2023.03
+
+  # The CUDA build. `cuda-version=12.4` above selects it; asking for a *cuda* build here
+  # as well turns "the solver quietly handed me the CPU build" into a solver error.
+  - pytorch>=2.0=*cuda*
+
+  - pip
+  - pip:
+      - mace-torch>=0.3.6
+      - pymsym>=0.3.5
+      - parsl>=2024.01
+
+# NOT IN HERE:
+#   openmpi / mpi4py   comes from `module load mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4`.
+#                      A conda openmpi would not know about this machine's interconnect.
+#   crest / xtb        CPU tools; they belong in environment-tianhe.yml on the CPU cluster.
+#   gromacs, orca      not part of branch C training.
+#   MACE-OFF weights   not downloaded on a login node -- outbound traffic goes through a
+#                      proxy. rsync them in; the SHA-256 is recomputed on load, so a
+#                      truncated transfer fails loudly rather than quietly.

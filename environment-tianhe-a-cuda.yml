@@ -1,0 +1,92 @@
+# openQHA -- TianheXY-A (login ln206), `ai` partition. Branch C training.
+#
+#     module load anaconda3/2023.09
+#     module load CUDA/12.3
+#     module load mpi/openmpi/5.0.0-gcc-11.4.0-cuda12.2
+#     conda env create -f environment-tianhe-a-cuda.yml
+#     conda activate openqha-cuda-a
+#
+# or:  bash install_dependency.sh --tianhe-a
+#
+# ---------------------------------------------------------------------------------------
+# WHY THIS IS NOT environment-tianhe-cuda.yml
+# ---------------------------------------------------------------------------------------
+# There are two GPU clusters and their CUDA ceilings differ. That is the whole reason
+# this file exists:
+#
+#     TianheXY-AI   module avail tops out at CUDA/12.4   -> environment-tianhe-cuda.yml
+#     TianheXY-A    module avail tops out at CUDA/12.3   -> THIS FILE
+#
+# Pinning 12.4 here would ask for a module the site does not have. `module load` fails
+# loudly, which is survivable; the worse case is pinning a conda CUDA newer than the
+# driver, which imports cleanly and dies at the first kernel launch.
+#
+# The matched MPI on this machine is `mpi/openmpi/5.0.0-gcc-11.4.0-cuda12.2` and the
+# newest matched NCCL is `nccl/2.19.3-cuda-12.3`. **Load the CUDA and the MPI that were
+# built together** -- an MPI built against a different CUDA fails at the first collective,
+# not at import, which is far harder to attribute.
+#
+# ---------------------------------------------------------------------------------------
+# THE NODE THIS TARGETS
+# ---------------------------------------------------------------------------------------
+# `ai` partition, per the site manual section 1.1:
+#
+#     2 x 28 = 56 CPU cores, 8 GPU cards, 1024 GB RAM per node
+#     80 GB HBM2e per card, driver 535.104.12
+#
+# **Eight cards per node, and nodes are allocated exclusively**, so one allocation is
+# eight GPUs and 56 cores. See hpc/resource_configs/tianhe_a.py for how that is used --
+# in short, as EIGHT INDEPENDENT single-GPU workers rather than one eight-way job,
+# because MACE fine-tuning is small and committee members are embarrassingly parallel.
+#
+# Driver 535.104.12 supports CUDA 12.2 at its own version, and CUDA 12 has minor-version
+# compatibility, so a 12.3 runtime is fine on it. Do not read the driver number as a
+# CUDA ceiling.
+# ---------------------------------------------------------------------------------------
+name: openqha-cuda-a
+channels:
+  - conda-forge
+  # Not conda-forge-only without this: conda merges the user's configured channels, and
+  # `anaconda3/2023.09` ships with `defaults` configured. Measured 2026-09-04 -- without
+  # it the solver pulled a defaults pytorch in and hid a real conflict behind it.
+  - nodefaults
+dependencies:
+  # Same major.minor as `module load CUDA/12.3`. Change both together or neither.
+  # Verified by dry run 2026-09-05 with CONDA_OVERRIDE_CUDA=12.3:
+  #     cuda-version 12.3   cuda-cudart 12.3.101   pytorch 2.5.1 cuda120_py311
+  # The torch build tag reads `cuda120` and that is correct -- CUDA 12 has minor-version
+  # compatibility, so a 12.0 build runs on any 12.x runtime. conda-forge ships no
+  # `cuda123` build; the pinned `cuda-version` is what governs the runtime.
+  - cuda-version=12.3
+
+  # OpenMP OpenBLAS, as everywhere in this repository. `nomkl` is deliberately absent:
+  # CUDA builds of pytorch depend on MKL, so the two cannot both be satisfied. The pins
+  # still hold, so `libblas` stays the OpenMP OpenBLAS while torch links MKL for itself.
+  - libopenblas=*=openmp*
+  - libblas=*=*openblas
+  - liblapack=*=*openblas
+
+  - python=3.11
+  - numpy>=1.24
+  - scipy>=1.10
+  - pyyaml>=6.0
+  - pandas>=1.5
+  - pyarrow>=10.0
+  - h5py>=3.8
+  - ase>=3.22
+  - rdkit>=2023.03
+
+  - pytorch>=2.0=*cuda*
+
+  - pip
+  - pip:
+      - mace-torch>=0.3.6
+      - pymsym>=0.3.5
+      - parsl>=2024.01
+
+# NOT IN HERE:
+#   openmpi / mpi4py   from `module load mpi/openmpi/5.0.0-gcc-11.4.0-cuda12.2`; a conda
+#                      openmpi would not know this machine's interconnect.
+#   crest / xtb        CPU tools -- they belong on TianheXY-C with environment-tianhe.yml.
+#   MACE-OFF weights   rsync them in; not pulled through the login node's proxy. The
+#                      SHA-256 is recomputed on load, so a truncated transfer fails loudly.

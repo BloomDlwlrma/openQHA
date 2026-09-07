@@ -43,27 +43,36 @@ SLURM_COMMANDS = dict(submit="sbatch", status="sacct", status_fallback="squeue",
 #: Tianhe (TianheXY-AI). Directives stay `#SBATCH`; only the front-end commands are
 #: renamed.
 #:
-#: **Only two of these five are confirmed.** `yhbatch` and `yhrun` appear verbatim
-#: in the site's own job scripts (user, 2026-08-31; D0-C-24). The status and cancel
-#: commands have NOT been seen on that machine, and this repo does not get to invent
-#: them: a wrong status command does not fail loudly, it makes Parsl believe every
-#: job is still pending, and the queue silently stops making progress.
+#: **All five are confirmed as of 2026-09-05** (`type -a` on the login node). They were
+#: two of five until then, and the reason that mattered is worth keeping: a wrong submit
+#: command fails loudly, while a wrong status command does not -- it makes Parsl believe
+#: every job is still pending and the queue silently stops making progress. That is why
+#: they were never guessed, and why `execute_wait` now raises on a failed status query.
 #:
-#: So they are left at the Slurm names, which is what a Slurm derivative usually
+#: They are the Slurm names, which is what a Slurm derivative usually
 #: keeps, and `preflight()` below reports which of the candidates actually exist on
 #: PATH. **Run preflight on the login node before step 1** and fill in whatever it
 #: finds. Branch E acceptance criterion 3 covers the rendered script; this covers
 #: the commands that act on it.
 TIANHE_COMMANDS = dict(
-    submit="yhbatch",            # confirmed: site job scripts
-    launcher="yhrun",            # confirmed: site job scripts
-    status="sacct",              # UNVERIFIED -- candidates: sacct, yhacct
-    status_fallback="squeue",    # UNVERIFIED -- candidates: squeue, yhqueue, yhinfo
-    cancel="scancel",            # UNVERIFIED -- candidates: scancel, yhcancel
+    submit="yhbatch",            # measured 2026-09-05: /usr/bin/yhbatch (no `sbatch`)
+    launcher="yhrun",            # measured 2026-09-05: /usr/bin/yhrun
+    status="sacct",              # measured 2026-09-05: /usr/bin/sacct
+    status_fallback="squeue",    # measured 2026-09-05: /usr/bin/squeue
+    cancel="scancel",            # measured 2026-09-05: /usr/bin/scancel
 )
 
 #: Which of the above are measured rather than assumed. Carried into every record.
-TIANHE_CONFIRMED = ("submit", "launcher")
+#:
+#: ALL FIVE, as of 2026-09-05: `type -a` on the login node found every one of them, and
+#: also found the yh* variants (yhacct, yhqueue, yhcancel). Both families are present.
+#:
+#: The plain Slurm names are kept for status and cancel on purpose. parsl's SlurmProvider
+#: PARSES the output of these commands, and the yh* variants are not guaranteed to print
+#: byte-identical output; swapping to a name whose format nobody has read would trade a
+#: verified path for an unverified one. `submit` must stay `yhbatch` -- `sbatch` was not
+#: in the list at all.
+TIANHE_CONFIRMED = ("submit", "launcher", "status", "status_fallback", "cancel")
 
 COMMANDS = {"slurm": SLURM_COMMANDS, "tianhe": TIANHE_COMMANDS}
 

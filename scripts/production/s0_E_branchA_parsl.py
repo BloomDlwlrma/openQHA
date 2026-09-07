@@ -208,14 +208,25 @@ def main():
     ap.add_argument("--species", nargs="*", default=None)
     ap.add_argument("--edges", action="store_true",
                     help="run every species named by the configured edge set")
+    ap.add_argument("--range", nargs=2, type=int, metavar=("START", "END"),
+                    default=None,
+                    help="QM9 index range, inclusive. Molecules already complete under "
+                         "--tag are subtracted, and molecules with no geometry or that "
+                         "fail the F0-F7 gates are dropped. Re-running the same command "
+                         "does the remainder.")
+    ap.add_argument("--no-resume", action="store_true",
+                    help="with --range: do NOT subtract completed molecules")
     ap.add_argument("--resource", default="local",
                     help="hpc/resource_configs/<name>.py (default: local -- step 0)")
-    ap.add_argument("--tag", default="prod")
+    ap.add_argument("--tag", default=None,
+                    help="default from the resource config's TAG")
     ap.add_argument("--threads", type=int, default=None,
                     help="CREST threads per molecule; default from the resource config")
     ap.add_argument("--max-workers", type=int, default=None)
-    ap.add_argument("--timeout-s", type=int, default=14400)
-    ap.add_argument("--hessian-mode", default="analytic")
+    ap.add_argument("--timeout-s", type=int, default=None,
+                    help="default from the resource config's TIMEOUT_S")
+    ap.add_argument("--hessian-mode", default=None,
+                    help="default from the resource config's HESSIAN_MODE")
     ap.add_argument("--account", default=None, help="scheduler account (cluster only)")
     ap.add_argument("--partition", default=None)
     ap.add_argument("--dry-run", action="store_true",
@@ -223,20 +234,61 @@ def main():
     args = ap.parse_args()
 
     cfg = config.load()
-    species, source = molecule_list(args, cfg)
+    worklist_record = None
+    species, source = ([], "pending --range scan") if args.range else \
+        molecule_list(args, cfg)
 
     import resource_configs
     res = resource_configs.load(args.resource)
-    threads = args.threads or getattr(res, "THREADS_PER_JOB", 4)
+
+    # The resource config carries the site's own defaults, so a production run needs no
+    # flags beyond --edges --resource <site>. An explicit flag still wins: a one-off
+    # override must not require editing a committed file.
+    def _pick(flag_value, attr, fallback):
+        if flag_value is not None:
+            return flag_value, "command line"
+        if hasattr(res, attr):
+            return getattr(res, attr), "resource config {}.{}".format(args.resource, attr)
+        return fallback, "built-in default"
+
+    threads, threads_src = _pick(args.threads, "THREADS_PER_JOB", 4)
+    tag, tag_src = _pick(args.tag, "TAG", "prod")
+    timeout_s, timeout_src = _pick(args.timeout_s, "TIMEOUT_S", 14400)
+    hessian_mode, hess_src = _pick(args.hessian_mode, "HESSIAN_MODE", "analytic")
+    args.tag, args.timeout_s, args.hessian_mode = tag, timeout_s, hessian_mode
+
+    # The worklist needs the resolved tag: "already complete" is a question about a
+    # particular campaign's shard, not about the repository as a whole.
+    if args.range:
+        from openqha import worklist as _worklist
+        start, end = args.range
+        candidates = _worklist.index_range(start, end)
+        if args.no_resume:
+            species = candidates
+            source = "indices {}..{} (resume disabled)".format(start, end)
+            worklist_record = dict(
+                completion_criterion="not consulted (--no-resume)",
+                n_candidates=len(candidates), n_remaining=len(candidates))
+        else:
+            species, worklist_record = _worklist.remaining(
+                candidates, cfg=cfg, tag=tag,
+                progress=lambda m: print("  " + m, end="\r", flush=True))
+            print(" " * 48, end="\r")
+            source = "indices {}..{} minus what is already complete".format(start, end)
 
     plan = dict(
         generated_by="scripts/production/s0_E_branchA_parsl.py",
         branch="E (execution layer for branch A)",
         resource=res.describe(),
         n_species=len(species), species=species, species_source=source,
-        tag=args.tag, threads_per_task=threads,
-        hessian_mode=args.hessian_mode, timeout_s=args.timeout_s,
+        tag=tag, threads_per_task=threads,
+        hessian_mode=hessian_mode, timeout_s=timeout_s,
+        # Where each of those came from. Without this the product records the value and
+        # not the decision, and "why 14400" has no answer six weeks later.
+        settings_source=dict(threads=threads_src, tag=tag_src,
+                             timeout_s=timeout_src, hessian_mode=hess_src),
         science_settings_source="configs/openqha.yaml -- NOT this script",
+        worklist=worklist_record,
         crest_settings={k: cfg["crest"].get(k) for k in
                         ("workhorse", "refine", "shake", "tstep_fs", "optlev",
                          "runtype")},
@@ -249,9 +301,19 @@ def main():
         args.resource, res.describe().get("max_workers")
         or res.describe().get("workers_per_node"), threads))
     print("molecules    {}  ({})".format(len(species), source))
+    if worklist_record and worklist_record.get("n_already_done") is not None:
+        print("resume       {} already complete, {} dropped (no geometry {}, gates {})"
+              .format(worklist_record["n_already_done"],
+                      worklist_record["n_dropped_no_geometry"]
+                      + worklist_record["n_dropped_by_gate"],
+                      worklist_record["n_dropped_no_geometry"],
+                      worklist_record["n_dropped_by_gate"]))
+        print("             done means: {}".format(
+            worklist_record["completion_criterion"]))
     print("settings     workhorse={workhorse} refine={refine} shake={shake} "
           "tstep={tstep_fs} fs".format(**plan["crest_settings"]))
-    print("tag          {}".format(args.tag))
+    print("tag          {}  ({})".format(tag, tag_src))
+    print("timeout      {} s  ({})".format(timeout_s, timeout_src))
     print()
 
     if args.dry_run:
@@ -271,7 +333,19 @@ def main():
     from parsl import python_app
     parsl.load(parsl_config)
 
-    app = python_app(run_one_molecule, executors=["openqha_crest"])
+    # The label comes from hpc/labels.py, and the config is checked against it BEFORE
+    # anything is submitted. A Parsl app that names an executor the config does not
+    # provide fails at neither build nor render time -- it simply never schedules.
+    import labels as _labels
+    crest_label = _labels.label("crest")
+    report = _labels.check(parsl_config, expect=crest_label)
+    if report["legacy"]:
+        print("NOTE: this resource config uses retired executor labels {} -> {}. "
+              "They still resolve; update the config.".format(
+                  report["legacy"], report["legacy_map"]))
+    print("executor     {}".format(crest_label))
+
+    app = python_app(run_one_molecule, executors=[crest_label])
 
     passthrough = {k: os.environ[k] for k in
                    ("S0_CREST_BIN", "S0_RUNS_ROOT", "S0_ENGINE", "S0_MACE_MODEL",

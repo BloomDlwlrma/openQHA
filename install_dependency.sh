@@ -9,6 +9,12 @@
 #     bash install_dependency.sh --no-weights # skip the MACE-OFF download
 #     bash install_dependency.sh --all-weights# fetch the whole MACE-OFF family, not one
 #     bash install_dependency.sh --cuda       # CUDA build, without the Tianhe specifics
+#     bash install_dependency.sh --tianhe-cuda# Tianhe GPU cluster, branch C training
+#
+# THERE ARE TWO TIANHE CLUSTERS and they need different environments:
+#   --tianhe       TianheXY-C  (CPU: xyfree/mars/deimos/e9)  -> branches A and B
+#   --tianhe-cuda  TianheXY-AI (GPU: hx/h100x/a100x/...)     -> branch C, CUDA 12.4
+#   --tianhe-a     TianheXY-A  (GPU: ai/temp, 8 cards/node)  -> branch C, CUDA 12.3
 #     bash install_dependency.sh --lean       # branch B production only, `openqha-openmm`
 #
 # ONE environment runs everything, including branch B's OpenMM route. That is a ruling of
@@ -59,13 +65,24 @@ ENV_FILE="environment.yml"
 REQ="requirements.txt"
 DO_INSTALL=1
 WEIGHTS="default"          # default | all | none
+#: Extra modules for --tianhe-cuda. CUDA and the openmpi BUILT AGAINST IT must be loaded
+#: together: an openmpi from a different CUDA fails at the first collective, not at import.
+TIANHE_MODULES=""
 
 for arg in "$@"; do
     case "$arg" in
-        --tianhe|--hpc)  MODE="tianhe"; ENV_FILE="environment-cuda.yml"
-                         PY_ENV="${OPENQHA_ENV:-openqha-cuda}" ;;
+        --tianhe|--hpc)  MODE="tianhe"; ENV_FILE="environment-tianhe.yml"
+                         PY_ENV="${OPENQHA_ENV:-openqha}" ;;
         --cuda)          ENV_FILE="environment-cuda.yml"
                          PY_ENV="${OPENQHA_ENV:-openqha-cuda}" ;;
+        --tianhe-cuda)   MODE="tianhe"; ENV_FILE="environment-tianhe-cuda.yml"
+                         PY_ENV="${OPENQHA_ENV:-openqha-cuda}"
+                         TIANHE_MODULES="CUDA/12.4 mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4 nccl/2.23.4-cuda-12.4" ;;
+        --tianhe-a)      MODE="tianhe"; ENV_FILE="environment-tianhe-a-cuda.yml"
+                         PY_ENV="${OPENQHA_ENV:-openqha-cuda-a}"
+                         # CUDA 12.3 is the CEILING on TianheXY-A; 12.4 does not
+                         # exist there. The MPI is the one built against this CUDA.
+                         TIANHE_MODULES="CUDA/12.3 mpi/openmpi/5.0.0-gcc-11.4.0-cuda12.2 nccl/2.19.3-cuda-12.3" ;;
         --local)         MODE="local" ;;
         --minimal)       REQ="requirements-minimal.txt" ;;
         --lean)          ENV_FILE="environment-openmm.yml"; PY_ENV="openqha-openmm";
@@ -94,6 +111,20 @@ echo "weights     : $WEIGHTS"
 # -------------------------------------------------------------------------------------
 # 0. conda
 # -------------------------------------------------------------------------------------
+if ! command -v conda >/dev/null 2>&1; then
+    # Module-based sites first: on Tianhe conda does not exist until the module is
+    # loaded, and the directory search below would just report "conda not found".
+    # `module avail` there lists anaconda3/2019.10, 2020.11 and 2023.09; the newest is
+    # the one this repository is built against (python 3.11 from conda-forge anyway).
+    if command -v module >/dev/null 2>&1; then
+        module load anaconda3/2023.09 >/dev/null 2>&1 || \
+            module load anaconda3 >/dev/null 2>&1 || true
+        for m in $TIANHE_MODULES; do
+            module load "$m" >/dev/null 2>&1 || \
+                echo "!! module not available: $m" >&2
+        done
+    fi
+fi
 if ! command -v conda >/dev/null 2>&1; then
     for c in "$HOME/miniconda3" "$HOME/anaconda3" "$HOME/miniforge3" /opt/conda; do
         [ -f "$c/etc/profile.d/conda.sh" ] && { . "$c/etc/profile.d/conda.sh"; break; }
@@ -150,8 +181,12 @@ if [ "$MODE" = "tianhe" ]; then
     echo "     A wrong SUBMIT command fails loudly. A wrong STATUS command does not:"
     echo "     Parsl believes every job is pending and the queue silently stops."
     echo "  2. write hpc/resource_configs/tianhe_cpu.py -- see docs/branchA_workflow.md §6."
-    echo "  3. conformer search goes on a CPU partition, NOT h100x: it bills by the whole"
-    echo "     card and gives 14 CPUs with it, and GFN2-xTB never touches a GPU."
+    echo "  3. THERE IS NO CPU PARTITION on this site (measured 2026-09-05): hx, h100x,"
+    echo "     a100x, a800x and v100x are all GPU partitions. Branch A therefore takes a"
+    echo "     GPU allocation it does not use; hpc/resource_configs/tianhe.py defaults to"
+    echo "     v100x, the oldest card and the least contended."
+    echo "  4. -G/--gpus is MANDATORY and --exclusive is BANNED (site manual 6.2.2)."
+    echo "     parsl defaults exclusive=True, so a stock SlurmProvider would be rejected."
 fi
 
 if [ "$DO_INSTALL" -eq 0 ]; then

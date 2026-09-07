@@ -29,6 +29,10 @@ must not exceed the physical cores, or the measured cost of a molecule stops
 meaning anything (D0-P1-12, defect 34).
 """
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import labels as _labels  # noqa: E402
 
 #: Cores this machine has. Measured, not assumed.
 N_CORES = os.cpu_count() or 4
@@ -132,21 +136,21 @@ def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
     return Config(
         executors=[
             HighThroughputExecutor(
-                label="openqha_crest",
+                label=_labels.label("crest"),
                 max_workers_per_node=workers,
                 cores_per_worker=float(threads_per_job),
                 cpu_affinity="none",
                 provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1),
             ),
             HighThroughputExecutor(
-                label="openqha_qha",
+                label=_labels.label("qha"),
                 max_workers_per_node=qha_workers,
                 cores_per_worker=float(QHA_THREADS_PER_JOB),
                 cpu_affinity="none",
                 provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1),
             ),
             HighThroughputExecutor(
-                label="openqha_qha_openmm",
+                label=_labels.label("qha", standby=True),
                 max_workers_per_node=OPENMM_MAX_WORKERS,
                 cores_per_worker=float(OPENMM_THREADS_PER_JOB),
                 cpu_affinity="none",
