@@ -294,6 +294,17 @@ VARIANTS = [
     ("langevin_10.0", "thermostat",
      dict(kind="langevin", friction_per_ps=10.0, fixcm=False),
      "ten times branch B, to bracket the friction"),
+    # The range put to this branch on 2026-09-07 as "weak damping, to restore the true
+    # fluctuation amplitude", against the source paper's 50/ps. Both ends are here so the
+    # claim is measured rather than argued: Langevin samples the canonical distribution
+    # for ANY friction, so a difference between these rows is a finite-timestep or
+    # finite-sampling effect, not a difference in the distribution being sampled.
+    ("langevin_5.0", "thermostat",
+     dict(kind="langevin", friction_per_ps=5.0, fixcm=False),
+     "upper end of the weak-damping range proposed 2026-09-07"),
+    ("langevin_50.0", "thermostat",
+     dict(kind="langevin", friction_per_ps=50.0, fixcm=False),
+     "the source paper's own friction (Rinaldo & Field 2003, p2)"),
     ("bussi", "thermostat",
      dict(kind="bussi", taut_fs=100.0),
      "stochastic velocity rescaling; GROMACS tcoupl = v-rescale, which the mdp already says"),

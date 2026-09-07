@@ -1,81 +1,84 @@
 # Branch B production protocol -- **the single source of truth for how long and how often**
 #
-# Included by configs/openqha.yaml. Both trajectory drivers read it, so the ASE route and
-# the OpenMM route cannot drift apart. Until 2026-09-07 they had: the ASE driver ran
-# 50 ps + 200 ps and the OpenMM driver 2 ps + 25 ps, while the two are supposed to be an
-# INDEPENDENT IMPLEMENTATION PAIR of one protocol. Two implementations of two different
-# protocols measure nothing.
+# Included by configs/openqha.yaml. Both trajectory drivers and the Parsl driver read it,
+# so the ASE route and the OpenMM route cannot drift apart. Until 2026-09-07 they had:
+# the ASE driver ran 50 + 200 ps and the OpenMM driver 2 + 25 ps, while the two are
+# supposed to be an INDEPENDENT IMPLEMENTATION PAIR of one protocol. Two implementations
+# of two different protocols measure nothing.
 #
 # =======================================================================================
-# WHERE THESE NUMBERS COME FROM
+# 1. A CORRECTION: THE PROTEIN PROTOCOL DOES NOT TRANSFER
 # =======================================================================================
-# User ruling 2026-09-07: use the published protocol from the papers this branch already
-# cites, at production level.
+# On the first pass (2026-09-07, morning) the published protocol of Rinaldo & Field,
+# *Biophysical Journal* 2003 -- 1 fs, 520 ps equilibration, 1.5 ns production, one frame
+# per 0.5 ps, Langevin friction 50/ps -- was adopted WHOLESALE. That was wrong, and the
+# user said so the same day.
 #
-# Rinaldo & Field, *Biophysical Journal* 2003 -- "A Computational Study of the Open and
-# Closed Forms of the N-Lobe Human Serum Transferrin" (the paper `openqha/qha.py` already
-# cites for the 50 ps^-1 coupling and for the two convergence diagnostics). Its methods
-# section fixes the whole protocol, quoted rather than paraphrased:
-#
-#   "The timestep for the simulation was 1 fs ... a friction coefficient of 50 ps^-1 was
-#    employed for each atom"                                                        (p2)
-#   "Initially 20 ps of equilibration was performed but, in the end, it was found that
-#    520 ps were necessary."                                                        (p2)
-#   "The equilibration was followed by a simulation of 1.5 ns during which data were
-#    collected every 0.5 ps."                                                       (p2)
-#   "we could only use 3000 structures for each analysis (those obtained during the last
-#    1.5 ns of our simulations)"                                                    (p3)
-#   "First, global translations and rotations were removed ... by superimposing the
-#    nonhydrogen atoms of each structure on the first structure"                    (p3)
+# It is the right paper: this branch already cites it for its thermostat and for both
+# convergence diagnostics in `openqha.quasi_harmonic.qha`. What does not transfer is the
+# SYSTEM. Their system is a 2586-heavy-atom solvated protein whose basin is enormous and
+# barely explored in 1.5 ns. Ours is 10-19 atoms in vacuum.
 #
 # =======================================================================================
-# THE ONE CONSTRAINT THAT DEFEATED THE PAPER, AND WHY IT CANNOT REACH US
+# 2. WHY LONGER IS NOT BETTER HERE: THE SINGLE-GAUSSIAN ASSUMPTION
 # =======================================================================================
-# Rinaldo & Field could not converge their entropy, and they say exactly why (p11):
+# Quasi-harmonic analysis assumes the sampled configurations are ONE multivariate
+# Gaussian. Branch A enumerates the basins; branch B measures the entropy INSIDE one.
 #
-#   "as the length of the trajectory increases, the number of nonzero modes contributing
-#    to the entropy increases. To include all such modes in our calculation we would need
-#    a minimum of 7758 dynamical structures -- which would imply a simulation of at least
-#    4 ns, a length that is currently beyond our computational resources."
+# **A trajectory that crosses a torsional barrier samples two basins**, and the covariance
+# then contains the displacement BETWEEN the minima as well as the fluctuation within
+# them. T*S is inflated, and nothing else in the chain notices.
 #
-# **The covariance matrix cannot have more non-zero eigenvalues than it has frames.** They
-# had 3N = 7758 degrees of freedom and 3000 frames, so at most 3000 modes could appear and
-# 4758 were missing by construction.
+# Acetone's methyl barrier is about 0.8 kcal/mol against kT = 0.59 at 298 K. It rotates
+# freely. Over 1.5 ns it will turn many times, and although a 120-degree turn gives an
+# INDISTINGUISHABLE structure -- so the conformer count and the symmetry number are
+# unaffected -- the three hydrogens have physically moved, and the Cartesian covariance
+# sees them sweep a circle.
 #
-# openQHA's molecules have 10 to 19 atoms:  3N-6 = 24 to 51.
-# At 0.5 ps over 1.5 ns that is **3000 frames against at most 51 modes -- 59x the rank
-# requirement.** The mechanism that stopped the protein calculation is three orders of
-# magnitude away from us, which is what makes this protocol cheap here and is exactly why
-# the user asked for it: "as is quick for small molecules to qha".
+# So the length is set by BASIN RESIDENCE, not by the paper.
+# `openqha.quasi_harmonic.basin_residence` counts both kinds of crossing and
+# `interpret_saturation()` refuses to read acceptance criterion 1 without them, because
+# a rising saturation curve has two causes that demand OPPOSITE actions:
 #
-# `openqha.qha.mode_batch_convergence` implements their second diagnostic and the note
-# there already predicted this. This file is where the prediction gets acted on.
-#
-# =======================================================================================
-# WHY 0.5 ps AND NOT THE 8 fs WE USED BEFORE
-# =======================================================================================
-# The quasi-harmonic covariance is an EQUAL-TIME average, <(x_i - <x_i>)(x_j - <x_j>)>.
-# The sampling interval therefore does not alias anything -- it only decides how many
-# INDEPENDENT samples the estimate is built from.
-#
-#   before   200 ps at 8 fs   = 25 000 frames, spaced far inside the correlation time.
-#                              Storage and analysis cost scale with 25 000; the
-#                              statistical information does not.
-#   now     1500 ps at 0.5 ps =  3000 frames, spaced at the published interval, over a
-#                              trajectory 7.5x longer.
-#
-# Fewer frames, more information, and 8x less to write. The old 25 ps default is also
-# known to FAIL this branch's own acceptance criterion 1: the saturation curve moved
-# +0.4684 kcal/mol over the last doubling against a 0.3 budget.
+#     rising, no crossings      the estimator has not converged   -> run LONGER
+#     rising, crossings         the trajectory is leaving a basin -> run SHORTER
 #
 # =======================================================================================
-# THESE ARE STARTING VALUES; THE SATURATION CURVE HAS THE LAST WORD
+# 3. WHAT WAS MEASURED BEFORE CHOOSING (acetone, its own MACE-OFF23_medium Hessian)
 # =======================================================================================
-# `production_ps` is not a claim that 1.5 ns is enough -- it is the published length and
-# the point at which to start asking. Acceptance criterion 1 is measured by
-# `openqha.qha.saturation_curve` on the trajectory that was actually produced, and if the
-# last doubling still moves T*S by more than `saturation_budget_kcal`, the answer is to
-# run longer, not to report the number.
+# `qha.synthetic_harmonic_trajectory` draws from the exact classical canonical
+# distribution, so the true T*S is known in closed form and the ESTIMATOR error can be
+# isolated from any question about dynamics. 8 independent draws per row:
+#
+#   all atoms, 3N-6 = 24, closed-form T*S = 2.9317 kcal/mol
+#     len/ps  step/ps  frames  frames/DOF     bias      seed spread
+#        500      2.0     250        10.4  +0.0053         0.0412
+#        500      1.0     500        20.8  -0.0037         0.0297
+#        500      0.5    1000        41.7  -0.0050         0.0145
+#       1500      0.5    3000       125.0  -0.0048         0.0044
+#
+# Three things follow, and one of them corrects a prediction made here earlier:
+#
+#   * **The estimator is essentially unbiased everywhere in this range** -- |bias| stays
+#     under 0.01 kcal/mol even at 250 frames. A finite-sample eigenvalue bias was
+#     predicted at frames/DOF ~ 5-10 and, measured, it is not there at this size.
+#   * What the frame count buys is PRECISION: the seed-to-seed spread falls from 0.041 to
+#     0.004 kcal/mol. Both are far inside the 1 kcal/mol target.
+#   * **All 24 modes are recovered at 2 ps spacing and T*S matches the closed form.**
+#     That is the direct disproof of the idea that downsampling filters high-frequency
+#     bond and angle motion out of the covariance: if it did, T*S would fall below the
+#     closed form, and it does not.
+#
+# So the sampling interval is a storage-and-precision choice, not a filtering one, and
+# 1.0 ps is affordable. The RISK in this protocol is basin residence, which is a property
+# of the dynamics and cannot be measured this way -- see examples/02_qha_openmm_acetone.
+#
+# =======================================================================================
+# 4. THESE ARE STARTING VALUES; THE SCAN AND THE BASIN CHECK HAVE THE LAST WORD
+# =======================================================================================
+# `examples/02_qha_openmm_acetone/s0_qha_parameter_scan.py` scans length, interval,
+# friction and atom selection on one molecule and reports basin residence beside every
+# entropy. Nothing here is settled for a NEW molecule until that has been run on it.
 # =======================================================================================
 branch_b:
   _source: "Rinaldo & Field, Biophysical Journal 2003 (10.1016/S0006-3495(03)70023-0)"
@@ -86,14 +89,78 @@ branch_b:
   temperature_K: null              # null -> thermodynamics.temperature_K (298.15)
 
   # ---- length ------------------------------------------------------------------------
-  equilibration_ps: 520.0          # literature_value: paper p2. 20 ps was NOT enough.
-  production_ps: 1500.0            # literature_value: paper p2 ("a simulation of 1.5 ns")
+  # **CORRECTED 2026-09-07, second ruling.** The paper's 520 + 1500 ps was adopted
+  # wholesale on the first pass; that was wrong, and the reason is in section 2 below.
+  # A solvated protein at 300 K barely explores its basin in 1.5 ns. A 10-atom molecule
+  # crosses its methyl barrier (~0.8 kcal/mol against kT = 0.59) constantly, and a
+  # trajectory that changes basin is no longer measuring an intra-basin entropy.
+  #
+  # So the length is now set by BASIN RESIDENCE, not by the paper. 500 ps is the short
+  # end of the range put by the user (500 ps - 1 ns); the scan in
+  # examples/02_qha_openmm_acetone decides where in it to sit, per molecule.
+  equilibration_ps: 50.0           # a small molecule in vacuum, not a solvated protein
+  production_ps: 500.0             # modifiable_convention; range 500-1000, see above
+  production_ps_range: [500.0, 1000.0]
 
   # ---- sampling ----------------------------------------------------------------------
-  sampling_interval_ps: 0.5        # literature_value: paper p2 ("every 0.5 ps")
+  # 1.0 ps, not the paper's 0.5. **The reason usually given for this is wrong and the
+  # conclusion is still right**: downsampling does NOT filter high-frequency bond and
+  # angle motion out of the covariance. The quasi-harmonic covariance is an EQUAL-TIME
+  # average, so every retained frame still carries the full instantaneous bond-length
+  # displacement, and a stiff mode contributes kT/m*omega^2 however sparsely you sample.
+  # Measured: at 2 ps spacing all 24 of acetone's modes are still recovered and T*S is
+  # within 0.005 kcal/mol of the closed form (section 3).
+  #
+  # What a longer interval actually buys is decorrelation and 2x less to write. What it
+  # costs is precision, and that was measured too, so the choice is on numbers:
+  #     500 frames  ->  seed-to-seed spread 0.030 kcal/mol
+  #    3000 frames  ->                      0.004 kcal/mol
+  # Both are far inside the 1 kcal/mol target, so 1.0 ps is affordable.
+  sampling_interval_ps: 1.0
+  sampling_interval_ps_range: [0.5, 2.0]
   # Derived, and asserted by the drivers rather than written twice:
   #     sample_every_steps = sampling_interval_ps * 1000 / timestep_fs = 500
-  expected_frames: 3000            # derived_criterion: production_ps / sampling_interval_ps
+  expected_frames: 500             # derived_criterion: production_ps / sampling_interval_ps
+
+  # ---- the thermostat, and a name collision worth untangling -----------------------------
+  # The paper's "friction coefficient of 50 ps^-1" is a LANGEVIN friction. openQHA's
+  # production route uses a Nose-Hoover CHAIN, where openmmtools' `collision_frequency`
+  # of 50/ps means a COUPLING TIME of 20 fs. Same number, different algorithm, different
+  # meaning -- and they must not be traded for each other.
+  #
+  # For Langevin, equilibrium configurational averages are INDEPENDENT of the friction:
+  # Langevin samples the canonical distribution for any gamma > 0. So a weaker friction
+  # cannot "restore the true fluctuation amplitude" -- the amplitude is already right.
+  # What gamma changes is the rate of configurational diffusion, and therefore how much
+  # of the basin a FIXED-LENGTH trajectory covers, and the finite-timestep bias.
+  #
+  # For the Nose-Hoover coupling time the repository has a MEASUREMENT that points the
+  # other way from intuition: on a harmonic surface where the answer is known in closed
+  # form, a 100 fs coupling returned the softest mode at 179 cm^-1 against a true 79.7
+  # and cost 1.15 kcal/mol on T*S; 419 fs cost 1.23. 20 fs was the best of the sweep, and
+  # `qha.assert_trajectory_identity` refuses anything looser.
+  #
+  # So the default is UNCHANGED until the scan says otherwise, and the scan covers both
+  # axes: scripts/calibration/s0_B_thermostat_choice.py has langevin 0.1/1/5/10/50 per ps
+  # and Nose-Hoover tdamp 5-1000 fs, all against the closed form.
+  thermostat: "nose-hoover chain"
+  nose_hoover_tdamp_fs: 20.0       # = collision_frequency 50/ps. NOT a Langevin friction.
+  nose_hoover_chain_length: 5
+  langevin_friction_per_ps_scan: [0.1, 1.0, 5.0, 10.0, 50.0]
+  nose_hoover_tdamp_fs_scan: [5.0, 10.0, 20.0, 30.0, 50.0, 100.0, 200.0, 419.0, 1000.0]
+
+  # ---- which atoms the covariance is built from ------------------------------------------
+  # The source paper superimposed and analysed NON-HYDROGEN atoms. openQHA's default is
+  # all atoms. These are DIFFERENT QUANTITIES and must not be compared: measured on
+  # acetone's own MACE Hessian, closed-form T*S is 2.9317 kcal/mol all-atom and 0.1383
+  # heavy-atom-only. The hydrogens carry 18 of the 24 modes.
+  #
+  # The case FOR heavy-atom-only here is not the usual one (dropping quantum X-H
+  # stretches). It is that the atoms it drops are exactly the ones a freely rotating
+  # methyl sweeps around a circle -- the dominant source of non-Gaussian variance in
+  # these molecules. See section 2.
+  analysis_atoms: "all"            # all | heavy
+  analysis_atoms_scan: ["all", "heavy"]
 
   # ---- what the frames have to satisfy -------------------------------------------------
   # derived_criterion. The covariance cannot have more non-zero eigenvalues than frames;

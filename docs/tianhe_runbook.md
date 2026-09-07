@@ -197,6 +197,85 @@ the same molecule** — if they differ, the execution layer is doing something i
 
 ---
 
+## 5b. Branch B: trajectories on the GPU, collection on the CPU
+
+Branch B is split across two clusters, and the split is not arbitrary — the two halves
+want opposite machines.
+
+```
+trajectories   TianheXY-A `ai`      GPU, one trajectory per card share, 7 days
+               (or TianheXY-AI `h100x` for a single molecule end to end)
+collection     TianheXY-C `deimos`  CPU, one molecule per core, 64 on ONE node
+```
+
+### Smoke test first — always
+
+```bash
+mkdir -p $HOME/HDD_POOL/runs/openQHA/logs
+
+# Parsl route: one species, one seed, 20 ps, 30 minutes on the short queue
+python -u scripts/production/s0_E_branchB_parsl.py --species dsgdb9nsd_000018 \
+    --resource tianhe_a --route openmm --seeds 1 --prod-ps 20 --debug
+
+# yhbatch route
+bash hpc/slurm/submit_branchB_tianhe_a.sh a_debug temp
+```
+
+**Read `seconds_per_ps_this_run` out of `meta.json` before sizing anything.** Branch B on
+a card is UNMEASURED here: the only GPU figure this repository has is 3.5x *slower* than
+CPU, on a T400 (`D0-C-5`). That does not transfer to an 80 GB card, and nothing has
+replaced it.
+
+Also check the `platform` field in every `meta.json`. **If it is not `CUDA`, the job ran
+on the CPU** and the timings mean something else entirely.
+
+### Production
+
+```bash
+python -u scripts/production/s0_E_branchB_parsl.py --edges \
+    --resource tianhe_a --route openmm \
+    2>&1 | tee $HOME/HDD_POOL/runs/openQHA/logs/branchB_$(date +%Y%m%d_%H%M).log
+
+# when the trajectories are done, collect on the CPU cluster
+python -u scripts/production/s0_E_branchB_collect_parsl.py --edges \
+    --resource tianhe_cpu --tag prod
+```
+
+Both resume: trajectories flush every 250 frames and stop themselves at 90% of the
+walltime, and the collector subtracts molecules that already have a result. Re-running
+the same command does the remainder.
+
+### The protocol is in a config file, not on the command line
+
+[`configs/branchB_protocol.yaml`](../configs/branchB_protocol.yaml) — 1 fs, 50 ps
+equilibration, 500 ps production, one frame per 1.0 ps. Both trajectory routes and the
+Parsl driver read it, so `--prod-ps` is for a smoke test, not for production.
+
+**These are NOT the published protein numbers**, and the reason is in
+[`branchB_production.md`](branchB_production.md) §2: a 10-19 atom molecule crosses its
+torsional barriers on a timescale where a protein does not move, and a trajectory that
+changes basin is not measuring an intra-basin entropy. Longer is not better here.
+
+### The one thing to check before believing a number
+
+```bash
+python - <<'PY'
+import json, numpy as np, sys
+from openqha.quasi_harmonic import qha, basin_residence as br
+meta = json.load(open(sys.argv[1] if len(sys.argv) > 1 else "meta.json"))
+frames = np.load("frames.npy")
+res = br.basin_residence(frames, meta["symbols"])
+sat = qha.saturation_curve(frames, meta["masses_amu"])
+print(json.dumps(br.interpret_saturation(sat, res), indent=1))
+PY
+```
+
+`stayed_in_one_basin: false` means the trajectory left its basin and T*S is inflated —
+however converged the saturation curve looks. A failed criterion 1 has two causes that
+demand **opposite** actions (run longer / run shorter), and this is what tells them apart.
+
+---
+
 ## 6. Production
 
 Settings live in the config, not the command line. See

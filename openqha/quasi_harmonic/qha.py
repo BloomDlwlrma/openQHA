@@ -324,12 +324,36 @@ def protocol(cfg=None):
     in the record would then be wrong by that rounding.
     """
     from .. import config as _config
-    try:
-        cfg = cfg or _config.load()
-        p = dict(cfg["quasi_harmonic"])
-        p.setdefault("_status", "configs/branchB_protocol.yaml")
-    except Exception:                                            # noqa: BLE001
-        p = dict(PROTOCOL_FALLBACK)
+
+    #: `branch_b` is a CONFIG KEY, not a package name. On 2026-09-07 a subpackage rename
+    #: (`branch_b/` -> `quasi_harmonic/`) rewrote this string literal too, and the broad
+    #: `except Exception` below turned the resulting KeyError into a silent fall back to
+    #: PROTOCOL_FALLBACK -- so every driver quietly ran the SUPERSEDED protocol while the
+    #: verification reported "OK", because it compared the drivers against the same
+    #: fallback. Hence the narrow except and the loud raise.
+    KEY = "branch_b"
+    if cfg is None:
+        try:
+            cfg = _config.load()
+        except FileNotFoundError:
+            # A checkout with no configuration is a legitimate state -- the module
+            # constants ARE the published values. Anything else is not.
+            return _derive(dict(PROTOCOL_FALLBACK))
+    if KEY not in cfg:
+        raise KeyError(
+            "configs/branchB_protocol.yaml defines no {!r} section, so the branch B "
+            "protocol cannot be read. "
+            "Falling back silently is not an option here: the fallback is a "
+            "DIFFERENT protocol, and a run using it would report the wrong length "
+            "and sampling interval while looking healthy. "
+            "Config loaded from: {}".format(KEY, cfg.get("_path")))
+    p = dict(cfg[KEY])
+    p.setdefault("_status", "configs/branchB_protocol.yaml")
+    return _derive(p)
+
+
+def _derive(p):
+    """Fill in the quantities that are computed rather than stored. See `protocol`."""
 
     dt = float(p["timestep_fs"])
     interval_fs = float(p["sampling_interval_ps"]) * 1000.0
