@@ -314,7 +314,7 @@ def rotational_constants(masses, positions):
     B_i is proportional to 1 / I_i and the constant cancels in the ratio test used by
     the deduplication, so no unit conversion is needed here.
     """
-    from . import thermo
+    from ..thermochem import thermo
     moments = thermo.principal_moments(np.asarray(masses, dtype=float),
                                        np.asarray(positions, dtype=float))
     moments = np.asarray(sorted(float(m) for m in moments), dtype=float)

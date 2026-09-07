@@ -94,7 +94,10 @@ def _hpc_root(repo):
 
 sys.path.insert(0, str(_hpc_root(ROOT)))
 
-from openqha import config  # noqa: E402
+from openqha import config, qha  # noqa: E402
+
+#: Read once, at import, so --help shows the real defaults.
+_PROTOCOL = qha.protocol()
 
 #: route -> the production driver that implements it.
 ROUTES = {
@@ -268,8 +271,11 @@ def main():
                     help="independent trajectories per basin. 3 is the minimum that "
                          "gives a blank control, which is acceptance criterion 5")
     ap.add_argument("--seed0", type=int, default=20260903)
-    ap.add_argument("--prod-ps", type=float, default=200.0)
-    ap.add_argument("--equil-ps", type=float, default=50.0)
+    # The published protocol, from configs/branchB_protocol.yaml -- the same file both
+    # trajectory drivers read. Hard-coding 200/50 here would have quietly overridden it
+    # for every Parsl run, which is the whole class of bug this file exists to avoid.
+    ap.add_argument("--prod-ps", type=float, default=_PROTOCOL["production_ps"])
+    ap.add_argument("--equil-ps", type=float, default=_PROTOCOL["equilibration_ps"])
     ap.add_argument("--max-workers", type=int, default=None)
     ap.add_argument("--wall-budget-s", type=float, default=None,
                     help="per-task budget; default comes from the resource config")

@@ -48,8 +48,8 @@ frequencies cm^-1, entropies kcal/(mol*K), temperature kelvin.
 """
 import numpy as np
 
-from . import thermo
-from .hessian import rigid_body_vectors
+from ..thermochem import thermo
+from ..thermochem.hessian import rigid_body_vectors
 
 #: Physical constants. They are imported from thermo where they already exist, so the
 #: package holds exactly one value of each.
@@ -290,6 +290,75 @@ def superimpose(positions, masses, reference=None, max_iterations=10, tolerance_
 # ======================================================================================
 # Covariance and its spectrum
 # ======================================================================================
+
+# =========================================================================================
+# The production protocol: how long, how often, and what the frames must satisfy.
+# =========================================================================================
+#: Fallbacks, used only when configs/branchB_protocol.yaml is absent. They are the
+#: published values, so a run without the config file is still the right protocol -- but
+#: `protocol()` says which source it used, because "the same numbers by luck" and "the
+#: same numbers because one file defines them" are different situations.
+PROTOCOL_FALLBACK = dict(
+    timestep_fs=1.0,
+    equilibration_ps=520.0,
+    production_ps=1500.0,
+    sampling_interval_ps=0.5,
+    expected_frames=3000,
+    saturation_budget_kcal=0.3,
+    chunk_frames=250,
+    _source="Rinaldo & Field, Biophysical Journal 2003",
+    _status="module fallback -- configs/branchB_protocol.yaml was not readable",
+)
+
+
+def protocol(cfg=None):
+    """The branch B production protocol, from configs/branchB_protocol.yaml.
+
+    Returns a dict with `sample_every_steps` DERIVED rather than stored: the interval is
+    the physical quantity the paper states, and the step count is what an integrator
+    needs. Writing both into the config would let them disagree, and a sampling interval
+    that disagrees with its own step count is not detectable in any product.
+
+    Raises if the derived step count is not a whole number -- an interval that is not an
+    integer multiple of the timestep would silently be rounded, and every frame spacing
+    in the record would then be wrong by that rounding.
+    """
+    from .. import config as _config
+    try:
+        cfg = cfg or _config.load()
+        p = dict(cfg["quasi_harmonic"])
+        p.setdefault("_status", "configs/branchB_protocol.yaml")
+    except Exception:                                            # noqa: BLE001
+        p = dict(PROTOCOL_FALLBACK)
+
+    dt = float(p["timestep_fs"])
+    interval_fs = float(p["sampling_interval_ps"]) * 1000.0
+    steps = interval_fs / dt
+    if abs(steps - round(steps)) > 1e-9:
+        raise ValueError(
+            "sampling_interval_ps {} is not a whole number of {} fs timesteps "
+            "({} steps). Rounding it would make every frame_spacing_fs in every "
+            "product wrong by the rounding.".format(
+                p["sampling_interval_ps"], dt, steps))
+    p["sample_every_steps"] = int(round(steps))
+    p["frame_spacing_fs"] = float(interval_fs)
+    return p
+
+
+def min_frames_for(n_atoms):
+    """Frames needed before the covariance can even have full rank.
+
+    The constraint that defeated the source paper: a covariance estimated from T frames
+    has at most T non-zero eigenvalues, and 3N-6 are wanted. Rinaldo & Field had 7758
+    degrees of freedom and 3000 frames, so 4758 modes were missing by construction and
+    the entropy could not converge however long they ran.
+
+    For 10-19 atoms this returns 30-57 against the 3000 frames the protocol produces, so
+    it is satisfied by a factor of ~59. It is checked anyway -- the cheap check that
+    cannot fire is the one that catches the day something changes.
+    """
+    return 3 * int(n_atoms)
+
 def mass_weighted_covariance(fitted_positions, masses, mean_structure=None):
     """C = M^(1/2) sigma M^(1/2), shape (3N, 3N), units amu * angstrom^2."""
     x = np.asarray(fitted_positions, dtype=float)

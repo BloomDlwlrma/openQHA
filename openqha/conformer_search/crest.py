@@ -45,7 +45,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import S0_ROOT
+from .. import S0_ROOT
 
 #: There used to be a `TEMPLATE` constant here naming
 #: `configs/crest_composite.toml.template`. The file was lost in the 2026-09-03
@@ -501,7 +501,7 @@ def start_servers(n, socket_prefix=None, torch_threads=1,
     ceiling, and `/home/ubuntu/runs/openQHA/sockets/...` is far below it.
     """
     import sys
-    from . import config
+    from .. import config
     py = python or sys.executable
     if socket_prefix is None:
         socket_prefix = str(config.runs_dir("sockets") / "s0_mace_pool")

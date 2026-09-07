@@ -33,7 +33,7 @@ S0_MACE_SOCKET=/tmp/s0_mace_engrad.sock \
 ```
 
 It needs CREST on the path and a MACE-OFF model in place — see the engine registry in
-`openqha/engine.py`, which searches for the model root and refuses to run on a checksum
+`openqha/potentials/engine.py`, which searches for the model root and refuses to run on a checksum
 it does not recognise.
 
 ## Tutorials live in `docs/tutorials/`

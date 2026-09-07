@@ -60,7 +60,7 @@ import numpy as np
 #: that no longer exists produces none to compare. Those are two different questions.
 _trapezoid = getattr(np, "trapezoid", None) or np.trapz
 
-from .thermo import HC_KCAL, KB_KCAL, T_REF
+from ..thermochem.thermo import HC_KCAL, KB_KCAL, T_REF
 
 C_LIGHT_CM_PER_FS = 2.99792458e-5      # cm/fs
 KB_EV = 8.617333262e-5                 # eV/K

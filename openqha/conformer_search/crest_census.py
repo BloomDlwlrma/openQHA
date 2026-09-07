@@ -57,7 +57,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import conformers, hessian
+from . import conformers
+from ..thermochem import hessian
 
 #: Default Hessian instrument. "analytic" since 2026-09-03 -- defect 64 / D0-P1-47:
 #: finite differences at delta = 0.01 A resolve only to +-9 to 20 cm^-1, while the
@@ -322,7 +323,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
 
     # ---- free energy: only for species whose sigma and g0 are explicitly declared ----
     if species and do_hessian:
-        from . import thermo
+        from ..thermochem import thermo
         gs = []
         for c in kept:
             atoms = conformers._mol_to_atoms(mol, c)

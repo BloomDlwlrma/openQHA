@@ -86,7 +86,7 @@ def _gromacs():
     criterion that fails for something it does not measure teaches people to ignore it.
     """
     try:
-        from . import gmx_io
+        from .quasi_harmonic import gmx_io
         gmx_io.gmx_binary()
         return True
     except Exception:                                          # noqa: BLE001

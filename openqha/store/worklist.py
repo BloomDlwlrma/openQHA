@@ -27,7 +27,9 @@ filesystem, and its fix notes are the interesting part:
 """
 from __future__ import annotations
 
-from . import basin_store, config as _config, filters
+from . import basin_store
+from .. import config as _config
+from ..conformer_search import filters
 
 #: What has to exist for a molecule to count as done.
 #:

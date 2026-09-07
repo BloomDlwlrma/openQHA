@@ -167,7 +167,7 @@ teaches people to ignore it.
 ### The potential's weights
 
 MACE-OFF weights are **not in this repository** — they are fetched, not shipped.
-`bash install_dependency.sh` downloads them for you; `openqha/engine.py` holds the
+`bash install_dependency.sh` downloads them for you; `openqha/potentials/engine.py` holds the
 expected **SHA-256 for every selectable model and recomputes it on every load**, so a
 truncated download, a proxy that served an HTML error page, or a silently swapped
 potential all fail loudly instead of quietly changing the level of theory that every

@@ -46,7 +46,7 @@ alone -- **enabling F7 without supplying an index raises, it does not skip silen
 """
 import pathlib as _pathlib
 
-from . import config as _config
+from .. import config as _config
 
 GATE_ORDER = ("F0", "F1", "F3", "F4", "F5", "F6", "F7")
 
@@ -142,7 +142,7 @@ def screen(smiles, cfg=None, gates=None, identifier=None):
                 "identifier was passed. Either supply the index or turn "
                 "F7_qm9_geometry_consistent off in the configuration -- "
                 "**silently skipping an enabled gate is not allowed**.")
-        from . import qm9_uncharacterized
+        from ..data import qm9_uncharacterized
         row = qm9_uncharacterized.entry(identifier)
         if row is not None and _f7_in_scope(identifier, cfg):
             mode = f7_mode(cfg)
@@ -151,7 +151,7 @@ def screen(smiles, cfg=None, gates=None, identifier=None):
                 # gate then passes and the REPAIRED GEOMETRY IS USED -- config.qm9_xyz
                 # resolves it, and the product records `geometry_source` so which
                 # structure a number came from is never a guess.
-                from . import curated_qm9
+                from ..data import curated_qm9
                 path, kind = curated_qm9.find(identifier, cfg)
                 if path is not None:
                     return True, None, (
@@ -201,7 +201,7 @@ def f7_mode(cfg=None):
         raise ValueError(
             "f7_mode is {!r}; it must be one of {}".format(mode, ", ".join(F7_MODES)))
     if mode == "curated":
-        from . import curated_qm9
+        from ..data import curated_qm9
         if not curated_qm9.available(cfg):
             raise FileNotFoundError(
                 "f7_mode = 'curated' needs the curatedQM9 archive, which was not "

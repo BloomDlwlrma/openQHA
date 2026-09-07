@@ -79,16 +79,21 @@ sys.path.insert(0, str(ROOT))
 
 from openqha import config, engine, openmm_mace, qha  # noqa: E402
 
+# The production protocol, from configs/branchB_protocol.yaml -- the SAME file the ASE
+# route reads. These module constants are the fallback and are kept equal to it; `main()`
+# overrides them from the config so the two routes cannot drift apart again. Until
+# 2026-09-07 this driver ran 2 + 25 ps while the ASE one ran 50 + 200, which made the two
+# "independent implementations" implementations of different protocols.
 TIMESTEP_FS = 1.0
-SAMPLE_EVERY_STEPS = 8
+SAMPLE_EVERY_STEPS = 500       # 0.5 ps at 1 fs -- Rinaldo & Field 2003 p2
 #: openmmtools' own defaults, spelled out. See the module docstring.
 COLLISION_FREQUENCY_PER_PS = 50.0
 CHAIN_LENGTH = 5
 NUM_MTS = 5
 NUM_YOSHIDA_SUZUKI = 5
-EQUIL_PS = 2.0
-PROD_PS = 25.0
-CHUNK_FRAMES = 250
+EQUIL_PS = 520.0               # Rinaldo & Field 2003 p2; 20 ps was tried and rejected
+PROD_PS = 1500.0               # Rinaldo & Field 2003 p2 -- 1.5 ns, giving 3000 frames
+CHUNK_FRAMES = 250             # 125 ps per flush at 0.5 ps spacing
 
 
 def tdamp_fs(collision_frequency_per_ps):
@@ -263,6 +268,10 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
 
 
 def main():
+    # THE PROTOCOL COMES FROM configs/branchB_protocol.yaml, not from this file. The
+    # module constants above are the fallback for a checkout without it; if both exist and
+    # disagree, the config wins and `--help` shows the config's value.
+    _p = qha.protocol()
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", default="dsgdb9nsd_000018")
@@ -282,11 +291,13 @@ def main():
                     help="stop production and flush after this many seconds. Set it "
                          "below the queue walltime so a task stops itself instead of "
                          "being killed between a write and a rename.")
-    ap.add_argument("--equil-ps", type=float, default=EQUIL_PS)
-    ap.add_argument("--prod-ps", type=float, default=PROD_PS)
+    ap.add_argument("--equil-ps", type=float, default=_p["equilibration_ps"])
+    ap.add_argument("--prod-ps", type=float, default=_p["production_ps"])
     ap.add_argument("--temperature", type=float, default=None)
-    ap.add_argument("--timestep-fs", type=float, default=TIMESTEP_FS)
-    ap.add_argument("--sample-every", type=int, default=SAMPLE_EVERY_STEPS)
+    ap.add_argument("--timestep-fs", type=float, default=_p["timestep_fs"])
+    ap.add_argument("--sample-every", type=int, default=_p["sample_every_steps"],
+                    help="steps between frames. Default is derived from the config's\n"
+                         "sampling_interval_ps, never stored twice.")
     ap.add_argument("--collision-frequency", type=float,
                     default=COLLISION_FREQUENCY_PER_PS,
                     help="1/ps. openmmtools' default is 50; the identity assertion "
@@ -408,6 +419,8 @@ def main():
                 integrator=thermo,
                 route="openmm",
                 platform=args.platform,
+                protocol_source=_p.get("_source"),
+                protocol_status=_p.get("_status"),
                 force=force_record,
                 force_check_against_ase=check,
                 centre_of_mass_pinned_to_origin=False,

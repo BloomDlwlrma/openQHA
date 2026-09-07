@@ -50,7 +50,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import S0_ROOT, __version__
+from .. import S0_ROOT, __version__
 
 #: Mirrors the `scripts/` taxonomy exactly (plan_D section 2.1). A product is filed by
 #: the category of the script that produced it -- one taxonomy, not two.

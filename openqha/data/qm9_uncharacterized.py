@@ -53,7 +53,7 @@ criterion.
 import hashlib
 from pathlib import Path
 
-from . import S0_ROOT
+from .. import S0_ROOT
 
 #: The list, shipped with the repository. **Never fetched from the network** -- a
 #: product has to be reproducible offline.

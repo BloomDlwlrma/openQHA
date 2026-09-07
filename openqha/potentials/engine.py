@@ -44,7 +44,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from . import S0_ROOT
+from .. import S0_ROOT
 
 #: Where the weights might live, in priority order. They are NOT in this repository and
 #: must never be: the MACE-OFF weights are under the Academic Software Licence, which

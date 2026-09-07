@@ -156,7 +156,7 @@ def qm9_xyz(qm9_index, cfg=None):
     # a molecule on the uncharacterized list; for everything else the archive simply
     # carries QM9's own file, which is equally usable. Either way `qm9_xyz_source`
     # below records which of the three naming patterns matched.
-    from . import curated_qm9
+    from .data import curated_qm9
     cur, kind = curated_qm9.find(qm9_index, cfg)
     if cur is not None:
         return cur
@@ -263,7 +263,7 @@ def qm9_xyz_source(qm9_index, cfg=None):
     p = qm9_root(cfg) / cfg["data"]["qm9_xyz_dir"] / (qm9_index + ".xyz")
     if p.exists():
         return "qm9_native"
-    from . import curated_qm9
+    from .data import curated_qm9
     _cur, kind = curated_qm9.find(qm9_index, cfg)
     if kind is not None:
         return "curatedQM9:" + kind

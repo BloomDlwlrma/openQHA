@@ -64,8 +64,8 @@ is a measurement rather than a mystery.
 | environment | `openqha` | `openqha` — **one environment since 2026-09-05** |
 | integrator | `openmmtools.NoseHooverChainVelocityVerletIntegrator` | `ase.md.nose_hoover_chain.NoseHooverChainNVT` |
 | chain propagation | 5-term Yoshida–Suzuki, 5 MTS (openmmtools' defaults) | 3-term YS, `tloop` MTS — **not adjustable** |
-| MACE reaches it via | `openqha/openmm_mace.py`, a traced `TorchForce` | `mace.calculators.MACECalculator` |
-| neighbour list | **complete graph**, built here; no neighbour search at all | MACE's own, with `openqha/mace_patch.py` applied |
+| MACE reaches it via | `openqha/quasi_harmonic/openmm_mace.py`, a traced `TorchForce` | `mace.calculators.MACECalculator` |
+| neighbour list | **complete graph**, built here; no neighbour search at all | MACE's own, with `openqha/potentials/mace_patch.py` applied |
 | resumes bit-identically | **no** — the chain's extended variables are not checkpointed | **yes** — `state.npz` carries positions and momenta |
 
 Both are enabled in `hpc/configs/master.json` on purpose: they write the same product and
@@ -295,6 +295,39 @@ HPC configuration is in `hpc/`: `hpc/configs/qha_md.json` for the ASE route,
   neighbour list that is not translation invariant. The second defect is real but lives in
   the MACE **develop** tree vendored under stage 2, not in the `mace_torch 0.3.16` that
   the ASE route imports. Do not cite either without new evidence.
+## The production protocol (set 2026-09-07)
+
+Everything measured above was taken at **25 ps**, and criterion 1 failed there by
++0.4684 kcal/mol against a 0.3 budget. Those records are kept as they are — they are the
+evidence that the criterion works — and the production length is now the published one:
+
+| | value | source |
+|---|---|---|
+| timestep | 1 fs | Rinaldo & Field, *Biophys. J.* 2003, p2 |
+| equilibration | **520 ps** | ibid. — 20 ps was tried and rejected |
+| production | **1500 ps** (1.5 ns) | ibid. |
+| sampling interval | **0.5 ps** | ibid. |
+| frames | **3000** | 1500 / 0.5 |
+
+`configs/branchB_protocol.yaml` is the single source, and **both** trajectory drivers plus
+the Parsl driver read it. Until 2026-09-07 they did not: the ASE route ran 50 + 200 ps and
+the OpenMM route 2 + 25 ps, while the two are supposed to be an independent implementation
+pair of *one* protocol — two implementations of two protocols measure nothing.
+
+**Why 0.5 ps is better than the 8 fs it replaces**, not looser: the quasi-harmonic
+covariance is an equal-time average, so the interval aliases nothing — it only decides how
+many *independent* samples the estimate is built from. 25 000 frames spaced far inside the
+correlation time carry the information of a few hundred.
+
+**The constraint that defeated the source paper cannot reach us.** A covariance estimated
+from T frames has at most T non-zero eigenvalues; Rinaldo & Field had 3N = 7758 degrees of
+freedom and 3000 frames, so 4758 modes were missing by construction and no trajectory
+length would have converged them (their p11). Our molecules are 10–19 atoms: 3N−6 = 24–51
+against 3000 frames, a margin of 53–100×. `openqha.qha.min_frames_for()` checks it anyway.
+
+**1.5 ns is where to start asking, not an answer.** Criterion 1 is still measured on the
+trajectory that was actually produced.
+
 * **25 ps is not converged.** The production length is set by the saturation curve, not by
   a constant in a file.
 * Two rulings in `plan_B` §7 are still the user's: the molecule scope, and whether the

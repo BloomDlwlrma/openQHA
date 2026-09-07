@@ -75,8 +75,8 @@ decimals in nm = 0.01 angstrom, and the mass-weighted amplitude of a C-H stretch
 is about 0.03 angstrom, so `.gro` quantisation would land squarely on the quantity being
 measured.
 """
-from .extensions.gromacs import *            # noqa: F401,F403
-from .extensions.gromacs import (            # noqa: F401
+from ..extensions.gromacs import *            # noqa: F401,F403
+from ..extensions.gromacs import (            # noqa: F401
     BOX_PADDING_NM, NEVSKIP_ROT_TRANS, box_and_shift, covar, covar_plain,
     cross_check, gmx_binary, grompp, parse_entropy, parse_xvg, run_gmx,
     superimpose_once, version, write_g96_trajectory, write_gro,

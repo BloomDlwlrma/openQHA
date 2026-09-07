@@ -48,7 +48,7 @@ import os
 import re
 from pathlib import Path
 
-from . import S0_ROOT
+from .. import S0_ROOT
 
 #: Directory name as distributed. Users drop the unpacked archive under `data/qm9/`.
 DEFAULT_DIRNAME = "133660_curatedQM9_outof_133885"

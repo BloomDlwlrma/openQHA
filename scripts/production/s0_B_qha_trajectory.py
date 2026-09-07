@@ -78,7 +78,12 @@ TIMESTEP_FS = 1.0          # D0-C-30 (Moore/Cole/Csanyi, JACS 2026, 148, 4928) a
                            # Rinaldo & Field independently. The repo's old 0.5 fs was an
                            # unsourced guess that doubled the cost for nothing.
 FRICTION_PER_PS = 1.0      # D0-C-30, the MACE authors' own value.
-SAMPLE_EVERY_STEPS = 8     # one frame per 8 fs. Positions, not velocities: quasi-harmonic
+SAMPLE_EVERY_STEPS = 500   # 0.5 ps, the published interval (configs/branchB_protocol.yaml).
+                           # Was 8 fs. The covariance is an EQUAL-TIME average, so a
+                           # shorter interval aliases nothing -- it just stores frames
+                           # far inside the correlation time, which cost 25 000 frames
+                           # for the information in a few hundred.
+                           # Positions, not velocities: quasi-harmonic
                            # analysis needs the second moment of the position, so there is
                            # no Nyquist limit to respect -- only near-independence.
 
@@ -152,8 +157,10 @@ NOSE_HOOVER_CHAIN_LENGTH = 3
 #: Langevin walk; the trajectory is equally valid either way, and the quasi-harmonic
 #: analysis superimposes every frame regardless.
 PIN_CENTRE_OF_MASS = False
-EQUIL_PS = 50.0            # D0-C-30. Measured, see the relaxation record.
-PROD_PS = 200.0            # STARTING POINT ONLY. The final length is set by the
+EQUIL_PS = 520.0           # literature_value: Rinaldo & Field 2003 p2 -- 20 ps was
+                           # tried and was NOT enough. See configs/branchB_protocol.yaml.
+PROD_PS = 1500.0           # literature_value: 1.5 ns, Rinaldo & Field 2003 p2.
+                           # STARTING POINT ONLY. The final length is set by the
                            # saturation curve in the analysis (criterion 1).
 
 
@@ -582,6 +589,8 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    # THE PROTOCOL COMES FROM configs/branchB_protocol.yaml. See the OpenMM driver.
+    _p = qha.protocol()
     ap.add_argument("--species", default=None, help="QM9 index, e.g. dsgdb9nsd_000018")
     ap.add_argument("--basins", default=None,
                     help="branch A basin file (<qid>_basins.xyz); overrides --species "
@@ -597,8 +606,8 @@ def main():
                          "task per (basin, seed), and each task must land in its own "
                          "seedNN directory with its own seed -- without this they would "
                          "all be seed 0 and overwrite one another")
-    ap.add_argument("--equil-ps", type=float, default=EQUIL_PS)
-    ap.add_argument("--prod-ps", type=float, default=PROD_PS)
+    ap.add_argument("--equil-ps", type=float, default=_p["equilibration_ps"])
+    ap.add_argument("--prod-ps", type=float, default=_p["production_ps"])
     ap.add_argument("--temperature", type=float, default=None)
     ap.add_argument("--friction", type=float, default=FRICTION_PER_PS,
                     help="Langevin friction in 1/ps; ignored under Nose-Hoover")
@@ -617,7 +626,7 @@ def main():
                          "where ASE's integrator overwrites it and it would do nothing")
     ap.add_argument("--no-pin-com", dest="pin_com", action="store_false",
                     help="let the centre of mass random-walk freely")
-    ap.add_argument("--sample-every", type=int, default=SAMPLE_EVERY_STEPS)
+    ap.add_argument("--sample-every", type=int, default=_p["sample_every_steps"])
     ap.add_argument("--fmax", type=float, default=0.005)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--wall-budget-s", type=float, default=0.0,

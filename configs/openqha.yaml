@@ -16,6 +16,7 @@ include:
   - edges_testset.yaml       # this project's own campaign: edges:, species:
   - filters.yaml             # species_filter
   - hessian.yaml             # package2
+  - branchB_protocol.yaml    # branch B: how long, how often (the published protocol)
   - state_points.yaml        # package3_state_points
   - electronic.yaml          # package5
   - cluster_tianhe.yaml      # cluster

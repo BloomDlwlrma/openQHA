@@ -80,6 +80,27 @@ PACKAGE = {
 #: the package. This is ALF's "one QM job per allocation" pattern applied to training.
 WORKERS_PER_NODE = 1
 
+#: Branch B is not. A quasi-harmonic trajectory is a serial chain of single-structure
+#: MACE calls on a 10-19 atom molecule, which fills neither the card nor the package's
+#: 14 CPUs. So `qha` runs ONE WORKER PER CPU in the package, all sharing the one card
+#: this allocation owns. On h100x that is 14 trajectories per allocation instead of 1.
+#:
+#: `None` means "ask the partition": see `qha_workers_for()`.
+QHA_WORKERS_PER_ALLOCATION = None
+QHA_CORES_PER_WORKER = 1
+
+#: TianheXY-A is preferred for branch B (8 cards per allocation against this cluster's
+#: one). This role exists so a single molecule can be run end to end on h100x, which is
+#: what examples/02_qha_openmm_acetone does.
+OPENMM_PLATFORM = "CUDA"
+#: Branch B needs a longer allocation than training does. The published protocol is
+#: 520 + 1500 ps, which at the only cost this repository has measured (96.1 s/ps on
+#: ONE CPU THREAD) is ~54 h per trajectory -- so a 16 h walltime would guarantee
+#: every task stopped on its budget. The site allows 7 days; 3 is the same number
+#: examples/02_qha_openmm_acetone submits with.
+QHA_WALLTIME = "3-00:00:00"
+QHA_WALL_BUDGET_S = int(0.90 * 3 * 24 * 3600)
+
 NODES_PER_BLOCK = 1
 
 #: Quota (Starlight, 2026-09-05): 6 running jobs, 6 nodes.
@@ -90,12 +111,42 @@ JOB_QUOTA = 6
 #: 6 concurrent single-GPU trainings -- a committee, or a hyper-parameter sweep.
 MAX_BLOCKS = 6
 WALLTIME = "16:00:00"
+#: There is no short queue on this cluster in the recorded `sinfo`, so `--debug` here is
+#: the same partition with a short walltime. It does NOT schedule sooner the way `temp`
+#: on TianheXY-A or `debug` on TianheXY-C does.
+DEBUG_WALLTIME = "00:30:00"
 # =========================================================================================
 
 
 def cpus_for(partition):
     """CPUs available in one card's package, or None where the manual does not say."""
     return (PACKAGE.get(partition) or {}).get("cpus")
+
+
+def qha_workers_for(partition):
+    """Branch B workers in one allocation on `partition`: one per CPU in the package.
+
+    Falls back to 1 where the manual does not give the package, because guessing a worker
+    count on a partition whose CPU allowance is unknown is how a submission gets rejected
+    for asking for more CPUs than it was sold.
+    """
+    if QHA_WORKERS_PER_ALLOCATION:
+        return int(QHA_WORKERS_PER_ALLOCATION)
+    cpus = cpus_for(partition)
+    return int(cpus) if cpus else 1
+
+
+def layout(role, partition):
+    """(workers, cores_per_worker) for a role on a partition."""
+    if role == "train":
+        cpus = cpus_for(partition)
+        return WORKERS_PER_NODE, float(cpus or 1)
+    if role == "qha":
+        return qha_workers_for(partition), float(QHA_CORES_PER_WORKER)
+    raise KeyError(
+        "role {!r} does not run on TianheXY-AI. This cluster serves train and qha.\\n"
+        "Branch A (CREST) is CPU work -- see hpc/resource_configs/tianhe_cpu.py.".format(
+            role))
 
 
 def _worker_init(here, partition):
@@ -137,8 +188,18 @@ def _worker_init(here, partition):
 
 def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
            walltime=None, run_dir=None, worker_init=None, max_workers=None,
-           gpus=None, role="train"):
-    """Parsl Config for branch C training on the Tianhe GPU cluster."""
+           gpus=None, role="train", debug=False):
+    """Parsl Config for the Tianhe GPU cluster, per card.
+
+    `role` is `train` (one task per allocation, the whole card) or `qha` (branch B, one
+    worker per CPU in the package, all sharing the one allocated card).
+
+    **`available_accelerators` is deliberately NOT passed here**, unlike on TianheXY-A.
+    The allocation on this cluster IS one card and Slurm has already set
+    CUDA_VISIBLE_DEVICES to it; parsl would recompute an absolute device index from
+    `nvidia-smi -L`, which reports the node's 8 physical cards rather than the one this
+    job owns, and hand most workers a card the job does not have.
+    """
     from parsl.config import Config
     from parsl.executors import HighThroughputExecutor
     from parsl.launchers import SimpleLauncher
@@ -148,18 +209,30 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     part = partition or PARTITION
     gpus = GPUS_PER_JOB if gpus is None else gpus
+    workers, cores = layout(role, part)
+    blocks = MAX_BLOCKS
+    if role == "qha" and walltime is None:
+        walltime = QHA_WALLTIME
+    if debug:
+        # This cluster has no short queue of its own in the recorded `sinfo`; a debug run
+        # is the same partition with a short walltime and one allocation. Said plainly
+        # rather than silently, because "debug" that is not a different queue does not
+        # schedule any sooner.
+        walltime = walltime or DEBUG_WALLTIME
+        blocks = 1
 
     cfg = Config(
         executors=[
             HighThroughputExecutor(
                 label=_labels.label(role),
-                max_workers_per_node=int(max_workers or WORKERS_PER_NODE),
+                max_workers_per_node=int(max_workers or workers),
+                cores_per_worker=float(cores),
                 provider=TianheSlurmProvider(
                     part,
                     account=account if account is not None else ACCOUNT,
                     nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
                     init_blocks=0, min_blocks=0,
-                    max_blocks=min(int(max_blocks or MAX_BLOCKS),
+                    max_blocks=min(int(max_blocks or blocks),
                                    NODE_QUOTA, JOB_QUOTA),
                     # `--gpus=N`: the spelling the manual requires. NOT parsl's
                     # `gpus_per_node`, which renders `--gpus-per-node=N`, a different
@@ -201,13 +274,24 @@ def describe():
         workers_per_node=WORKERS_PER_NODE, max_blocks=MAX_BLOCKS,
         node_quota=NODE_QUOTA, job_quota=JOB_QUOTA,
         max_trainings_in_flight=MAX_BLOCKS * WORKERS_PER_NODE,
+        debug_walltime=DEBUG_WALLTIME,
+        debug_partition=PARTITION,
+        roles=["train", "qha"],
+        layouts={r: dict(zip(("workers_per_node", "cores_per_worker"),
+                             layout(r, PARTITION))) for r in ("train", "qha")},
+        qha_workers_per_allocation=qha_workers_for(PARTITION),
+        max_trajectories_in_flight=MAX_BLOCKS * qha_workers_for(PARTITION),
+        openmm_platform=OPENMM_PLATFORM,
+        qha_wall_budget_s=QHA_WALL_BUDGET_S, qha_walltime=QHA_WALLTIME,
+        gpu_pinning=("inherited from Slurm -- available_accelerators is deliberately NOT "
+                     "passed on a per-card cluster; see config()"),
         walltime=WALLTIME,
         exclusive=False, filesystem="XYAIFS00 (lustre, 1 TB, NO BACKUP)",
         modules=["anaconda3/2023.09", "CUDA/" + CUDA_VERSION],
         modules_recorded_not_loaded=[MPI_MODULE_RECORDED, NCCL_MODULE_RECORDED],
         environment_file="environment-tianhe-gpu.yml",
         prefer_instead=PREFER_INSTEAD, cuda=CUDA_VERSION,
-        labels=[_labels.label("train")],
+        labels=[_labels.label("train"), _labels.label("qha")],
         scheduler_commands=commands, scheduler_commands_confirmed=confirmed,
         site_rules=[
             "-G/--gpus is MANDATORY (manual 6.2.1.1, 6.2.2)",

@@ -28,18 +28,18 @@ BRANCH A -- the science. Changing anything here changes the answer.
   configs/filters.yaml          species_filter         <- the F0-F7 gates
   configs/edges_testset.yaml    edges:, species:       <- which molecules
   configs/hessian.yaml          package2               <- frequencies
-  openqha/crest.py              writes the CREST input, parses its output
-  openqha/conformers.py         dedup, ordering, basin construction
-  openqha/crest_census.py       the census a product is built from
-  openqha/engine.py             THE POTENTIAL: registry, path, SHA-256
-  openqha/mace_server.py        the resident MACE server CREST talks to
-  openqha/mace_patch.py         translation-invariant neighbour list
-  openqha/symmetry.py           sigma per basin
-  openqha/hessian.py            analytic / finite-difference Hessians
-  openqha/thermo.py             partition functions
-  openqha/filters.py            F0-F7
-  openqha/basin_store.py        WHERE results go (sharded)
-  openqha/record.py             the product record
+  openqha/conformer_search/crest.py         writes the CREST input, parses its output
+  openqha/conformer_search/conformers.py    dedup, ordering, basin construction
+  openqha/conformer_search/crest_census.py  the census a product is built from
+  openqha/conformer_search/filters.py       F0-F7
+  openqha/conformer_search/symmetry.py      sigma per basin
+  openqha/potentials/engine.py              THE POTENTIAL: registry, path, SHA-256
+  openqha/potentials/mace_server.py         the resident MACE server CREST talks to
+  openqha/potentials/mace_patch.py          translation-invariant neighbour list
+  openqha/thermochem/hessian.py             analytic / finite-difference Hessians
+  openqha/thermochem/thermo.py              partition functions
+  openqha/store/basin_store.py              WHERE results go (sharded)
+  openqha/store/record.py                   the product record
   scripts/production/s0_A_pipeline.py    the driver: ONE molecule, start to finish
 
 BRANCH E -- the execution layer. Changing anything here must change NO number.
@@ -53,13 +53,45 @@ BRANCH E -- the execution layer. Changing anything here must change NO number.
   hpc/env/common.sh             what every job sources, on every machine
   hpc/env/tianhe.sh             what only Tianhe needs
   hpc/slurm/                    the plain yhbatch route (no Parsl)
-  openqha/worklist.py           what is left to compute, and how it decided
+  openqha/store/worklist.py     what is left to compute, and how it decided
   scripts/production/s0_E_worklist.py       that, as a command
   scripts/production/s0_E_branchA_parsl.py  branch A over Parsl
 ```
 
 If you are ever unsure which side a change belongs on, ask whether a person reproducing
 the result needs to know about it. The queue name: no. The dedup threshold: yes.
+
+### The package is grouped by role (changed 2026-09-07)
+
+`openqha/` was 29 modules in one flat directory. It is now grouped the way ALF
+(`alframework/{builders,samplers,qm_interfaces,ml_interfaces,tools}`) and MACE
+(`mace/{calculators,cli,data,modules,tools}`) are grouped:
+
+```
+openqha/
+    config.py           every module reads it, so it stays at the top
+    capabilities.py     introspects the WHOLE package, so it cannot live inside one part
+    conformer_search/   crest conformers crest_census refine_analysis filters symmetry
+    quasi_harmonic/     qha openmm_mace vdos torsion_cv perturb mdtraj_io gmx_io
+    potentials/         engine mace_patch mace_server          (ALF: ml_interfaces)
+    thermochem/         hessian thermo critical
+    store/              basin_store artifacts record report worklist
+    data/               curated_qm9 qm9_uncharacterized
+    qm_interfaces/      orca
+    extensions/         optional cross-checks; no production number depends on one
+```
+
+Named for what they **do**, not for which branch of this project's plan they serve — a
+reader of the published package should not have to learn the branch letters to find the
+conformer search.
+
+**Every existing import still works.** `from openqha import qha`, `import openqha.qha`
+and `from openqha.thermo import KB_KCAL` all resolve, through a lazy PEP 562
+`__getattr__` in `openqha/__init__.py`. Lazy is the load-bearing half: `import openqha`
+still pulls in no torch, ase, rdkit or openmm, which is what lets
+`openqha.capabilities` report on packages that are not installed. New code should prefer
+the explicit path — `from openqha.quasi_harmonic import qha` — because it says which part
+of the pipeline is being reached into.
 
 ---
 
@@ -185,7 +217,7 @@ Unpacked, it is four separate facts:
 
 **1. The weights are not in this repository and never will be.** MACE-OFF is under the
 Academic Software Licence — academic, non-commercial, no redistribution. openQHA ships
-only *paths and SHA-256 digests*. `openqha/engine.py` says this in the code.
+only *paths and SHA-256 digests*. `openqha/potentials/engine.py` says this in the code.
 
 **2. `install_dependency.sh` downloads them for you — except in `--tianhe` mode.**
 On a workstation it fetches `MACE-OFF23_medium.model` (~100 MB) from
@@ -234,8 +266,8 @@ re-copy it; do not "fix" the pin.
 
 | what | where | note |
 |---|---|---|
-| the registry | `openqha/engine.py` → `ENGINES` | name → path, sha256, licence, source, note |
-| production default | `openqha/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` since 2026-09-03 (S0-A-16) |
+| the registry | `openqha/potentials/engine.py` → `ENGINES` | name → path, sha256, licence, source, note |
+| production default | `openqha/potentials/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` since 2026-09-03 (S0-A-16) |
 | select another | `S0_ENGINE=MACE-OFF23_large` | must be a registered name; unknown names raise |
 | move the tree | `S0_MACE_ROOT=/path/to/potentials` | overrides the search |
 | one file | `S0_MACE_MODEL=/path/to/x.model` | overrides one path |
@@ -414,7 +446,7 @@ it computes.**
 | | Parsl | yhbatch |
 |---|---|---|
 | unit submitted | a *block* (one node), grown on demand | one job per shard |
-| worklist | `openqha/worklist.py`, in the driver | `s0_E_worklist.py`, in the job |
+| worklist | `openqha/store/worklist.py`, in the driver | `s0_E_worklist.py`, in the job |
 | resume | subtract completed under the tag | same code, same criterion |
 | failure of one molecule | task recorded, batch continues | `FAILED <id>` appended, `xargs` continues |
 | card/thread pinning | `cores_per_worker` | `xargs -P` |
@@ -528,6 +560,22 @@ collection     TianheXY-C, CPU, ONE MOLECULE PER CORE, 64 at a time, ONE NODE
                    --resource tianhe_cpu --tag prod
                TAG=prod yhbatch hpc/slurm/branchB_collect.slurm
 ```
+
+**The protocol is the published one** (`configs/branchB_protocol.yaml`): 1 fs timestep,
+**520 ps equilibration + 1500 ps production, one frame every 0.5 ps → 3000 frames**, from
+Rinaldo & Field, *Biophys. J.* 2003 — the paper this branch already cited for its
+thermostat. Both trajectory routes and the Parsl driver read that one file; until
+2026-09-07 they ran 50 + 200 ps and 2 + 25 ps respectively, which made the "independent
+implementation pair" a pair of different protocols.
+
+The constraint that stopped the source paper converging — a covariance from T frames has
+at most T non-zero eigenvalues, and they had 7758 degrees of freedom against 3000 frames —
+is 53–100× away from a 10–19 atom molecule. That is why this protocol is cheap here.
+
+**TianheXY-A uses the whole node**: 56 workers, one per core, **7 sharing each card**. One
+trajectory per card left 48 of 56 cores idle, and a 10-atom molecule cannot fill an 80 GB
+H100 — the cost there is kernel-launch latency, not arithmetic. At the 5-node quota that
+is 280 concurrent trajectories rather than 40.
 
 **One node for collection, not twelve.** The pass reads frames and diagonalises a 3N×3N
 covariance per molecule: small, serial, float64 — a card buys nothing, and its real cost is

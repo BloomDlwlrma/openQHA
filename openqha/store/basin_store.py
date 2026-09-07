@@ -48,7 +48,7 @@ import json
 import re
 from pathlib import Path
 
-from . import S0_ROOT
+from .. import S0_ROOT
 
 #: Molecules per leaf directory. Matches `package1.chunk_size`, so a chunk of the
 #: campaign is exactly one leaf directory and "which chunk am I resuming" has one

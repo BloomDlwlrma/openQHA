@@ -89,7 +89,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .. import thermo
+from ..thermochem import thermo
 
 #: nm per angstrom. GROMACS works in nm throughout; this module converts at the edges
 #: and nowhere else.
@@ -533,7 +533,7 @@ def cross_check(frames_A, symbols, masses, workdir, temperature_K=thermo.T_REF,
     comparison is therefore against our UNPROJECTED spectrum, like for like, and the
     projection's own effect is reported separately as `projection_effect_*`.
     """
-    from . import qha
+    from ..quasi_harmonic import qha
 
     work = Path(workdir)
     work.mkdir(parents=True, exist_ok=True)
@@ -671,7 +671,7 @@ def superimpose_once(frames_A, masses):
     say how much of any disagreement with `gmx covar` comes from the fit protocol rather
     than from the arithmetic, and the only honest way to say that is to run both.
     """
-    from . import qha
+    from ..quasi_harmonic import qha
     return qha.superimpose(frames_A, masses, max_iterations=1, tolerance_A=0.0)
 
 

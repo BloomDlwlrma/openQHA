@@ -38,7 +38,7 @@ is why.
   SMILES or QM9 index
         │
   ┌─────▼──────────────────────────────────────────────────────────────┐
-  │ 1. GATES F0–F7            openqha/filters.py                       │
+  │ 1. GATES F0–F7            openqha/conformer_search/filters.py                       │
   │    short-circuit, so the failing gate is unique                    │
   └─────┬──────────────────────────────────────────────────────────────┘
         │  passes
@@ -487,7 +487,7 @@ they must not share an `.mdp`.
 | 4 | **The energy and rotational conditions have never blocked a merge** — both counters still zero. |
 | 5 | **Nothing has been submitted to Tianhe.** Three scheduler command names unverified. |
 | 6 | **Per-molecule cost under contention unmeasured** — only the uncontended 285 s exists. |
-| 7 | **`f7_mode` implemented and curatedQM9 in place** (`openqha/filters.py`, `openqha/curated_qm9.py`). Default is still `drop_all`; switching the default to `curated` is a separate ruling and has not been made. `curated` refuses to run when the archive is absent rather than falling back silently. |
+| 7 | **`f7_mode` implemented and curatedQM9 in place** (`openqha/conformer_search/filters.py`, `openqha/curated_qm9.py`). Default is still `drop_all`; switching the default to `curated` is a separate ruling and has not been made. `curated` refuses to run when the archive is absent rather than falling back silently. |
 
 ---
 
