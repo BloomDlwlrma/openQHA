@@ -210,7 +210,21 @@ CONDA_HOME_SHIM=""
 # FUNCTION after conda.sh is sourced, and bash keeps a variable assignment that prefixes
 # a function call in the calling shell afterwards. Silently moving $HOME for the rest of
 # the script is not a small bug.
+#: Which binary performs a solve: `conda`, or the mamba chosen in section 0. Set there;
+#: `conda` until then, so a pre-section-0 call still works.
+SOLVE_TOOL="conda"
+
 conda_solve() {
+    if [ -n "$CONDA_HOME_SHIM" ]; then
+        ( HOME="$CONDA_HOME_SHIM"; export HOME; "$SOLVE_TOOL" "$@" )
+    else
+        "$SOLVE_TOOL" "$@"
+    fi
+}
+
+#: Read-only queries -- `config --show`, and anything else that must reflect the real
+#: conda regardless of which solver runs. Never mamba: mamba's `config` is not conda's.
+conda_query() {
     if [ -n "$CONDA_HOME_SHIM" ]; then
         ( HOME="$CONDA_HOME_SHIM"; export HOME; conda "$@" )
     else
@@ -319,16 +333,62 @@ echo "conda       : $CONDA_BASE"
 
 # The classic solver takes tens of minutes on this dependency set; libmamba takes a
 # minute or two. Use it if it is there, and say so rather than silently doing either.
+# WHY THIS IS MORE THAN A SPEED SETTING, measured on TianheXY-AI 2026-09-08:
+# a `--tianhe-cuda` solve ran **1 h 37 min at 100% CPU and 3.5 GB RSS** and was still
+# going. That is the classic solver's signature on a hard set; libmamba answers this
+# file, or refuses it, in minutes. A classic solve does not merely take longer -- it goes
+# silent behind a spinner for over an hour on a shared login node, which is both
+# indistinguishable from a hang and antisocial.
+echo "conda ver   : $(conda --version 2>/dev/null || echo unknown)"
 SOLVER=()
-if conda create --help 2>&1 | grep -q -- '--solver' && \
-   "$CONDA_BASE/bin/python" -c "import conda_libmamba_solver" >/dev/null 2>&1; then
-    SOLVER=(--solver=libmamba)
-    echo "solver      : libmamba (asked for explicitly, not left to the default)"
-else
-    warn "libmamba solver not available; the classic solver will take much longer."
-    warn "  Measured on this dependency set: libmamba minutes, classic tens of minutes."
-    warn "  conda install -n base conda-libmamba-solver   # then re-run"
+SOLVE_TOOL="conda"
+# `if command -v`, NOT `_mamba="$(command -v mamba)"`. `command -v` exits non-zero when
+# the name is not found, and under `set -e` that assignment ABORTS THE SCRIPT -- silently,
+# right after the "conda ver" line. Caught 2026-09-08 by the mock run, which is exactly
+# the shape of bug a mock is for: on a machine that HAS mamba it never fires.
+# A condition in `if`/`elif` is exempt from `set -e`; a bare assignment is not.
+_mamba=""
+if [ "${OPENQHA_SOLVE_WITH:-auto}" = "conda" ]; then
+    :                                        # explicit opt-out: leave _mamba empty
+elif command -v mamba >/dev/null 2>&1; then
+    _mamba="$(command -v mamba)"
+elif [ -x "$CONDA_BASE/bin/mamba" ]; then
+    # miniforge3 ships mamba here even when the shell hook has not been run, which is the
+    # case inside this script -- it sources conda.sh only.
+    _mamba="$CONDA_BASE/bin/mamba"
 fi
+
+if [ -n "$_mamba" ]; then
+    # PREFERRED ON THIS SITE. The conda here is miniforge3, which always ships mamba, and
+    # the user's own init_conda.sh already exports MAMBA_EXE. mamba IS libmamba with no
+    # question of whether a flag reached the right subcommand -- see the next branch for
+    # why that question is not academic.
+    SOLVE_TOOL="$_mamba"
+    echo "solver      : mamba -- $_mamba  (OPENQHA_SOLVE_WITH=conda to use conda)"
+elif conda env create --help 2>&1 | grep -q -- '--solver' && \
+     "$CONDA_BASE/bin/python" -c "import conda_libmamba_solver" >/dev/null 2>&1; then
+    # NOTE THE SUBCOMMAND. This used to probe `conda create --help` while the call the
+    # script actually makes is `conda env create`. Those are different parsers and they
+    # have not always carried the same flags -- so the check could pass, the flag be
+    # dropped or rejected, and the solve fall back to classic with nothing said. Probe
+    # the subcommand you are going to run.
+    SOLVER=(--solver=libmamba)
+    # Belt and braces: the flag is per subcommand, the variable is not.
+    export CONDA_SOLVER=libmamba
+    echo "solver      : conda + libmamba (flag and CONDA_SOLVER, not left to default)"
+else
+    warn "NO libmamba AND NO mamba. The classic solver will be used, and on this"
+    warn "  dependency set that is not 'slower' -- it was still running after 1 h 37 min"
+    warn "  at 100% CPU on TianheXY-AI (2026-09-08). Fix it before starting:"
+    warn "    conda install -n base conda-libmamba-solver     # or"
+    warn "    conda install -n base mamba"
+    warn "  Set OPENQHA_ALLOW_CLASSIC=1 to proceed anyway."
+    if [ -z "$OPENQHA_ALLOW_CLASSIC" ]; then
+        echo "refusing to start a classic solve; see above." >&2
+        exit 1
+    fi
+fi
+unset _mamba
 
 # -------------------------------------------------------------------------------------
 # 1. Site-specific preparation
@@ -475,7 +535,7 @@ if [ "$MODE" = "tianhe" ]; then
     # Record what the solve will actually use. Not a warning in either mode: on Tianhe a
     # TUNA URL here is CORRECT, and the earlier version of this check flagged it, which
     # would have fired on every properly configured run.
-    EFFECTIVE_CHANNELS="$(conda_solve config --show channels 2>/dev/null \
+    EFFECTIVE_CHANNELS="$(conda_query config --show channels 2>/dev/null \
                           | tail -n +2 | sed 's/^[[:space:]]*-[[:space:]]*//' | tr '\n' ' ')" || true
     echo "channels    : ${EFFECTIVE_CHANNELS:-<none reported>}"
     if [ -z "$CONDA_HOME_SHIM" ]; then
@@ -497,7 +557,7 @@ if [ "$MODE" = "tianhe" ]; then
         # no custom_channels and it falls through to conda.anaconda.org. Deriving it
         # means the check follows the site if the mirror ever moves, instead of testing
         # a host no solve here would contact.
-        _cf_base="$(conda_solve config --show custom_channels 2>/dev/null \
+        _cf_base="$(conda_query config --show custom_channels 2>/dev/null \
                     | awk '/^[[:space:]]*conda-forge:/ {print $2}')" || true
         if [ -n "$_cf_base" ]; then
             _probe="$_cf_base/conda-forge/noarch/repodata.json"
@@ -578,6 +638,19 @@ fi
 # 2. The environment
 # -------------------------------------------------------------------------------------
 say "environment: $PY_ENV"
+# SAY HOW LONG THIS TAKES, BEFORE IT GOES QUIET.
+# `Solving environment: \` is a spinner and nothing else; the script then prints nothing
+# for minutes. Every operator who has not seen it before reads that as a hang and kills
+# it -- which on this dependency set throws away the most expensive step. So state the
+# expectation, and state how to check it is alive, in the log itself.
+cat <<'EXPECT'
+  The solve prints a spinner and nothing else. That is normal, and it is not quick:
+    libmamba   ~1-5 min here      classic   tens of minutes
+  This file pins cuda-version, a *cuda* pytorch, a *cuda* openmm-torch and openmmtools
+  at once; it is the hardest solve in this repository. To check it is working rather
+  than hung, from a SECOND shell -- ~100% CPU means solving, ~0% means blocked:
+    ps -o pid,etime,pcpu,rss,comm -u "$USER" | grep -i -E 'conda|mamba'
+EXPECT
 if conda env list | awk '{print $1}' | grep -qx "$PY_ENV"; then
     # DEFECT, fixed 2026-09-08: this said `-f environment.yml` unconditionally, so a
     # re-run of `--tianhe-cuda` after a failed solve updated `openqha-gpu` from the
