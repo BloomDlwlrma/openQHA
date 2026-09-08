@@ -64,12 +64,17 @@ setting. `tianhexy-i` appears in the table and this repository knows nothing els
 ssh <you>@tianhe
 cd $HOME                               # /HOME/hku2021_fos4/hku2021_fos4xy_2
 
-# The proxy. conda HANGS rather than fails without it, so do this first.
+# The proxy. Without it a login node has NO DNS -- conda does not fail cleanly, it
+# retries for minutes and then blames whichever mirror it was reaching for. Do it first.
 source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138
-curl -sI https://conda.anaconda.org | head -1     # expect: HTTP/... 200 or 301
+
+# Probe the mirror you actually use, which on this account is TUNA (see §3a).
+curl -sI https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/noarch/repodata.json | head -1
 ```
 
-If that `curl` hangs, stop. Everything after it will hang too, and a hung job is charged.
+Expect `HTTP/… 200`. If that `curl` hangs, stop — everything after it will hang too, and a
+hung job is charged for its whole walltime. `install_dependency.sh --tianhe*` runs this
+same probe for you and refuses to start when it fails.
 
 ---
 
@@ -103,17 +108,18 @@ Every `configured_exists` must be `true`.
 
 * the `debug` partition name and the two walltimes (30 min / 3 days) are the user's, not
   read off `sinfo` here;
-* **CUDA/12.3 on TianheXY-AI.** The recorded listing was elided (`CUDA/11.8 ...
-  CUDA/13.2`), so 12.3 is inside the range but was never read off the screen. The conda
-  side is pinned to it. One line to change if it is absent —
-  `CUDA_VERSION` in `hpc/resource_configs/tianhe_ai.py` and the pin in
-  `environment-tianhe-gpu.yml`;
+* ~~**CUDA/12.3 on TianheXY-AI.**~~ **Closed 2026-09-08.** A full `module avail` on
+  `ln302%TianheXY-AI` lists `CUDA/12.3` outright, beside 12.0, 12.1, 12.2 and 12.4. The
+  earlier listing had been recorded elided (`CUDA/11.8 … CUDA/13.2`), so 12.3 was inside
+  the range but had never been read off the screen. **12.4 is present on -AI and must
+  still not be used** — TianheXY-A has no 12.4, and matching both is what makes one
+  `environment-tianhe-gpu.yml` serve both clusters;
 * on TianheXY-A, **9 of 25 `ai` nodes were in state O** at that reading. Effective capacity
   is below the node count; check `yhi` before planning around 25.
 
 ---
 
-## 3. Install  **[unverified]**
+## 3. Install  **[install path measured 2026-09-08; the run itself still unverified]**
 
 ```bash
 git clone <this repo> openQHA && cd openQHA     # or rsync it in
@@ -121,10 +127,147 @@ git clone <this repo> openQHA && cd openQHA     # or rsync it in
 bash install_dependency.sh --tianhe        # TianheXY-C  -> `openqha`      (CPU)
 bash install_dependency.sh --tianhe-a      # TianheXY-A  -> `openqha-gpu`  (CUDA 12.3)
 bash install_dependency.sh --tianhe-cuda   # TianheXY-AI -> `openqha-gpu`  (the same file)
+
+# ONLY ONE CLUSTER ON YOUR ACCOUNT? Build both environments on it. Two separate solves,
+# not one bigger environment -- see "Two environments" below for why that distinction is
+# the whole point.
+bash install_dependency.sh --tianhe-cuda --both     # -> openqha AND openqha-gpu
 ```
 
 Neither GPU flag loads MPI: nothing openQHA runs on a card needs collectives, and dropping
 it is what let one environment file serve both GPU clusters.
+
+### 3a. The install that failed, and what it was really telling you
+
+Run on `ln302%TianheXY-AI`, 2026-09-08. Forty urllib3 retry lines, then:
+
+```
+CondaHTTPError: HTTP 000 CONNECTION FAILED for url
+<https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/linux-64/repodata.json>
+Failed to resolve 'mirrors.tuna.tsinghua.edu.cn' ([Errno -3] Temporary failure in name resolution)
+```
+
+**Read the second line, not the first. "Failed to resolve" is DNS — not a refused
+connection, not a 404, not a stale mirror.** A Tianhe login node has no direct DNS, so
+until `setproxy.sh` has run *nothing* resolves: TUNA, `conda.anaconda.org` or anything
+else. One cause, one fix. The forty retry lines and the TUNA URL in the message are what
+made it look like a mirror problem, and it was never one.
+
+TUNA is the intended mirror on all three clusters and `~/.condarc` is correct as it
+stands — same file on TianheXY-CN, -A and -AI:
+
+```yaml
+channels: [defaults]
+default_channels: [<TUNA>/anaconda/pkgs/{main,r,msys2}]
+custom_channels:  {conda-forge: <TUNA>/anaconda/cloud, pytorch: <TUNA>/anaconda/cloud}
+```
+
+The environment files add `conda-forge` and `nodefaults`, so `conda-forge` resolves
+through `custom_channels` to `<TUNA>/anaconda/cloud/conda-forge` and that is the only
+channel a solve here touches. Checked 2026-09-08: that path returns **HTTP 200**, and its
+`linux-64/repodata.json` (443 MB) was last modified **the same day** — the mirror is live
+and current. `pypi.tuna.tsinghua.edu.cn` serves `mace-torch` too.
+
+**The installer therefore changes nothing about your channels.** It does three things,
+none of which reads or writes `~/.condarc`:
+
+1. **Sources the site proxy itself** (host/port from `configs/cluster_tianhe.yaml`) and
+   exports all four spellings plus `no_proxy`, so pip, curl and the weight transfer see
+   the same proxy conda does. This used to be a *warning* telling you to export it
+   yourself, which is what let the failing run start at all.
+2. **Probes the mirror your condarc actually names** — read out of
+   `conda config --show custom_channels`, not hard-coded — once, with a 15-second
+   timeout, and stops there. So a missing proxy is one line naming the proxy, not forty
+   naming a mirror.
+3. **Silences the notice/retry storm** with `CONDA_NUMBER_CHANNEL_NOTICES=0` and the
+   `CONDA_REMOTE_*` timeouts. These are *scalar* conda parameters, which environment
+   variables replace cleanly — so no file is touched. (That is specifically not true of
+   `channels`; see the table below.)
+
+pip gets `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` for the run, to match —
+`mace-torch`, `pymsym` and `parsl` have no conda-forge package and are otherwise the
+slowest part of the install. Exported per-run; `~/.pip/pip.conf` is not written.
+`OPENQHA_PIP_INDEX=<url>` overrides it, `OPENQHA_PIP_INDEX=` opts out to `pypi.org`.
+
+```bash
+TIANHE_PROXY_HOST=<host> TIANHE_PROXY_PORT=<port> bash install_dependency.sh --tianhe-cuda
+OPENQHA_SKIP_NET_CHECK=1 bash install_dependency.sh --tianhe-cuda   # skip the probe
+```
+
+#### If TUNA is missing a package — a different failure, and a different lever
+
+TUNA mirrors conda-forge's *content*. If it is stale or incomplete for a pin this project
+needs (`openmm-torch=*cuda*`, `cuda-version=12.3`, `crest>=3.0.2`), the solve fails with
+**`PackagesNotFoundError`** — a content error. No proxy setting helps and retrying will
+not either. Only then:
+
+```bash
+OPENQHA_FORCE_ANACONDA=1 bash install_dependency.sh --tianhe-cuda   # one run, direct
+```
+
+It is off by default, still needs the proxy, and still does not edit `~/.condarc`. If
+what you see instead is `Failed to resolve`, `HTTP 000` or a hang, this is the wrong
+lever — that is the proxy.
+
+**Why that flag needs a scratch `HOME` rather than one obvious env var:** both obvious
+mechanisms were measured against conda 24.1.2 on 2026-09-08 and neither works.
+
+| attempt | result |
+|---|---|
+| `CONDARC=<file> conda …` | **ignored outright.** `conda config --show-sources` with it set lists only `~/.condarc`; the named file never appears |
+| `CONDA_CHANNELS=<url> conda …` | **merges, does not replace.** `channels` is a sequence and conda concatenates across sources, so the result kept the TUNA-mapped names in the list |
+
+Map parameters cannot be emptied from the environment at all (`CONDA_CUSTOM_CHANNELS=''`
+is a type error). A `.condarc` inside a `HOME` we control has nothing to merge with,
+which is the whole reason for the indirection — and it is why the *scalar* settings in
+point 3 above need no such trick. One hole remains and the installer reports it every
+run: `$CONDA_PREFIX/.condarc` sits *above* `~/.condarc` in the search path, so a config
+written into the miniforge3 base is not shadowed; the effective channel list is printed.
+### 3b. Two environments, and why they are not one
+
+`openqha` (CPU) and `openqha-gpu` (GPU) are split along their **linear algebra**, which is
+the one difference their names do not show:
+
+| | `openqha` | `openqha-gpu` |
+|---|---|---|
+| BLAS | OpenBLAS, **OpenMP build**, pinned; `nomkl` | MKL (whatever the solver picks) |
+| torch | CPU | CUDA 12.3 |
+| CREST + xtb | yes | **no** |
+| runs | branch A, QHA collection | branch B trajectories, branch C training |
+
+Three requirements, and no single solve satisfies all three:
+
+* conda-forge's `crest` links the **pthreads** OpenBLAS while CREST is OpenMP-parallel.
+  Measured 2026-09-04 on `dsgdb9nsd_000018`, `-T 4`, same 2 conformers: pthreads 38.0 s and
+  4164 warning lines, OpenMP 18.5 s and none. Hence the pins.
+* A CUDA build of pytorch **depends on MKL**, so `nomkl` and a CUDA torch cannot both hold.
+* Dry runs 2026-09-07: `openmmtools` + pins solves; `openmmtools` + CUDA torch solves;
+  `openmmtools` + CUDA torch + `cuda-version=12.3` + pins **fails**. Each pair, never the
+  triple.
+
+So the pins live where CREST and the quasi-harmonic diagonalisation are, and the GPU half
+takes MKL — where neither of those runs. **The diagonalisation, the only step whose numbers
+a BLAS could move, always executes in the collection pass, in `openqha`, against OpenBLAS.**
+
+Pick one per job and let `hpc/env/tianhe.sh` activate it:
+
+```bash
+OPENQHA_ROLE=cpu source hpc/env/tianhe.sh    # branch A, QHA collection
+OPENQHA_ROLE=gpu source hpc/env/tianhe.sh    # branch B trajectories, branch C training
+```
+
+> **Never `conda activate openqha` and then `conda activate openqha-gpu`.** Conda *stacks*
+> rather than replaces, so both prefixes stay on the loader's search path — one carrying
+> OpenBLAS and one MKL — and which you get is decided by link order, not by the name you
+> typed. It imports cleanly and returns numbers from a library you did not choose.
+> `hpc/env/tianhe.sh` deactivates down to base first, and reports the BLAS it ended up with
+> (`OPENQHA_BLAS`, in every job log via `openqha_report_env`).
+>
+> That report reads conda-meta build strings, and not the two things you would try first:
+> `numpy.show_config()` reports `"name": "blas"` for both providers under conda-forge's
+> `libblas` metapackage, and the `libblas.so.3` symlink resolves to `libopenblasp-*.so`
+> even in an OpenMP-pinned environment — the `p` is conda-forge's file naming, not
+> "pthreads". Both were checked on 2026-09-08; both would have given the wrong answer.
 
 **None of them downloads the MACE-OFF weights.** Fetch them where you have bandwidth and
 copy them in — the reasoning, the procedure and the verification are section 4 of

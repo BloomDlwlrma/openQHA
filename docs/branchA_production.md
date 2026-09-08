@@ -145,18 +145,36 @@ reproducible; the count is one draw.
 
 ## 3. Environments: which file, which machine
 
-| file | env name | machine | what it is for |
-|---|---|---|---|
-| `environment.yml` | `openqha` | workstation | everything, including branch B's OpenMM |
-| `environment-tianhe.yml` | `openqha` | **TianheXY-C** | branch A + collection. CPU torch, CREST, xtb |
-| `environment-tianhe-gpu.yml` | `openqha-gpu` | **TianheXY-A and TianheXY-AI** | branch B trajectories + branch C training. CUDA 12.3 |
-| `environment-cuda.yml` | `openqha-cuda` | any GPU box | CUDA without the Tianhe specifics |
-| `environment-openmm.yml` | `openqha-openmm` | anywhere | branch B only, ~2 GB smaller |
+| file | env name | machine | BLAS | what it is for |
+|---|---|---|---|---|
+| `environment.yml` | `openqha` | workstation | OpenBLAS/OpenMP | everything, including branch B's OpenMM |
+| `environment-tianhe.yml` | `openqha` | **TianheXY-C** | OpenBLAS/OpenMP | branch A + collection. CPU torch, CREST, xtb |
+| `environment-tianhe-gpu.yml` | `openqha-gpu` | **TianheXY-A and TianheXY-AI** | MKL | branch B trajectories + branch C training. CUDA 12.3 |
+| `environment-cuda.yml` | `openqha-cuda` | any GPU box | OpenBLAS/OpenMP | CUDA without the Tianhe specifics |
+| `environment-openmm.yml` | `openqha-openmm` | anywhere | OpenBLAS/OpenMP | branch B only, ~2 GB smaller |
+
+The BLAS column is there because it is the axis the two Tianhe environments are split
+along and the one you cannot read off the name. `openqha-gpu` takes MKL because a CUDA
+build of pytorch depends on it, which makes `nomkl` unsatisfiable there; everything that
+could be *moved* by that choice — the quasi-harmonic diagonalisation above all — runs in
+the collection pass, in `openqha`, against OpenBLAS. `docs/tianhe_runbook.md` §3b has the
+three measurements behind the split.
 
 ```bash
 bash install_dependency.sh --tianhe        # TianheXY-C  -> openqha
 bash install_dependency.sh --tianhe-a      # TianheXY-A  -> openqha-gpu, CUDA/12.3
 bash install_dependency.sh --tianhe-cuda   # TianheXY-AI -> openqha-gpu, CUDA/12.3
+
+# Only one cluster on your account? Build both on it -- two solves, not one big env:
+bash install_dependency.sh --tianhe-cuda --both
+```
+
+Then pick one per job rather than activating both — conda *stacks* activations, and a
+stacked shell has an OpenBLAS `lib/` and an MKL `lib/` on one loader path:
+
+```bash
+OPENQHA_ROLE=cpu source hpc/env/tianhe.sh    # branch A, QHA collection
+OPENQHA_ROLE=gpu source hpc/env/tianhe.sh    # branch B, branch C
 ```
 
 ### One GPU environment, not two (changed 2026-09-07)
@@ -338,10 +356,15 @@ production queue means one set of costs to compare against. They are recorded in
 ```bash
 ssh <you>@tianhe
 source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138
-curl -sI https://conda.anaconda.org | head -1      # expect 200 or 301
+
+# Probe the mirror this account actually uses -- TUNA, via custom_channels in ~/.condarc.
+curl -sI https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/noarch/repodata.json | head -1
 ```
 
-If that hangs, stop — everything after it will hang too, and a hung job is charged.
+Expect `HTTP/… 200`. If it hangs, stop — everything after it will hang too, and a hung job
+is charged. A login node has **no direct DNS**, so before `setproxy.sh` nothing resolves
+and conda reports that as an outage of whichever mirror it was reaching for; that is
+exactly the 2026-09-08 failure, and `tianhe_runbook.md` §3a is the post-mortem.
 
 ```bash
 type -a yhbatch yhrun sacct squeue scancel        # all five exist (measured 2026-09-05)

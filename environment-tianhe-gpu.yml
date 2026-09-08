@@ -24,14 +24,24 @@
 # `module load CUDA/12.4` fails on A, and worse, a conda CUDA pinned newer than the
 # runtime imports perfectly cleanly and dies at the first kernel launch.
 #
-# **The one thing to check before the first GPU job on TianheXY-AI**: that CUDA/12.3 is
-# really in its module tree. The listing recorded here was elided (`CUDA/11.8 ...
-# CUDA/13.2`), so 12.3 is inside the recorded range but was never read off the screen:
+# **CLOSED 2026-09-08.** This used to say "the one thing to check before the first GPU job
+# on TianheXY-AI is that CUDA/12.3 is really in its module tree" -- the earlier listing had
+# been recorded elided (`CUDA/11.8 ... CUDA/13.2`), so 12.3 was inside the range but had
+# never been read off the screen. A full `module avail` on ln302%TianheXY-AI now shows it
+# outright, alongside 11.3/11.7/11.8 and 12.0/12.1/12.2/12.4 and 13.0/13.2:
+#
+#     CUDA/11.3  CUDA/12.0  CUDA/12.3  CUDA/13.2
+#     CUDA/11.7  CUDA/12.1  CUDA/12.4
+#     CUDA/11.8  CUDA/12.2  CUDA/13.0
+#
+# So the pin below is met on TianheXY-AI. Note 12.4 is also present HERE -- do not raise
+# the pin to it: TianheXY-A has no 12.4, and matching both machines is what makes this one
+# file. Re-check with, if the site ever rebuilds its module tree:
 #
 #     module avail CUDA 2>&1 | tr ' ' '\n' | grep -i "^CUDA/12"
 #
-# If it is absent, the fix is one line -- CUDA_VERSION in hpc/resource_configs/tianhe_ai.py
-# and the pin below -- not a second file.
+# If it ever goes absent, the fix is one line -- CUDA_VERSION in
+# hpc/resource_configs/tianhe_ai.py and the pin below -- not a second file.
 #
 # ---------------------------------------------------------------------------------------
 # NO MPI IN HERE, AND THAT IS WHAT MAKES ONE FILE POSSIBLE

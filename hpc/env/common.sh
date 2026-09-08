@@ -106,5 +106,11 @@ openqha_report_env() {
     echo "  crest           ${S0_CREST_BIN:-$(command -v crest)}"
     echo "  runs root       $S0_RUNS_ROOT"
     echo "  OMP/MKL/BLAS    $OMP_NUM_THREADS/$MKL_NUM_THREADS/$OPENBLAS_NUM_THREADS"
+    # WHICH BLAS, not just how many threads of it. Sites that keep two environments --
+    # one OpenBLAS for CREST, one MKL because a CUDA torch drags MKL in anyway -- can
+    # land a job in the wrong one and get numbers that look fine. The site file fills
+    # these in (hpc/env/tianhe.sh); elsewhere they are empty and the line says so.
+    echo "  conda env       ${CONDA_DEFAULT_ENV:-none}  [role ${OPENQHA_ROLE:-unset}]"
+    echo "  BLAS provider   ${OPENQHA_BLAS:-not probed}/${OPENQHA_BLAS_THREADS:-n/a}"
     echo "  loadavg         $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo n/a)"
 }

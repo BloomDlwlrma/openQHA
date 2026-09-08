@@ -1,0 +1,93 @@
+# openQHA -- ESCAPE-HATCH conda config for Tianhe. NOT THE DEFAULT PATH.
+#
+# ---------------------------------------------------------------------------------
+# NOTHING READS THIS FILE UNLESS YOU ASK FOR IT
+# ---------------------------------------------------------------------------------
+#     OPENQHA_FORCE_ANACONDA=1 bash install_dependency.sh --tianhe-cuda
+#
+# Only then does install_dependency.sh copy this file into a scratch directory and run
+# the conda solve with HOME pointed at it. Without that variable the file is inert and
+# conda uses YOUR ~/.condarc and the TUNA mirror, which is the intended arrangement
+# (user ruling 2026-09-08). Your ~/.condarc is never read, written or edited either way.
+#
+# ---------------------------------------------------------------------------------
+# THE ONE FAILURE THIS IS FOR -- AND IT IS NOT A NETWORK FAILURE
+# ---------------------------------------------------------------------------------
+# TUNA mirrors conda-forge's CONTENT. If it is stale or incomplete for a pin this
+# project needs -- `openmm-torch>=1.4=*cuda*`, `cuda-version=12.3`, `crest>=3.0.2` --
+# the solve fails with PackagesNotFoundError or an unsatisfiable-spec error. No proxy
+# setting fixes that, and neither does retrying: the package is not on the mirror.
+# This routes ONE run straight at conda.anaconda.org so you can tell the two apart.
+#
+# **If instead you see "Failed to resolve", "HTTP 000" or a hang, this is the WRONG
+# tool.** That is the proxy, and install_dependency.sh handles it -- see its header.
+# Reaching for this file will not help and will change which mirror gets blamed.
+#
+# ---------------------------------------------------------------------------------
+# WHY A SCRATCH HOME AND NOT `CONDARC`, WHICH IS THE OBVIOUS ANSWER
+# ---------------------------------------------------------------------------------
+# Two mechanisms were tried against conda 24.1.2 first and BOTH FAILED. If you are
+# about to simplify this, they are what you will simplify it back into:
+#
+#   * `CONDARC=<file> conda ...` -- IGNORED OUTRIGHT. `$CONDARC` is in conda's
+#     documented search path, but with it set `conda config --show-sources` lists only
+#     ~/.condarc and never the named file, and `--show channels` returns the user's
+#     channels unchanged. Measured 2026-09-08.
+#
+#   * `CONDA_CHANNELS=<url> conda ...` -- MERGES, DOES NOT REPLACE. Env vars have the
+#     highest priority, but `channels` is a SEQUENCE and conda concatenates sequences
+#     across sources. Against the real Tianhe ~/.condarc the result was
+#     `[<our url>, defaults]` -- ours first, and the TUNA-mapped names still in the
+#     list, still fetched. `CONDA_CUSTOM_CHANNELS=''` is rejected as a type error:
+#     map parameters cannot be emptied from the environment at all.
+#
+# (SCALAR parameters do not have this problem, which is why the installer sets
+# number_channel_notices and the remote_* timeouts as CONDA_* env vars and touches no
+# file for those.) A .condarc inside a HOME we control is read as the ONLY user
+# config, so there is nothing left to merge with. That is the whole indirection.
+#
+# It has one hole, and the installer reports rather than hides it:
+# `$CONDA_PREFIX/.condarc` sits ABOVE ~/.condarc in the search path, so a config
+# written into the miniforge3 base still contributes. The installer prints the
+# effective channel list every run.
+# ---------------------------------------------------------------------------------
+
+# Fully qualified, so it does not depend on channel_alias being read at all.
+channels:
+  - https://conda.anaconda.org/conda-forge
+
+# Named anyway: harmless while this is the only config file, and load-bearing the
+# moment someone reuses this file somewhere it is not.
+channel_alias: https://conda.anaconda.org
+default_channels: []
+
+# environment-tianhe*.yml are conda-forge-only. A defaults/conda-forge mix is what hid
+# a real solver conflict on 2026-09-04, so this is not merely tidiness.
+channel_priority: strict
+show_channel_urls: true
+
+# Same values the installer exports as CONDA_* env vars on the normal TUNA path; here
+# because on this path the env vars and this file are read together and agreeing is
+# cheaper than reasoning about which wins.
+number_channel_notices: 0
+remote_connect_timeout_secs: 10.0
+remote_read_timeout_secs: 60.0
+remote_max_retries: 2
+remote_backoff_factor: 1
+
+auto_activate_base: false
+report_errors: false
+
+# NOT SET HERE, deliberately:
+#   proxy_servers   exported into the environment by install_dependency.sh instead, so
+#                   pip, curl and the weight transfer see the same proxy conda does.
+#                   Setting it here would give conda a proxy and leave pip without one.
+#                   The proxy is needed on THIS path too: conda.anaconda.org does not
+#                   resolve on a login node either.
+#   ssl_verify      leave it TRUE. If the proxy terminates TLS, the fix is to point
+#                   REQUESTS_CA_BUNDLE at its CA, not to stop verifying.
+#   envs_dirs       the installer pins CONDA_ENVS_DIRS/CONDA_PKGS_DIRS to the values
+#                   your REAL config resolves to, read before HOME is moved -- so
+#                   environments land where `conda env list` already looks for them.
+#                   Hard-coding a path here would send them somewhere else, and an
+#                   environment built under the scratch HOME vanishes with it.

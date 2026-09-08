@@ -49,9 +49,13 @@ GPUS_PER_JOB = 1
 #: 12.4 -- so one `environment-tianhe-gpu.yml` serves both. The conda side pins the same
 #: number. Change them together or neither.
 #:
-#: **Check this exists before the first GPU job here**: the recorded module listing for
-#: this cluster was elided (`CUDA/11.8 ... CUDA/13.2`), so 12.3 is inside the recorded
-#: range but was never read off the screen.
+#: **CONFIRMED PRESENT, 2026-09-08.** A full `module avail` on ln302%TianheXY-AI lists
+#: CUDA/12.3 outright (with 12.0, 12.1, 12.2 and 12.4 beside it), closing the caveat this
+#: comment used to carry -- the earlier listing had been recorded elided as
+#: `CUDA/11.8 ... CUDA/13.2`, so 12.3 was inside the range but unread.
+#:
+#: 12.4 exists on THIS cluster and must still not be used: TianheXY-A has no 12.4, and
+#: one environment file serving both is what the shared pin buys.
 #:     module avail CUDA 2>&1 | grep -o "CUDA/12[.][0-9]*"
 CUDA_VERSION = "12.3"
 

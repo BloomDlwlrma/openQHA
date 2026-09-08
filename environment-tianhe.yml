@@ -10,6 +10,28 @@
 # or just:  bash install_dependency.sh --tianhe
 #
 # ---------------------------------------------------------------------------------------
+# THIS FILE IS ALSO THE CPU HALF OF A TWO-ENVIRONMENT INSTALL ON A GPU CLUSTER
+# ---------------------------------------------------------------------------------------
+# "TianheXY-C" below is where branch A belongs when you have that cluster. An account with
+# only a GPU cluster still needs branch A somewhere, and the answer is to build BOTH
+# environments there and run branch A on the CPU cores of a GPU allocation:
+#
+#     bash install_dependency.sh --tianhe-cuda --both     # openqha AND openqha-gpu
+#     OPENQHA_ROLE=cpu source hpc/env/tianhe.sh           # then pick this one per job
+#
+# **Two solves, not one larger environment.** The BLAS pins below and the CUDA torch in
+# environment-tianhe-gpu.yml have no common solution -- a CUDA pytorch depends on MKL, so
+# `nomkl` is unsatisfiable beside it, and `openmmtools + CUDA torch + cuda-version + these
+# pins` was measured unsolvable on 2026-09-07 while every pair of the three solves. Keeping
+# them apart is what makes each half satisfiable, and the pins then stay where CREST and
+# the quasi-harmonic diagonalisation actually are.
+#
+# Do not activate both at once: conda STACKS activations, so a stacked shell has this
+# environment's OpenBLAS and the other's MKL on one loader path and link order decides
+# which you get. hpc/env/tianhe.sh unwinds to base before it activates, and reports the
+# BLAS it ended up with into the job log.
+#
+# ---------------------------------------------------------------------------------------
 # WHY A THIRD ENVIRONMENT FILE
 # ---------------------------------------------------------------------------------------
 # environment.yml is this project's workstation environment and carries a notebook stack,
