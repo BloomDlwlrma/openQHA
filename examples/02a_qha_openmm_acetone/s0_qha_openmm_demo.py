@@ -13,7 +13,7 @@ What it demonstrates, in order:
 
 Run it as:
 
-    python examples/02_qha_openmm_acetone/s0_qha_openmm_demo.py
+    python examples/02a_qha_openmm_acetone/s0_qha_openmm_demo.py
 
 One environment runs both routes as of 2026-09-05. It used to need two, because
 openmm-torch pins the pytorch it was compiled against; that pin was accepted (pytorch

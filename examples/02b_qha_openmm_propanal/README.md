@@ -1,11 +1,11 @@
-# 03 — propanal: the whole chain on a multi-basin molecule
+# 02b — propanal: the whole chain on a multi-basin molecule
 
 Branch A and branch B end to end, on a molecule where **the ensemble is real**.
 
 ```bash
-bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf                    # local
-MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf
-MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf
+bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf                    # local
+MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
+MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
 ```
 
 Two modes, one file, both at **production settings**. There is no smoke mode: a short run

@@ -191,9 +191,9 @@ better-conditioned for the correction while being useless as an absolute entropy
 ### The whole chain — one file, two modes
 
 ```bash
-bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf                    # local
-MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf
-MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf
+bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf                    # local
+MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
+MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
 ```
 
 It runs the four production drivers in order and adds no science of its own. **There is no

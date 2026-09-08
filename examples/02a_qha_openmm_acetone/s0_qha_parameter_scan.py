@@ -32,8 +32,8 @@ length, interval and atom selection are all POST-HOC on one trajectory: only the
 thermostat needs separate runs. That is what makes the scan affordable -- 1 trajectory
 per thermostat setting, not 1 per cell of a four-way grid.
 
-    python examples/02_qha_openmm_acetone/s0_qha_parameter_scan.py --stage estimator
-    python examples/02_qha_openmm_acetone/s0_qha_parameter_scan.py --stage dynamics \\
+    python examples/02a_qha_openmm_acetone/s0_qha_parameter_scan.py --stage estimator
+    python examples/02a_qha_openmm_acetone/s0_qha_parameter_scan.py --stage dynamics \\
         --prod-ps 1000 --thermostats langevin_1 langevin_5 langevin_50 nhc_20 nhc_100
 """
 import argparse

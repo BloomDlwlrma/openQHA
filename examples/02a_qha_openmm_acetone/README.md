@@ -1,4 +1,4 @@
-# 02 — acetone: the real-molecule debug check
+# 02a — acetone: the real-molecule debug check
 
 This directory is where openQHA is checked **on a real molecule, end to end, with all its
 basins** — not on a synthetic control, not on one basin, not at one setting.
@@ -15,9 +15,9 @@ basins** — not on a synthetic control, not on one basin, not at one setting.
 ## The whole chain
 
 ```bash
-bash examples/run_chain.sh examples/02_qha_openmm_acetone/chain.conf                    # local
-MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/02_qha_openmm_acetone/chain.conf
-MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/02_qha_openmm_acetone/chain.conf
+bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf                    # local
+MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf
+MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf
 ```
 
 **One file, two modes, both production.** There is no smoke mode: a short run is not a
@@ -25,7 +25,7 @@ smaller version of the answer, it is a different quantity that looks like one. I
 to know whether the machinery works, run the estimator stage of the parameter scan — it is
 seconds, it is exact, and it cannot be mistaken for a result.
 
-For the ensemble, use [`../03_qha_openmm_propanal/`](../03_qha_openmm_propanal/README.md):
+For the ensemble, use [`../02b_qha_openmm_propanal/`](../02b_qha_openmm_propanal/README.md):
 acetone has one basin, so its `F_conf` is identically zero.
 
 ---
@@ -33,10 +33,10 @@ acetone has one basin, so its `F_conf` is identically zero.
 ## The settings grid: `debug_realmole`
 
 ```bash
-python examples/02_qha_openmm_acetone/s0_debug_realmole.py \
-    --conf examples/02_qha_openmm_acetone/debug_realmole.conf --print-conf
-python examples/02_qha_openmm_acetone/s0_debug_realmole.py \
-    --conf examples/02_qha_openmm_acetone/debug_realmole.conf
+python examples/02a_qha_openmm_acetone/s0_debug_realmole.py \
+    --conf examples/02a_qha_openmm_acetone/debug_realmole.conf --print-conf
+python examples/02a_qha_openmm_acetone/s0_debug_realmole.py \
+    --conf examples/02a_qha_openmm_acetone/debug_realmole.conf
 ```
 
 It runs **branch A → every basin of acetone → branch B per basin → the ensemble free

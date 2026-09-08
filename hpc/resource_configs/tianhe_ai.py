@@ -95,13 +95,13 @@ QHA_CORES_PER_WORKER = 1
 
 #: TianheXY-A is preferred for branch B (8 cards per allocation against this cluster's
 #: one). This role exists so a single molecule can be run end to end on h100x, which is
-#: what examples/02_qha_openmm_acetone does.
+#: what examples/02a_qha_openmm_acetone does.
 OPENMM_PLATFORM = "CUDA"
 #: Branch B needs a longer allocation than training does. The published protocol is
 #: 520 + 1500 ps, which at the only cost this repository has measured (96.1 s/ps on
 #: ONE CPU THREAD) is ~54 h per trajectory -- so a 16 h walltime would guarantee
 #: every task stopped on its budget. The site allows 7 days; 3 is the same number
-#: examples/02_qha_openmm_acetone submits with.
+#: examples/02a_qha_openmm_acetone submits with.
 QHA_WALLTIME = "3-00:00:00"
 QHA_WALL_BUDGET_S = int(0.90 * 3 * 24 * 3600)
 

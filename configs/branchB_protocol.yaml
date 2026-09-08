@@ -71,12 +71,12 @@
 #
 # So the sampling interval is a storage-and-precision choice, not a filtering one, and
 # 1.0 ps is affordable. The RISK in this protocol is basin residence, which is a property
-# of the dynamics and cannot be measured this way -- see examples/02_qha_openmm_acetone.
+# of the dynamics and cannot be measured this way -- see examples/02a_qha_openmm_acetone.
 #
 # =======================================================================================
 # 4. THESE ARE STARTING VALUES; THE SCAN AND THE BASIN CHECK HAVE THE LAST WORD
 # =======================================================================================
-# `examples/02_qha_openmm_acetone/s0_qha_parameter_scan.py` scans length, interval,
+# `examples/02a_qha_openmm_acetone/s0_qha_parameter_scan.py` scans length, interval,
 # friction and atom selection on one molecule and reports basin residence beside every
 # entropy. Nothing here is settled for a NEW molecule until that has been run on it.
 # =======================================================================================
@@ -97,7 +97,7 @@ branch_b:
   #
   # So the length is now set by BASIN RESIDENCE, not by the paper. 500 ps is the short
   # end of the range put by the user (500 ps - 1 ns); the scan in
-  # examples/02_qha_openmm_acetone decides where in it to sit, per molecule.
+  # examples/02a_qha_openmm_acetone decides where in it to sit, per molecule.
   equilibration_ps: 50.0           # a small molecule in vacuum, not a solvated protein
   production_ps: 500.0             # modifiable_convention; range 500-1000, see above
   production_ps_range: [500.0, 1000.0]

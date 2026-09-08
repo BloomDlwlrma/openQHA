@@ -1,6 +1,6 @@
 """Reference-level quantum chemistry. ALF calls this qm_interfaces.
 
-Modules: orca
+Modules: orca, xtb
 
 Deliberately thin, as in ALF and MACE: importing this subpackage must not
 import its modules. openQHA loads no torch, ase, rdkit or openmm at import

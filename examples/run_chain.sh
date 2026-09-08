@@ -10,7 +10,7 @@
 # =======================================================================================
 # THE WHOLE CHAIN, ONE FILE, TWO MODES
 # =======================================================================================
-#     bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf
+#     bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
 #     MODE=hpc PARTITION=ai    bash examples/run_chain.sh <conf>
 #     MODE=hpc PARTITION=h100x bash examples/run_chain.sh <conf>
 #
@@ -54,7 +54,7 @@ cd "$ROOT"
 CONF="${1:-}"
 if [ -z "$CONF" ]; then
     echo "usage: bash examples/run_chain.sh <conf>" >&2
-    echo "   eg: bash examples/run_chain.sh examples/03_qha_openmm_propanal/chain.conf" >&2
+    echo "   eg: bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf" >&2
     exit 2
 fi
 [ -f "$CONF" ] || { echo "no such conf: $CONF" >&2; exit 2; }

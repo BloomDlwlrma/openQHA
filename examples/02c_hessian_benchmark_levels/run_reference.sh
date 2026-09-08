@@ -1,0 +1,25 @@
+#!/bin/bash
+# The RI-MP2 column of 02c. Hours, not seconds -- run it detached and come back.
+#
+# Detached with `setsid nohup ... -u`: a plain `&` from an interactive WSL shell dies
+# with the shell and leaves a zero-byte log, which has happened here before.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PY="${OPENQHA_PYTHON:-$HOME/anaconda3/envs/openqha/bin/python}"
+NPROCS="${NPROCS:-4}"
+LOG="${LOG:-$HOME/runs/openQHA/02c_reference.log}"
+mkdir -p "$(dirname "$LOG")"
+
+cd "$ROOT"
+{
+  for spec in "dsgdb9nsd_000018 prod" "dsgdb9nsd_000035 multibasin"; do
+    set -- $spec
+    echo "=== $1  tag $2  $(date -Is) ==="
+    "$PY" examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
+        --species "$1" --tag "$2" --levels mace,gfn2,rimp2 --nprocs "$NPROCS" || \
+        echo "FAILED $1"
+  done
+  echo "=== done $(date -Is) ==="
+} >> "$LOG" 2>&1
+
+echo "log: $LOG"

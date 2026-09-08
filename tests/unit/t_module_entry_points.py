@@ -46,7 +46,7 @@ SKIP = ("_superseded", "_backup", "__pycache__", ".git", "_to_delete", ".mem")
 DELIBERATE = {
     ("tests/unit/t_module_entry_points.py", "openqha.X"),
     ("tests/unit/t_module_entry_points.py", "openqha.a.b"),
-    ("examples/02_qha_openmm_acetone/README.md", "openqha.mace_server"),
+    ("examples/02a_qha_openmm_acetone/README.md", "openqha.mace_server"),
     ("openqha/__init__.py", "openqha.mace_server"),
 }
 

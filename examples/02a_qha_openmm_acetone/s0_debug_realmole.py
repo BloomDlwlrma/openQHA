@@ -32,8 +32,8 @@ swept axis, `export NAME="${NAME:-default}"` is a fixed setting, and every cell 
 one row to `$RESULT_LOG`. A grid that lives in a shell history is a grid nobody can
 reproduce; this one is a file that can be diffed.
 
-    python examples/02_qha_openmm_acetone/s0_debug_realmole.py \\
-        --conf examples/02_qha_openmm_acetone/debug_realmole_smoke.conf
+    python examples/02a_qha_openmm_acetone/s0_debug_realmole.py \\
+        --conf examples/02a_qha_openmm_acetone/debug_realmole_smoke.conf
 
 ONE TRAJECTORY PER (BASIN, SEED, THERMOSTAT). Length is a truncation, interval is a
 stride, atom set is a mask -- all three are read off the SAME trajectory. The 150-cell

@@ -11,8 +11,13 @@ the repository-scale version of a criterion nobody has built a failing case for.
 | Directory | What it does | State |
 |---|---|---|
 | `01_crest_composite_acetone/` | acetone through the CREST composite calculator: GFN sampling with MACE refinement over a socket | **runs** |
-| `02_qha_openmm_acetone/` | **the real-molecule debug check.** Acetone end to end, a grid of branch B settings, and the closed-form estimator control. **One basin**, so it tests basin residence, not the ensemble | **runs** |
-| `03_qha_openmm_propanal/` | **the whole chain on a multi-basin molecule.** Propanal: 3 basins (one Cs, a degenerate gauche pair), branch A → branch B → collect → **F_conf** | **runs** |
+| `02a_qha_openmm_acetone/` | **the real-molecule debug check.** Acetone end to end, a grid of branch B settings, and the closed-form estimator control. **One basin**, so it tests basin residence, not the ensemble | **runs** |
+| `02b_qha_openmm_propanal/` | **the whole chain on a multi-basin molecule.** Propanal: 3 basins (one Cs, a degenerate gauche pair), branch A → branch B → collect → **F_conf** | **runs** |
+| `02c_hessian_benchmark_levels/` | **the scale.** MACE-OFF vs GFN2-xTB vs RI-MP2/cc-pVTZ on the same molecules, energies and forces through to `G − E_el`. Answers "how far is the potential's own thermochemistry from the reference", which every other deviation is measured against | **runs** (MACE + GFN2 in seconds; the reference level is hours) |
+| `02d_qha_frequency_identity/` | **can `ν(QHA)` stand in for `ω(Hessian)`?** Harmonic-limit control, real trajectory, and the hybrid spectrum priced against both. **Measured: yes for entropy, no for ZPE and enthalpy** — the obstacle is the frame count | **runs** |
+
+Both new examples use the same two molecules as 02a and 02b, so their numbers can be
+carried straight across.
 
 ### One runner for the whole chain
 
@@ -27,11 +32,11 @@ production drivers in order — branch A, branch B trajectories, collection, ens
 adds no science of its own. Each example directory holds a `chain.conf` and nothing else
 it needs.
 
-### `02_qha_openmm_acetone/` is the debug check for the whole chain
+### `02a_qha_openmm_acetone/` is the debug check for the whole chain
 
 ```bash
-bash examples/02_qha_openmm_acetone/run_debug_realmole.sh              # smoke, local
-bash examples/02_qha_openmm_acetone/run_debug_realmole.sh --production # the full grid
+python examples/02a_qha_openmm_acetone/s0_debug_realmole.py \
+    --conf examples/02a_qha_openmm_acetone/debug_realmole.conf
 ```
 
 It runs branch A → **every basin of acetone** → branch B per basin → the ensemble
@@ -46,7 +51,7 @@ and it cannot show whether the trajectory stayed in its basin at all. Both need 
 molecule with all of its basins.
 
 ```
-python examples/02_qha_openmm_acetone/s0_qha_openmm_demo.py
+python examples/02a_qha_openmm_acetone/s0_qha_openmm_demo.py
 ```
 
 It runs the ASE route in whatever interpreter you start it with, and looks for a second
