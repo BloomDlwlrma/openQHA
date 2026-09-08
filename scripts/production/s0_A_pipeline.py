@@ -799,7 +799,7 @@ def main():
     print()
 
     # CREST's quality layer reaches MACE through a Unix socket served by a resident
-    # process (openqha/mace_server.py). One molecule needs exactly one server, so
+    # process (openqha/potentials/mace_server.py). One molecule needs exactly one server, so
     # this script starts its own unless a socket is already exported -- branch E
     # exports one per parallel slot, because a single server holds one model and one
     # lock and would serialise the whole fan-out.

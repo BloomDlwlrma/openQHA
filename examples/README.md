@@ -11,7 +11,25 @@ the repository-scale version of a criterion nobody has built a failing case for.
 | Directory | What it does | State |
 |---|---|---|
 | `01_crest_composite_acetone/` | acetone through the CREST composite calculator: GFN sampling with MACE refinement over a socket | **runs** |
-| `02_qha_openmm_acetone/` | acetone through branch B, both production routes: the closed-form check, the OpenMM force against the ASE one, two trajectories, an independent superposition | **runs** |
+| `02_qha_openmm_acetone/` | **the real-molecule debug check.** Acetone end to end — every basin, a grid of branch B settings, the ensemble free energy — plus the closed-form estimator control and a single-molecule GPU job | **runs** |
+
+### `02_qha_openmm_acetone/` is the debug check for the whole chain
+
+```bash
+bash examples/02_qha_openmm_acetone/run_debug_realmole.sh              # smoke, local
+bash examples/02_qha_openmm_acetone/run_debug_realmole.sh --production # the full grid
+```
+
+It runs branch A → **every basin of acetone** → branch B per basin → the ensemble
+free energy, over a grid configured in a `.conf` (the convention of
+`00_QM9_reaction_eng/hkuhpc/REPT-dNN/search/*.conf`), and writes one row per cell:
+length, interval, thermostat, atom set, frames, frames/DOF, mean T·S, spread, **F_conf**,
+and the basin-crossing counts.
+
+The point is the last two. A single-basin scan cannot show whether a setting that moves
+T·S moves every basin *together* — in which case it changes the deliverable by nothing —
+and it cannot show whether the trajectory stayed in its basin at all. Both need a real
+molecule with all of its basins.
 
 ```
 python examples/02_qha_openmm_acetone/s0_qha_openmm_demo.py
@@ -27,7 +45,7 @@ criteria 1 and 5 are refused below 20 ps, because a 0.4 ps run once passed the s
 criterion and the reason it passed was that it had not begun to rise.
 
 ```
-python -m openqha.mace_server --socket /tmp/s0_mace_engrad.sock &
+python -m openqha.potentials.mace_server --socket /tmp/s0_mace_engrad.sock &
 S0_MACE_SOCKET=/tmp/s0_mace_engrad.sock \
     python examples/01_crest_composite_acetone/s0_crest_acetone_demo.py
 ```

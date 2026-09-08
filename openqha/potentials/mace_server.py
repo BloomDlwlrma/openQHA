@@ -22,8 +22,8 @@ a gradient that quietly went wrong.
 
 Usage::
 
-    python -m openqha.mace_server --socket /tmp/s0_mace.sock
-    python -m openqha.mace_server --socket /tmp/s0_mace.sock --stop
+    python -m openqha.potentials.mace_server --socket /tmp/s0_mace.sock
+    python -m openqha.potentials.mace_server --socket /tmp/s0_mace.sock --stop
 """
 import argparse
 import os

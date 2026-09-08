@@ -51,6 +51,16 @@ lookup.
 New code should prefer the explicit path -- `from openqha.quasi_harmonic import qha` --
 because it says which part of the pipeline the caller is reaching into. Both work.
 
+**The one thing the shim cannot do is `python -m openqha.<old name>`.** `runpy` asks the
+finder for a submodule FILE of that name before any code in this package runs, so there
+is nothing to intercept. Use the real path:
+
+    python -m openqha.potentials.mace_server --socket /tmp/s0_mace.sock
+
+That case is not hypothetical: it is how branch A broke on 2026-09-07, at
+`crest.start_servers()`, with "No module named openqha.mace_server" -- and no test
+caught it, because nothing in the suite starts the resident MACE server.
+
 WHAT THIS PACKAGE IS
 --------------------
 **Since 2026-08-28 openQHA is an independent framework**: it imports nothing from, and
@@ -112,10 +122,13 @@ def __getattr__(name):
         still costs nothing and pulls in no heavy dependency;
       * it is cached as an attribute of this package, so the second access is a normal
         attribute lookup and not another import;
-      * it is ALSO registered in `sys.modules` under the old dotted name, so
-        `from openqha.thermo import KB_KCAL` and `import openqha.qha` keep working --
-        `__getattr__` alone does not cover those, because they go through the import
-        system rather than through attribute access.
+      * it is ALSO registered in `sys.modules` under the old dotted name.
+
+    That last point is NOT enough on its own, and believing it was cost branch B a run:
+    `from openqha.thermo import X` never reaches `__getattr__` at all, because
+    `from a.b import c` asks the import system for a submodule `b` and raises if there
+    is none -- only the trailing `c` gets an attribute fallback. `_LegacyFinder` below
+    is what actually makes that form work in a fresh process.
 
     An unknown name raises AttributeError naming the subpackages, rather than the bare
     "module 'openqha' has no attribute 'x'" that says nothing about where to look.
@@ -131,6 +144,58 @@ def __getattr__(name):
     sys.modules.setdefault("{}.{}".format(__name__, name), module)
     globals()[name] = module
     return module
+
+
+class _LegacyLoader:
+    """Loads `openqha.<old>` by returning the module that now lives elsewhere.
+
+    `create_module` hands back the ALREADY-IMPORTED real module, so the alias and the
+    real name are the same object. Two copies would each have their own module-level
+    caches -- `engine._CACHE`, `config._CACHE` -- and a process that reached the same
+    code by both names would build the potential twice and compare two of them.
+    """
+
+    def __init__(self, real):
+        self._real = real
+
+    def create_module(self, spec):
+        return importlib.import_module(self._real)
+
+    def exec_module(self, module):
+        return None                      # already executed under its real name
+
+
+class _LegacyFinder:
+    """Resolve `openqha.<pre-2026-09-07 name>` to its new home.
+
+    A finder rather than only `__getattr__`, because `from openqha.thermo import X`
+    never reaches `__getattr__`: `from a.b import c` asks the import system for a
+    submodule `b` of `a` and raises if there is none. Only the trailing `c` gets the
+    attribute fallback. That is exactly how branch B broke on 2026-09-07 -- and why the
+    check that was supposed to catch it did not, having imported `openqha.thermo` as an
+    attribute earlier in the same process.
+    """
+
+    @staticmethod
+    def find_spec(fullname, path=None, target=None):
+        prefix = __name__ + "."
+        if not fullname.startswith(prefix):
+            return None
+        tail = fullname[len(prefix):]
+        pkg = _MOVED.get(tail)
+        if pkg is None:
+            return None
+        import importlib.util
+        return importlib.util.spec_from_loader(
+            fullname, _LegacyLoader("{}.{}.{}".format(__name__, pkg, tail)))
+
+
+#: Appended, not prepended: a real submodule of this package must always win, so that
+#: adding a genuine `openqha/thermo.py` one day would shadow the alias rather than be
+#: shadowed by it.
+if not any(getattr(f, "__name__", "") == "_LegacyFinder" or isinstance(f, _LegacyFinder)
+           for f in sys.meta_path):
+    sys.meta_path.append(_LegacyFinder)
 
 
 def __dir__():

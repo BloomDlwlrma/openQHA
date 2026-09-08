@@ -201,7 +201,7 @@ def relax(atoms, calc, fmax=0.005, steps=500):
 
 def integrity(atoms, d_max_ref, e_min, temperature_K):
     """Is it still one molecule? Reported every chunk, and fatal if it is not."""
-    from openqha.thermo import KB_KCAL
+    from openqha.thermochem.thermo import KB_KCAL
     d = atoms.get_all_distances()
     np.fill_diagonal(d, np.inf)
     kt = KB_KCAL * temperature_K

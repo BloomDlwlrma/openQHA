@@ -49,9 +49,19 @@ doing the sweeping are exactly the ones it drops.
 
 HOW A WELL IS ASSIGNED
 ----------------------
-For a rotor of order `n` the surface has period 2*pi/n. The dihedral is wrapped into one
-period, which makes symmetry-equivalent minima the same point, and the well index is then
-which of the `n` sectors of the FULL circle the raw angle sits in.
+The raw dihedral is divided into the `n` wells the rotor has -- `n` from its periodicity
+for a symmetric rotor, three for a general torsion (a rotatable single bond has three
+staggered minima; `rotor_order` describes the symmetry of the ends, not the number of
+minima). Crossings are counted once, on that coordinate, and are then CLASSIFIED by what
+the rotor is, using `torsion_cv`'s own `kind`.
+
+An earlier version counted a second time on an angle folded into a single period. That
+was wrong in the worst way: folding leaves a coordinate spanning exactly one period, and
+the well rule then split that single well in half at an arbitrary midpoint, so every
+thermal wiggle across the midpoint counted as a conformer change. It reported 33
+"distinct" crossings in 40 frames of acetone -- whose true count is zero, since a methyl
+turn maps the molecule onto itself -- and because the equivalent count was derived by
+subtraction, the spurious number also erased the real one.
 
 Crossings are counted with **hysteresis**: a crossing is recorded only once the angle has
 moved past the new well centre by `commit_fraction` of the half-width. Without it, an
@@ -83,28 +93,47 @@ def dihedral_series(frames, atoms):
     return np.array([torsion_cv.dihedral(f, atoms) for f in x], dtype=float)
 
 
-def _unwrap_to_period(angles, order):
-    """Fold an angle series into ONE period of a rotor of the given order.
+#: Wells assumed for a general torsion whose reported periodicity is 1.
+#:
+#: `rotor_order` describes the SYMMETRY of each end of the bond, not the number of minima
+#: on the potential. A rotatable single bond has three staggered minima whatever the end
+#: groups look like, so a periodicity of 1 means "no symmetry", not "one well". The
+#: number is a convention and is carried in the record so that a molecule where it is
+#: wrong can be seen rather than assumed.
+DEFAULT_WELLS_GENERAL_TORSION = 3
 
-    For order n the physical surface repeats every 2*pi/n, so this is the coordinate in
-    which two symmetry-equivalent minima are the same point. A change of well HERE is a
-    change of conformer; a change of sector in the raw angle need not be.
+
+def wells_for(cv):
+    """How many minima this torsion has, and whether they are copies of one another.
+
+    Returns (n_wells, symmetric). `symmetric` is read from `torsion_cv`'s own `kind`
+    rather than re-derived: a methyl-type rotor maps the molecule onto itself every
+    2*pi/n, so a crossing changes no conformer.
     """
-    n = max(1, int(order))
-    period = 2.0 * np.pi / n
-    return np.mod(np.asarray(angles, dtype=float), period)
+    periodicity = int(cv.get("periodicity", 1) or 1)
+    symmetric = "symmetric rotor" in str(cv.get("kind", ""))
+    if symmetric and periodicity > 1:
+        return periodicity, True
+    return max(periodicity, DEFAULT_WELLS_GENERAL_TORSION), False
 
 
-def _count_crossings(angles, period, commit_fraction=COMMIT_FRACTION):
+def _count_crossings(angles, period, commit_fraction=COMMIT_FRACTION, n_wells=None):
     """Committed well-to-well crossings of a periodic coordinate.
 
     Returns (n_crossings, occupancy) where occupancy counts frames per well index.
+
+    The index is taken MODULO the well count. Without that, `floor(a/period + 0.5)` on an
+    angle wrapped to [0, 2*pi) returns 0..n rather than 0..n-1 -- the top half of the last
+    well rounds up to index n, which is index 0 again. A 3-fold rotor then reports four
+    wells, and every pass through the wrap point counts as a crossing although nothing
+    moved.
     """
     a = np.asarray(angles, dtype=float)
     if len(a) == 0:
         return 0, {}
     half = period / 2.0
-    well = np.floor(a / period + 0.5).astype(int)
+    n_wells = int(n_wells or max(1, round(2.0 * np.pi / period)))
+    well = np.floor(a / period + 0.5).astype(int) % n_wells
     current = int(well[0])
     crossings = 0
     occupancy = {}
@@ -116,7 +145,13 @@ def _count_crossings(angles, period, commit_fraction=COMMIT_FRACTION):
         # the boundary. An angle rattling on a barrier top otherwise counts as a hop on
         # every frame, and the number then describes the frame spacing, not the dynamics.
         centre = int(k) * period
-        if abs(ang - centre) < (1.0 - commit_fraction) * half:
+        # On the circle: the distance from an angle to a well centre must be measured
+        # the short way round, or well 0 looks 2*pi away from an angle just below 2*pi.
+        span = 2.0 * np.pi if abs(period * n_wells - 2.0 * np.pi) < 1e-9 else None
+        d = abs(ang - centre)
+        if span is not None:
+            d = min(d, span - d)
+        if d < (1.0 - commit_fraction) * half:
             crossings += 1
             current = int(k)
     return crossings, occupancy
@@ -141,31 +176,35 @@ def basin_residence(frames, symbols, commit_fraction=COMMIT_FRACTION):
     rotors, distinct, equivalent = [], 0, 0
     for cv in cvs:
         atoms = cv["atoms"]
-        # `periodicity`, not `order`: the CV record carries the rotor order of each end
-        # separately and `periodicity` is max(oi, oj, 1), which is the period of the
-        # surface along this axis.
-        order = int(cv.get("periodicity", 1))
+        n_wells, symmetric = wells_for(cv)
         raw = dihedral_series(x, atoms)
 
-        # Distinct conformers: in the folded coordinate the symmetry copies coincide.
-        folded = _unwrap_to_period(raw, order)
-        n_distinct, occ_distinct = _count_crossings(
-            folded, 2.0 * np.pi / max(1, order), commit_fraction)
-        # Every crossing of the FULL circle, including turning a rotor into its own copy.
-        n_all, occ_all = _count_crossings(
-            np.mod(raw, 2.0 * np.pi), 2.0 * np.pi / max(1, order), commit_fraction)
+        # ONE count, on the raw angle, over the wells the rotor actually has. The earlier
+        # version counted a second time on an angle folded into a single period, where
+        # `floor(a/period + 0.5)` splits that one well in half at an arbitrary midpoint --
+        # so every thermal wiggle across the midpoint was counted as a conformer change.
+        # It reported 33 "distinct" crossings in 40 frames for acetone, whose true count
+        # is zero.
+        n_crossings, occupancy = _count_crossings(
+            np.mod(raw, 2.0 * np.pi), 2.0 * np.pi / n_wells, commit_fraction,
+            n_wells=n_wells)
 
-        n_equivalent = max(0, n_all - n_distinct)
-        distinct += n_distinct
-        equivalent += n_equivalent
+        # WHAT the crossing was is a property of the rotor, not of the trajectory.
+        if symmetric:
+            equivalent += n_crossings
+            n_distinct, n_equivalent = 0, n_crossings
+        else:
+            distinct += n_crossings
+            n_distinct, n_equivalent = n_crossings, 0
+
         rotors.append(dict(
-            atoms=[int(i) for i in atoms], periodicity=order,
+            atoms=[int(i) for i in atoms], periodicity=int(cv.get("periodicity", 1) or 1),
+            n_wells=int(n_wells), symmetric=bool(symmetric),
             kind=cv.get("kind"), elements=cv.get("elements"),
             distinct_basin_crossings=int(n_distinct),
             symmetry_equivalent_crossings=int(n_equivalent),
-            wells_visited=len(occ_all),
-            angle_std_deg=float(np.degrees(np.std(folded))),
-            angle_range_deg=float(np.degrees(folded.max() - folded.min())),
+            wells_visited=len(occupancy),
+            angle_std_deg=float(np.degrees(np.std(raw))),
         ))
 
     return dict(

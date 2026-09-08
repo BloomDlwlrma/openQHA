@@ -6,7 +6,7 @@ call. Remove it and no CREST run with the composite calculator can finish.
 
 **这个脚本每次梯度调用都会被 CREST 起一次**, 所以它只 import `os/socket/sys`,
 不碰 numpy、不碰 torch。实测启动 13.6 ms; 真正的力计算在常驻服务端里
-(`python -m openqha.mace_server`)。
+(`python -m openqha.potentials.mace_server`)。
 
 CREST 侧的约定 (`src/calculator/generic_sc.f90`):
   * CREST 写 `genericinp.xyz` 到 calcspace, 然后执行
@@ -71,7 +71,7 @@ def main():
         s.close()
     except OSError as exc:
         die("连不上常驻服务端 {} ({}) —— 先跑 "
-            "`python -m openqha.mace_server --socket {}`".format(SOCKET, exc, SOCKET))
+            "`python -m openqha.potentials.mace_server --socket {}`".format(SOCKET, exc, SOCKET))
 
     out = buf.decode("utf-8").strip().split("\n")
     if not out or out[0].startswith("ERROR"):

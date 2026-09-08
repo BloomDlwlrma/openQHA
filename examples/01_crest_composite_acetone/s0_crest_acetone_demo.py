@@ -4,7 +4,7 @@ EXAMPLE. Not a production driver and not a calibration: it runs ONE molecule wit
 shipped settings and prints what came back, so that a reader can see the machinery work
 before reading `scripts/production/s0_A_pipeline.py`.
 
-    python -m openqha.mace_server --socket /tmp/s0_mace_engrad.sock &
+    python -m openqha.potentials.mace_server --socket /tmp/s0_mace_engrad.sock &
     S0_MACE_SOCKET=/tmp/s0_mace_engrad.sock \\
         python examples/01_crest_composite_acetone/s0_crest_acetone_demo.py
 

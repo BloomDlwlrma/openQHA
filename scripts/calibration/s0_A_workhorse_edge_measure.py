@@ -30,7 +30,7 @@ carrying all four elements, and stage 2's experiment of record.
 
 Usage
 -----
-    python -m openqha.mace_server --socket /tmp/s0_mace_engrad.sock &
+    python -m openqha.potentials.mace_server --socket /tmp/s0_mace_engrad.sock &
     S0_MACE_SOCKET=/tmp/s0_mace_engrad.sock \
         python scripts/calibration/s0_A_workhorse_edge_measure.py --workhorse gfn2 --refine opt
 

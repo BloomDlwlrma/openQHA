@@ -25,7 +25,7 @@ upstream master's `src/calculator/` has no mlip source file; `subprojects/` has 
 `fmlip_relay`.
 
 So this module goes through `backend="generic"` by default, using this repository's own
-socket client (`openqha/mace_server.py` plus `scripts/production/s0_mace_engrad.py`,
+socket client (`openqha/potentials/mace_server.py` plus `scripts/production/s0_mace_engrad.py`,
 **architecturally the same as fmlip-relay**). The `backend="mlip"` branch is already
 written, and **once 3.1 lands it is a one-parameter change**.
 
@@ -516,7 +516,7 @@ def start_servers(n, socket_prefix=None, torch_threads=1,
                  TORCH_NUM_THREADS=str(torch_threads),
                  OPENBLAS_NUM_THREADS=str(torch_threads))
         log = open("{}.log".format(sock), "w")
-        p = subprocess.Popen([py, "-m", "openqha.mace_server", "--socket", sock],
+        p = subprocess.Popen([py, "-m", "openqha.potentials.mace_server", "--socket", sock],
                              cwd=str(S0_ROOT), env=e, stdout=log,
                              stderr=subprocess.STDOUT)
         servers.append((p, sock))

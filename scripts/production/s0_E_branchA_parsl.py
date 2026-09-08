@@ -149,7 +149,7 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
         _os.unlink(sock)
 
     server = _sp.Popen(
-        [_sys.executable, "-m", "openqha.mace_server", "--socket", sock],
+        [_sys.executable, "-m", "openqha.potentials.mace_server", "--socket", sock],
         cwd=str(repo_root), env=e,
         stdout=open(sock + ".log", "w"), stderr=_sp.STDOUT)
     try:
