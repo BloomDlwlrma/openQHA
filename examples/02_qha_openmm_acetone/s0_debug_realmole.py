@@ -153,11 +153,14 @@ def basin_energies_and_sigma(rec, species, cfg):
     spec = config.species(species, cfg)
     out = []
     for i, b in enumerate(rec.get("basins", [])):
-        e = b.get("relative_energy_kcal")
-        if e is None:
-            e = b.get("energy_kcal_relative", b.get("rel_kcal"))
+        # `relative_kcal`, by name. A basin without it RAISES rather than defaulting to
+        # zero -- a default of 0.0 is a valid relative energy, so the mistake would make
+        # every basin look degenerate and no check would fire.
+        if "relative_kcal" not in b:
+            raise KeyError(
+                "basin {} has no `relative_kcal`; keys are {}".format(i, sorted(b)))
         sigma = (b.get("symmetry") or {}).get("sigma", spec["symmetry_number"])
-        out.append(dict(index=i, rel_kcal=float(e if e is not None else 0.0),
+        out.append(dict(index=i, rel_kcal=float(b["relative_kcal"]),
                         sigma=int(sigma),
                         degeneracy=int(spec["electronic_degeneracy"])))
     return out

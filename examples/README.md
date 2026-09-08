@@ -11,7 +11,21 @@ the repository-scale version of a criterion nobody has built a failing case for.
 | Directory | What it does | State |
 |---|---|---|
 | `01_crest_composite_acetone/` | acetone through the CREST composite calculator: GFN sampling with MACE refinement over a socket | **runs** |
-| `02_qha_openmm_acetone/` | **the real-molecule debug check.** Acetone end to end — every basin, a grid of branch B settings, the ensemble free energy — plus the closed-form estimator control and a single-molecule GPU job | **runs** |
+| `02_qha_openmm_acetone/` | **the real-molecule debug check.** Acetone end to end, a grid of branch B settings, and the closed-form estimator control. **One basin**, so it tests basin residence, not the ensemble | **runs** |
+| `03_qha_openmm_propanal/` | **the whole chain on a multi-basin molecule.** Propanal: 3 basins (one Cs, a degenerate gauche pair), branch A → branch B → collect → **F_conf** | **runs** |
+
+### One runner for the whole chain
+
+```bash
+bash examples/run_chain.sh <conf>                          # local, production settings
+MODE=hpc PARTITION=ai    bash examples/run_chain.sh <conf>  # TianheXY-A,  8 cards, 7 days
+MODE=hpc PARTITION=h100x bash examples/run_chain.sh <conf>  # TianheXY-AI, 1 card,  3 days
+```
+
+`examples/run_chain.sh` is the only file that submits anything. It runs the four
+production drivers in order — branch A, branch B trajectories, collection, ensemble — and
+adds no science of its own. Each example directory holds a `chain.conf` and nothing else
+it needs.
 
 ### `02_qha_openmm_acetone/` is the debug check for the whole chain
 

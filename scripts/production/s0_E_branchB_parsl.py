@@ -95,6 +95,7 @@ def _hpc_root(repo):
 sys.path.insert(0, str(_hpc_root(ROOT)))
 
 from openqha import config, qha  # noqa: E402
+from openqha.store import basin_store  # noqa: E402
 
 #: Read once, at import, so --help shows the real defaults.
 _PROTOCOL = qha.protocol()
@@ -264,9 +265,10 @@ def main():
                     help="OpenMM platform for --route openmm. Default: the resource "
                          "config's OPENMM_PLATFORM, else CPU.")
     ap.add_argument("--tag", default="prod")
-    ap.add_argument("--basins", type=int, default=1,
-                    help="how many basins per species to run (branch A supplies the "
-                         "geometries; without it there is one)")
+    ap.add_argument("--basins", default="auto",
+                    help="how many basins per species to run. 'auto' (the default) takes "
+                         "the count from branch A's own record, so the number and the "
+                         "geometries cannot disagree. An integer caps it.")
     ap.add_argument("--seeds", type=int, default=3,
                     help="independent trajectories per basin. 3 is the minimum that "
                          "gives a blank control, which is acceptance criterion 5")
@@ -318,8 +320,27 @@ def main():
         raise SystemExit("--platform applies to --route openmm only; the ASE route has "
                          "no platform concept.")
 
+    # WHICH GEOMETRIES. Until 2026-09-08 this driver passed no basin file at all, so
+    # every task started from the QM9 reference geometry and `--basins 5` produced five
+    # copies of one basin under five different indices. The count and the file now come
+    # from the same place: branch A's product.
+    basins_for, missing = {}, []
+    for s in species:
+        j, x = basin_store.paths_for(s, tag=args.tag)[:2]
+        if j.exists() and x.exists():
+            rec = basin_store.read(s, tag=args.tag) or {}
+            n = len(rec.get("basins", [])) or 1
+            basins_for[s] = (str(x), n)
+        else:
+            basins_for[s] = (None, 1)
+            missing.append(s)
+
+    def _n_basins(s):
+        _f, n = basins_for[s]
+        return n if args.basins == "auto" else min(n, int(args.basins))
+
     tasks = [(s, b, k) for s in species
-             for b in range(args.basins) for k in range(args.seeds)]
+             for b in range(_n_basins(s)) for k in range(args.seeds)]
 
     plan = dict(
         generated_by="scripts/production/s0_E_branchB_parsl.py",
@@ -338,7 +359,11 @@ def main():
                       else described.get("walltime")),
             max_blocks=(1 if args.debug else described.get("max_blocks"))),
         n_species=len(species), species=species, species_source=source,
-        n_tasks=len(tasks), basins_per_species=args.basins, seeds_per_basin=args.seeds,
+        n_tasks=len(tasks),
+        basins_per_species={s: basins_for[s][1] for s in species},
+        basin_files={s: basins_for[s][0] for s in species},
+        species_without_branch_a=missing,
+        seeds_per_basin=args.seeds,
         tag=args.tag, prod_ps=args.prod_ps, equil_ps=args.equil_ps,
         wall_budget_s=budget,
         science_settings_source=("scripts/production/{} and configs/openqha.yaml -- "
@@ -373,8 +398,22 @@ def main():
         "DEBUG (smoke test)" if args.debug else "production",
         plan["submission"]["partition"], plan["submission"]["walltime"],
         plan["submission"]["max_blocks"]))
-    print("tasks        {}  ({} species x {} basins x {} seeds)".format(
-        len(tasks), len(species), args.basins, args.seeds))
+    print("tasks        {}  ({} species, basins from branch A, {} seeds)".format(
+        len(tasks), len(species), args.seeds))
+    for s in species:
+        f, n = basins_for[s]
+        print("             {:<20} {} basin(s)  {}".format(
+            s, n, f if f else "NO BRANCH A PRODUCT -- see the warning below"))
+    if missing:
+        print()
+        print("WARNING: {} species have no branch A basin list under tag {!r}:".format(
+            len(missing), args.tag))
+        print("         {}".format(", ".join(missing[:8])))
+        print("         Their trajectories will start from the QM9 REFERENCE GEOMETRY,")
+        print("         which is one geometry and not a basin. The per-trajectory")
+        print("         meta.json records that as `geometry_source`, and any F_conf")
+        print("         built on them is a sum over ONE basin however many were asked")
+        print("         for. Run scripts/production/s0_A_pipeline.py first.")
     print("length       {} ps equilibration + {} ps production".format(
         args.equil_ps, args.prod_ps))
     print("wall budget  {}".format(
@@ -438,7 +477,8 @@ def main():
 
     started = time.time()
     futures = [app(s, b, k, args.seed0, str(ROOT), args.tag, args.prod_ps, args.equil_ps,
-                   budget, route=route, platform=platform, env=passthrough)
+                   budget, route=route, platform=platform,
+                   basins_file=basins_for[s][0], env=passthrough)
                for s, b, k in tasks]
     results = []
     for f in futures:

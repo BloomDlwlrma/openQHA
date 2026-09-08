@@ -5,19 +5,38 @@ basins** — not on a synthetic control, not on one basin, not at one setting.
 
 | | what it answers | cost |
 |---|---|---|
-| `s0_qha_openmm_demo.py` | does the chain run at all? | minutes |
-| **`s0_debug_realmole.py`** | **do the settings change the answer?** | hours → days |
+| `chain.conf` + `examples/run_chain.sh` | **the whole chain on acetone** | hours → days |
+| `s0_debug_realmole.py` | do the settings change the answer? | hours |
 | `s0_qha_parameter_scan.py --stage estimator` | is the *estimator* accurate? | seconds |
-| `tianhe_ai_h100x.slurm` | one molecule, full length, on a card | up to 3 days |
+| `s0_qha_openmm_demo.py` | does the chain run at all? | minutes |
 
 ---
 
-## The debug check: `debug_realmole`
+## The whole chain
 
 ```bash
-bash examples/02_qha_openmm_acetone/run_debug_realmole.sh              # smoke, local
-bash examples/02_qha_openmm_acetone/run_debug_realmole.sh --production # full grid
-bash examples/02_qha_openmm_acetone/run_debug_realmole.sh --tianhe     # submit it
+bash examples/run_chain.sh examples/02_qha_openmm_acetone/chain.conf                    # local
+MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/02_qha_openmm_acetone/chain.conf
+MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/02_qha_openmm_acetone/chain.conf
+```
+
+**One file, two modes, both production.** There is no smoke mode: a short run is not a
+smaller version of the answer, it is a different quantity that looks like one. If you want
+to know whether the machinery works, run the estimator stage of the parameter scan — it is
+seconds, it is exact, and it cannot be mistaken for a result.
+
+For the ensemble, use [`../03_qha_openmm_propanal/`](../03_qha_openmm_propanal/README.md):
+acetone has one basin, so its `F_conf` is identically zero.
+
+---
+
+## The settings grid: `debug_realmole`
+
+```bash
+python examples/02_qha_openmm_acetone/s0_debug_realmole.py \
+    --conf examples/02_qha_openmm_acetone/debug_realmole.conf --print-conf
+python examples/02_qha_openmm_acetone/s0_debug_realmole.py \
+    --conf examples/02_qha_openmm_acetone/debug_realmole.conf
 ```
 
 It runs **branch A → every basin of acetone → branch B per basin → the ensemble free
@@ -100,10 +119,7 @@ export SEEDS="${SEEDS:-3}"                       # fixed
 export RESULT_LOG="${RESULT_LOG:-analysis/qha/debug_realmole/results.csv}"
 ```
 
-| file | what |
-|---|---|
-| `debug_realmole.conf` | the full grid |
-| `debug_realmole_smoke.conf` | small enough for a workstation. **Not a result** — 20 ps is below the floor at which this branch will read criteria 1 and 5 |
+`debug_realmole.conf` is the grid. There is no smoke variant, deliberately — see above.
 
 `--print-conf` shows what the parser understood **before** anything is spent. That matters:
 the first version of the parser required end-of-line right after a value, so every setting
@@ -144,9 +160,11 @@ from 250 to 3000 frames, and **all 24 modes are recovered at 2 ps spacing**. Tha
 the direct disproof of the idea that downsampling filters stiff modes out of the covariance
 — if it did, T·S would fall below the closed form.
 
-**`tianhe_ai_h100x.slurm`** — one molecule, full length, on one h100x allocation: branch A
-on the 14 CPUs, 14 trajectories sharing the one card, then the analysis. See
-[`../../docs/branchB_production.md`](../../docs/branchB_production.md).
+**`examples/run_chain.sh`** — the whole chain, and the only file that submits anything.
+It carries the invariant `#SBATCH` directives, takes partition / walltime / `--gpus` as
+`yhbatch` flags (a `#SBATCH` line cannot be parameterised), and passes the conf as the
+script's **argument** for the job to `source` — not `--export=ALL`. See
+[`../../docs/branchB_production.md`](../../docs/branchB_production.md) §6.
 
 ---
 
