@@ -27,10 +27,10 @@ store and skips it.
 
 ```bash
 # step 1 -- CPU. Branch A only. Minutes.
-MODE=hpc PARTITION=deimos bash examples/run_chain.sh examples/02b_qha_openmm_propanal/branchA.conf
+bash examples/run_chain.sh examples/02b_qha_openmm_propanal/branchA.conf deimos
 
 # step 2 -- GPU. Everything else, starting from those basins.
-MODE=hpc PARTITION=ai     bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
+bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf ai
 ```
 
 | example | step 1 (`branchA.conf`) | step 2 (`chain.conf`) | shared TAG |
@@ -53,18 +53,33 @@ allocation is spent, and prints the step-1 command for that example. Running ste
 Locally there is only one step: `bash examples/run_chain.sh <chain.conf>` makes the basins
 if they are missing and reuses them if they are not.
 
-### One runner for the whole chain
+### How a run is put together
 
 ```bash
-bash examples/run_chain.sh <conf>                          # local, production settings
-MODE=hpc PARTITION=ai    bash examples/run_chain.sh <conf>  # TianheXY-A,  8 cards, 7 days
-MODE=hpc PARTITION=h100x bash examples/run_chain.sh <conf>  # TianheXY-AI, 1 card,  3 days
+bash examples/run_chain.sh <conf>            # here, now — no scheduler
+bash examples/run_chain.sh <conf> deimos     # TianheXY-CN, CPU,     3 days
+bash examples/run_chain.sh <conf> debug      # TianheXY-CN, CPU,     30 min
+bash examples/run_chain.sh <conf> ai         # TianheXY-A,  8 cards, 7 days
+bash examples/run_chain.sh <conf> temp       # TianheXY-A,  8 cards, 30 min
+bash examples/run_chain.sh <conf> h100x      # TianheXY-AI, 1 card,  3 days
 ```
 
-`examples/run_chain.sh` is the only file that submits anything. It runs the four
-production drivers in order — branch A, branch B trajectories, collection, ensemble — and
-adds no science of its own. Each example directory holds a `chain.conf` and nothing else
-it needs.
+Three files, and the split is what makes the output land where you expect:
+
+| file | what it is |
+|---|---|
+| `run_chain.sh` | **submits.** Reads the conf, picks the `.slurm`, hands it to `sbatch`/`yhbatch`, prints the job id and exits. Does nothing heavy — it runs on a login node |
+| `slurm/<partition>.slurm` | **one queue's directives.** `--partition`, `--nodes`, `--ntasks`, `--cpus-per-task`, `--time`, `--gpus`/`--exclusive`, and `--output`/`--error` into `logs/` |
+| `chain_body.sh` | **the work.** Sourced by every `.slurm` and used directly for a local run, so the five queues can differ in allocation and cannot differ in what they compute |
+
+It used to be one self-submitting file. That failed on the machine: the job's output
+arrived on the **login node's terminal** instead of its `--output` file, so the prompt
+never came back to submit step 2; `#SBATCH` lines cannot be parameterised, so
+`--cpus-per-task` and `--exclusive` — which differ per cluster — were simply absent; and
+the login node did real work (importing torch, loading the potential) before submitting.
+
+`sbatch` on the CPU cluster, `yhbatch` on the GPU ones. Job output goes to
+`logs/openqha_<name>_<jobid>.{out,err}` under the repository.
 
 ### `02a_qha_openmm_acetone/` is the debug check for the whole chain
 

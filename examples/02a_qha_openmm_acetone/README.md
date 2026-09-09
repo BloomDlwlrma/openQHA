@@ -16,8 +16,8 @@ basins** — not on a synthetic control, not on one basin, not at one setting.
 
 ```bash
 bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf                    # local
-MODE=hpc PARTITION=ai    bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf
-MODE=hpc PARTITION=h100x bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf
+bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf ai
+bash examples/run_chain.sh examples/02a_qha_openmm_acetone/chain.conf h100x
 ```
 
 **One file, two modes, both production.** There is no smoke mode: a short run is not a

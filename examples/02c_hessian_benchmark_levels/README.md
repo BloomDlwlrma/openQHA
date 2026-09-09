@@ -8,8 +8,8 @@ python examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
     --species dsgdb9nsd_000018 --tag prod --levels mace,gfn2
 
 # PRODUCTION: all three levels, every basin, on the CPU cluster
-MODE=hpc PARTITION=deimos bash examples/run_chain.sh \
-    examples/02c_hessian_benchmark_levels/chain.conf
+bash examples/run_chain.sh \
+    examples/02c_hessian_benchmark_levels/chain.conf deimos
 
 # hours, here, detached, both molecules
 bash examples/02c_hessian_benchmark_levels/run_reference.sh

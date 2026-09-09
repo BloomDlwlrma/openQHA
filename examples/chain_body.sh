@@ -1,0 +1,220 @@
+#!/bin/bash
+# THE WORK. Runs on a compute node (under one of examples/slurm/*.slurm) or locally.
+#
+#     bash examples/chain_body.sh <conf>
+#
+# It never submits anything. Submission is `examples/run_chain.sh`, which picks the right
+# `.slurm` for the partition and hands it to sbatch/yhbatch. Splitting the two is what
+# makes the job's stdout land in the job's own `--output` file instead of on the login
+# node's terminal, and what lets each partition carry its own `#SBATCH` directives
+# (`--cpus-per-task` for CPU, `--gpus` for GPU) which a single self-submitting file
+# cannot.
+#
+# WHERE THE SETTINGS COME FROM
+# ----------------------------
+# One conf, sourced here, on the compute node. Not `--export`: that carries the
+# submitting shell's whole environment into the job, so what the job saw depended on who
+# submitted it, and the settings survived only in a scheduler record nobody reads.
+#
+# PARTITION and KIND come from the `.slurm` that launched this (they are properties of
+# the job, not of the science), and fall back to the conf when run locally.
+# =======================================================================================
+set -eo pipefail
+# NOT `set -u`: the conda GROMACS activation hook fails under it and leaves the
+# environment half-built while the script carries on. Measured 2026-09-03.
+
+if [ -n "$SLURM_SUBMIT_DIR" ]; then
+    ROOT="$SLURM_SUBMIT_DIR"
+else
+    ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+cd "$ROOT"
+
+CONF="${1:-}"
+[ -n "$CONF" ] || { echo "usage: bash examples/chain_body.sh <conf>" >&2; exit 2; }
+[ -f "$CONF" ] || { echo "no such conf: $CONF" >&2; exit 2; }
+# shellcheck disable=SC1090
+source "$CONF"
+
+SPECIES="${SPECIES:?the conf must set SPECIES}"
+TAG="${TAG:-chain}"
+SEEDS="${SEEDS:-3}"
+THREADS="${THREADS:-4}"
+CHAIN="${CHAIN:-qha}"
+
+# Set by the .slurm; on a local run there is no .slurm, so the conf decides.
+PARTITION="${OPENQHA_PARTITION:-${PARTITION:-local}}"
+KIND="${OPENQHA_KIND:-cpu}"
+
+if [ "$KIND" = "gpu" ]; then
+    RESOURCE="${RESOURCE:-$([ "$PARTITION" = "h100x" ] && echo tianhe_ai || echo tianhe_a)}"
+    ROUTE="${ROUTE:-openmm}"; PLATFORM="CUDA"
+elif [ -n "$SLURM_JOB_ID" ]; then
+    RESOURCE="${RESOURCE:-tianhe_cpu}"; ROUTE="${ROUTE:-ase}"; PLATFORM="CPU"
+else
+    RESOURCE="${RESOURCE:-local}"; ROUTE="${ROUTE:-ase}"; PLATFORM="CPU"
+fi
+
+# ---------------------------------------------------------------------------------------
+# Environment. Only a job needs the site modules; a local run uses whatever is active.
+# ---------------------------------------------------------------------------------------
+openqha_load_conda_module() {
+    local m
+    for m in "${OPENQHA_CONDA_MODULE:-}" anaconda3/202309 anaconda3/20250601 \
+             miniconda3/202409 miniforge/24.7.1 anaconda3 miniforge; do
+        [ -n "$m" ] || continue
+        if module load "$m" >/dev/null 2>&1; then echo "module    $m"; return 0; fi
+    done
+    if command -v conda >/dev/null 2>&1; then
+        echo "module    none loaded; conda already on PATH ($(command -v conda))"
+        return 0
+    fi
+    echo "openQHA: no conda module could be loaded and conda is not on PATH." >&2
+    echo "  Tried: \$OPENQHA_CONDA_MODULE, anaconda3/202309, anaconda3/20250601," >&2
+    echo "  miniconda3/202409, miniforge/24.7.1. Run 'module avail' and set" >&2
+    echo "  OPENQHA_CONDA_MODULE to the one this site actually has." >&2
+    return 1
+}
+
+if [ -n "$SLURM_JOB_ID" ]; then
+    module purge 2>/dev/null || true
+    openqha_load_conda_module || exit 1
+    if [ "$KIND" = "gpu" ]; then
+        module load CUDA/12.3 || {
+            echo "openQHA: module load CUDA/12.3 FAILED -- this would run on the CPU" >&2
+            exit 1; }
+    fi
+    # Inherited task-layout variables make a child process misread its allocation and try
+    # to relaunch itself through the scheduler (rule 7). CREST forks its own workers.
+    for v in $(env | awk -F= '{print $1}' \
+               | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
+        unset "$v"
+    done
+    # cpu -> `openqha` (crest, xtb, pinned OpenBLAS); gpu -> `openqha-gpu` (CUDA torch,
+    # OpenMM, MKL). hpc/env/tianhe.sh does the mapping; OPENQHA_ENV overrides both.
+    export OPENQHA_ROLE="${OPENQHA_ROLE:-$KIND}"
+    source hpc/env/common.sh
+    source hpc/env/tianhe.sh
+    openqha_report_env
+fi
+
+echo
+echo "======================================================================"
+echo "openQHA   chain $CHAIN   species $SPECIES   tag $TAG"
+echo "  partition $PARTITION${SLURM_JOB_ID:+   job $SLURM_JOB_ID}   kind $KIND"
+echo "  resource  $RESOURCE   route $ROUTE   platform $PLATFORM"
+echo "  seeds     $SEEDS   threads $THREADS   conf $CONF"
+echo "======================================================================"
+
+# =======================================================================================
+# BRANCH A: MADE ONCE, ON THE CPU, AND CONSUMED BY EVERYTHING ELSE
+# =======================================================================================
+# Every chain starts from the basins; only one of them makes them. That split is what
+# lets a molecule be run as two submissions -- a CPU job that establishes the basins, then
+# GPU jobs that consume them -- instead of every GPU job repeating a CREST search it
+# cannot even run. `openqha-gpu` has NO crest and NO xtb.
+#
+# Keyed by (SPECIES, TAG): the two confs of an example share a TAG for this reason.
+BASINS_PRESENT=$(python - "$SPECIES" "$TAG" <<'PY'
+import sys
+sys.path.insert(0, ".")
+try:
+    from openqha.store import basin_store
+    print("yes" if basin_store.exists(sys.argv[1], tag=sys.argv[2]) else "no")
+except Exception:                                                 # noqa: BLE001
+    print("unknown")
+PY
+)
+
+if [ "$CHAIN" = "conformers" ]; then
+    echo
+    echo "---- branch A: conformer search -> every basin ------------------------"
+    [ "$BASINS_PRESENT" = "yes" ] && \
+        echo "     (a record already exists for tag '$TAG'; re-running it -- this
+     chain's product IS branch A)"
+    python -u scripts/production/s0_A_pipeline.py \
+        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
+elif [ "$BASINS_PRESENT" = "yes" ]; then
+    echo
+    echo "---- branch A: already done for tag '$TAG' -- reusing those basins ----"
+elif [ "$KIND" = "gpu" ]; then
+    echo "openQHA: no branch A product for '$SPECIES' under tag '$TAG', and branch A" >&2
+    echo "  cannot run here (openqha-gpu has neither crest nor xtb). Run step 1 on the" >&2
+    echo "  CPU cluster first, with the SAME tag:" >&2
+    echo "    bash examples/run_chain.sh $(dirname "$CONF")/branchA.conf deimos" >&2
+    exit 2
+else
+    echo
+    echo "---- branch A: conformer search -> every basin ------------------------"
+    echo "     (no record for tag '$TAG' yet, and this is a CPU run, so making it here)"
+    python -u scripts/production/s0_A_pipeline.py \
+        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
+fi
+
+# =======================================================================================
+# The chains. Every step is a production or example driver -- this file adds no science,
+# and every science setting comes from the conf or from configs/branchB_protocol.yaml.
+# =======================================================================================
+case "$CHAIN" in
+
+conformers)
+    echo
+    echo "branch A only. The basins are the product; nothing else runs."
+    ;;
+
+qha)    # the conformational free energy: A -> B -> collect -> F_conf
+    echo
+    echo "---- branch B: one trajectory per (basin, seed) -----------------------"
+    # --basins auto: the count comes from branch A's own record, so the number of basins
+    # and the geometries they start from cannot disagree.
+    python -u scripts/production/s0_E_branchB_parsl.py \
+        --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
+        --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+        ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"}
+
+    echo
+    echo "---- collect: quasi-harmonic analysis per molecule --------------------"
+    python -u scripts/production/s0_E_branchB_collect_parsl.py \
+        --species "$SPECIES" --tag "$TAG" --resource "${COLLECT_RESOURCE:-$RESOURCE}"
+
+    echo
+    echo "---- the answer: F_conf over the ensemble -----------------------------"
+    python -u scripts/production/s0_B_report_ensemble.py --species "$SPECIES" --tag "$TAG"
+    ;;
+
+levels) # 02c: MACE vs GFN2-xTB vs RI-MP2, energies and forces through to G - E_el
+    # CPU only. The cost is entirely the RI-MP2 `TightOpt NumFreq`: 1613 s per 10-atom
+    # structure at 4 processes, one ORCA job per basin, in sequence.
+    echo
+    echo "---- 02c: three levels on every basin ---------------------------------"
+    python -u examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
+        --species "$SPECIES" --tag "$TAG" \
+        --levels "${LEVELS:-mace,gfn2,rimp2}" --nprocs "${ORCA_NPROCS:-$THREADS}" \
+        ${ORCA_MAXCORE:+--maxcore "$ORCA_MAXCORE"}
+    ;;
+
+identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
+    # The trajectories are DENSELY sampled on purpose: the protocol's 1.0 ps interval is
+    # chosen for the ENTROPY, while the zero-point energy needs of order 12 500 frames,
+    # which at 1.0 ps would be 12.5 ns. Both numbers are measured in 02d stage 1.
+    echo
+    echo "---- branch B: dense trajectories, ${PROD_PS:-protocol} ps ------------"
+    python -u scripts/production/s0_E_branchB_parsl.py \
+        --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
+        --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+        ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
+        ${SAMPLE_EVERY:+--sample-every "$SAMPLE_EVERY"}
+
+    echo
+    echo "---- 02d: G_total from omega and from nu, term by term ----------------"
+    python -u examples/02d_qha_frequency_identity/s0_frequency_identity.py \
+        --species "$SPECIES" --tag "$TAG" --stage all --traj-tag "$TAG" \
+        ${NU_CUT:+--nu-cut "$NU_CUT"}
+    ;;
+
+*)  echo "CHAIN must be conformers, qha, levels or identity, got '$CHAIN'" >&2
+    exit 2 ;;
+esac
+
+echo
+echo "chain '$CHAIN' finished for $SPECIES (tag $TAG)."

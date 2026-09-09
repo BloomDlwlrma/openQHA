@@ -12,14 +12,21 @@ two reasons that arrived together:
 
 THE RULE THAT DOES NOT CHANGE
 -----------------------------
-A missing or altered weight file raises. It never falls back to another potential.
-Silently swapping the potential strips every downstream number of the level it claims
-to be at, and level consistency is the only condition under which the composite
-decomposition holds (D0-4, skills section 2.1).
+A MISSING weight file raises, and it never falls back to another potential. An ALTERED
+one no longer does -- see below. Silently swapping the potential strips every downstream
+number of the level it claims to be at, and level consistency is the only condition under
+which the composite decomposition holds (D0-4, skills section 2.1); after 2026-09-09
+keeping that condition is the operator's job, not the code's.
 
-Each registry entry carries an expected SHA-256. `provenance()` recomputes it and
-raises on mismatch, so a truncated download or a swapped file is caught at load time
-rather than showing up as a puzzling number three weeks later.
+Each registry entry carries the SHA-256 of the file this engine was developed against.
+**It is RECORDED in every product and NOT enforced** (user ruling 2026-09-09): loading a
+potential is "find this filename in the one flat directory and use it", nothing more.
+The gate was removed after it refused a working file on Tianhe twice -- a torch
+re-serialisation changes the digest and the file size while the weights stay identical,
+so the digest could not tell a repackaged model from a different one. The accepted cost
+is that a genuinely swapped file now changes every downstream number silently; the
+digest in the record makes it visible afterwards, and `scripts/tooling/s0_check_weights.py`
+compares parameters rather than bytes for anyone who wants to ask.
 
 WHAT CHANGING THE DEFAULT COSTS -- read before relying on any older number
 --------------------------------------------------------------------------
@@ -87,9 +94,9 @@ from .. import S0_ROOT
 #:     <repo>/data/potentials/MACE-OFF23-SC_swa.model
 #:     ...
 #: No subdirectories. `S0_MACE_ROOT` points the whole directory somewhere else;
-#: `S0_MACE_MODEL` overrides one individual file. Neither is a way to CHANGE potentials:
-#: the SHA-256 check in `provenance()` is what makes a swap impossible, and it runs on
-#: whichever path was used. To change potentials, use `S0_ENGINE`.
+#: `S0_MACE_MODEL` overrides one individual file. To change potentials, use `S0_ENGINE`.
+#: **Nothing verifies the CONTENTS of the file any more** (user ruling 2026-09-09) -- the
+#: filename is the whole identity check. See `provenance`.
 #:
 #: -------------------------------------------------------------------------------------
 #: ADDING A NEW POTENTIAL (any MLIP, not just MACE)
@@ -352,13 +359,30 @@ def _classify_weight_mismatch(name, entry, p, digest):
         "name.".format(params, pinned_params)), extra
 
 
-def provenance(name=None, strict=True):
+def provenance(name=None, strict=False):
     """Provenance record for the potential. Every product must carry it.
 
-    Recomputes the file SHA-256. If it disagrees with the pin, the mismatch is
-    CLASSIFIED (see `_classify_weight_mismatch`) rather than simply refused: a
-    re-serialised copy of the same model is not a changed potential, and treating the
-    two the same is what turns a real safeguard into something people want to switch off.
+    **THE HASH IS RECORDED, NOT ENFORCED** (user ruling 2026-09-09).
+    -------------------------------------------------------------
+    Loading a potential is now: the registry gives a filename, `model_path` finds that
+    filename in the one flat directory, and that file is used. Nothing else gates it.
+
+    The gate was removed after it refused a working weight file on Tianhe twice. It was
+    not a wrong idea, but it was the wrong instrument: measured 2026-09-09 on this
+    repository's own `MACE-OFF23_medium.model`, a `torch.save`/`torch.load` round trip
+    changes the file SHA-256 **and the file size** while every tensor stays bit-identical.
+    So the digest was reporting "different model" for a re-serialised copy of the same
+    one, and an operator who has seen that twice is right not to trust it.
+
+    What replaces it is nothing automatic, and that is a real, accepted cost: a genuinely
+    swapped weight file now changes every downstream number silently, and D0-4's level
+    consistency rests on the operator rather than on the code. The digest and the file
+    size still go into every product, so the swap is *visible afterwards* in the record
+    even though it is no longer *prevented*. `scripts/tooling/s0_check_weights.py`
+    remains, and compares parameters rather than bytes, for anyone who wants to ask.
+
+    `strict=True` restores the old refusal for a caller that wants it. Nothing in the
+    repository passes it.
     """
     name = name or engine_name()
     entry = ENGINES[name]
@@ -368,10 +392,18 @@ def provenance(name=None, strict=True):
     mismatch = None
     expected = entry.get("sha256")
     if expected and digest != expected:
-        ok, message, mismatch = _classify_weight_mismatch(name, entry, p, digest)
-        if not ok:
-            raise ValueError(message)
-        sys.stderr.write(message + "\n")
+        mismatch = dict(expected_sha256=expected, computed_sha256=digest,
+                        size_bytes=p.stat().st_size,
+                        enforced=bool(strict),
+                        note=("the file differs from the digest this engine was "
+                              "developed against. Recorded, not enforced. Compare the "
+                              "PARAMETERS with scripts/tooling/s0_check_weights.py if "
+                              "you want to know whether it is the same model."))
+        if strict:
+            ok, message, extra = _classify_weight_mismatch(name, entry, p, digest)
+            if not ok:
+                raise ValueError(message)
+            mismatch.update(extra)
 
     import mace
     import torch

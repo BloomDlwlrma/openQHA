@@ -15,8 +15,8 @@ python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
     --species dsgdb9nsd_000018 --tag prod --stage harmonic
 
 # PRODUCTION: 500 ps, one frame per 2 fs, every basin, three seeds
-MODE=hpc PARTITION=ai bash examples/run_chain.sh \
-    examples/02d_qha_frequency_identity/chain.conf
+bash examples/run_chain.sh \
+    examples/02d_qha_frequency_identity/chain.conf ai
 bash examples/run_chain.sh examples/02d_qha_frequency_identity/chain.conf   # or here
 
 # a trajectory you already have

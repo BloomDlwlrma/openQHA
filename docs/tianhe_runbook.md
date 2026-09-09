@@ -436,11 +436,11 @@ cannot be parameterised.
 bash examples/run_chain.sh examples/02d_qha_frequency_identity/chain.conf
 
 # submit it
-MODE=hpc PARTITION=ai     bash examples/run_chain.sh <conf>   # TianheXY-A,  8 cards, 7 d
-MODE=hpc PARTITION=h100x  bash examples/run_chain.sh <conf>   # TianheXY-AI, 1 card,  3 d
-MODE=hpc PARTITION=deimos bash examples/run_chain.sh <conf>   # TianheXY-C,  CPU,     3 d
-MODE=hpc PARTITION=temp   bash examples/run_chain.sh <conf>   # GPU short queue, 30 min
-MODE=hpc PARTITION=debug  bash examples/run_chain.sh <conf>   # CPU short queue, 30 min
+bash examples/run_chain.sh <conf> ai   # TianheXY-A,  8 cards, 7 d
+bash examples/run_chain.sh <conf> h100x   # TianheXY-AI, 1 card,  3 d
+bash examples/run_chain.sh <conf> deimos   # TianheXY-C,  CPU,     3 d
+bash examples/run_chain.sh <conf> temp   # GPU short queue, 30 min
+bash examples/run_chain.sh <conf> debug   # CPU short queue, 30 min
 ```
 
 ### Three site facts, all three measured on the machine 2026-09-09
@@ -511,10 +511,10 @@ Every example is submitted twice, and the split is not administrative — branch
 
 ```bash
 # step 1 -- CPU, minutes. Branch A only; the basins are the product.
-MODE=hpc PARTITION=deimos bash examples/run_chain.sh examples/02b_qha_openmm_propanal/branchA.conf
+bash examples/run_chain.sh examples/02b_qha_openmm_propanal/branchA.conf deimos
 
 # step 2 -- GPU, hours to days. Finds those basins and skips branch A.
-MODE=hpc PARTITION=ai     bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
+bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf ai
 ```
 
 | example | step 1 | step 2 | shared TAG |
@@ -604,8 +604,8 @@ and the two answers cannot come from different trajectories.
 ### Before the long one: the 30-minute gate
 
 ```bash
-MODE=hpc PARTITION=temp  bash examples/run_chain.sh <conf>   # GPU chains
-MODE=hpc PARTITION=debug bash examples/run_chain.sh <conf>   # CHAIN=levels
+bash examples/run_chain.sh <conf> temp   # GPU chains
+bash examples/run_chain.sh <conf> debug   # CHAIN=levels
 ```
 
 Same file, same conf, same settings — only the queue and the walltime change. **It is not
