@@ -237,6 +237,7 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
         refine=c["refine"], backend=c["backend"],
         engine_client=S0_ROOT / c["engine_client"],
         workhorse=c["workhorse"], tstep_fs=float(c["tstep_fs"]),
+        calcspace=getattr(args, "keep_calcspace", None),
         timeout_s=int(args.timeout_s))
     rec["wall_seconds"] = time.time() - started
     rec["reused_scratch"] = False
@@ -654,6 +655,24 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
             "CREST produced no ensemble at {}. Its own report: terminated_normally="
             "{}, terminated EARLY={}".format(ens, crest_rec.get("terminated_normally"),
                                              crest_rec.get("n_terminated_early")))
+    # ---- stop here rather than build basins out of numbers CREST could not rank -------
+    # Both of these were survivable-looking on 2026-09-09 and neither was survivable:
+    # CREST said `terminated normally`, and the ensemble it handed over had 1814 frames
+    # with NaN for every energy. Everything after this line would have run happily on it.
+    if crest_rec.get("energy_defect"):
+        return dict(qm9_index=qid, gate=gate_rec, crest=crest_rec,
+                    stopped_at="crest_energies", note=crest_rec["energy_defect"])
+    ceiling = getattr(args, "max_conformers", None)
+    if ceiling and crest_rec.get("n_conformers", 0) > int(ceiling):
+        return dict(
+            qm9_index=qid, gate=gate_rec, crest=crest_rec,
+            stopped_at="conformer_count",
+            note="CREST reports {} conformers and this run's ceiling is {}. The energies "
+                 "parsed as finite, so this is not the NaN defect -- either the ceiling "
+                 "is wrong for this molecule (it is set per example, and it is a "
+                 "judgement, not a measurement) or the deduplication is not "
+                 "deduplicating.".format(crest_rec.get("n_conformers"), ceiling))
+
     frames, comments = crest_census.read_ensemble_atoms(ens)
 
     # Step 3 pools an INDEPENDENT starting geometry. Only a shipped species has one.
@@ -773,6 +792,20 @@ def main():
     ap.add_argument("--force-crest", action="store_true",
                     help="rerun CREST even if a matching scratch directory exists")
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--max-conformers", type=int, default=None,
+                    help="stop if CREST reports more conformers than this. **There is "
+                         "no default**: the right ceiling is a property of the molecule, "
+                         "not of the pipeline, so it is set per example (see "
+                         "examples/02a_qha_openmm_acetone/branchA.conf) and never "
+                         "guessed here. Acetone at 10 atoms cannot have hundreds; the "
+                         "2026-09-09 Tianhe run reported 1814 for propanal because every "
+                         "energy was NaN and CREGEN discarded nothing.")
+    ap.add_argument("--keep-calcspace", default=None, metavar="DIR",
+                    help="run CREST's external gradient calls in DIR and keep it, "
+                         "instead of a scratch directory CREST deletes. DIAGNOSTIC: it "
+                         "keeps files for every gradient call. Without it, a failed "
+                         "gradient leaves no evidence at all -- which is why job 7347197 "
+                         "could not be explained from its own output.")
     args = ap.parse_args()
 
     if not (args.species or args.smiles):

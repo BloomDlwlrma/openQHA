@@ -194,7 +194,7 @@ HYDROGEN_MASS_AMU = 2.0
 def write_input(workdir, input_xyz, runtype="imtd-gc", threads=4, optlev="tight",
                 refine="sp", backend="generic", engine_client=None,
                 mace_model=None, shake=None, workhorse="gfn2", tstep_fs=None,
-                hmass_amu=HYDROGEN_MASS_AMU):
+                hmass_amu=HYDROGEN_MASS_AMU, calcspace=None):
     """Write one CREST input from the template. Returns the path written.
 
     Every parameter is explicit and none is left to an implicit default -- each of them
@@ -256,6 +256,18 @@ def write_input(workdir, input_xyz, runtype="imtd-gc", threads=4, optlev="tight"
                    'gradtype = "engrad"\n'
                    'gradfile = "genericinp.engrad"\n'
                    'refine   = "{}"\n'.format(client, refine))
+        if calcspace:
+            # `calcspace` (alias `dir`) is an upstream key: "the directory in which CREST
+            # shall perform this calculation", relative or absolute. Naming it makes the
+            # external calculator's working directory a PERSISTENT one instead of scratch
+            # CREST removes, which is the only way to see `genericinp.xyz`,
+            # `genericinp.engrad` and the client's own stderr in `generic.out` after the
+            # fact. On 2026-09-09 a whole Tianhe run produced NaN energies and left not
+            # one of those three files behind.
+            #
+            # **Diagnostic, not production.** It keeps files for every gradient call, so
+            # it belongs on a run you are watching, not on a campaign.
+            quality += 'calcspace = "{}"\n'.format(calcspace)
     else:
         if not mace_model:
             raise ValueError("backend='mlip' needs mace_model to point at a .model file")
@@ -377,6 +389,7 @@ def run(workdir, input_xyz, timeout_s=7200, env=None, **kwargs):
                             "crest_rotamers.xyz", "crestopt.xyz")
                   if (workdir / n).exists()})
     rec["ok"] = bool(rec["terminated_normally"] and rec["n_terminated_early"] == 0)
+    judge_energies(workdir, out, rec)
     if not rec["ok"]:
         rec["tail"] = "\n".join(out.splitlines()[-25:])
     return rec
@@ -453,10 +466,17 @@ def record_from_dir(workdir, settings=None, seconds=None, returncode=None):
                   for n in ("crest_conformers.xyz", "crest_best.xyz",
                             "crest_rotamers.xyz", "crestopt.xyz")
                   if (workdir / n).exists()})
+    # **`terminated normally` is not the same as `produced usable numbers`.** On
+    # 2026-09-09 CREST ran to completion on Tianhe, printed its full wall-time summary,
+    # and handed back 1814 conformers whose energies were every one of them NaN. Nothing
+    # in this repository noticed, because the only thing anyone read off the ensemble was
+    # how many frames it had. CREGEN's energy window is inert against NaN -- nine passes
+    # discarded not one structure -- so the ensemble grows instead of shrinking and the
+    # cost of the run explodes as a side effect of the same defect.
+    #
+    # So the energies are now part of the verdict, and `ok` is false without them.
     rec["ok"] = bool(rec["terminated_normally"] and rec["n_terminated_early"] == 0)
-    ens = workdir / "crest_conformers.xyz"
-    if ens.exists():
-        rec["n_conformers"] = len(read_ensemble(ens))
+    judge_energies(workdir, out, rec)
     rec["settings_from_toml"] = read_input_settings(workdir / "input.toml")
     hits = [l.strip() for l in out.splitlines() if "wall-time:" in l]
     if hits:
@@ -481,6 +501,99 @@ def _grab_int(text, key):
             except (ValueError, IndexError):
                 return None
     return None
+
+
+def comment_energy(comment):
+    """The energy CREST writes on a frame's comment line, or None if it is not a number.
+
+    Returns a float for `NaN` too -- `float("nan")` -- because "CREST wrote NaN there" and
+    "CREST wrote something that is not a number at all" are different failures and the
+    caller has to be able to tell them apart.
+    """
+    f = str(comment).split()
+    if not f:
+        return None
+    try:
+        return float(f[0])
+    except ValueError:
+        return None
+
+
+def judge_energies(workdir, out, rec):
+    """Add the ensemble-energy verdict to a CREST record, in place.
+
+    **`CREST terminated normally` is not the same as `CREST produced usable numbers`.**
+    On 2026-09-09 a Tianhe run finished cleanly, printed its full wall-time summary, and
+    handed back **1814 conformers whose energies were every one of them NaN** (job
+    7347197, propanal; the last verified acetone run gave 7 conformers). Nothing in this
+    repository noticed, because the only thing anyone ever read off the ensemble was how
+    many frames it had -- `read_ensemble` parses the coordinates with `float()` and
+    returns the energy as a string.
+
+    Two consequences, and the second is why this is not merely a correctness check:
+
+      1. the numbers are unusable, and they flow downstream as if they were conformers;
+      2. **CREGEN's energy window is inert against NaN.** Nine passes discarded not one
+         structure (686 -> 686, 1372 -> 1372, 1814 -> 1814), so the ensemble only grows,
+         and the next single-point stage runs on 1814 structures instead of a dozen.
+         93% of that job's wall clock was single points on frames a working run would
+         have thrown away. **The defect caused the cost.**
+
+    So the energies are part of the verdict now, and `ok` is false without them.
+    """
+    inf = float("inf")
+    rec["n_cregen_nan"] = sum(1 for line in out.splitlines()
+                              if "E lowest" in line and "NaN" in line)
+    ens = Path(workdir) / "crest_conformers.xyz"
+    if not ens.exists():
+        return rec
+    frames = read_ensemble(ens)
+    rec["n_conformers"] = len(frames)
+    energies = [comment_energy(c) for c, _ in frames]
+    rec["n_energies_unparsable"] = sum(1 for v in energies if v is None)
+    rec["n_nonfinite_energies"] = sum(
+        1 for v in energies if v is None or v != v or v in (inf, -inf))
+    # ---- the failure mode that is NOT NaN, and that a finiteness check waves through --
+    # Measured 2026-09-09, real CREST 3.0.2, n-butane, the production shape, with the
+    # socket deliberately pointed at a path that does not exist: **every one of 1926
+    # client invocations failed, and CREST exited 0, printed "terminated normally", and
+    # wrote `0.00000000` as the energy of every conformer.** It never said a word about
+    # the external calculator. So an external gradient program that is simply not there
+    # produces a finite, plausible-looking, completely fabricated ensemble.
+    #
+    # The first version of this function passed that run as `ok`. It was written against
+    # the NaN that Tianhe produced, and this is the neighbouring case -- so the criterion
+    # is spread, not finiteness: **distinct conformers never have bit-identical energies.**
+    finite = [v for v in energies if v is not None and v == v and v not in (inf, -inf)]
+    rec["n_zero_energies"] = sum(1 for v in finite if v == 0.0)
+    rec["energy_spread"] = (max(finite) - min(finite)) if len(finite) > 1 else None
+    if not rec["n_nonfinite_energies"] and len(finite) > 1 and rec["energy_spread"] == 0.0:
+        rec["ok"] = False
+        rec["energy_defect"] = (
+            "all {} conformer energies are bit-identical ({!r}). Distinct conformers do "
+            "not have identical energies, so these were never computed. {}This is what "
+            "CREST does when the external gradient program fails on every call: it exits "
+            "0 and reports a normal termination (measured 2026-09-09 on real CREST "
+            "3.0.2). Set S0_MACE_TRACE and read engrad_trace.log -- if the statuses are "
+            "FAIL, the reason is on that line.".format(
+                len(finite), finite[0],
+                "They are all exactly zero, which is CREST's initial value. "
+                if rec["n_zero_energies"] == len(finite) else ""))
+    elif rec["n_nonfinite_energies"]:
+        rec["ok"] = False
+        rec["energy_defect"] = (
+            "{} of {} conformer energies in crest_conformers.xyz are not finite numbers"
+            "{}. CREST cannot rank or discard structures on them, so what came back is "
+            "not a conformer list -- it is close to every frame CREST ever looked at. "
+            "Do not read basins off this. To find out why the gradients never arrived, "
+            "rerun with S0_MACE_TRACE set and a calcspace named, and compare the "
+            "server's own gradient count against `Total number of energy+grad calls` "
+            "in crest.out.".format(
+                rec["n_nonfinite_energies"], rec["n_conformers"],
+                "" if not rec["n_cregen_nan"]
+                else ", and CREGEN reported a NaN lowest energy {} time(s)".format(
+                    rec["n_cregen_nan"])))
+    return rec
 
 
 def read_ensemble(path):
@@ -639,7 +752,7 @@ def read_input_settings(toml_path):
         k, v = (x.strip() for x in s.split("=", 1))
         v = v.strip('"').strip("'")
         if k in ("runtype", "optlev", "refine", "threads", "input", "shake",
-                 "tstep", "hmass"):
+                 "tstep", "hmass", "calcspace"):
             out[k] = v
         elif k == "method":
             methods.append(v)

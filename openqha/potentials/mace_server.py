@@ -77,6 +77,11 @@ def serve(socket_path, device="cpu", quiet=False):
         print("[s0-mace-server] listening on {}".format(socket_path), flush=True)
 
     n_calls, t_sum, t0 = 0, 0.0, time.time()
+    n_nonfinite = 0
+    #: One line per gradient. Off by default -- 10^4-10^6 calls per search -- and turned
+    #: on by S0_MACE_TRACE, the same switch the client uses, so one setting instruments
+    #: both ends of the socket at once.
+    verbose = bool(os.environ.get("S0_MACE_TRACE"))
     lock = threading.Lock()
     try:
         while True:
@@ -95,6 +100,22 @@ def serve(socket_path, device="cpu", quiet=False):
                 dt = time.time() - t1
                 n_calls += 1
                 t_sum += dt
+                # **The server's own count is half the evidence.** A NaN ensemble has
+                # three possible sources -- the client never arrived, the client arrived
+                # but its gradient file never reached CREST, or the model itself returned
+                # NaN -- and comparing "gradients served" against "energy+grad calls"
+                # in crest.out separates the first from the other two. Costs one line
+                # per call in a log that is already kept with the job (2026-09-09).
+                if e != e or e in (float("inf"), float("-inf")):
+                    n_nonfinite += 1
+                    print("[s0-mace-server] call {} n={} NON-FINITE energy {!r} -- "
+                          "refusing, the client will abort".format(n_calls, len(syms), e),
+                          flush=True)
+                    conn.sendall(b"ERROR non-finite energy from the model\nEND\n")
+                    continue
+                if verbose:
+                    print("[s0-mace-server] call {} n={} E={:.6f} eV {:.1f} ms".format(
+                        n_calls, len(syms), e, 1000 * dt), flush=True)
                 out = ["{:.12f}".format(e)]
                 out += ["{:.12f} {:.12f} {:.12f}".format(*row) for row in f]
                 out.append("END")
@@ -113,9 +134,17 @@ def serve(socket_path, device="cpu", quiet=False):
         if os.path.exists(socket_path):
             os.unlink(socket_path)
         if not quiet and n_calls:
-            print("[s0-mace-server] {} gradients in all, mean model time {:.1f} ms, "
-                  "server up for {:.0f} s".format(n_calls, 1000 * t_sum / n_calls,
-                                                  time.time() - t0), flush=True)
+            # **Always printed, tracing or not.** This total is the number to compare
+            # against `Total number of energy+grad calls` in crest.out: if CREST says
+            # 94674 and the server says 0, the client never reached it and nothing about
+            # the model is implicated (2026-09-09, job 7347197).
+            print("[s0-mace-server] {} gradients in all, {} non-finite, mean model time "
+                  "{:.1f} ms, server up for {:.0f} s".format(
+                      n_calls, n_nonfinite, 1000 * t_sum / n_calls, time.time() - t0),
+                  flush=True)
+        elif not quiet:
+            print("[s0-mace-server] **0 gradients served** in {:.0f} s -- nothing ever "
+                  "connected to {}".format(time.time() - t0, socket_path), flush=True)
 
 
 def stop(socket_path):

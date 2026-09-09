@@ -42,6 +42,29 @@ SEEDS="${SEEDS:-3}"
 THREADS="${THREADS:-4}"
 CHAIN="${CHAIN:-qha}"
 
+# ---------------------------------------------------------------------------------------
+# Branch A diagnostics. All three OFF unless the conf asks for them.
+# ---------------------------------------------------------------------------------------
+# They exist because of job 7347197 (2026-09-09): CREST finished cleanly and handed back
+# 1814 conformers with NaN for every energy, and the run left **no evidence whatsoever**
+# about why -- the external client's stderr goes into CREST's calcspace, and CREST
+# deletes the calcspace.
+#
+#   MAX_CONFORMERS   a ceiling for THIS molecule. Not a physical law and not a default:
+#                    acetone at 10 atoms cannot have hundreds of conformers, and that is
+#                    a statement about acetone, so it lives in the example's conf.
+#   KEEP_CALCSPACE   name CREST's external-calculator directory so it persists.
+#                    Keeps files for every gradient call -- a run you are watching, not
+#                    a campaign.
+#   MACE_TRACE       one line per gradient from BOTH ends of the socket: the client
+#                    (which writes outside the calcspace, so it survives) and the server.
+#                    Comparing the server's total against `Total number of energy+grad
+#                    calls` in crest.out is what separates "the client never arrived"
+#                    from "the client arrived and its answer never got back to CREST".
+BRANCH_A_ARGS=""
+[ -n "${MAX_CONFORMERS:-}" ] && BRANCH_A_ARGS="$BRANCH_A_ARGS --max-conformers $MAX_CONFORMERS"
+[ -n "${KEEP_CALCSPACE:-}" ] && BRANCH_A_ARGS="$BRANCH_A_ARGS --keep-calcspace $KEEP_CALCSPACE"
+
 # Set by the .slurm; on a local run there is no .slurm, so the conf decides.
 PARTITION="${OPENQHA_PARTITION:-${PARTITION:-local}}"
 KIND="${OPENQHA_KIND:-cpu}"
@@ -156,6 +179,17 @@ if [ -n "$SLURM_JOB_ID" ] && [ -n "$S0_SCRATCH" ]; then
     trap keep_scratch EXIT
 fi
 
+# The trace directory has to be somewhere that OUTLIVES the calcspace, and on a job that
+# means inside the node-local tree that gets carried back -- not in the calcspace, and not
+# on Lustre. Set after the environment files have run, because that is what defines
+# S0_SCRATCH.
+if [ -n "${MACE_TRACE:-}" ]; then
+    S0_MACE_TRACE="${S0_SCRATCH:-$ROOT/logs}/trace"
+    mkdir -p "$S0_MACE_TRACE"
+    export S0_MACE_TRACE
+    echo "trace     $S0_MACE_TRACE   (one line per gradient, both ends of the socket)"
+fi
+
 echo
 echo "======================================================================"
 echo "openQHA   chain $CHAIN   species $SPECIES   tag $TAG"
@@ -190,8 +224,11 @@ if [ "$CHAIN" = "conformers" ]; then
     [ "$BASINS_PRESENT" = "yes" ] && \
         echo "     (a record already exists for tag '$TAG'; re-running it -- this
      chain's product IS branch A)"
+    # shellcheck disable=SC2086  -- BRANCH_A_ARGS is a deliberate word list, empty unless
+    # the conf turned a diagnostic on
     python -u scripts/production/s0_A_pipeline.py \
-        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
+        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" \
+        --hessian-mode analytic $BRANCH_A_ARGS
 elif [ "$BASINS_PRESENT" = "yes" ]; then
     echo
     echo "---- branch A: already done for tag '$TAG' -- reusing those basins ----"
@@ -205,8 +242,11 @@ else
     echo
     echo "---- branch A: conformer search -> every basin ------------------------"
     echo "     (no record for tag '$TAG' yet, and this is a CPU run, so making it here)"
+    # shellcheck disable=SC2086  -- BRANCH_A_ARGS is a deliberate word list, empty unless
+    # the conf turned a diagnostic on
     python -u scripts/production/s0_A_pipeline.py \
-        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
+        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" \
+        --hessian-mode analytic $BRANCH_A_ARGS
 fi
 
 # =======================================================================================
