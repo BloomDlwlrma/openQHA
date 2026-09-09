@@ -228,10 +228,29 @@ def write_input(workdir, input_xyz, runtype="imtd-gc", threads=4, optlev="tight"
         if not client.exists():
             raise FileNotFoundError("the MACE client is not at: {}".format(client))
         if not os.access(client, os.X_OK):
-            raise PermissionError(
-                "{} has no executable bit. CREST **executes it directly** (not as "
-                "`python <script>`), so it must be executable and its shebang must "
-                "work.".format(client))
+            # Set it rather than refuse. CREST executes this file directly, so the bit
+            # is a requirement of ours, on our own script, and turning it on is one
+            # syscall -- there is nothing for the operator to decide.
+            #
+            # It goes missing for a reason that is invisible on Windows: git tracked
+            # `s0_mace_engrad.py` as mode 100644 while the working copy on a Windows
+            # checkout reports `rwxr-xr-x` regardless. Every fresh clone on a cluster
+            # therefore arrived non-executable, and on 2026-09-09 that killed two branch
+            # A jobs on Tianhe. The index has been corrected too (`git update-index
+            # --chmod=+x`); this handles the transfers that do not carry a mode at all.
+            try:
+                os.chmod(client, os.stat(client).st_mode | 0o111)
+            except OSError as exc:
+                raise PermissionError(
+                    "{} has no executable bit and it could not be set ({}). CREST "
+                    "**executes it directly** (not as `python <script>`), so it must be "
+                    "executable and its shebang must work.\n"
+                    "  chmod +x {}".format(client, exc, client))
+            if not os.access(client, os.X_OK):
+                raise PermissionError(
+                    "{} is still not executable after chmod -- a read-only or "
+                    "noexec-mounted filesystem. CREST executes it directly, so it "
+                    "cannot run from here.".format(client))
         quality = ('method   = "generic"\n'
                    'binary   = "{}"\n'
                    'gradtype = "engrad"\n'
@@ -496,15 +515,20 @@ def start_servers(n, socket_prefix=None, torch_threads=1,
                   python=None, timeout_s=180):
     """Start n resident MACE servers, one socket each. Returns [(process, socket path), ...].
 
-    The sockets and their logs go under `runs_root/sockets/` (the user, 2026-08-31: do not
-    write straight into the home directory). A Unix domain socket path has a 108-byte
-    ceiling, and `/home/ubuntu/runs/openQHA/sockets/...` is far below it.
+    The sockets and their logs go in **this job's own node-local directory**,
+    `<TMPDIR or /tmp>/<owner>/<job id>/` -- see `config.socket_dir`.
+
+    They used to go under `runs_root/sockets/`, which is on the SHARED filesystem, and on
+    2026-09-09 that collided on Tianhe: two branch A jobs submitted back to back both
+    opened `runs_root/sockets/s0_mace_pool_0.sock` on two different compute nodes, and
+    whichever bound second unlinked the first one's socket. A Unix socket is a rendezvous
+    between processes on one machine; it has no business on a shared filesystem.
     """
     import sys
     from .. import config
     py = python or sys.executable
     if socket_prefix is None:
-        socket_prefix = str(config.runs_dir("sockets") / "s0_mace_pool")
+        socket_prefix = str(config.socket_dir() / "s0_mace_pool")
     servers = []
     for k in range(n):
         sock = "{}_{}.sock".format(socket_prefix, k)

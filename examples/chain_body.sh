@@ -98,6 +98,64 @@ if [ -n "$SLURM_JOB_ID" ]; then
     openqha_report_env
 fi
 
+# ---------------------------------------------------------------------------------------
+# NODE-LOCAL SCRATCH: run there, carry the end state back, then remove it.
+# ---------------------------------------------------------------------------------------
+# `hpc/env/tianhe.sh` puts the whole job under `<TMPDIR or /tmp>/<owner>/<job id>/` --
+# sockets, runs, CREST's working directories, all of it. Two reasons, both measured:
+#
+#   * CREST writes many small files into parallel `_N` subdirectories, and doing that on
+#     Lustre is slow for this job and for everyone else on the machine;
+#   * two branch A jobs on two compute nodes both opened the same
+#     `runs_root/sockets/s0_mace_pool_0.sock` on the SHARED filesystem (2026-09-09), and
+#     whichever bound second unlinked the first one's socket.
+#
+# The obligation that comes with node-local storage: **anything written there is gone
+# when the job ends unless the job carries it back**. So the whole tree is copied to
+# `logs/node_local/<jobid>/` first -- `cp -a`, which recreates socket nodes too, so the
+# end state is what you see -- and only then removed.
+if [ -n "$SLURM_JOB_ID" ] && [ -n "$S0_SCRATCH" ]; then
+    KEEP_DIR="$ROOT/logs/node_local/$SLURM_JOB_ID"
+    echo "scratch   $S0_SCRATCH"
+    echo "          -> end state kept at logs/node_local/$SLURM_JOB_ID/"
+    keep_scratch() {
+        local rc=$? src dst
+        mkdir -p "$KEEP_DIR" 2>/dev/null || true
+
+        # THE MANIFEST IS WRITTEN FIRST, and it is the part that always works.
+        # `cp -a` carries socket nodes on a filesystem that supports them and drops them
+        # SILENTLY on one that does not (measured: a DrvFs destination takes the logs and
+        # not the `.sock`). So the listing of what was there is recorded before any copy
+        # is attempted, and the copy is then checked against it.
+        { echo "# end state of $S0_SCRATCH"
+          echo "# job $SLURM_JOB_ID on $(hostname), exit $rc, $(date -Is)"
+          echo
+          ls -laR "$S0_SCRATCH" 2>/dev/null
+        } > "$KEEP_DIR/MANIFEST.txt" 2>/dev/null || true
+
+        # `cp -a .` copies the CONTENTS, dotfiles included, preserving modes and times.
+        ( cd "$S0_SCRATCH" && cp -a . "$KEEP_DIR/" ) 2>>"$KEEP_DIR/MANIFEST.txt" || true
+
+        # Say what did not make it, rather than leaving a quietly shorter directory.
+        src=$(cd "$S0_SCRATCH" && find . -mindepth 1 | wc -l)
+        dst=$(cd "$KEEP_DIR" && find . -mindepth 1 ! -name MANIFEST.txt | wc -l)
+        if [ "$dst" -lt "$src" ]; then
+            echo "kept      $dst of $src entries -- $((src - dst)) could not be" \
+                 "recreated on this filesystem (sockets, usually). MANIFEST.txt lists" \
+                 "everything that was there." >&2
+        fi
+        echo "kept      $(du -sh "$KEEP_DIR" 2>/dev/null | cut -f1) in $KEEP_DIR"
+        # `rm -rf` on a computed path gets a guard: only a path under a tmp base is ever
+        # removed, never something that resolved somewhere unexpected.
+        case "$S0_SCRATCH" in
+            /tmp/*|"${TMPDIR:-/nonexistent}"/*)
+                rm -rf "$S0_SCRATCH" 2>/dev/null || true ;;
+            *) echo "NOT removing $S0_SCRATCH -- it is not under a tmp base" >&2 ;;
+        esac
+    }
+    trap keep_scratch EXIT
+fi
+
 echo
 echo "======================================================================"
 echo "openQHA   chain $CHAIN   species $SPECIES   tag $TAG"

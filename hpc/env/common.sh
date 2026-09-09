@@ -78,7 +78,17 @@ export OPENBLAS_MAIN_FREE=1
 # --------------------------------------------------------------------------------------
 # Everything this repo writes goes under one root (D0-C-8). No literal path appears
 # in the code; the code asks openqha.config.runs_root().
-export S0_RUNS_ROOT="${S0_RUNS_ROOT:-$HOME/runs/openQHA}"
+# A DEFAULT, and it says so. `hpc/env/<site>.sh` is sourced after this file and moves the
+# root onto node-local scratch; it must be able to tell "nobody chose one" from "the
+# operator chose one". Without the marker its own `${S0_RUNS_ROOT:-...}` saw the value
+# this line had just set and kept it -- so on Tianhe the node-local scratch never took
+# effect and CREST wrote its many small files onto Lustre, which is exactly what
+# tianhe.sh section "scratch" exists to prevent. Measured from a job banner 2026-09-09:
+# `runs root  /HOME/hku2021_fos4/.../runs/openQHA`.
+if [ -z "$S0_RUNS_ROOT" ]; then
+    export S0_RUNS_ROOT="$HOME/runs/openQHA"
+    export S0_RUNS_ROOT_IS_DEFAULT=1
+fi
 mkdir -p "$S0_RUNS_ROOT"
 
 # torch >= 2.6 defaults to weights_only=True, which refuses the MACE-OFF

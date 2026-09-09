@@ -330,3 +330,75 @@ def runs_dir(name, cfg=None):
     p = runs_root(cfg) / name
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+#: Longest usable AF_UNIX path. `sun_path` is 108 bytes on Linux including the NUL, and
+#: a longer path is TRUNCATED rather than rejected -- the bind succeeds on a path nobody
+#: asked for and the client then cannot find it.
+SOCKET_PATH_LIMIT = 100
+
+
+def socket_dir():
+    """Where Unix domain sockets go: **node-local, per user, never the shared runs root.**
+
+    Three things go wrong when sockets live under `runs_root`, and on 2026-09-09 the
+    second one bit on Tianhe:
+
+      1. `runs_root` is on the shared filesystem. A Unix socket is a rendezvous between
+         processes on ONE machine; putting it on Lustre is at best meaningless and at
+         worst unsupported.
+      2. **Two jobs collide.** Two branch A jobs submitted back to back both opened
+         `runs_root/sockets/s0_mace_pool_0.sock` -- same path, different compute nodes.
+         Whichever bound second unlinked the first one's socket.
+      3. Shared paths are long, and `sun_path` truncates rather than refuses.
+
+    In a job it is `$S0_SCRATCH/sockets`, i.e. inside the SAME node-local tree the rest
+    of the job's scratch lives in (`hpc/env/tianhe.sh`), so there is one directory to
+    carry back and one to remove:
+
+        /tmp/sherwin/7346431/sockets/s0_mace_pool_0.sock
+        /tmp/sherwin/7346431/runs/...
+
+    Outside a job, or with no `S0_SCRATCH`, it builds the same shape itself from
+    `S0_SOCKET_DIR` else `TMPDIR` else `/tmp`, `S0_SOCKET_OWNER` else the login name, and
+    the Slurm job id else `pid<N>`. **A directory per job is what separates two jobs**, so
+    the socket names inside it stay short -- which matters, because `sun_path` truncates.
+
+    0700 on the owner and job levels keeps another user on the same shared node out.
+    """
+    import getpass
+    scratch = os.environ.get("S0_SCRATCH")
+    if scratch:
+        d = Path(scratch) / "sockets"
+        parents = (Path(scratch), d)
+    else:
+        base = Path(os.environ.get("S0_SOCKET_DIR")
+                    or os.environ.get("TMPDIR") or "/tmp")
+        owner = os.environ.get("S0_SOCKET_OWNER") or getpass.getuser()
+        job = os.environ.get("SLURM_JOB_ID") or "pid{}".format(os.getpid())
+        d = base / owner / job / "sockets"
+        parents = (base / owner, base / owner / job, d)
+    d.mkdir(parents=True, exist_ok=True)
+    for p in parents:
+        try:
+            p.chmod(0o700)
+        except OSError:
+            pass                  # a shared TMPDIR we do not own; not worth failing over
+    return d
+
+
+def socket_path(stem, index=None):
+    """One socket inside this job's own directory.
+
+    Uniqueness comes from the DIRECTORY (`socket_dir`), not from the name, so the name
+    stays short -- which matters, because `sun_path` truncates a long path instead of
+    refusing it.
+    """
+    name = stem if index is None else "{}_{}".format(stem, index)
+    p = socket_dir() / (name + ".sock")
+    if len(str(p)) > SOCKET_PATH_LIMIT:
+        raise ValueError(
+            "socket path is {} characters, over the {}-character limit that AF_UNIX "
+            "silently truncates at:\n  {}\nSet S0_SOCKET_DIR to something shorter."
+            .format(len(str(p)), SOCKET_PATH_LIMIT, p))
+    return p

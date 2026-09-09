@@ -535,6 +535,78 @@ precedence over the conf. Without that, a conf whose default is `PARTITION=ai` �
 try to `module load CUDA/12.3` on a CPU node. Found by inspection 2026-09-09, before it
 cost an allocation.
 
+### Node-local scratch: run there, carry the end state back  **[measured 2026-09-09]**
+
+```
+/tmp/<owner>/<SLURM_JOB_ID>/sockets/s0_mace_pool_0.sock
+/tmp/<owner>/<SLURM_JOB_ID>/runs/branchA/...
+```
+
+**The node-local scratch had never taken effect.** `hpc/env/tianhe.sh` sets `S0_SCRATCH`
+and `S0_RUNS_ROOT` under `TMPDIR`, and this runbook has always said so — but `common.sh`
+is sourced first and its own `S0_RUNS_ROOT="${S0_RUNS_ROOT:-$HOME/runs/openQHA}"` had
+already set the variable, so `tianhe.sh`'s `:-` kept it. The job banner read
+`runs root  /HOME/…/runs/openQHA`, and CREST had been writing its thousands of small
+files onto Lustre the whole time. `common.sh` now marks its value as a default and
+`tianhe.sh` overrides a default — never an explicit `S0_RUNS_ROOT` you exported yourself.
+
+> `${VAR:-default}` cannot be used for layered configuration: it cannot tell "nobody set
+> this" from "the previous layer just set it". Mark the source, or override outright.
+
+**What comes back.** `logs/openqha_<name>_<jobid>.{out,err}` as before, and the whole
+node-local tree — sockets, CREST working directories, everything — copied to
+
+```
+logs/node_local/<jobid>/
+```
+
+before it is removed. `MANIFEST.txt` is written **first**, from `ls -laR`, because it is
+the part that always works: `cp -a` recreates socket nodes on a filesystem that supports
+them and drops them **silently** on one that does not. After copying, the entry counts
+are compared and any shortfall is reported rather than left as a quietly shorter
+directory.
+
+`<owner>` is `S0_SOCKET_OWNER`, defaulting to your login name; `<SLURM_JOB_ID>` is
+**Slurm's**, read from the environment and never invented — outside a job it falls back
+to `pid<N>`. Base directory: `S0_SOCKET_DIR`, else `TMPDIR`, else `/tmp`.
+
+They used to go under `runs_root/sockets/`, which is the **shared** filesystem. Two
+branch A jobs submitted back to back (7346431 on `cnode1948`, 7346432 on `cnode2001`)
+both opened `runs_root/sockets/s0_mace_pool_0.sock`, and whichever bound second unlinked
+the first one's socket. A Unix socket is a rendezvous between processes on **one**
+machine; it has no business on Lustre. `sun_path` also truncates past 108 bytes rather
+than refusing, so `config.socket_path` raises above 100 characters instead.
+
+**What the job leaves behind for you.** The MACE servers write `<socket>.log` beside
+their socket, on the compute node's own disk, which is gone when the job ends. Before
+removing that directory the job copies every **regular** file in it back to
+
+```
+logs/node_local/<jobid>/
+```
+
+The sockets themselves are not copied — a socket is not a file you can read afterwards.
+The `rm -rf` is guarded: it only ever removes a path under a tmp base, and says so
+loudly if the path resolved somewhere else.
+
+### The CREST client's executable bit  **[measured 2026-09-09]**
+
+`scripts/production/s0_mace_engrad.py` is **executed directly by CREST**, not as
+`python <script>`, so it needs the bit. Git tracked it as mode `100644` while a Windows
+working copy reports `rwxr-xr-x` for everything — so it looked fine on the workstation
+and every fresh clone on a cluster arrived non-executable. It killed two branch A jobs
+before anything else ran.
+
+Fixed in the index (`git update-index --chmod=+x`), and `crest.write_input` now **sets
+the bit** rather than refusing: it is our requirement, on our own script, and it is one
+syscall. It still raises if the chmod fails — a read-only or `noexec` mount.
+
+If you transferred the repository some way that drops modes, this is the check:
+
+```bash
+ls -l scripts/production/s0_mace_engrad.py     # want -rwx
+```
+
 ### Which chain, and where each one belongs
 
 | `CHAIN` | what it runs | partition |

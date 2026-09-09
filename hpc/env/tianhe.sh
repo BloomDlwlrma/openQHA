@@ -168,13 +168,34 @@ fi
 # subdirectories (one molecule's working directory is 2.6-15 MB across dozens of files on
 # this project's workstation). Doing that on a shared parallel filesystem is slow for the
 # job and slow for everyone else on the machine.
-export S0_SCRATCH="${TMPDIR:-/tmp}/$USER/openqha.${SLURM_JOB_ID:-$$}"
+# ONE node-local tree per job: <base>/<owner>/<job id>/. Sockets, runs and CREST's
+# working directories all live under it, so the job has a single directory to carry back
+# and a single directory to remove.
+#
+#     /tmp/sherwin/7346431/sockets/s0_mace_pool_0.sock
+#     /tmp/sherwin/7346431/runs/branchA/...
+#
+# `S0_SCRATCH_OWNER` names the middle level and defaults to the login name; the job id is
+# **Slurm's**, read from the environment, never invented.
+export S0_SCRATCH_OWNER="${S0_SCRATCH_OWNER:-${S0_SOCKET_OWNER:-$USER}}"
+export S0_SOCKET_OWNER="${S0_SOCKET_OWNER:-$S0_SCRATCH_OWNER}"
+export S0_SCRATCH="${TMPDIR:-/tmp}/$S0_SCRATCH_OWNER/${SLURM_JOB_ID:-$$}"
 mkdir -p "$S0_SCRATCH"
+chmod 700 "$S0_SCRATCH" 2>/dev/null || true
 
 # Everything this repository writes goes under one root. On a cluster that root must be
 # node-local for the work and shared for the results -- runs go to scratch, products are
 # written back into the repository by the pipeline itself.
-export S0_RUNS_ROOT="${S0_RUNS_ROOT:-$S0_SCRATCH/runs}"
+#
+# **Overriding a DEFAULT, not the operator.** `common.sh` sets S0_RUNS_ROOT to
+# $HOME/runs/openQHA and marks it with S0_RUNS_ROOT_IS_DEFAULT. Until 2026-09-09 this
+# line read `${S0_RUNS_ROOT:-...}`, which saw that default already set and kept it -- so
+# the node-local scratch below was written, documented, and never once used. An explicit
+# S0_RUNS_ROOT exported by the operator still wins, which is the point of the marker.
+if [ -n "$S0_RUNS_ROOT_IS_DEFAULT" ] || [ -z "$S0_RUNS_ROOT" ]; then
+    export S0_RUNS_ROOT="$S0_SCRATCH/runs"
+    unset S0_RUNS_ROOT_IS_DEFAULT
+fi
 mkdir -p "$S0_RUNS_ROOT"
 
 # ---- proxy ------------------------------------------------------------------------------

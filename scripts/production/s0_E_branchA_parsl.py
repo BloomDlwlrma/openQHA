@@ -139,12 +139,15 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
     e = dict(_os.environ)
     e.update(env or {})
 
-    # One resident MACE server for this molecule, on a socket named after it so two
-    # workers can never collide.
-    sock_dir = _Path(e.get("S0_RUNS_ROOT",
-                          _os.path.expanduser("~/runs/openQHA"))) / "sockets"
-    sock_dir.mkdir(parents=True, exist_ok=True)
-    sock = str(sock_dir / "branchA_{}_{}.sock".format(qm9_index, _os.getpid()))
+    # One resident MACE server for this molecule, in THIS JOB's node-local socket
+    # directory -- `<TMPDIR or /tmp>/<owner>/<job id>/`, see `openqha.config.socket_dir`.
+    #
+    # It used to be `runs_root/sockets/`, which is the SHARED filesystem: two jobs on two
+    # compute nodes then opened the same path, and whichever bound second unlinked the
+    # first one's socket (measured on Tianhe 2026-09-09). A Unix socket is a rendezvous
+    # between processes on ONE machine.
+    from openqha import config as _config
+    sock = str(_config.socket_path("branchA_{}".format(qm9_index), _os.getpid()))
     if _os.path.exists(sock):
         _os.unlink(sock)
 

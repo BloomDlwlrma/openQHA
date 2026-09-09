@@ -213,7 +213,9 @@ def _worker_init(lock, device):
         except Exception:
             pass
         load_s = time.time() - t0
-    sock = str(config.runs_dir("sockets", CFG) / "s0_mace_w{}.sock".format(os.getpid()))
+    # Node-local, per job: see openqha.config.socket_dir. A socket under runs_root is on
+    # the shared filesystem, where two jobs collide (measured on Tianhe 2026-09-09).
+    sock = str(config.socket_path("s0_mace_w", os.getpid()))
     from openqha import mace_server
     th, stop = mace_server.serve_in_thread(sock, calc)
     _W.update(calc=calc, engine=name, prov=prov, socket=sock, stop=stop,
