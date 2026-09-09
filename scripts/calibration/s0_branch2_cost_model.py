@@ -149,6 +149,7 @@ def main():
     # Work back from the total wall clock to "the equivalent cost of one displacement": `wall / (6N)`.
     # The optimisation segment is included -- it follows the same scaling and is not a large share
     # (measured on the 10-atom probe: 639/1613 = 40%).
+    import math
     import numpy as np
     for r in good:
         r["t_per_disp"] = r["wall"] / (6.0 * r["n_atoms"])

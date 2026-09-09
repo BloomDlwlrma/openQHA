@@ -88,18 +88,34 @@ case "$MODE" in
         RESOURCE="${RESOURCE:-local}"; ROUTE="${ROUTE:-ase}"; PLATFORM="CPU"
         KIND="cpu"; SB_GPUS=0 ;;
     hpc)
+        # SUBMITTER: the two clusters do not take the same command. TianheXY-CN (the CPU
+        # side) is stock Slurm and wants `sbatch`; the GPU clusters use the site's
+        # `yhbatch` wrapper. Measured on the machine 2026-09-09 -- getting this from the
+        # partition rather than from a global is the whole reason it is in this table.
         case "$PARTITION" in
             # --- GPU: TianheXY-A, whole node, 8 cards, 56 cores ---------------------
-            ai)     RESOURCE="tianhe_a";   KIND="gpu"; SB_GPUS=8; SB_TIME="7-00:00:00" ;;
-            temp)   RESOURCE="tianhe_a";   KIND="gpu"; SB_GPUS=8; SB_TIME="00:30:00" ;;
+            ai)     RESOURCE="tianhe_a";   KIND="gpu"; SB_GPUS=8; SB_TIME="7-00:00:00"
+                    SUBMIT="yhbatch" ;;
+            temp)   RESOURCE="tianhe_a";   KIND="gpu"; SB_GPUS=8; SB_TIME="00:30:00"
+                    SUBMIT="yhbatch" ;;
             # --- GPU: TianheXY-AI, the allocation IS one card + 14 CPUs -------------
-            h100x)  RESOURCE="tianhe_ai";  KIND="gpu"; SB_GPUS=1; SB_TIME="3-00:00:00" ;;
-            # --- CPU: TianheXY-C. ORCA has no GPU path here, so 02c lives on these --
-            deimos) RESOURCE="tianhe_cpu"; KIND="cpu"; SB_GPUS=0; SB_TIME="3-00:00:00" ;;
-            debug)  RESOURCE="tianhe_cpu"; KIND="cpu"; SB_GPUS=0; SB_TIME="00:30:00" ;;
+            h100x)  RESOURCE="tianhe_ai";  KIND="gpu"; SB_GPUS=1; SB_TIME="3-00:00:00"
+                    SUBMIT="yhbatch" ;;
+            # --- CPU: TianheXY-CN. ORCA has no GPU path here, so 02c lives on these -
+            deimos) RESOURCE="tianhe_cpu"; KIND="cpu"; SB_GPUS=0; SB_TIME="3-00:00:00"
+                    SUBMIT="sbatch" ;;
+            debug)  RESOURCE="tianhe_cpu"; KIND="cpu"; SB_GPUS=0; SB_TIME="00:30:00"
+                    SUBMIT="sbatch" ;;
             *) echo "PARTITION must be ai, temp, h100x, deimos or debug, got" \
                     "'$PARTITION'" >&2; exit 2 ;;
         esac
+        # OPENQHA_SUBMIT wins: a site can rename its wrapper without editing this table.
+        SUBMIT="${OPENQHA_SUBMIT:-$SUBMIT}"
+        command -v "$SUBMIT" >/dev/null 2>&1 || {
+            echo "openQHA: '$SUBMIT' is not on PATH on this login node." >&2
+            echo "  PARTITION=$PARTITION expects it. If this cluster uses a different" >&2
+            echo "  submitter, set OPENQHA_SUBMIT=<command> and tell docs/tianhe_runbook.md." >&2
+            exit 2; }
         if [ "$KIND" = "gpu" ]; then
             ROUTE="${ROUTE:-openmm}"; PLATFORM="CUDA"
         else
@@ -125,14 +141,46 @@ fi
 # ---------------------------------------------------------------------------------------
 # 3. Submit, or run. The same file does both.
 # ---------------------------------------------------------------------------------------
+# The site's conda module, whatever it is called here. The names carry no dot on
+# TianheXY-CN -- `anaconda3/202309`, not `anaconda3/2023.09` -- and asking for the wrong
+# one printed a bare "Unable to locate a modulefile" that looks like a real failure and
+# is not, because a conda already on PATH is a perfectly good answer. Try the candidates,
+# say which one worked, and only complain if conda is genuinely unreachable afterwards.
+openqha_load_conda_module() {
+    local m
+    for m in "${OPENQHA_CONDA_MODULE:-}" anaconda3/202309 anaconda3/20250601 \
+             miniconda3/202409 miniforge/24.7.1 anaconda3 miniforge; do
+        [ -n "$m" ] || continue
+        if module load "$m" >/dev/null 2>&1; then
+            echo "module    $m"
+            return 0
+        fi
+    done
+    if command -v conda >/dev/null 2>&1; then
+        echo "module    none loaded; conda already on PATH ($(command -v conda))"
+        return 0
+    fi
+    echo "openQHA: no conda module could be loaded and conda is not on PATH." >&2
+    echo "  Tried: \$OPENQHA_CONDA_MODULE, anaconda3/202309, anaconda3/20250601," >&2
+    echo "  miniconda3/202409, miniforge/24.7.1. Run 'module avail' and set" >&2
+    echo "  OPENQHA_CONDA_MODULE to the one this site actually has." >&2
+    return 1
+}
+
+# The environment follows the PARTITION, not a hard-coded name: the CPU cluster wants the
+# `openqha` environment (crest, xtb, OpenBLAS pinned) and the GPU clusters want
+# `openqha-gpu` (CUDA torch, OpenMM, MKL). hpc/env/tianhe.sh maps the role to the name,
+# and OPENQHA_ENV still overrides both.
+export OPENQHA_ROLE="${OPENQHA_ROLE:-$KIND}"
+
 if [ "$MODE" = "hpc" ] && [ -z "$SLURM_JOB_ID" ]; then
     LOGDIR="${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs"
     mkdir -p "$LOGDIR"          # Slurm opens --output BEFORE the script runs (rule 6)
 
     # Refuse on the login node rather than in the queue. A missing or truncated weight
     # file is the commonest way to waste an allocation and costs a second to rule out.
-    module load anaconda3/2023.09 2>/dev/null || true
-    OPENQHA_ENV="${OPENQHA_ENV:-openqha-gpu}" source hpc/env/tianhe.sh 2>/dev/null || true
+    openqha_load_conda_module || exit 1
+    source hpc/env/tianhe.sh 2>/dev/null || true
     python - <<'PY' || exit 1
 import sys
 try:
@@ -140,15 +188,21 @@ try:
     p = engine.provenance()
 except Exception as exc:                                          # noqa: BLE001
     sys.exit("openQHA: cannot load the potential here -- {}: {}\n"
-             "  The MACE-OFF weights are NOT downloaded on a login node. Fetch them\n"
-             "  where you have bandwidth and copy them in:\n"
-             "      rsync -a data/potentials/ <tianhe>:$HOME/openQHA/data/potentials/"
+             "  If the weights are missing: they are NOT downloaded on a login node.\n"
+             "  Fetch them where you have bandwidth and copy them in:\n"
+             "      rsync -a --partial --progress data/potentials/ "
+             "<tianhe>:<repo>/data/potentials/\n"
+             "  If the hashes disagree: run this and read the VERDICT line --\n"
+             "      python scripts/tooling/s0_check_weights.py\n"
+             "  It separates a truncated copy, a re-serialised copy of the SAME model,\n"
+             "  and a genuinely different model. Only the last one is a reason to stop."
              .format(type(exc).__name__, exc))
 print("engine   {}  sha256 {}  pinned={}".format(
     p["engine"], p["sha256"][:16], p["sha256_pinned"]))
 PY
 
-    echo "submitting  $CONF  ->  $PARTITION  chain=$CHAIN  (${SB_TIME}, gpus=${SB_GPUS})"
+    echo "submitting  $CONF  ->  $PARTITION  chain=$CHAIN  via $SUBMIT" \
+         "(${SB_TIME}, gpus=${SB_GPUS})"
     # The conf path is the script's ARGUMENT. No --export: see the header.
     #
     # CHAIN and MODE reach the job through the CONF, not through the environment: the
@@ -157,7 +211,7 @@ PY
     # which some Slurm builds reject.
     GPUFLAG=()
     [ "${SB_GPUS:-0}" -gt 0 ] && GPUFLAG=(--gpus="$SB_GPUS")
-    exec yhbatch --partition="$PARTITION" --time="$SB_TIME" "${GPUFLAG[@]}" \
+    exec "$SUBMIT" --partition="$PARTITION" --time="$SB_TIME" "${GPUFLAG[@]}" \
         --output="$LOGDIR/openqha_${CHAIN}_${TAG}_%j.out" \
         --error="$LOGDIR/openqha_${CHAIN}_${TAG}_%j.err" \
         "$0" "$CONF"
@@ -168,7 +222,7 @@ fi
 # ---------------------------------------------------------------------------------------
 if [ -n "$SLURM_JOB_ID" ]; then
     module purge 2>/dev/null || true
-    module load anaconda3/2023.09 2>/dev/null || module load miniforge/24.7.1 2>/dev/null || true
+    openqha_load_conda_module || exit 1
     if [ "$KIND" = "gpu" ]; then
         module load CUDA/12.3 || {
             echo "openQHA: module load CUDA/12.3 FAILED -- this would run on the CPU" >&2
@@ -179,8 +233,11 @@ if [ -n "$SLURM_JOB_ID" ]; then
     for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
         unset "$v"
     done
-    OPENQHA_ENV="${OPENQHA_ENV:-openqha-gpu}"
-    export OPENQHA_ENV
+    # OPENQHA_ROLE was set from the PARTITION above; tianhe.sh maps it to the
+    # environment name (cpu -> openqha, gpu -> openqha-gpu). Hard-coding `openqha-gpu`
+    # here, as this line used to, put a CPU chain into the GPU environment -- which has
+    # no crest and no xtb, so branch A would have failed on the compute node for a
+    # reason that had nothing to do with branch A.
     source hpc/env/common.sh
     source hpc/env/tianhe.sh
     openqha_report_env

@@ -443,6 +443,66 @@ MODE=hpc PARTITION=temp   bash examples/run_chain.sh <conf>   # GPU short queue,
 MODE=hpc PARTITION=debug  bash examples/run_chain.sh <conf>   # CPU short queue, 30 min
 ```
 
+### Three site facts, all three measured on the machine 2026-09-09
+
+**1. The submitter is not the same on both sides.** TianheXY-CN (the CPU cluster) is
+stock Slurm and takes `sbatch`; the GPU clusters take the site's `yhbatch` wrapper. It
+comes out of the partition table, so nobody has to remember:
+
+| partition | cluster | submitter |
+|---|---|---|
+| `ai`, `temp` | TianheXY-A | `yhbatch` |
+| `h100x` | TianheXY-AI | `yhbatch` |
+| `deimos`, `debug` | TianheXY-CN | **`sbatch`** |
+
+`OPENQHA_SUBMIT=<command>` overrides it. A submitter that is not on PATH is refused on
+the login node with the partition named, rather than failing as an unrecognised command.
+
+**2. The conda module names carry no dot.** `anaconda3/202309`, **not**
+`anaconda3/2023.09`. Also present: `anaconda3/20250601`, `miniconda3/202409`,
+`miniforge/24.7.1`. The script now tries these in turn, prints which one it loaded, and
+accepts "conda is already on PATH" as a perfectly good answer — the previous version
+asked for a name that does not exist and printed a bare `Unable to locate a modulefile`
+that looks like a failure and was not. `OPENQHA_CONDA_MODULE=<name>` is tried first.
+
+**3. The environment follows the partition.** `OPENQHA_ROLE` is set from the partition:
+CPU → `openqha` (crest, xtb, pinned OpenBLAS), GPU → `openqha-gpu` (CUDA torch, OpenMM,
+MKL). The old script hard-coded `openqha-gpu`, which would have put a CPU chain into an
+environment with **no crest and no xtb** — branch A would then have failed on the compute
+node for a reason that had nothing to do with branch A.
+
+### When the weights hash disagrees — which of four things happened
+
+```bash
+python scripts/tooling/s0_check_weights.py        # read the VERDICT line
+```
+
+A file SHA-256 answers *are these the same bytes*. The pin is asking *are these the same
+numbers*, and those are different questions. **Measured 2026-09-09 on this repository's
+own `MACE-OFF23_medium.model`: a `torch.save`/`torch.load` round trip of that exact model
+changed the file SHA-256 and the file size — 18 350 596 → 18 367 938 bytes — while all 79
+tensors stayed bit-identical.**
+
+So the file hash alone cannot separate:
+
+| what happened | what to do |
+|---|---|
+| truncated or interrupted copy | re-copy; the **size** says so at a glance |
+| re-serialised by a different torch — **same numbers** | nothing. It is the same potential |
+| genuinely different weights | stop. This is what the pin exists for |
+| same file, different path | nothing |
+
+`provenance()` now classifies instead of only refusing: on a file-hash mismatch it
+computes the **parameter fingerprint** (SHA-256 over the state_dict in canonical key
+order), and if that matches the pin it proceeds with a loud note and records **both**
+hashes in every product. If the parameters differ it still refuses, because that really
+does change the level every downstream number claims (`D0-4`).
+
+Run the checker on the machine whose file you trust and on the cluster, and compare three
+lines: size, file sha, params sha. That decides it in one command instead of an argument.
+`--pin` prints the registry lines to paste into `openqha/potentials/engine.py` once you
+have decided the file is right.
+
 ### Which chain, and where each one belongs
 
 | `CHAIN` | what it runs | partition |

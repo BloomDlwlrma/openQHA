@@ -42,6 +42,7 @@ accepted explicitly or restored by pointing stage 2 at the same new engine.
 """
 import hashlib
 import os
+import sys
 from pathlib import Path
 
 from .. import S0_ROOT
@@ -134,6 +135,15 @@ ENGINES = {
     "MACE-OFF23_medium": dict(
         filename="MACE-OFF23_medium.model",
         sha256="4842c52ad210d6e1f84d6cf1ffa70fae25a7e0d755ed55cf223f43913f587db7",
+        # The bytes and the numbers are two different identities, and only the second one
+        # is what "the same potential" means. Measured 2026-09-09: a torch save/load
+        # round trip of THIS EXACT model changed the file SHA-256 and the file size
+        # (18 350 596 -> 18 367 938 bytes) while every tensor stayed bit-identical.
+        # A file hash therefore cannot tell a re-serialised copy from a different model,
+        # and on Tianhe it did not. See `parameter_fingerprint`.
+        params_sha256="8dca373ad57c67faf89f41b0c1a58caf9b64df39016449e74238428a268f2ac2",
+        n_tensors=79,
+        size_bytes=18350596,
         source="https://arxiv.org/abs/2312.15211",
         licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family; closest lineage to stage 2 surface.",
@@ -243,27 +253,130 @@ def model_path(name=None):
             name, p, found, _MODEL_ROOT_ENV, ", ".join(sorted(ENGINES))))
 
 
-def provenance(name=None):
+def parameter_fingerprint(path=None, name=None):
+    """SHA-256 over the model's tensors, in canonical key order.
+
+    **The bytes and the numbers are two different identities**, and only the second one
+    is what "the same potential" means. Measured 2026-09-09 on this repository's own
+    `MACE-OFF23_medium.model`: a `torch.save` / `torch.load` round trip of that exact
+    model changed the file SHA-256 **and the file size** -- 18 350 596 -> 18 367 938
+    bytes -- while every one of the 79 tensors stayed bit-identical.
+
+    So a file hash cannot tell a re-serialised copy from a different model. It says
+    "different" to both, and the operator is then left to argue about whether the check
+    is worth having. This function is the other half: it is invariant to the container
+    and sensitive to the weights, which is the discrimination the check was always for.
+
+    Returns `(hexdigest, n_tensors)`. Costs about 3 s -- it has to load the model -- so
+    it is computed only when the file hash has already disagreed.
+    """
+    import torch
+    p = Path(path) if path else model_path(name)
+    model = torch.load(str(p), map_location="cpu", weights_only=False)
+    state = model.state_dict() if hasattr(model, "state_dict") else model
+    h = hashlib.sha256()
+    for k in sorted(state):
+        v = state[k]
+        h.update(k.encode("utf-8"))
+        h.update(str(v.dtype).encode("utf-8"))
+        h.update(str(tuple(v.shape)).encode("utf-8"))
+        h.update(v.detach().cpu().contiguous().numpy().tobytes())
+    return h.hexdigest(), len(state)
+
+
+def _classify_weight_mismatch(name, entry, p, digest):
+    """Say WHICH kind of mismatch this is, instead of only that there is one.
+
+    Four situations produce a different file hash and they do not deserve the same
+    answer:
+
+      1. truncated or corrupted transfer          -> refuse, and say so; the size says it
+      2. same parameters, different container     -> proceed; record both hashes
+      3. genuinely different weights              -> refuse; this is the one the pin is for
+      4. no parameter pin recorded for this model -> refuse, but say the check was blind
+
+    Returns `(ok, message, extra)`.
+    """
+    size = p.stat().st_size
+    pinned_size = entry.get("size_bytes")
+    pinned_params = entry.get("params_sha256")
+
+    head = ("weight file for {} does not match its pinned SHA-256.\n"
+            "  expected {}\n  computed {}\n  path     {}\n"
+            "  size     {} bytes{}\n".format(
+                name, entry.get("sha256"), digest, p, size,
+                "" if not pinned_size else
+                "  (pinned file was {})".format(pinned_size)))
+
+    if pinned_size and size < pinned_size * 0.9:
+        return False, head + (
+            "This file is {:.0%} of the pinned size -- it looks TRUNCATED, which is what "
+            "an interrupted copy leaves behind. Re-copy it and check the size first:\n"
+            "    rsync -a --partial --progress data/potentials/ "
+            "<host>:<repo>/data/potentials/".format(size / pinned_size)), {}
+
+    if not pinned_params:
+        return False, head + (
+            "No parameter fingerprint is pinned for this engine, so the only identity "
+            "available is the file hash and it disagrees. Refusing.\n"
+            "Record one with:  python scripts/tooling/s0_check_weights.py --pin"), {}
+
+    try:
+        params, n = parameter_fingerprint(p, name)
+    except Exception as exc:                                          # noqa: BLE001
+        return False, head + (
+            "The file could not be loaded to compare its PARAMETERS ({}: {}), so it is "
+            "not merely a different container -- it is not a usable model file."
+            .format(type(exc).__name__, exc)), {}
+
+    extra = dict(params_sha256=params, params_sha256_pinned=pinned_params,
+                 n_tensors=n, size_bytes=size)
+    if params == pinned_params:
+        return True, (
+            "openQHA: the weight FILE differs from its pin but the PARAMETERS are "
+            "identical.\n"
+            "  file sha256    {} (pinned {})\n"
+            "  params sha256  {}  <- matches, {} tensors\n"
+            "This is a re-serialised copy of the same model -- a different torch version "
+            "writing the same numbers. Proceeding; both hashes go into every product.\n"
+            "If you want the file hash to agree too, re-pin it with\n"
+            "    python scripts/tooling/s0_check_weights.py --pin".format(
+                digest[:16], str(entry.get("sha256"))[:16], params[:16], n), extra)
+
+    return False, head + (
+        "  params sha256  {}\n  expected       {}\n"
+        "**The PARAMETERS differ**, not just the container. This is a different model, "
+        "and running it would change the level every downstream number claims (D0-4) "
+        "without saying so. Refusing.\n"
+        "Get the same weights, or register the new model as its own engine with its own "
+        "name.".format(params, pinned_params)), extra
+
+
+def provenance(name=None, strict=True):
     """Provenance record for the potential. Every product must carry it.
 
-    Recomputes the SHA-256 and raises if it disagrees with the pinned value.
+    Recomputes the file SHA-256. If it disagrees with the pin, the mismatch is
+    CLASSIFIED (see `_classify_weight_mismatch`) rather than simply refused: a
+    re-serialised copy of the same model is not a changed potential, and treating the
+    two the same is what turns a real safeguard into something people want to switch off.
     """
     name = name or engine_name()
     entry = ENGINES[name]
     p = model_path(name)
     digest = hashlib.sha256(p.read_bytes()).hexdigest()
 
+    mismatch = None
     expected = entry.get("sha256")
     if expected and digest != expected:
-        raise ValueError(
-            "weight file for {} does not match its pinned SHA-256.\n"
-            "  expected {}\n  computed {}\n  path     {}\n"
-            "Refusing to run: a changed potential invalidates the level every "
-            "downstream number claims (D0-4).".format(name, expected, digest, p))
+        ok, message, mismatch = _classify_weight_mismatch(name, entry, p, digest)
+        if not ok:
+            raise ValueError(message)
+        sys.stderr.write(message + "\n")
 
     import mace
     import torch
     return dict(
+        weight_file_mismatch=mismatch,
         engine=name,
         source=entry["source"],
         licence=entry["licence"],
