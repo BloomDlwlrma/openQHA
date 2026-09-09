@@ -347,6 +347,8 @@ basin_store.census(tag="prod")                          # how many per chunk
 | [`docs/tutorials/T02_…ipynb`](docs/tutorials/) | **theory** — AD Hessians and Projected Hessian Learning |
 | [`configs/`](configs/) | every parameter, classified and sourced |
 | [`hpc/README.md`](hpc/README.md) | which machine runs what, and why |
+| [`docs/tianhe_install.md`](docs/tianhe_install.md) | **installing on Tianhe** — the five site facts, exact pinned versions, and every failure seen so far |
+| [`docs/tianhe_runbook.md`](docs/tianhe_runbook.md) | the Tianhe machines themselves: partitions, quotas, scheduler commands |
 
 ---
 

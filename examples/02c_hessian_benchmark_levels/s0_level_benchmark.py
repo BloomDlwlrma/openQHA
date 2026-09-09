@@ -137,7 +137,30 @@ def level_gfn2(symbols, positions, masses, workdir=None):
                 seconds=rec["wall_seconds"], command=rec["command"])
 
 
-def level_rimp2(symbols, positions, masses, workdir, nprocs, maxcore, timeout_s):
+def _read_rimp2(stem, masses, positions, seconds=None, reused=False):
+    """Turn a finished ORCA `.hess` into this example's level record.
+
+    Shared by the fresh run and the resume so the two cannot report different things
+    about the same file.
+    """
+    parsed = orca.parse_hess(str(stem) + ".hess")
+    check = orca.verify_hess_frequencies(parsed)
+    pos_A = parsed["positions_bohr"] / orca.BOHR_PER_ANGSTROM
+    h_ev = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
+    freqs = mode_match.projected_modes(h_ev, masses, pos_A, "hessian")[0]
+    return dict(level="RI-MP2/RIJK/cc-pVTZ", route=ORCA_OPTFREQ_ROUTE,
+                frequencies_cm_inv=[float(x) for x in freqs],
+                orca_frequencies_cm_inv=[float(x) for x in parsed["frequencies_cm_inv"]],
+                n_imaginary=int((np.asarray(freqs) < 0).sum()),
+                positions_A=pos_A.tolist(),
+                max_displacement_A=float(
+                    np.abs(pos_A - np.asarray(positions, float)).max()),
+                parse_check=check, seconds=seconds, reused_existing_hess=bool(reused),
+                workdir=str(Path(stem).parent))
+
+
+def level_rimp2(symbols, positions, masses, workdir, nprocs, maxcore, timeout_s,
+                refresh=False):
     """RI-MP2/RIJK/cc-pVTZ `TightOpt NumFreq`, then our own projection of its Hessian.
 
     ORCA's own `THERMOCHEMISTRY` block is read for nothing: it guesses the symmetry
@@ -149,6 +172,17 @@ def level_rimp2(symbols, positions, masses, workdir, nprocs, maxcore, timeout_s)
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
     stem = workdir / "optfreq"
+
+    # Reuse a finished job. Half an hour of MP2 per structure is worth resuming, and the
+    # reuse is safe because the .hess is only accepted if `verify_hess_frequencies`
+    # still passes on it -- a truncated or mismatched file fails there rather than being
+    # trusted for existing. `--refresh` forces the run.
+    if not refresh and Path(str(stem) + ".hess").exists():
+        try:
+            return _read_rimp2(stem, masses, positions, reused=True)
+        except Exception as exc:                                        # noqa: BLE001
+            print("   existing {}.hess rejected ({}); rerunning".format(stem, exc))
+
     lines = [ORCA_OPTFREQ_ROUTE,
              "%maxcore {}".format(int(maxcore)),
              "%pal nprocs {} end".format(int(nprocs)),
@@ -168,19 +202,7 @@ def level_rimp2(symbols, positions, masses, workdir, nprocs, maxcore, timeout_s)
         raise RuntimeError("ORCA did not finish normally in {}. Tail:\n{}".format(
             workdir, "\n".join(out.splitlines()[-25:])))
 
-    parsed = orca.parse_hess(str(stem) + ".hess")
-    check = orca.verify_hess_frequencies(parsed)
-    pos_A = parsed["positions_bohr"] / orca.BOHR_PER_ANGSTROM
-    h_ev = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
-    freqs = mode_match.projected_modes(h_ev, masses, pos_A, "hessian")[0]
-    return dict(level="RI-MP2/RIJK/cc-pVTZ", route=ORCA_OPTFREQ_ROUTE,
-                frequencies_cm_inv=[float(x) for x in freqs],
-                orca_frequencies_cm_inv=[float(x) for x in parsed["frequencies_cm_inv"]],
-                n_imaginary=int((np.asarray(freqs) < 0).sum()),
-                positions_A=pos_A.tolist(),
-                max_displacement_A=float(
-                    np.abs(pos_A - np.asarray(positions, float)).max()),
-                parse_check=check, seconds=float(seconds), workdir=str(workdir))
+    return _read_rimp2(stem, masses, positions, seconds=float(seconds))
 
 
 # ------------------------------------------------------------------------ comparisons
@@ -235,6 +257,8 @@ def main():
     ap.add_argument("--nprocs", type=int, default=4)
     ap.add_argument("--maxcore", type=int, default=3500)
     ap.add_argument("--timeout-s", type=int, default=36000)
+    ap.add_argument("--refresh", action="store_true",
+                    help="rerun ORCA even when a usable .hess is already on disk")
     ap.add_argument("--forces", action="store_true",
                     help="also compare forces at the common geometry (extra ORCA run)")
     ap.add_argument("--out", default=None)
@@ -294,7 +318,8 @@ def main():
         if "rimp2" in levels:
             got["rimp2"] = level_rimp2(symbols, positions, masses,
                                        runs / "basin{:02d}".format(b) / "rimp2",
-                                       args.nprocs, args.maxcore, args.timeout_s)
+                                       args.nprocs, args.maxcore, args.timeout_s,
+                                       refresh=args.refresh)
 
         hdr = "{:>22} {:>7} {:>9} {:>9} {:>9} {:>10} {:>10} {:>9}"
         print(hdr.format("level", "n_imag", "nu_min", "nu_max", "dx_max/A",

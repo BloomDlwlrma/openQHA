@@ -330,7 +330,12 @@ crest:
   # `backend` to "mlip" and nothing else.
   mlip:
     backend: "mace"
-    modelpath: "../source-code/MACE-OFF23-SC-main/MACE-OFF23-SC_swa.model"
+    # 2026-09-09: follows DEFAULT_ENGINE from MACE-OFF23-SC to MACE-OFF23_medium.
+    # This line is NOT read today (backend is still "mace"; the mlip branch waits for
+    # CREST 3.1), and crest.py takes mace_model as an ARGUMENT from engine.model_path(),
+    # not from here. But a config recording a superseded potential is eventually read as
+    # fact, so it moves with the default.
+    modelpath: "data/potentials/MACE-OFF23_medium.model"
 
   # ---- 1.7 An upstream defect this configuration deliberately avoids -----------------
   # CREST 3.0.2 fails on the ONE combination "external generic calculator + MD/metaMD":

@@ -188,6 +188,23 @@ if [ -z "$MAMBA" ]; then
 fi
 echo "solver      : $MAMBA"
 
+# ---- __cuda -----------------------------------------------------------------------------
+# A card-less allocation has no driver, so `__cuda` is absent and every conda-forge
+# *cuda* build is unsatisfiable ("__cuda =* *, which is missing on the system" --
+# measured on a login node 2026-09-08). An allocation WITH `--gpus` does have one, so
+# this is usually redundant here; set it anyway, because a job submitted without --gpus
+# would otherwise fail deep in the solve instead of building the environment it was
+# asked for. Read from the yml so it cannot drift from the `cuda-version=` pin.
+if [ "$ROLE" != "cpu" ] && [ -z "$CONDA_OVERRIDE_CUDA" ]; then
+    _pin="$(grep -oE '^[[:space:]]*-[[:space:]]*cuda-version=[0-9]+\.[0-9]+' \
+            environment-tianhe-gpu.yml 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)" || true
+    if [ -n "$_pin" ]; then
+        export CONDA_OVERRIDE_CUDA="$_pin"
+        echo "__cuda      : assumed $_pin for the solve"
+    fi
+    unset _pin
+fi
+
 export CONDA_NUMBER_CHANNEL_NOTICES=0
 export CONDA_REMOTE_CONNECT_TIMEOUT_SECS=10.0
 export CONDA_REMOTE_READ_TIMEOUT_SECS=60.0

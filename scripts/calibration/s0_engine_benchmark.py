@@ -17,17 +17,63 @@ print("nproc        =", os.cpu_count())
 print("torch threads=", torch.get_num_threads())
 print("interop      =", torch.get_num_interop_threads())
 
-ROOT = ("/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/"
-        "lambda-qm9-reaction-deltan_0-mace_v1/stage0-tradition-free-energy-calc")
-EGRET = ROOT + "/../source-code/egret-public-master/compiled_models/EGRET_1.model"
-EGRET_M = ROOT + "/../source-code/egret-public-master/compiled_models/EGRET_1M.model"
-EGRET_S = ROOT + "/../source-code/egret-public-master/compiled_models/EGRET_1S.model"
-MACE = ("/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/related-papers/"
-        "workflow-design/mlps/MACE-OFF23-SC-main/MACE-OFF23-SC_swa.model")
+# PATHS COME FROM THE REGISTRY, NOT FROM STRINGS (fixed 2026-09-09).
+#
+# This file used to open with three absolute paths hard-coded to one person's WSL mount,
+# rooted at `.../stage0-tradition-free-energy-calc` -- a directory that has not existed
+# since the 2026-09-03 rename to `openQHA`. So the script could not run anywhere,
+# including on the machine it was written on. It is the same defect as the two found on
+# Tianhe: a location written into a string does not move with the thing it names.
+#
+# The MACE weights now come from `engine.model_path()`, which resolves
+# `model_root()/<filename>` -- one flat directory, `S0_MACE_ROOT` to move it.
+#
+# Egret is NOT in the registry: it is a comparison engine for this benchmark only and no
+# production number depends on it. It stays a path, but a path you can set rather than
+# one baked in, and the script says what to do when it is absent instead of dying on a
+# stack trace. Register it if it ever becomes more than a benchmark.
+import sys
+from pathlib import Path
+
+
+def _repo_root():
+    """Walk up until the openqha package is actually there.
+
+    NOT `parents[2]`. Counting directory levels is the same defect as writing the path
+    into a string: it is right until a file moves, and then it silently points at the
+    wrong tree. `tests/unit/t_repo_bootstrap.py` fails the build over it -- and caught
+    exactly this in the 2026-09-09 rewrite of this file's header, where the fix for one
+    hard-coded path introduced a level count instead.
+    """
+    for p in Path(__file__).resolve().parents:
+        if (p / "openqha" / "__init__.py").is_file():
+            return p
+    raise RuntimeError("openQHA package not found above " + __file__)
+
+
+sys.path.insert(0, str(_repo_root()))
+from openqha.potentials import engine  # noqa: E402
+
+#: Which registered potential to time. Any name in `engine.ENGINES`.
+MACE_ENGINE = os.environ.get("S0_ENGINE", "MACE-OFF23-SC")
+MACE = str(engine.model_path(MACE_ENGINE))
+
+#: Egret's compiled models. Set S0_EGRET_ROOT to the directory holding them.
+_EGRET_ROOT = Path(os.environ.get(
+    "S0_EGRET_ROOT",
+    engine.model_root().parent / "egret" / "compiled_models"))
+EGRET = str(_EGRET_ROOT / "EGRET_1.model")
+EGRET_M = str(_EGRET_ROOT / "EGRET_1M.model")
+EGRET_S = str(_EGRET_ROOT / "EGRET_1S.model")
+if not Path(EGRET).is_file():
+    print("Egret models not found under {}.\n"
+          "  Set S0_EGRET_ROOT to the directory holding EGRET_1*.model, or run only the\n"
+          "  MACE rows. Egret is a comparison engine here; no product depends on it."
+          .format(_EGRET_ROOT))
 
 
 def geometry():
-    p = ROOT + "/docs/orca_inputs/C2H5O1N1_19_36_acetamide.inp"
+    p = str(_repo_root() / "docs" / "orca_inputs" / "C2H5O1N1_19_36_acetamide.inp")
     lines = open(p, encoding="utf-8").read().split("\n")
     i = next(i for i, l in enumerate(lines) if l.startswith("* xyz"))
     sym, xyz = [], []
@@ -62,7 +108,7 @@ for nthreads in (torch.get_num_threads(), max(1, (os.cpu_count() or 4) - 2)):
     print("=== torch threads = {} ===".format(nthreads))
     from mace.calculators import mace_off, MACECalculator
     bench(MACECalculator(model_paths=MACE, device="cpu", default_dtype="float64"),
-          "MACE-OFF23-SC")
+          MACE_ENGINE)
     bench(mace_off(model=EGRET, default_dtype="float64", device="cpu"), "Egret-1")
     bench(mace_off(model=EGRET_M, default_dtype="float64", device="cpu"), "Egret-1M")
     bench(mace_off(model=EGRET_S, default_dtype="float64", device="cpu"), "Egret-1S")

@@ -121,6 +121,11 @@ Every `configured_exists` must be `true`.
 
 ## 3. Install  **[install path measured 2026-09-08; the run itself still unverified]**
 
+> **A fuller treatment is now [`tianhe_install.md`](tianhe_install.md)** — the five site
+> facts that decide whether an install works, exact pinned versions for both environments
+> if you would rather drive it by hand, verification, and a table of every failure seen
+> here so far. What follows is the summary; that file is where to go when it breaks.
+
 ```bash
 git clone <this repo> openQHA && cd openQHA     # or rsync it in
 
@@ -416,6 +421,104 @@ PY
 `stayed_in_one_basin: false` means the trajectory left its basin and T*S is inflated —
 however converged the saturation curve looks. A failed criterion 1 has two causes that
 demand **opposite** actions (run longer / run shorter), and this is what tells them apart.
+
+---
+
+## 5c. Submitting a chain: one file, two modes, three chains  **[dispatch verified locally 2026-09-09]**
+
+Everything above submits through the same file. `examples/run_chain.sh` carries the
+invariant `#SBATCH` directives and **submits itself**, taking partition, walltime and
+`--gpus` as `yhbatch` flags, because those depend on the cluster and a `#SBATCH` line
+cannot be parameterised.
+
+```bash
+# run it here, now, at production settings
+bash examples/run_chain.sh examples/02d_qha_frequency_identity/chain.conf
+
+# submit it
+MODE=hpc PARTITION=ai     bash examples/run_chain.sh <conf>   # TianheXY-A,  8 cards, 7 d
+MODE=hpc PARTITION=h100x  bash examples/run_chain.sh <conf>   # TianheXY-AI, 1 card,  3 d
+MODE=hpc PARTITION=deimos bash examples/run_chain.sh <conf>   # TianheXY-C,  CPU,     3 d
+MODE=hpc PARTITION=temp   bash examples/run_chain.sh <conf>   # GPU short queue, 30 min
+MODE=hpc PARTITION=debug  bash examples/run_chain.sh <conf>   # CPU short queue, 30 min
+```
+
+### Which chain, and where each one belongs
+
+| `CHAIN` | what it runs | partition |
+|---|---|---|
+| `qha` (default) | branch A → branch B → collect → `F_conf` | `ai` / `h100x` |
+| `identity` | 02d: may `ν_k` replace `ω_i` in ZPE, enthalpy, entropy | `ai` / `h100x` |
+| `levels` | 02c: MACE vs GFN2-xTB vs RI-MP2 | **`deimos` only** |
+
+`CHAIN` is set **in the conf**, not in the environment, so a submission is reproducible
+from the file alone — the job re-sources the same conf on the compute node.
+
+**`CHAIN=levels` on a GPU partition is refused on the login node.** ORCA has no GPU path
+in this repository and `D0-75` puts production quantum chemistry on deimos; catching it
+before `yhbatch` turns a wasted allocation into a one-line error.
+
+### What Tianhe actually buys you here, and what it does not
+
+**It does not make one trajectory faster.** A ten-atom molecule on MACE-OFF23_medium is
+latency-bound, not throughput-bound: the only GPU figure this repository has is 3.5×
+*slower* than CPU on a T400 (`D0-C-5`), which does not transfer to an 80 GB card and has
+**not been replaced by a measurement**. Do not plan as though it will.
+
+**It buys concurrency.** A production 02d run is 2 molecules × up to 4 basins × 3 seeds =
+**up to 24 independent trajectories**, and they have no communication between them at all.
+That is what the resource profiles are shaped for:
+
+| profile | layout | good for |
+|---|---|---|
+| `tianhe_a` (`ai`) | 56 workers on 8 cards, 7 per card | many short-ish trajectories |
+| `tianhe_ai` (`h100x`) | the allocation **is** one card + 14 CPUs | one species, one long run |
+| `tianhe_cpu` (`deimos`) | 64 workers × 1 core × 1 node | `levels`, and the collection step |
+
+`available_accelerators` is passed to Parsl as an **int**, never a list. Replay of the
+arithmetic (2026-09-07): an int gives `{card 0: 7 workers, …, card 7: 7}`; a hand-built
+list gave `{0: 49, 1: 7}` — 49 of 56 workers on one card, which reads as "the GPU is
+slow" and is not.
+
+### The two settings a production 02d run must get right
+
+```bash
+PROD_PS=500        # the protocol's production length, not shortened
+SAMPLE_EVERY=2     # steps, i.e. one frame per 2 fs -- NOT the protocol's 1.0 ps
+```
+
+The second one is the whole point and it is worth understanding before you spend a week
+of allocation on it. The protocol samples every 1.0 ps to filter high-frequency noise out
+of the **entropy**. Measured in 02d stage 1, on a surface that is *exactly* harmonic so
+that sampling is the only thing that can be wrong:
+
+```
+frames      dZPE       dT*S
+   500    +1.4246    +0.0226      <- what 500 ps at 1.0 ps actually gives you
+ 12500    -0.0035    -0.0037
+```
+
+**At the protocol's own interval a 500 ps run carries a +1.42 kcal/mol sampling bias in
+the zero-point energy before any physics enters**, while the entropy is already fine. The
+two products of one trajectory want opposite intervals. 12 500 frames at 1.0 ps would be
+12.5 ns; at 2 fs it is 25 ps, and 500 ps at 2 fs gives 250 000 frames — 20× more than the
+harmonic limit needs, which leaves no room to argue that a residual is undersampling.
+
+Cost of the density: **60 MB per trajectory** (250 000 × 10 × 3 × 8 bytes). The entropy
+analysis subsamples back to 1.0 ps from the same file, so one run answers both questions
+and the two answers cannot come from different trajectories.
+
+### Before the long one: the 30-minute gate
+
+```bash
+MODE=hpc PARTITION=temp  bash examples/run_chain.sh <conf>   # GPU chains
+MODE=hpc PARTITION=debug bash examples/run_chain.sh <conf>   # CHAIN=levels
+```
+
+Same file, same conf, same settings — only the queue and the walltime change. **It is not
+a smoke test and its numbers are not results**: it is a check that the environment loads,
+the weights are present, the partition accepts the flags and the drivers start. Read the
+gate for "did it start", never for "what is the answer".
 
 ---
 

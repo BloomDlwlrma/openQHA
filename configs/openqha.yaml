@@ -59,18 +59,30 @@ thermodynamics:
 # 势 —— 唯一的一个
 # --------------------------------------------------------------------------------------
 engine:
-  name: "MACE-OFF23-SC"
-  # PATH IS NOT AUTHORITATIVE HERE. openqha/engine.py holds the registry and
-  # SEARCHES for the model root (S0_MACE_ROOT overrides), because the reference
-  # tree has now moved twice. This line records WHICH weights, not where.
-  weights: "../source-code/MACE-OFF23-SC-main/MACE-OFF23-SC_swa.model"
-  sha256: "32c9fb51704f96da"        # 前 16 位；完整值由 openqha.engine.provenance() 现算并比对
+  # ALIGNED 2026-09-09. This said "MACE-OFF23-SC" while DEFAULT_ENGINE in
+  # openqha/potentials/engine.py has been MACE-OFF23_medium since 2026-09-03 (S0-A-16).
+  # **They disagreed, and the code won**: no code reads this `name` field, it is a
+  # record. So the potential this file claimed was not the potential being run, and
+  # anyone reproducing from the config would have reported the wrong level. It now
+  # follows the code. To change potentials use S0_ENGINE -- the only switch read.
+  name: "MACE-OFF23_medium"
+  # PATH IS NOT AUTHORITATIVE HERE. openqha/potentials/engine.py resolves
+  # `model_root()/<filename>` and nothing else. This line records WHICH weights, not where.
+  # Weights go FLAT in data/potentials/, keeping their own filename, with NO
+  # subdirectory (ruling 2026-09-09). S0_MACE_ROOT moves the whole directory;
+  # S0_MACE_MODEL overrides one file.
+  weights: "data/potentials/MACE-OFF23_medium.model"
+  sha256: "4842c52ad210d6e1"        # 前 16 位；完整值由 openqha.engine.provenance() 现算并比对
   dtype: "float64"                  # numerical_tolerance：几何优化与有限差分 Hessian 都要它
   device: "cpu"
   licence: "Academic Software Licence (ASL) —— 学术非商业"
-  source: "https://arxiv.org/abs/2405.18171"
+  source: "https://arxiv.org/abs/2312.15211"
   # 权重缺失时**抛异常，绝不回退到别的势**。静默换势会让下游每个数字失去它标称的层级。
   fallback_allowed: false
+  # Still selectable, and must stay: every package-1 basin and every number in
+  # D0-P2-11/12/14 lives on that surface and cannot be reproduced without it.
+  # Select it back with S0_ENGINE=MACE-OFF23-SC.
+  #   superseded_default: "MACE-OFF23-SC"  (sha256 32c9fb51704f96da, arXiv 2405.18171)
 
 # --------------------------------------------------------------------------------------
 # 数据 —— 本地路径，不指向任何别的 stage

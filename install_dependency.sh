@@ -638,6 +638,36 @@ fi
 # 2. The environment
 # -------------------------------------------------------------------------------------
 say "environment: $PY_ENV"
+
+# ---- __cuda: a LOGIN NODE HAS NO GPU DRIVER, so the solver thinks CUDA is impossible ---
+# conda-forge's CUDA builds depend on the `__cuda` VIRTUAL package, which conda/mamba
+# synthesise from the NVIDIA driver they can see. Login nodes have no card and no driver,
+# so `__cuda` is absent and every `*cuda*` build is unsatisfiable. Measured on
+# ln302%TianheXY-AI, 2026-09-08, with mamba:
+#
+#     pytorch =2.5.1 cuda120* is not installable because it requires
+#     └─ __cuda =* *, which is missing on the system.
+#
+# CONDA_OVERRIDE_CUDA tells the solver to assume a driver of that version. It affects
+# SOLVING ONLY -- nothing is faked at runtime -- and it is honest here because the
+# compute nodes this environment will run on do have one (driver 550.54.15, a CUDA 12.4
+# driver; minor-version compatibility covers a 12.3 runtime).
+#
+# **Read from $ENV_FILE, not hard-coded**, so the override and the `cuda-version=` pin
+# cannot drift apart -- setting them independently is how you get an environment that
+# solves against one CUDA and links against another.
+#
+# NOTE FOR ANYONE RE-TESTING THIS: `conda` on a workstation WITH a driver solves
+# `*cuda*` happily and proves nothing. Check `conda info | grep -A6 'virtual packages'`
+# and confirm `__cuda` is genuinely absent before concluding the override is unnecessary.
+# A truncated read of that output is what got this wrong once already.
+_cuda_pin="$(grep -oE '^[[:space:]]*-[[:space:]]*cuda-version=[0-9]+\.[0-9]+' "$ENV_FILE" 2>/dev/null \
+             | grep -oE '[0-9]+\.[0-9]+' | head -1)" || true
+if [ -n "$_cuda_pin" ] && [ -z "$CONDA_OVERRIDE_CUDA" ]; then
+    export CONDA_OVERRIDE_CUDA="$_cuda_pin"
+    echo "  __cuda      : assumed $_cuda_pin for the solve (login nodes carry no driver)"
+fi
+unset _cuda_pin
 # SAY HOW LONG THIS TAKES, BEFORE IT GOES QUIET.
 # `Solving environment: \` is a spinner and nothing else; the script then prints nothing
 # for minutes. Every operator who has not seen it before reads that as a hang and kills
@@ -768,9 +798,13 @@ CREST_BIN="$(command -v crest || true)"
 MACE_ROOT="${S0_MACE_ROOT:-$HERE/data/potentials}"
 MACE_URL_BASE="https://github.com/ACEsuit/mace-off/raw/main"
 
-fetch_model () {          # fetch_model <registry-name> <family-dir> <file>
+fetch_model () {          # fetch_model <registry-name> <upstream-subdir> <file>
+    # <upstream-subdir> is where the file lives ON THE SERVER. The LOCAL destination is
+    # flat: openqha/potentials/engine.py resolves <root>/<filename> and nothing else
+    # (user ruling 2026-09-09). Downloading into a mace_off23/ subdirectory here is what
+    # made the installer put weights somewhere the loader never looked.
     local name="$1" fam="$2" file="$3"
-    local dest="$MACE_ROOT/$fam/$file"
+    local dest="$MACE_ROOT/$file"
     local want
     want="$(python -c "from openqha import engine; print(engine.ENGINES['$name']['sha256'] or '')" 2>/dev/null)"
 
@@ -780,7 +814,7 @@ fetch_model () {          # fetch_model <registry-name> <family-dir> <file>
         return 0
     fi
 
-    mkdir -p "$MACE_ROOT/$fam"
+    mkdir -p "$MACE_ROOT"
     echo "  $file: downloading"
     if ! curl -fL --retry 3 --progress-bar -o "$dest.part" "$MACE_URL_BASE/$fam/$file"; then
         rm -f "$dest.part"
@@ -805,13 +839,16 @@ fetch_model () {          # fetch_model <registry-name> <family-dir> <file>
 
 if [ "$WEIGHTS" = "none" ]; then
     say "MACE-OFF weights: skipped (--no-weights)"
-    echo "  Branch A cannot run without them. When you have them, put them at"
-    echo "    \$S0_MACE_ROOT/mace_off23/MACE-OFF23_medium.model"
+    echo "  Branch A cannot run without them. When you have them, drop them in"
+    echo "    $MACE_ROOT/MACE-OFF23_medium.model"
+    echo "  FLAT -- one directory, no subdirectories. That is the only layout."
 elif [ "$MODE" = "tianhe" ]; then
     say "MACE-OFF weights: not downloaded on a login node"
     echo "  Outbound traffic goes through a proxy here and a 100 MB pull from a login"
     echo "  node is antisocial. Fetch them where you have bandwidth and copy them in:"
-    echo "    rsync -a data/potentials/ <tianhe>:$HERE/data/potentials/"
+    echo "    rsync -av data/potentials/ <tianhe>:$HERE/data/potentials/"
+    echo "  FLAT in that directory -- no mace_off23/ subdirectory. That is the only"
+    echo "  layout openqha/potentials/engine.py resolves."
     echo "  Then: python -c 'from openqha import engine; print(engine.provenance())'"
 else
     say "MACE-OFF weights -> $MACE_ROOT"

@@ -157,7 +157,7 @@ The BLAS column is there because it is the axis the two Tianhe environments are 
 along and the one you cannot read off the name. `openqha-gpu` takes MKL because a CUDA
 build of pytorch depends on it, which makes `nomkl` unsatisfiable there; everything that
 could be *moved* by that choice — the quasi-harmonic diagonalisation above all — runs in
-the collection pass, in `openqha`, against OpenBLAS. `docs/tianhe_runbook.md` §3b has the
+the collection pass, in `openqha`, against OpenBLAS. [`tianhe_install.md`](tianhe_install.md) §1.5 has the
 three measurements behind the split.
 
 ```bash
@@ -264,7 +264,7 @@ cd openQHA
 bash install_dependency.sh                    # downloads + hash-checks the default
 # or:  bash install_dependency.sh --all-weights   # the whole committee, for branch C
 
-ls -l data/potentials/mace_off23/
+ls -l data/potentials/
 #   MACE-OFF23_medium.model
 
 # --- copy it in ----------------------------------------------------------------------
@@ -284,28 +284,46 @@ re-copy it; do not "fix" the pin.
 
 | what | where | note |
 |---|---|---|
-| the registry | `openqha/potentials/engine.py` → `ENGINES` | name → path, sha256, licence, source, note |
+| the registry | `openqha/potentials/engine.py` → `ENGINES` | name → **filename**, sha256, licence, source, note — no paths |
+| the directory | `openqha/potentials/engine.py` → `model_root()` | `<repo>/data/potentials`, or `S0_MACE_ROOT` |
+| add a potential | an `ENGINES` entry: `filename=`, `sha256=` | any MLIP. Drop the file in that directory, flat |
 | production default | `openqha/potentials/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` since 2026-09-03 (S0-A-16) |
 | select another | `S0_ENGINE=MACE-OFF23_large` | must be a registered name; unknown names raise |
-| move the tree | `S0_MACE_ROOT=/path/to/potentials` | overrides the search |
-| one file | `S0_MACE_MODEL=/path/to/x.model` | overrides one path |
+| move the directory | `S0_MACE_ROOT=/path/to/potentials` | the one flat directory of weights |
+| one file | `S0_MACE_MODEL=/path/to/x.model` | overrides that engine only |
 | what the run used | `configs/openqha.yaml` → `engine:` | records *which* weights, **not authoritative for the path** |
 
-The path is a **search**, not a literal, because a literal has already broken twice here:
-`scripts/` moved and every `parents[1]` broke; then the reference tree moved out to
-`../source-code/` and every engine path broke. A name written into a string does not move
-with the thing it names.
-
-Expected layout after `install_dependency.sh`:
+**ONE directory, FLAT** (user ruling 2026-09-09). `model_root()/<filename>` and nothing
+else — no subdirectories, no search:
 
 ```
-$S0_MACE_ROOT/                 # default: <repo>/data/potentials
-    mace_off23/MACE-OFF23_medium.model      <- the production default
-    mace_off23/MACE-OFF23_small.model       <- committee, with --all-weights
-    mace_off23/MACE-OFF23_large.model
-    mace_off23/MACE-OFF23b_medium.model
-    mace_off24/MACE-OFF24_medium.model
+<repo>/data/potentials/                     <- model_root(); S0_MACE_ROOT moves it
+    MACE-OFF23_medium.model                 <- the production default
+    MACE-OFF23_small.model                  <- committee members, --all-weights
+    MACE-OFF23_large.model
+    MACE-OFF23b_medium.model
+    MACE-OFF24_medium.model
+    MACE-OFF23-SC_swa.model                 <- kept selectable; package 1 lives on it
 ```
+
+This replaced a search over four candidate roots × seven relative layouts, with a
+per-family `mace_off23/` subdirectory on top. That search was written because a literal
+path had already broken twice here — and it failed worse, in a way worth remembering:
+
+> A search with many candidates does not have one answer you can check. It has a list of
+> places it *might* have looked, and when it fails nobody can tell whether the file is
+> missing or merely somewhere the list does not cover.
+
+Both of its failures were real and both were on Tianhe: weights copied flat into
+`data/potentials/` — what everyone does when moving them to a cluster — were invisible
+because a directory only counted if it held a literal `mace_off23` subdirectory; and
+`install_dependency.sh` told people to use `data/potentials/`, which **was not in the
+search list at all**. That appeared to work only because the installer also writes
+`env_openqha.sh`, which exports `S0_MACE_ROOT` — and a cluster job never sources it. The
+documented location failed on exactly the path the documentation was written for.
+
+The original fragility is answered by `S0_ROOT` being *computed* rather than written
+down, not by searching harder.
 
 **Never falls back.** A missing or altered weight file raises. Silently swapping the
 potential strips every downstream number of the level it claims to be at, and level
@@ -364,7 +382,7 @@ curl -sI https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/noarch/
 Expect `HTTP/… 200`. If it hangs, stop — everything after it will hang too, and a hung job
 is charged. A login node has **no direct DNS**, so before `setproxy.sh` nothing resolves
 and conda reports that as an outage of whichever mirror it was reaching for; that is
-exactly the 2026-09-08 failure, and `tianhe_runbook.md` §3a is the post-mortem.
+exactly the 2026-09-08 failure, and [`tianhe_install.md`](tianhe_install.md) is the handbook and the post-mortem.
 
 ```bash
 type -a yhbatch yhrun sacct squeue scancel        # all five exist (measured 2026-09-05)

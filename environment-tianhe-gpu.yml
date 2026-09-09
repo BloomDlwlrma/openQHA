@@ -2,8 +2,29 @@
 #
 #     module load anaconda3/2023.09
 #     module load CUDA/12.3
+#     export CONDA_OVERRIDE_CUDA=12.3      # <- NOT OPTIONAL ON A LOGIN NODE, see below
 #     conda env create -f environment-tianhe-gpu.yml
 #     conda activate openqha-gpu
+#
+# ---------------------------------------------------------------------------------------
+# CONDA_OVERRIDE_CUDA IS REQUIRED WHEREVER THERE IS NO GPU DRIVER
+# ---------------------------------------------------------------------------------------
+# conda-forge's CUDA builds depend on the `__cuda` VIRTUAL package, which conda and mamba
+# synthesise from the NVIDIA driver they can see. A login node has no card and no driver,
+# so `__cuda` is absent and every `*cuda*` build below becomes unsatisfiable. Measured on
+# ln302%TianheXY-AI, 2026-09-08:
+#
+#     pytorch =2.5.1 cuda120* is not installable because it requires
+#     └─ __cuda =* *, which is missing on the system.
+#
+# The override affects SOLVING ONLY -- nothing is faked at runtime -- and it is honest
+# here because the compute nodes this environment runs on do have a driver (550.54.15).
+# `install_dependency.sh` sets it automatically, reading the value from the
+# `cuda-version=` pin below so the two cannot drift apart.
+#
+# Re-testing this on a workstation that HAS a driver proves nothing: check
+# `conda info | grep -A6 "virtual packages"` and confirm `__cuda` is genuinely absent
+# first. A truncated read of that output is what made this look unnecessary once (S0-G-67).
 #
 # or:  bash install_dependency.sh --tianhe-cuda    # TianheXY-AI
 #      bash install_dependency.sh --tianhe-a       # TianheXY-A
@@ -144,17 +165,41 @@ dependencies:
   # exports OPENBLAS_NUM_THREADS=1 -- which is what actually fixed the measured case, the
   # pins merely made it unnecessary.
   #
-  # SOLVED VERSIONS (dry run 2026-09-07, CONDA_OVERRIDE_CUDA=12.3, linux-64):
-  #     cuda-version   12.3            cuda-cudart   12.3.101
-  #     python         3.11.16         numpy         1.26.4
-  #     pytorch        2.5.1  cuda120_py311h7a71dd8_303
-  #     openmm         8.2.0           openmm-torch  1.5  cuda120py311hc49b99e_0
-  #     openmmtools    0.25.0          mdanalysis    2.10.0
-  #     libblas        3.9.0  37_h5875eb1_mkl        mkl  2024.2.2
+  # SOLVED VERSIONS -- RE-MEASURED 2026-09-08, libmamba, linux-64, CONDA_OVERRIDE_CUDA=12.3
+  # (5 min 30 s including the repodata download. The same file under the CLASSIC solver
+  # was still running after 1 h 37 min at 100% CPU on a Tianhe login node -- see S0-G-66.
+  # This file is not "slow to solve"; it is slow to solve with the wrong solver.)
+  #
+  #     python         3.11.16  h5f976f7_2_cpython
+  #     cuda-version   12.3     h32bc705_3          cudnn        9.10.2.21 hbcb9cd8_0
+  #     pytorch        2.5.1    cuda120_py311h7a71dd8_303
+  #     libtorch       2.5.1    cuda120_h6f417b9_303
+  #     openmm         8.2.0    py311h5db57db_0
+  #     openmm-torch   1.5      cuda120py311hc49b99e_0
+  #     openmmtools    0.25.0   pyhd8ed1ab_0        mdanalysis   2.10.0  py311hed34c8f_1
+  #     numpy          1.26.4   py311h64a7726_0     scipy        1.13.1  py311h517d4fd_0
+  #     pandas         2.3.3    py311hed34c8f_2     pyarrow      18.1.0  py311h38be061_0
+  #     h5py           3.16.0   nompi_py311h89df61e_104
+  #     ase            3.29.0   pyhd8ed1ab_1        rdkit        2025.09.5 py311h34e1bb8_0
+  #     pyyaml         6.0.3    py311h3778330_1     pip          26.2.1  pyh8b19718_0
+  #     libblas        3.9.0    37_h5875eb1_mkl     mkl          2024.2.2 ha770c72_17
+  #     liblapack      3.9.0    37_h5e43f62_mkl
+  #     llvm-openmp    23.1.0   h7148c6a_0          _openmp_mutex 4.5    8_kmp_llvm
+  #
+  # pip layer, versions checked on PyPI 2026-09-08:
+  #     mace-torch 0.3.16   pymsym 0.3.5   parsl 2026.9.7
+  # NOTE mace-torch 0.3.17 DOES NOT EXIST on PyPI (releases stop at 0.3.16), although
+  # requirements.txt says "measured on 0.3.17" in two places. That claim is not currently
+  # reproducible; pin 0.3.16.
   #
   # openmm-torch resolves to a **cuda120** build, matching torch. If that ever comes back
   # as a `cpu` build the environment is silently useless for the thing it exists for --
   # the `=*cuda*` constraint above is what turns that into a solver error instead.
+  #
+  # NOTE THE NUMPY/TORCH SPLIT ACROSS THE TWO ENVIRONMENTS. Here: numpy 1.26.4, torch
+  # 2.5.1. In environment-tianhe.yml: numpy 2.4.6, torch 2.13.0. `cuda-version=12.3` plus
+  # openmm-torch pulls this whole side back a generation. Products crossing between the
+  # two must go through parquet/HDF5/xyz, never pickle.
 
   - python=3.11
   - numpy>=1.24

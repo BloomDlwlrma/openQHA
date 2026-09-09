@@ -14,10 +14,12 @@ the stiff modes, QHA for the soft ones — is unnecessary machinery.
 python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
     --species dsgdb9nsd_000018 --tag prod --stage harmonic
 
-# needs a trajectory whose atom order is branch A's own
-BASINS=data/basins/prod/1_16000/1_4000/dsgdb9nsd_000018.basins.xyz \
-SPECIES=dsgdb9nsd_000018 bash examples/02d_qha_frequency_identity/run_trajectory.sh
+# PRODUCTION: 500 ps, one frame per 2 fs, every basin, three seeds
+MODE=hpc PARTITION=ai bash examples/run_chain.sh \
+    examples/02d_qha_frequency_identity/chain.conf
+bash examples/run_chain.sh examples/02d_qha_frequency_identity/chain.conf   # or here
 
+# a trajectory you already have
 python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
     --species dsgdb9nsd_000018 --tag prod --stage all --traj-tag ex02d
 ```
@@ -26,8 +28,12 @@ python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
 
 ## The answer, in one line
 
-**For entropy, yes. For zero-point energy and enthalpy, no — and the obstacle is the
-frame count, not the physics.**
+**`ν_k` may replace `ω_i` for the entropy. It may not for the zero-point energy or the
+enthalpy — and `G_trans` and `G_rot` never depended on the spectrum at all.**
+
+Substituting the whole quasi-harmonic spectrum into `G_total` moves it by **−6.8
+kcal/mol** on acetone and **−6.7** on propanal, against a potential whose own error
+against RI-MP2 is **0.4** (02c). Where that comes from, term by term, is stage 3.
 
 ---
 
@@ -108,12 +114,46 @@ gate rejects modes whose frequencies are perfectly good.
 
 ---
 
-## Stage 2 — the real trajectory
+## Stage 2 — the real trajectory, and the answer
 
 The same analysis on molecular dynamics on the real surface, over prefixes of **one**
 trajectory so that only the length changes. The deviation here is stage 1's sampling
 noise **plus** the physics: anharmonicity, internal rotation, basin escape. Stage 1 is
 what makes those separable.
+
+Measured 2026-09-09. Acetone, 12 500 frames at 2 fs = 25 ps, Nosé–Hoover chain,
+tdamp 20 fs — **the frame count at which stage 1's ZPE error is 0.004 kcal/mol**:
+
+```
+ length   max|dnu|       dZPE     dE_vib       dT*S    minBlk   dup
+  5.0ps    3007.04    +6.2690    +6.3815    +0.5851     0.277     2
+ 10.0ps    3003.86    +0.1240    +0.6542    +1.8003     0.194     2
+ 15.0ps    3002.99    -2.9329    -2.2789    +2.1912     0.244     3
+ 20.0ps    3004.92    -3.9129    -3.2420    +2.0784     0.309     4
+ 25.0ps    3003.93    -5.4246    -4.6985    +2.1758     0.261     2
+  crossings: 0 distinct, 137 symmetry-equivalent
+```
+
+**Sampling has been eliminated as the explanation, and the ZPE is still wrong by
+−5.42 kcal/mol — and still moving.** Propanal's three basins give −4.59, −6.12, −5.9.
+
+Two things in that table are worth reading slowly.
+
+**`max|dnu|` sits at ~3000 cm⁻¹ at every length.** A quasi-harmonic mode's best-overlap
+partner is a C–H stretch it is nowhere near. The two bases have stopped corresponding —
+`minBlk` is 0.18–0.31 and there are 2–5 duplicate pairings — so on the real surface there
+is no pairing `π` to build `S_i^final` on. That is not a threshold being missed; it is
+the mapping not existing.
+
+**The `dT·S` and `dZPE` columns are not the same kind of error.** The entropy excess is
+**physical**: 137 symmetry-equivalent methyl turns, zero conformer changes, and the same
++2.2 kcal/mol this repository measured before. The ZPE deviation is **an artefact of the
+question**: a classical trajectory has no zero-point motion at all, so reading `½hcΣν`
+off a classical variance is not a bad estimate of the ZPE, it is not an estimate of it.
+
+**Propanal basin 0 left its basin**: 16 distinct crossings in 25 ps. Its intra-basin
+quasi-harmonic entropy is not an intra-basin quantity, and `basin_residence` says so
+before anything downstream reads the number.
 
 The trajectory must carry branch A's own atom order. It is checked, never repaired — the
 basin `xyz` and a stored trajectory were measured on 2026-09-08 to disagree for acetone,
@@ -126,15 +166,128 @@ inflated `T·S` however smooth its saturation curve looks.
 
 ---
 
-## Stage 3 — the hybrid, priced
+## Stage 3 — the substitution itself: `G_total` with `ν_k` in place of `ω_i`
+
+**This is the question, and it needs no mode pairing.** Every term is a *sum* over its
+spectrum, so swapping one spectrum for the other is a set-to-set substitution: no
+permutation `π`, no overlap, no cutoff. (Whether a pairing could be built is stage 4's
+business, and stage 3 does not depend on the answer.)
+
+Acetone, 25 ps, 12 500 frames, kcal/mol:
+
+```
+            term  Hessian omega         QHA nu    difference
+------------------------------------------------------------
+            E_el   -121286.9509   -121286.9509       +0.0000
+             ZPE        52.6463        47.2217       -5.4246
+   H(T)-H(0) vib         1.5698         2.2959       +0.7261
+           E_rot         0.8887         0.8887       +0.0000
+         E_trans         0.8887         0.8887       +0.0000
+              pV         0.5925         0.5925       +0.0000
+         G_trans        -9.8856        -9.8856       +0.0000
+   G_rot (sigma)        -5.8917        -5.8470       +0.0446
+        -T*S_vib        -2.9297        -5.1055       -2.1758
+      (G - E_el)        35.5092        28.6795       -6.8297
+         G_total   -121251.4417   -121258.2714       -6.8297
+```
+
+Propanal basin 1: `G_total` moves **−6.6555** (ZPE −6.1241, H +0.5649, −T·S −1.1137).
+
+### `G_trans` and `G_rot` cannot move, and the code asserts it
+
+**`G_trans` is identical, exactly.** Sackur–Tetrode depends on the molecular mass, the
+temperature and the pressure. No frequency enters it, so a difference there would be an
+input error, and `gtotal.compare` raises rather than reports one.
+
+**`G_rot` moved +0.0446 — and that is geometry, not spectrum.** The rigid rotor depends
+on the moments of inertia and σ; no frequency enters it either. The Hessian route is
+evaluated at the minimum, the quasi-harmonic route at the trajectory's mean structure, and
+those are not the same point. The record labels it `rotational_geometry_shift_kcal` so it
+can never be read as an effect of the substitution.
+
+So of the six terms, **exactly three can move**: ZPE, the thermal enthalpy, and `−T·S`.
+
+### Which band carries which term — the argument, measured
+
+Acetone, from the Hessian spectrum:
+
+```
+ band / cm^-1    n          ZPE    share      H(T)-H(0)    share          T*S    share
+--------------------------------------------------------------------------------------
+    below 500    4       1.5404     2.9%         1.2616    80.4%       2.5358    86.6%
+  500 to 1500   13      21.7303    41.3%         0.3074    19.6%       0.3929    13.4%
+   above 1500    7      29.3755    55.8%         0.0008     0.1%       0.0009     0.0%
+        total   24      52.6463   100.0%         1.5698   100.0%       2.9297   100.0%
+```
+
+**ZPE is 55.8% from above 1500 cm⁻¹ and 97.1% from above 500. The thermal enthalpy is
+80.4% from below 500, and above 1500 contributes 0.1%.** Entropy behaves like the
+enthalpy: 86.6% from below 500.
+
+That is the whole argument in one table. `ZPE = ½hcΣν` weights every mode by its
+frequency, so the stiff end dominates — one C–H stretch at 3000 cm⁻¹ is worth 4.29
+kcal/mol of ZPE, a torsion at 100 cm⁻¹ worth 0.14. `H(T)−H(0) = Σ hcν/(e^{hcν/kT}−1)`
+weights by thermal occupation, and a 3000 cm⁻¹ mode is not excited at 300 K.
+
+**A trajectory resolves the soft end well and the stiff end badly.** So it can carry the
+enthalpy and the entropy, and it cannot carry the ZPE — not because the estimator is poor
+but because the ZPE is a question about the part of the spectrum a classical trajectory
+has least to say about, and no zero-point motion to say it with.
+
+### Against the yardstick
+
+02c measures MACE-OFF's own thermochemistry as **0.39–0.43 kcal/mol** from RI-MP2. The
+substitution costs **6.8**. It is **16× the error of the potential the whole project is
+built on** — so this is not a close call that better sampling might settle.
+
+---
+
+## Stage 4 — the hybrid, priced
 
 `mode_match.hybrid_spectrum` builds `S_i^final` and `G − E_el` is reported for the
-pure-Hessian, pure-QHA and hybrid spectra side by side, over a sweep of `ν_cut`. The
-price of each choice is then a number rather than an argument.
+pure-Hessian, pure-QHA and hybrid spectra side by side, over a sweep of `ν_cut`.
 
-`ν_cut` is swept and not assumed. This package's `thermo.QRRHO_NU0_CM` is 100 cm⁻¹,
-Grimme's convention for free energies; CREST's entropy mode uses `--sthr 25.0`. **The two
-differ by a factor of four**, so the value has to come out of the scan.
+Measured 2026-09-09, kcal/mol, at 25 ps:
+
+```
+                        acetone   propanal b0   propanal b1
+ hessian                35.5092       36.0252       35.7700
+ qha                    28.6348       30.1118       29.0972
+ hybrid nu_cut = 25     35.5092       36.0252       35.7700   (0 modes taken)
+ hybrid nu_cut = 50     35.5092       36.0252       35.7700   (0 modes taken)
+ hybrid nu_cut = 100    30.5733       36.0252       30.9618   (1, 0, 1 taken)
+ hybrid nu_cut = 150    30.5733       36.0252       31.0627   (1, 0, 3 taken)
+```
+
+**The hybrid is not a rescue, and the table shows both ways it fails.** At the cuts
+where the block-overlap gate passes nothing, the hybrid *is* the Hessian answer and the
+trajectory contributed nothing. At the cuts where it passes something, taking **one**
+soft mode from the quasi-harmonic spectrum moves `G − E_el` by about **5 kcal/mol** —
+five times the target accuracy, from one mode.
+
+The pure-QHA column is 5.9 to 6.9 kcal/mol below the Hessian on every basin. That is
+what the spectrum substitution costs when it is taken at face value.
+
+`ν_cut` was swept, not assumed: `thermo.QRRHO_NU0_CM` is 100 cm⁻¹, Grimme's convention
+for free energies, while CREST's entropy mode uses `--sthr 25.0`. **The two differ by a
+factor of four, and the table above differs by 5 kcal/mol across that range** — so the
+value is a result, not a convention.
+
+---
+
+## Verdict
+
+| term | can `ν(QHA)` replace `ω(Hessian)`? |
+|---|---|
+| entropy, **as a total** | **yes, and it is arguably the better quantity** — it carries hindered internal rotation the harmonic spectrum omits. It is a different number, not a worse one, and must be entered with the internal symmetry number (see [`plan_AB`](../../.mem/plan/plan_AB_total-free-energy.md)) |
+| entropy, **mode by mode** | **no.** On the real surface the pairing does not exist: block overlap 0.18–0.31, 2–5 duplicate pairings, largest paired discrepancy about 3000 cm⁻¹ |
+| **ZPE** | **no, and not for a fixable reason.** A classical trajectory has no zero-point motion |
+| **enthalpy** | **no**, same reason; it tracks the ZPE column row for row |
+
+So `G_total` keeps two spectra: **ZPE, enthalpy, `G_rot` and `G_trans` from the analytic
+Hessian; the entropy from the trajectory, as a total.** That is not the complicated
+splice — there is no mode-by-mode `π` in it, and no `ν_cut` and no overlap gate, because
+stage 2 says none of those three can be made to work.
 
 ---
 

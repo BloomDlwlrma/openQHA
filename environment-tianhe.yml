@@ -92,6 +92,37 @@ dependencies:
   - libblas=*=*openblas
   - liblapack=*=*openblas
 
+  # SOLVED VERSIONS -- measured 2026-09-08, libmamba, linux-64. This file had no recorded
+  # solve before; environment-tianhe-gpu.yml has had one since 2026-09-07, and the absence
+  # here is why "which file built this environment?" was answerable only by guesswork.
+  #
+  #     python         3.11.16  h5f976f7_2_cpython
+  #     libopenblas    0.3.34   openmp_h12324f8_1   <- openmp_, not pthreads_. The pin.
+  #     libblas        3.11.0   10_h4a7cf45_openblas
+  #     liblapack      3.11.0   10_h47877c9_openblas   nomkl  1.0  h5ca1d4c_0
+  #     pytorch        2.13.0   cpu_generic_py311_h7689428_2
+  #     libtorch       2.13.0   cpu_generic_hd7c72f0_2
+  #     crest          3.0.2    h8876d29_1          xtb          6.7.1  gfortran_ha02e54d_5
+  #     numpy          2.4.6    py311h2e04523_0     scipy        1.17.1 py311hbe70eeb_1
+  #     pandas         3.0.5    py311h8032f78_1     pyarrow      25.0.0 py311h38be061_0
+  #     matplotlib     3.11.1   py311h968eb38_2     h5py         3.16.0 nompi_py311h89df61e_104
+  #     ase            3.29.0   pyhd8ed1ab_1        rdkit        2026.03.6 py311hc027fe1_0
+  #     pyyaml         6.0.3    py311h3778330_1     pip          26.2.1 pyh8b19718_0
+  #
+  # pip layer (PyPI, 2026-09-08): mace-torch 0.3.16, pymsym 0.3.5, parsl 2026.9.7.
+  #
+  # THIS SET MATCHES, PACKAGE FOR PACKAGE, THE `openqha` ALREADY BUILT ON TianheXY-AI.
+  # That is worth recording because it settled a live question: that environment also
+  # contains jupyter, jupyterlab, mdtraj and MDAnalysis, which are NOT in this file --
+  # and they are all `pypi_0` in `conda list`, i.e. they came from
+  # `pip install -r requirements.txt`, not from environment.yml. The environment was built
+  # from THIS file and is correct. `conda list | grep pypi_0` is how you tell the conda
+  # layer from the pip layer, and it is worth doing before concluding a file was misused.
+  #
+  # NOTE THE SPLIT AGAINST THE GPU FILE: numpy 2.4.6 / torch 2.13.0 here against numpy
+  # 1.26.4 / torch 2.5.1 there. Products crossing between the two environments must go
+  # through parquet/HDF5/xyz, never pickle.
+
   - python=3.11
   - numpy>=1.24
   - scipy>=1.10

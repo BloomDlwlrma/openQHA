@@ -61,7 +61,10 @@ from openqha.quasi_harmonic import mode_match, qha                     # noqa: E
 from openqha.quasi_harmonic import basin_residence as br               # noqa: E402
 from openqha.store import basin_store                                  # noqa: E402
 from openqha.thermochem import hessian as hess_mod                     # noqa: E402
-from openqha.thermochem import thermo                                  # noqa: E402
+from openqha.thermochem import gtotal, thermo                          # noqa: E402
+
+#: 1 eV in kcal/mol -- the same constant stage 2 uses, not a second copy.
+EV_TO_KCAL = 23.060547830618307
 
 #: Frame counts for the harmonic-limit sweep. The top of the range is deliberately far
 #: past anything a real trajectory will reach: the point is to show where each term
@@ -203,9 +206,35 @@ def stage_real(traj_dir, symbols, positions, omega, v_om, masses, temperature_K,
                 rows={k: v for k, v in rows}), rows
 
 
+def stage_gtotal(nu, omega, masses, min_positions, mean_positions, sigma, degeneracy,
+                 e_el_kcal, temperature_K):
+    """Stage 3. **The substitution the question is actually about.**
+
+    `G_total` assembled twice from the same molecule, the same sigma and the same
+    electronic energy -- once with the Hessian's `omega_i`, once with the
+    quasi-harmonic `nu_k`. Every term is a SUM over its spectrum, so this needs no mode
+    pairing, no overlap and no cutoff. Whether a pairing could be built is a separate
+    question and stage 4 answers it; this stage does not depend on the answer.
+
+    Each route is evaluated at ITS OWN geometry -- the Hessian at the minimum it was
+    computed at, the quasi-harmonic route at the trajectory's mean structure -- because
+    that is what each one actually has. The consequence is that `G_rot` can differ, and
+    `gtotal.compare` labels that difference as geometry rather than letting it be read
+    as an effect of the spectrum.
+    """
+    ref = gtotal.assemble(omega, masses, min_positions, sigma, degeneracy,
+                          electronic_energy_kcal=e_el_kcal,
+                          temperature_K=temperature_K, label="Hessian omega")
+    test = gtotal.assemble(nu, masses, mean_positions, sigma, degeneracy,
+                           electronic_energy_kcal=e_el_kcal,
+                           temperature_K=temperature_K, label="QHA nu")
+    return dict(hessian=ref, qha=test,
+                comparison=gtotal.compare(ref, test, "hessian", "qha"))
+
+
 def stage_hybrid(nu, v_nu, omega, v_om, masses, positions, symbols, sigma, degeneracy,
                  temperature_K, nu_cuts, min_block_overlap):
-    """Stage 3. `G - E_el` from three spectra, so the price of the choice is a number."""
+    """Stage 4. `G - E_el` from three spectra, so the price of the choice is a number."""
     m = mode_match.match(nu, v_nu, omega, v_om)
     out = []
     for cut in nu_cuts:
@@ -312,21 +341,41 @@ def main():
                 xs = [r["residence"]["symmetry_equivalent_crossings"] for _, r in rrows]
                 print("  basin crossings at full length: {} distinct, {} "
                       "symmetry-equivalent".format(xd[-1], xs[-1]))
-                last = rrows[-1][1]
-                nu_full, v_nu_full, _, _ = qha_modes(
+                nu_full, v_nu_full, mean_full, _ = qha_modes(
                     np.load(d / "frames.npy"), masses, positions)
+
+                # ---- STAGE 3: the substitution itself. No pairing anywhere in it.
+                e_el = float(basin_rec["energy_eV"]) * EV_TO_KCAL
+                gt = stage_gtotal(nu_full, omega, masses, positions, mean_full,
+                                  sigma, degen, e_el, temperature)
+                entry["gtotal"] = gt
+                print()
+                print("STAGE 3 -- G_total with nu_k in place of omega_i, term by term "
+                      "(kcal/mol)")
+                print(gtotal.format_table([gt["hessian"], gt["qha"]], gt["comparison"]))
+                c = gt["comparison"]
+                print()
+                print("  G_trans is identical by construction: no frequency enters "
+                      "Sackur-Tetrode.")
+                print("  G_rot moved {:+.4f} kcal/mol, and that is the GEOMETRY "
+                      "(minimum vs trajectory mean), not the spectrum."
+                      .format(c["rotational_geometry_shift_kcal"]))
+                print("  everything the spectrum can touch: {:+.4f} kcal/mol"
+                      .format(c["vibrational_only_delta_kcal"]))
+                print()
+                print("  which band carries which term -- Hessian omega")
+                print(gtotal.format_bands(gt["hessian"]))
+                print()
+                print("  which band carries which term -- QHA nu")
+                print(gtotal.format_bands(gt["qha"]))
+
+                # ---- STAGE 4: could a per-mode splice be built at all?
                 entry["hybrid"] = stage_hybrid(
                     nu_full, v_nu_full, omega, v_om, masses, positions, symbols,
                     sigma, degen, temperature, cuts, args.min_block_overlap)
                 print()
-                print("STAGE 3 -- (G - E_el) from three spectra, kcal/mol")
-                p = entry["hybrid"]["pure"]
-                print("  {:>22} {:>14}".format("spectrum", "G - E_el"))
-                for k in ("hessian", "qha"):
-                    v = p[k]
-                    print("  {:>22} {:>14}".format(
-                        k, "refused" if "refused" in v
-                        else "%.4f" % v["G_minus_Eel_kcal"]))
+                print("STAGE 4 -- could a per-mode hybrid be built? (G - E_el, "
+                      "kcal/mol)")
                 for hy in entry["hybrid"]["hybrid"]:
                     print("  {:>22} {:>14.4f}   ({} modes from QHA, {} rejected on "
                           "overlap)".format(
@@ -334,7 +383,6 @@ def main():
                               hy["G_minus_Eel_kcal"],
                               hy["spectrum_record"]["n_from_qha"],
                               hy["spectrum_record"]["n_rejected_by_overlap"]))
-                del last
         report["basins"][str(b)] = entry
 
     report["wall_seconds"] = time.time() - t0

@@ -8,14 +8,24 @@
 #   flags below, where they can be. Only the invariant directives live here.
 #
 # =======================================================================================
-# THE WHOLE CHAIN, ONE FILE, TWO MODES
+# THE WHOLE CHAIN, ONE FILE, TWO MODES, THREE CHAINS
 # =======================================================================================
 #     bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
-#     MODE=hpc PARTITION=ai    bash examples/run_chain.sh <conf>
-#     MODE=hpc PARTITION=h100x bash examples/run_chain.sh <conf>
+#     MODE=hpc PARTITION=ai     bash examples/run_chain.sh <conf>     # GPU, 7 days
+#     MODE=hpc PARTITION=h100x  bash examples/run_chain.sh <conf>     # GPU, 3 days
+#     MODE=hpc PARTITION=deimos bash examples/run_chain.sh <conf>     # CPU, 3 days
 #
 #   local   run it here, now, at production settings.
 #   hpc     submit THIS FILE to Tianhe with yhbatch, at production settings.
+#
+#   CHAIN=qha       branch A -> branch B -> collect -> F_conf        (the default)
+#   CHAIN=levels    02c: MACE vs GFN2 vs RI-MP2. **CPU partitions only** -- ORCA has no
+#                   GPU path here, and D0-75 puts production quantum chemistry on deimos.
+#   CHAIN=identity  02d: may nu_k replace omega_i in ZPE, enthalpy and entropy? Needs
+#                   DENSE sampling, so the conf sets SAMPLE_EVERY.
+#
+#   CHAIN belongs in the conf, not the environment, so a submission is reproducible from
+#   the file alone. The conf is re-sourced inside the job.
 #
 # **There is no third mode and no smoke mode.** A short run is not a smaller version of
 # the answer -- it is a different quantity that looks like one, and this branch refuses
@@ -68,24 +78,49 @@ SEEDS="${SEEDS:-3}"
 THREADS="${THREADS:-4}"
 MODE="${MODE:-local}"
 PARTITION="${PARTITION:-ai}"
+CHAIN="${CHAIN:-qha}"
 
 # ---------------------------------------------------------------------------------------
-# 2. What each mode and partition means. One table, so the two modes cannot drift.
+# 2. What each mode and partition means. One table, so the modes cannot drift.
 # ---------------------------------------------------------------------------------------
 case "$MODE" in
     local)
-        RESOURCE="${RESOURCE:-local}"; ROUTE="${ROUTE:-ase}"; PLATFORM="CPU" ;;
+        RESOURCE="${RESOURCE:-local}"; ROUTE="${ROUTE:-ase}"; PLATFORM="CPU"
+        KIND="cpu"; SB_GPUS=0 ;;
     hpc)
-        ROUTE="${ROUTE:-openmm}"; PLATFORM="CUDA"
         case "$PARTITION" in
-            # TianheXY-A: whole node, 8 cards, 56 cores. 7 days.
-            ai)    RESOURCE="tianhe_a";  SB_GPUS=8; SB_TIME="7-00:00:00" ;;
-            # TianheXY-AI: allocation IS one card, 14 CPUs come with it. 3 days.
-            h100x) RESOURCE="tianhe_ai"; SB_GPUS=1; SB_TIME="3-00:00:00" ;;
-            *) echo "PARTITION must be ai or h100x, got '$PARTITION'" >&2; exit 2 ;;
-        esac ;;
+            # --- GPU: TianheXY-A, whole node, 8 cards, 56 cores ---------------------
+            ai)     RESOURCE="tianhe_a";   KIND="gpu"; SB_GPUS=8; SB_TIME="7-00:00:00" ;;
+            temp)   RESOURCE="tianhe_a";   KIND="gpu"; SB_GPUS=8; SB_TIME="00:30:00" ;;
+            # --- GPU: TianheXY-AI, the allocation IS one card + 14 CPUs -------------
+            h100x)  RESOURCE="tianhe_ai";  KIND="gpu"; SB_GPUS=1; SB_TIME="3-00:00:00" ;;
+            # --- CPU: TianheXY-C. ORCA has no GPU path here, so 02c lives on these --
+            deimos) RESOURCE="tianhe_cpu"; KIND="cpu"; SB_GPUS=0; SB_TIME="3-00:00:00" ;;
+            debug)  RESOURCE="tianhe_cpu"; KIND="cpu"; SB_GPUS=0; SB_TIME="00:30:00" ;;
+            *) echo "PARTITION must be ai, temp, h100x, deimos or debug, got" \
+                    "'$PARTITION'" >&2; exit 2 ;;
+        esac
+        if [ "$KIND" = "gpu" ]; then
+            ROUTE="${ROUTE:-openmm}"; PLATFORM="CUDA"
+        else
+            ROUTE="${ROUTE:-ase}"; PLATFORM="CPU"
+        fi ;;
     *) echo "MODE must be local or hpc, got '$MODE'" >&2; exit 2 ;;
 esac
+
+# 2b. Which chain, and whether this partition can run it.
+#
+# `levels` is quantum chemistry: ORCA RI-MP2, no GPU path in this repository, and by
+# D0-75 production quantum chemistry runs on deimos. Refusing here rather than in the
+# queue turns a wasted GPU allocation into a one-line error.
+case "$CHAIN" in
+    qha|identity|levels) ;;
+    *) echo "CHAIN must be qha, identity or levels, got '$CHAIN'" >&2; exit 2 ;;
+esac
+if [ "$CHAIN" = "levels" ] && [ "$MODE" = "hpc" ] && [ "$KIND" != "cpu" ]; then
+    echo "CHAIN=levels is ORCA RI-MP2 -- it has no GPU path. Use PARTITION=deimos" >&2
+    exit 2
+fi
 
 # ---------------------------------------------------------------------------------------
 # 3. Submit, or run. The same file does both.
@@ -113,11 +148,18 @@ print("engine   {}  sha256 {}  pinned={}".format(
     p["engine"], p["sha256"][:16], p["sha256_pinned"]))
 PY
 
-    echo "submitting  $CONF  ->  $PARTITION (${SB_TIME}, --gpus=${SB_GPUS})"
+    echo "submitting  $CONF  ->  $PARTITION  chain=$CHAIN  (${SB_TIME}, gpus=${SB_GPUS})"
     # The conf path is the script's ARGUMENT. No --export: see the header.
-    exec yhbatch --partition="$PARTITION" --time="$SB_TIME" --gpus="$SB_GPUS" \
-        --output="$LOGDIR/openqha_chain_${TAG}_%j.out" \
-        --error="$LOGDIR/openqha_chain_${TAG}_%j.err" \
+    #
+    # CHAIN and MODE reach the job through the CONF, not through the environment: the
+    # conf is re-sourced inside the job, so a submission is reproducible from the file
+    # alone. `--gpus` is omitted entirely on a CPU partition rather than passed as 0,
+    # which some Slurm builds reject.
+    GPUFLAG=()
+    [ "${SB_GPUS:-0}" -gt 0 ] && GPUFLAG=(--gpus="$SB_GPUS")
+    exec yhbatch --partition="$PARTITION" --time="$SB_TIME" "${GPUFLAG[@]}" \
+        --output="$LOGDIR/openqha_${CHAIN}_${TAG}_%j.out" \
+        --error="$LOGDIR/openqha_${CHAIN}_${TAG}_%j.err" \
         "$0" "$CONF"
 fi
 
@@ -127,9 +169,11 @@ fi
 if [ -n "$SLURM_JOB_ID" ]; then
     module purge 2>/dev/null || true
     module load anaconda3/2023.09 2>/dev/null || module load miniforge/24.7.1 2>/dev/null || true
-    module load CUDA/12.3 || {
-        echo "openQHA: module load CUDA/12.3 FAILED -- this would run on the CPU" >&2
-        exit 1; }
+    if [ "$KIND" = "gpu" ]; then
+        module load CUDA/12.3 || {
+            echo "openQHA: module load CUDA/12.3 FAILED -- this would run on the CPU" >&2
+            exit 1; }
+    fi
     # Inherited task-layout variables make a child process misread its allocation and
     # try to relaunch itself through the scheduler (rule 7). CREST forks its own workers.
     for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
@@ -144,33 +188,82 @@ fi
 
 echo
 echo "======================================================================"
-echo "openQHA chain   species $SPECIES   tag $TAG"
-echo "  mode      $MODE${SLURM_JOB_ID:+ (job $SLURM_JOB_ID)}"
+echo "openQHA   chain $CHAIN   species $SPECIES   tag $TAG"
+echo "  mode      $MODE${SLURM_JOB_ID:+ (job $SLURM_JOB_ID)}   partition $PARTITION"
 echo "  resource  $RESOURCE   route $ROUTE   platform $PLATFORM"
 echo "  seeds     $SEEDS      conf $CONF"
 echo "======================================================================"
 
 # ---------------------------------------------------------------------------------------
-# 5. The chain. Every step is a PRODUCTION driver -- this file adds no science.
+# 5. The chains. Every step is a PRODUCTION driver or an example driver -- this file
+#    adds no science of its own, and every science setting comes from the conf or from
+#    configs/branchB_protocol.yaml.
 # ---------------------------------------------------------------------------------------
+
+# Branch A first in all three chains: every one of them starts from the basins.
 echo
-echo "---- 1/4  branch A: conformer search -> every basin -------------------"
+echo "---- branch A: conformer search -> every basin ------------------------"
 python -u scripts/production/s0_A_pipeline.py \
     --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
 
+case "$CHAIN" in
+
+# =======================================================================================
+qha)   # the conformational free energy: A -> B -> collect -> F_conf
+# =======================================================================================
 echo
-echo "---- 2/4  branch B: one trajectory per (basin, seed) ------------------"
+echo "---- branch B: one trajectory per (basin, seed) -----------------------"
 # --basins auto: the count comes from branch A's own record, so the number of basins and
 # the geometries they start from cannot disagree.
 python -u scripts/production/s0_E_branchB_parsl.py \
     --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
-    --route "$ROUTE" --basins auto --seeds "$SEEDS"
+    --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+    ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"}
 
 echo
-echo "---- 3/4  collect: quasi-harmonic analysis per molecule ---------------"
+echo "---- collect: quasi-harmonic analysis per molecule --------------------"
 python -u scripts/production/s0_E_branchB_collect_parsl.py \
     --species "$SPECIES" --tag "$TAG" --resource "${COLLECT_RESOURCE:-$RESOURCE}"
 
 echo
-echo "---- 4/4  the answer: F_conf over the ensemble ------------------------"
+echo "---- the answer: F_conf over the ensemble -----------------------------"
 python -u scripts/production/s0_B_report_ensemble.py --species "$SPECIES" --tag "$TAG"
+;;
+
+# =======================================================================================
+levels)   # 02c: MACE vs GFN2-xTB vs RI-MP2, energies and forces through to G - E_el
+# =======================================================================================
+# CPU only. The cost is entirely the RI-MP2 `TightOpt NumFreq`: 1613 s per 10-atom
+# structure at 4 processes (analysis/branch2_cost_model.json), and it is one ORCA job per
+# basin, run in sequence. MACE and GFN2 together are under a second.
+echo
+echo "---- 02c: three levels on every basin ---------------------------------"
+python -u examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
+    --species "$SPECIES" --tag "$TAG" \
+    --levels "${LEVELS:-mace,gfn2,rimp2}" --nprocs "${ORCA_NPROCS:-$THREADS}" \
+    ${ORCA_MAXCORE:+--maxcore "$ORCA_MAXCORE"}
+;;
+
+# =======================================================================================
+identity)   # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
+# =======================================================================================
+# The trajectories here are DENSELY sampled on purpose. The production protocol's 1.0 ps
+# interval is chosen to filter high-frequency noise out of the ENTROPY; the zero-point
+# energy needs of order 12 500 frames to settle, which at 1.0 ps would be 12.5 ns. Both
+# numbers are measured in 02d stage 1. SAMPLE_EVERY is therefore a conf setting here and
+# every meta.json records the value that was used.
+echo
+echo "---- branch B: dense trajectories, ${PROD_PS:-protocol} ps ------------"
+python -u scripts/production/s0_E_branchB_parsl.py \
+    --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
+    --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+    ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
+    ${SAMPLE_EVERY:+--sample-every "$SAMPLE_EVERY"}
+
+echo
+echo "---- 02d: G_total from omega and from nu, term by term ----------------"
+python -u examples/02d_qha_frequency_identity/s0_frequency_identity.py \
+    --species "$SPECIES" --tag "$TAG" --stage all --traj-tag "$TAG" \
+    ${NU_CUT:+--nu-cut "$NU_CUT"}
+;;
+esac

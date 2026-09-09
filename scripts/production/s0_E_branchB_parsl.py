@@ -142,7 +142,7 @@ def _accepted_kwargs(fn):
 # ======================================================================================
 def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_ps,
                        equil_ps, wall_budget_s, route="ase", platform=None,
-                       basins_file=None, env=None):
+                       basins_file=None, env=None, sample_every=None):
     """One (basin, seed) trajectory, as a SUBPROCESS of the branch B driver.
 
     A subprocess rather than an import, for the same three reasons branch A uses one:
@@ -193,6 +193,14 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
            "--basin", str(basin), "--seed-index", str(seed_index),
            "--seed0", str(seed0),
            "--prod-ps", str(prod_ps), "--equil-ps", str(equil_ps)]
+    # The sampling interval is a science setting and normally comes from
+    # `configs/branchB_protocol.yaml`. It is overridable here because the two products
+    # of a trajectory want opposite intervals: the entropy wants 1.0 ps to filter
+    # high-frequency noise, while zero-point energy and enthalpy need of order 12 500
+    # frames, which at 1.0 ps would be 12.5 ns. Example 02d measures that; a run that
+    # overrides it records the value it used in every meta.json.
+    if sample_every:
+        cmd += ["--sample-every", str(int(sample_every))]
     if platform and route == "openmm":
         cmd += ["--platform", str(platform)]
     if wall_budget_s:
@@ -278,6 +286,13 @@ def main():
     # for every Parsl run, which is the whole class of bug this file exists to avoid.
     ap.add_argument("--prod-ps", type=float, default=_PROTOCOL["production_ps"])
     ap.add_argument("--equil-ps", type=float, default=_PROTOCOL["equilibration_ps"])
+    ap.add_argument("--sample-every", type=int, default=None,
+                    help="frames every N steps; default comes from the protocol. "
+                         "Raise the density for the ZPE/enthalpy question (02d)")
+    ap.add_argument("--sample-every", type=int, default=None,
+                    help="save a frame every N steps; default comes from "
+                         "configs/branchB_protocol.yaml. Raise the density for the "
+                         "zero-point-energy question -- see examples/02d")
     ap.add_argument("--max-workers", type=int, default=None)
     ap.add_argument("--wall-budget-s", type=float, default=None,
                     help="per-task budget; default comes from the resource config")
@@ -365,6 +380,7 @@ def main():
         species_without_branch_a=missing,
         seeds_per_basin=args.seeds,
         tag=args.tag, prod_ps=args.prod_ps, equil_ps=args.equil_ps,
+        sample_every_steps_override=args.sample_every,
         wall_budget_s=budget,
         science_settings_source=("scripts/production/{} and configs/openqha.yaml -- "
                                  "NOT this script".format(ROUTES[route])),
@@ -478,7 +494,8 @@ def main():
     started = time.time()
     futures = [app(s, b, k, args.seed0, str(ROOT), args.tag, args.prod_ps, args.equil_ps,
                    budget, route=route, platform=platform,
-                   basins_file=basins_for[s][0], env=passthrough)
+                   basins_file=basins_for[s][0], env=passthrough,
+                   sample_every=args.sample_every)
                for s, b, k in tasks]
     results = []
     for f in futures:

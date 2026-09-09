@@ -389,27 +389,65 @@ def frequencies_from_hessian(hessian_ev_a2, masses_amu):
     return np.sign(w) * np.sqrt(np.abs(w)) * _FREQ_CONV
 
 
-def verify_hess_frequencies(parsed, tol_cm_inv=0.5):
+#: ORCA writes the rigid-body entries of `$vibrational_frequencies` as exact zeros, so
+#: they are identified by being AT zero rather than by being the smallest. The
+#: distinction is not pedantic: a structure with an imaginary mode has an entry BELOW
+#: the rigid ones, and "the six smallest" then discards the imaginary mode and keeps a
+#: rigid zero in its place. See the note on `verify_hess_frequencies`.
+RIGID_ENTRY_TOLERANCE_CM = 1.0e-8
+
+
+def verify_hess_frequencies(parsed, tol_cm_inv=0.5, expect_rigid=6):
     """Assert that our parse reproduces ORCA's own printed frequencies.
 
     This single check catches four classes of error at once -- wrong units, wrong
     masses, wrong ordering, and a broken parse -- at zero computational cost.
 
+    BOTH SIDES ARE THE 3N-6 VIBRATIONAL WAVENUMBERS, AND WHY THAT MATTERS
+    --------------------------------------------------------------------
+    ORCA prints frequencies from the mass-weighted Hessian **with translation and
+    rotation projected out**. Comparing them against an unprojected spectrum happens to
+    agree to about 0.05 cm^-1 at a converged stationary point -- which is why the
+    original version of this function passed on 46 structures and looked correct.
+
+    It is not correct, and it fails the moment a structure carries an imaginary mode.
+    Measured 2026-09-09 on acetone at RI-MP2/RIJK/cc-pVTZ, where ORCA reports
+    `[-35.74, 0, 0, 0, 0, 0]` for the six lowest: keeping "the entries that are not
+    zero" retains the imaginary mode and drops only FIVE zeros, so the two lists are
+    then aligned one place apart and the function reported a **48.03 cm^-1**
+    disagreement that was entirely its own doing. With the Eckart projection the same
+    file agrees to **0.058 cm^-1**.
+
+    The imaginary mode itself is real and is not this function's business -- it is
+    reported through `n_imaginary`, and it is for the caller to refuse thermodynamics on
+    it (`thermo.vibrational` does).
+
     Raises ValueError past `tol_cm_inv`. Returns the diagnostic dict on success.
     """
+    from ..quasi_harmonic import mode_match                # local: avoids a cycle
+
     H_ev = hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
-    ours = frequencies_from_hessian(H_ev, parsed["masses_amu"])
+    positions_A = np.asarray(parsed["positions_bohr"], dtype=float) / BOHR_PER_ANGSTROM
+    ours = mode_match.projected_modes(H_ev, parsed["masses_amu"], positions_A,
+                                      "hessian")[0]
     theirs = np.asarray(parsed["frequencies_cm_inv"], dtype=float)
 
-    if ours.shape != theirs.shape:
+    rigid = np.abs(theirs) <= RIGID_ENTRY_TOLERANCE_CM
+    if int(rigid.sum()) != int(expect_rigid):
         raise ValueError(
-            "frequency count differs: we computed {}, ORCA printed {} ({})".format(
-                ours.shape[0], theirs.shape[0], parsed["path"]))
+            "ORCA printed {} entries at exactly zero, expected {} rigid modes. The six "
+            "lowest are {} ({}).".format(
+                int(rigid.sum()), expect_rigid,
+                np.sort(theirs)[:6].round(4).tolist(), parsed["path"]))
 
-    # ORCA lists the six rigid-body modes as exact zeros; compare on the rest, which
-    # is where a unit or mass error would show.
-    keep = np.abs(theirs) > 1.0e-8
-    dev = np.abs(ours[keep] - theirs[keep])
+    a = np.sort(ours)
+    b = np.sort(theirs[~rigid])
+    if a.shape != b.shape:
+        raise ValueError(
+            "frequency count differs: our projection gives {}, ORCA printed {} "
+            "vibrational modes ({})".format(a.shape[0], b.shape[0], parsed["path"]))
+
+    dev = np.abs(a - b)
     worst = float(dev.max()) if dev.size else 0.0
     if worst > tol_cm_inv:
         raise ValueError(
@@ -420,8 +458,10 @@ def verify_hess_frequencies(parsed, tol_cm_inv=0.5):
 
     return {
         "max_deviation_cm_inv": worst,
-        "n_compared": int(keep.sum()),
+        "rms_deviation_cm_inv": float(np.sqrt((dev ** 2).mean())) if dev.size else 0.0,
+        "n_compared": int(len(a)),
         "symmetry_residual": float(np.abs(
             parsed["hessian_eh_bohr2"] - parsed["hessian_eh_bohr2"].T).max()),
-        "n_imaginary": int((ours < -1.0).sum()),
+        "n_imaginary": int((b < 0.0).sum()),
+        "lowest_cm_inv": float(b.min()) if b.size else float("nan"),
     }

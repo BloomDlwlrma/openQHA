@@ -152,8 +152,9 @@ def main():
         print("potential  UNAVAILABLE: %s: %s" % (type(exc).__name__, str(exc)[:180]))
         print("  The weights are not shipped with this repository. Fetch them:")
         print("    bash install_dependency.sh            # downloads and hash-checks")
-        print("  or put them at $S0_MACE_ROOT/mace_off23/MACE-OFF23_medium.model")
-        print("  yourself. S0_MACE_MODEL overrides an individual file.")
+        print("  or copy MACE-OFF23_medium.model into that directory yourself --")
+        print("  FLAT, no subdirectory. The error above names the exact path.")
+        print("  S0_MACE_ROOT moves the directory; S0_MACE_MODEL overrides one file.")
 
     # ---- data ------------------------------------------------------------------------
     print()

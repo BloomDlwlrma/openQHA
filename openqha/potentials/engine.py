@@ -46,72 +46,77 @@ from pathlib import Path
 
 from .. import S0_ROOT
 
-#: Where the weights might live, in priority order. They are NOT in this repository and
-#: must never be: the MACE-OFF weights are under the Academic Software Licence, which
-#: forbids redistribution, and openQHA is meant to be publishable. Only paths and SHA-256
-#: digests belong here.
+#: ONE DIRECTORY, FLAT. `<root>/<filename>` and nothing else.
 #:
-#: This is a SEARCH rather than a literal path because a literal one has already broken
-#: twice in this repository: `scripts/` moved and every `parents[1]` broke; then the
-#: reference tree moved from `openQHA/ref-papers/` out to `../source-code/ref-papers/`
-#: (the correct move -- see above) and every engine path broke. A name written into a
-#: string does not move with the thing it names.
+#: The weights are NOT in this repository and must never be: MACE-OFF is under the
+#: Academic Software Licence, which forbids redistribution, and openQHA is meant to be
+#: publishable. Only filenames and SHA-256 digests belong here.
 #:
-#: `S0_MACE_ROOT` overrides the search, and `S0_MACE_MODEL` still overrides an individual
-#: file. Neither is a way to change potentials: the SHA-256 check in `provenance()` is what
-#: makes a swap impossible, and it runs whichever path was used.
+#: -------------------------------------------------------------------------------------
+#: WHY ONE FLAT DIRECTORY (user ruling 2026-09-09)
+#: -------------------------------------------------------------------------------------
+#: This used to be a SEARCH over four candidate roots x seven relative layouts, with a
+#: per-family subdirectory (`mace_off23/`, `mace_off24/`) on top. It was written that way
+#: because a literal path had already broken twice here -- `scripts/` moved, then the
+#: reference tree moved out to `../source-code/`. The cure turned out worse than the
+#: disease, in a way worth stating because it is a general trap:
+#:
+#:   **A search with many candidates does not have one answer you can check. It has a
+#:   list of places it might have looked, and when it fails nobody can tell whether the
+#:   file is missing or merely somewhere the list does not cover.**
+#:
+#: Two concrete failures came out of that, both on TianheXY-AI:
+#:   * weights copied FLAT into `data/potentials/` -- what everyone does when moving them
+#:     to a cluster -- were invisible, because a directory only counted if it held a
+#:     literal `mace_off23` subdirectory;
+#:   * `install_dependency.sh` told people to put them in `data/potentials/`, which was
+#:     not in the search list at all. It appeared to work only because the installer also
+#:     writes `env_openqha.sh`, which exports S0_MACE_ROOT -- and a cluster job never
+#:     sources that file. The documented location failed on exactly the path the
+#:     documentation was written for.
+#:
+#: So: ONE root, flat, and the root is a single value you can print. If it is wrong you
+#: can see that it is wrong. The old fragility is answered by `S0_ROOT` being computed
+#: rather than written down, not by searching harder.
+#:
+#: -------------------------------------------------------------------------------------
+#: WHERE TO PUT WEIGHTS
+#: -------------------------------------------------------------------------------------
+#:     <repo>/data/potentials/MACE-OFF23_medium.model
+#:     <repo>/data/potentials/MACE-OFF23-SC_swa.model
+#:     ...
+#: No subdirectories. `S0_MACE_ROOT` points the whole directory somewhere else;
+#: `S0_MACE_MODEL` overrides one individual file. Neither is a way to CHANGE potentials:
+#: the SHA-256 check in `provenance()` is what makes a swap impossible, and it runs on
+#: whichever path was used. To change potentials, use `S0_ENGINE`.
+#:
+#: -------------------------------------------------------------------------------------
+#: ADDING A NEW POTENTIAL (any MLIP, not just MACE)
+#: -------------------------------------------------------------------------------------
+#:   1. Drop the file in the directory above -- flat, keeping its own filename.
+#:   2. Add an entry to ENGINES: `filename`, `sha256`, `source`, `licence`, `note`.
+#:      `sha256=None` is allowed while you are still deciding; provenance() will report
+#:      the computed digest and flag it as unpinned rather than accept anything silently.
+#:      Pin it the moment the model is used for a number that gets recorded.
+#:   3. Select it with `S0_ENGINE=<name>`; make it the default by changing
+#:      DEFAULT_ENGINE, and then also `configs/openqha.yaml` -> `engine:` -- see the
+#:      note there about why those two disagreeing is not a cosmetic problem.
+#: Nothing else in this module needs touching; there is no per-family special case left.
 _MODEL_ROOT_ENV = "S0_MACE_ROOT"
-_CANDIDATE_ROOTS = (
-    S0_ROOT,
-    S0_ROOT.parent,
-    S0_ROOT.parent / "source-code",
-    S0_ROOT  / "openqha" /  "source-code",
-)
 
-#: Relative locations of the two families, under whichever root holds them.
-#:
-#: SEVERAL layouts, in preference order, because there are two legitimate ones. The
-#: developer tree keeps the weights inside a clone of the upstream `mace-off` repository;
-#: `install_dependency.sh` puts them in `data/potentials/mace_off23/`, i.e. directly under
-#: whatever `S0_MACE_ROOT` names. The empty relative `Path(".")` covers the second case
-#: and also lets anyone point S0_MACE_ROOT straight at a directory of their own.
-_OFF_RELATIVES = (
-    Path("ref-papers") / "mace-training" / "mace-off-main",
-    Path("mace-off-main"),
-    Path("mace-off"),
-    Path("."),
-)
-_SC_RELATIVES = (Path("MACE-OFF23-SC-main"), Path("."))
-
-#: What has to be present for a directory to count as holding that family. Without a
-#: marker the empty relative would match EVERY candidate root -- `Path(".")` is always a
-#: directory -- and the first root would win whether or not it held any weights.
-_OFF_MARKER = "mace_off23"
-_SC_MARKER = "MACE-OFF23-SC_swa.model"
+#: The one place. Relative to the repository, so it moves with the repository.
+DEFAULT_MODEL_ROOT = S0_ROOT / "data" / "potentials"
 
 
-def _find_root(relatives, marker, extra=None):
-    """First `root/relative` that actually contains `marker`.
+def model_root():
+    """The single directory holding every weight file.
 
-    Falls back to the first root and the first relative so that the error message from
-    `model_path` names a concrete path rather than nothing.
+    Read at CALL time, not at import: a job that exports S0_MACE_ROOT after this module
+    was first imported still gets the directory it asked for, and tests can point it
+    somewhere without reloading the module.
     """
-    roots = []
     env = os.environ.get(_MODEL_ROOT_ENV)
-    if env:
-        roots.append(Path(env))
-    roots.extend(extra or ())
-    roots.extend(_CANDIDATE_ROOTS)
-    for root in roots:
-        for relative in relatives:
-            if (root / relative / marker).exists():
-                return root / relative
-    return roots[0] / relatives[0]
-
-
-_OFF_ROOT = _find_root(_OFF_RELATIVES, _OFF_MARKER)
-_SC_ROOT = _find_root(_SC_RELATIVES, _SC_MARKER,
-                      extra=(S0_ROOT.parent / "source-code", S0_ROOT / "openQHA"))
+    return Path(env) if env else DEFAULT_MODEL_ROOT
 
 #: Registry of selectable potentials.
 #:
@@ -120,42 +125,42 @@ _SC_ROOT = _find_root(_SC_RELATIVES, _SC_MARKER,
 #: Pin it the first time a model is used for anything that gets recorded.
 ENGINES = {
     "MACE-OFF24_medium": dict(
-        path=_OFF_ROOT / "mace_off24" / "MACE-OFF24_medium.model",
+        filename="MACE-OFF24_medium.model",
         sha256="e5ccf5837f685899811a68754e7c994393bfd1a81720393b03c643b46c70bc69",
         source="https://github.com/ACEsuit/mace-off",
         licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member. Was briefly the default on 2026-09-03; superseded the same day by S0-A-16.",
     ),
     "MACE-OFF23_medium": dict(
-        path=_OFF_ROOT / "mace_off23" / "MACE-OFF23_medium.model",
+        filename="MACE-OFF23_medium.model",
         sha256="4842c52ad210d6e1f84d6cf1ffa70fae25a7e0d755ed55cf223f43913f587db7",
         source="https://arxiv.org/abs/2312.15211",
         licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family; closest lineage to stage 2 surface.",
     ),
     "MACE-OFF23_small": dict(
-        path=_OFF_ROOT / "mace_off23" / "MACE-OFF23_small.model",
+        filename="MACE-OFF23_small.model",
         sha256="165cce4cfec5a34b9c64d4ebf95de15d71106bb584b7291c8470f0749977c46f",
         source="https://arxiv.org/abs/2312.15211",
         licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member (S0-C-10). Too small to be a production engine.",
     ),
     "MACE-OFF23_large": dict(
-        path=_OFF_ROOT / "mace_off23" / "MACE-OFF23_large.model",
+        filename="MACE-OFF23_large.model",
         sha256="a29e397dbf3e7a24ac50a9b0dfc919bd5a62efa346f5895a6237b0950c1d76f4",
         source="https://arxiv.org/abs/2312.15211",
         licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member.",
     ),
     "MACE-OFF23b_medium": dict(
-        path=_OFF_ROOT / "mace_off23" / "MACE-OFF23b_medium.model",
+        filename="MACE-OFF23b_medium.model",
         sha256="871653738a4fbc8124dba1ff5bc595bd0abf7b849a8538c0825dc29ebadf1680",
         source="https://github.com/ACEsuit/mace-off",
         licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member.",
     ),
     "MACE-OFF23-SC": dict(
-        path=_SC_ROOT / "MACE-OFF23-SC_swa.model",
+        filename="MACE-OFF23-SC_swa.model",
         sha256="32c9fb51704f96da855c67e0cdc9894f3e41694e98b7a0ed8813388b9f21db33",
         source="https://arxiv.org/abs/2405.18171",
         licence="Academic Software Licence (ASL) -- academic non-commercial",
@@ -189,22 +194,53 @@ def engine_name():
 
 def model_path(name=None):
     """Path to the weights. S0_MACE_MODEL overrides it -- for moving machines, not
-    for changing potentials."""
+    for changing potentials.
+
+    Resolved HERE, not at import: `model_root()/<filename>`, read fresh each call, so a
+    job that exports S0_MACE_ROOT late still gets the directory it asked for.
+    """
     name = name or engine_name()
+
     override = os.environ.get("S0_MACE_MODEL")
-    p = Path(override) if override else Path(ENGINES[name]["path"])
-    if not p.exists():
-        raise FileNotFoundError(
-            "weights for {} not found: {}\n"
-            "The weights are NOT part of this repository -- they are under the Academic "
-            "Software Licence and cannot be redistributed. Searched under:\n  {}\n"
-            "Set {} to the directory holding ref-papers/ and MACE-OFF23-SC-main/, or "
-            "{} to one file.\n"
-            "stage 0 does not accept a silent potential swap.".format(
-                name, p,
-                "\n  ".join(str(r) for r in _CANDIDATE_ROOTS),
-                _MODEL_ROOT_ENV, "S0_MACE_MODEL"))
-    return p
+    if override:
+        p = Path(override)
+        if not p.is_file():
+            raise FileNotFoundError(
+                "S0_MACE_MODEL is set to {} and that is not a file.\n"
+                "Unset it to use {}/<filename>, or point it at one .model file."
+                .format(p, model_root()))
+        return p
+
+    entry = ENGINES[name]
+    root = model_root()
+    p = root / entry["filename"]
+    if p.is_file():
+        return p
+
+    # ONE expected path in the message, because there is now only one. The previous
+    # version listed eight directories it had searched, which sounds more helpful and is
+    # not: it left the reader to guess which of the eight was the intended one. Say where
+    # the file goes, then say what is actually in that directory -- that one line
+    # distinguishes "wrong directory" from "right directory, wrong filename", which were
+    # indistinguishable before and are the two things that actually go wrong.
+    if root.is_dir():
+        present = sorted(q.name for q in root.glob("*.model"))
+        found = ("directory exists and holds: " + (", ".join(present) if present
+                                                   else "no .model files at all"))
+    else:
+        found = "that directory does not exist"
+    raise FileNotFoundError(
+        "weights for {} not found.\n"
+        "  expected: {}\n"
+        "  {}\n"
+        "The weights are NOT part of this repository -- they are under the Academic "
+        "Software Licence and cannot be redistributed. Copy the file there, keeping its "
+        "name, with no subdirectory.\n"
+        "  {}=<dir>   move the whole directory\n"
+        "  S0_MACE_MODEL=<file>   override this one file\n"
+        "  S0_ENGINE=<name>       use a different registered potential: {}\n"
+        "stage 0 does not accept a silent potential swap.".format(
+            name, p, found, _MODEL_ROOT_ENV, ", ".join(sorted(ENGINES))))
 
 
 def provenance(name=None):

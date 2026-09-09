@@ -18,7 +18,11 @@
 # 包 5 —— 电子项
 # --------------------------------------------------------------------------------------
 package5:
-  composite_notation: "DLPNO-CCSD(T)/cc-pVTZ // MACE-OFF23-SC"
+  # 2026-09-09: the half after `//` follows DEFAULT_ENGINE from MACE-OFF23-SC to
+  # MACE-OFF23_medium. Production records COMPUTE this string via
+  # engine.composite_notation() (which reads engine_name()), so the products were always
+  # right; this hand-written line is what disagreed with them.
+  composite_notation: "DLPNO-CCSD(T)/cc-pVTZ // MACE-OFF23_medium"
   orca_version: "6.1.1"              # deimos 的 conda 环境 orca611（2026-08-29 用户裁定）
   orca_env_script: "configs/env_orca611_tianhe.sh"
   run_location: "deimos only"        # **WSL 只作为测试，不产生任何生产数字**
