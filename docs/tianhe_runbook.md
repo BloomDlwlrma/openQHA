@@ -90,7 +90,7 @@ module avail CUDA 2>&1 | grep -o "CUDA/12[.][0-9]*"      # GPU clusters only
 
 | role | used | why |
 |---|---|---|
-| submit | `yhbatch` | `sbatch` is **not** present |
+| submit | `yhbatch` **on the GPU clusters**, `sbatch` **on TianheXY-CN** | Corrected 2026-09-09 on the machine. This row used to read "`sbatch` is not present", which was true of the cluster it was measured on and false of the CPU one. `run_chain.sh` takes the submitter from the partition |
 | launcher | `yhrun` | |
 | status | `sacct` | `yhacct` exists too, but Parsl **parses** this output and nobody has read `yhacct`'s format |
 | status fallback | `squeue` | same reason |
@@ -503,10 +503,43 @@ lines: size, file sha, params sha. That decides it in one command instead of an 
 `--pin` prints the registry lines to paste into `openqha/potentials/engine.py` once you
 have decided the file is right.
 
+### The two-step flow: one CPU job, then one GPU job
+
+Every example is submitted twice, and the split is not administrative — branch A
+**cannot** run on a GPU partition. It is CREST + GFN2-xTB: `xtb` has no GPU path, and
+`openqha-gpu` contains neither `crest` nor `xtb`.
+
+```bash
+# step 1 -- CPU, minutes. Branch A only; the basins are the product.
+MODE=hpc PARTITION=deimos bash examples/run_chain.sh examples/02b_qha_openmm_propanal/branchA.conf
+
+# step 2 -- GPU, hours to days. Finds those basins and skips branch A.
+MODE=hpc PARTITION=ai     bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
+```
+
+| example | step 1 | step 2 | shared TAG |
+|---|---|---|---|
+| `02a` acetone | `deimos` | `ai` / `h100x` | `acetone` |
+| `02b` propanal | `deimos` | `ai` / `h100x` | `propanal` |
+| `02c` levels | `deimos` | **`deimos`** | `02c_prod` |
+| `02d` identity | `deimos` | `ai` / `h100x` | `02d_prod` |
+
+The two confs of an example **share a TAG** because the basin store is keyed by
+`(species, tag)`. A step-2 submission with no basins under that tag is refused **on the
+login node** — not in the queue — and prints the step-1 command for that example.
+
+**Placement travels as script arguments, not in the environment.** `MODE` and `PARTITION`
+are appended after the conf path (`... "$0" "$CONF" "$MODE" "$PARTITION"`) and take
+precedence over the conf. Without that, a conf whose default is `PARTITION=ai` — which
+02a and 02b both have — would be re-sourced inside a `deimos` job, derive `KIND=gpu`, and
+try to `module load CUDA/12.3` on a CPU node. Found by inspection 2026-09-09, before it
+cost an allocation.
+
 ### Which chain, and where each one belongs
 
 | `CHAIN` | what it runs | partition |
 |---|---|---|
+| `conformers` | **branch A only** — the basins, nothing after | **`deimos`** |
 | `qha` (default) | branch A → branch B → collect → `F_conf` | `ai` / `h100x` |
 | `identity` | 02d: may `ν_k` replace `ω_i` in ZPE, enthalpy, entropy | `ai` / `h100x` |
 | `levels` | 02c: MACE vs GFN2-xTB vs RI-MP2 | **`deimos` only** |

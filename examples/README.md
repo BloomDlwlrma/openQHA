@@ -19,6 +19,40 @@ the repository-scale version of a criterion nobody has built a failing case for.
 Both new examples use the same two molecules as 02a and 02b, so their numbers can be
 carried straight across.
 
+### Two steps per example: one CPU job, then one GPU job
+
+Every example is submitted twice. **Step 1 establishes the basins on the CPU cluster;
+step 2 consumes them.** Step 2 never re-runs branch A — it finds the record in the basin
+store and skips it.
+
+```bash
+# step 1 -- CPU. Branch A only. Minutes.
+MODE=hpc PARTITION=deimos bash examples/run_chain.sh examples/02b_qha_openmm_propanal/branchA.conf
+
+# step 2 -- GPU. Everything else, starting from those basins.
+MODE=hpc PARTITION=ai     bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
+```
+
+| example | step 1 (`branchA.conf`) | step 2 (`chain.conf`) | shared TAG |
+|---|---|---|---|
+| `02a` acetone | `deimos` | `ai` / `h100x` | `acetone` |
+| `02b` propanal | `deimos` | `ai` / `h100x` | `propanal` |
+| `02c` levels | `deimos` | **`deimos`** — ORCA has no GPU path | `02c_prod` |
+| `02d` identity | `deimos` | `ai` / `h100x` | `02d_prod` |
+
+**The two confs of an example share a TAG, and they must.** The basin store is keyed by
+`(species, tag)`: a mismatch would send step 2 looking somewhere empty, and on a GPU
+partition it then refuses — correctly, but for a reason that takes a while to see.
+
+**Branch A cannot run on a GPU partition at all.** It is CREST + GFN2-xTB; `xtb` has no
+GPU path, and the `openqha-gpu` environment contains neither `crest` nor `xtb`. A step-2
+submission with no basins is therefore refused **on the login node**, before the
+allocation is spent, and prints the step-1 command for that example. Running step 1 on
+`PARTITION=debug` (30 minutes) first is free.
+
+Locally there is only one step: `bash examples/run_chain.sh <chain.conf>` makes the basins
+if they are missing and reuses them if they are not.
+
 ### One runner for the whole chain
 
 ```bash

@@ -8,7 +8,7 @@
 #   flags below, where they can be. Only the invariant directives live here.
 #
 # =======================================================================================
-# THE WHOLE CHAIN, ONE FILE, TWO MODES, THREE CHAINS
+# THE WHOLE CHAIN, ONE FILE, TWO MODES, FOUR CHAINS
 # =======================================================================================
 #     bash examples/run_chain.sh examples/02b_qha_openmm_propanal/chain.conf
 #     MODE=hpc PARTITION=ai     bash examples/run_chain.sh <conf>     # GPU, 7 days
@@ -18,14 +18,18 @@
 #   local   run it here, now, at production settings.
 #   hpc     submit THIS FILE to Tianhe with yhbatch, at production settings.
 #
+#   CHAIN=conformers  branch A ONLY -- the basins, and nothing after them. CPU work, so
+#                     PARTITION=deimos. The sensible first job on a new cluster.
 #   CHAIN=qha       branch A -> branch B -> collect -> F_conf        (the default)
 #   CHAIN=levels    02c: MACE vs GFN2 vs RI-MP2. **CPU partitions only** -- ORCA has no
 #                   GPU path here, and D0-75 puts production quantum chemistry on deimos.
 #   CHAIN=identity  02d: may nu_k replace omega_i in ZPE, enthalpy and entropy? Needs
 #                   DENSE sampling, so the conf sets SAMPLE_EVERY.
 #
-#   CHAIN belongs in the conf, not the environment, so a submission is reproducible from
-#   the file alone. The conf is re-sourced inside the job.
+#   CHAIN belongs in the conf, not the environment, and setting it in the environment
+#   against a conf that says otherwise is REFUSED: the job re-sources the conf and never
+#   sees the submitting shell, so such a run would dispatch as one chain and execute
+#   another. Use a conf that declares the chain you want.
 #
 # **There is no third mode and no smoke mode.** A short run is not a smaller version of
 # the answer -- it is a different quantity that looks like one, and this branch refuses
@@ -69,6 +73,22 @@ if [ -z "$CONF" ]; then
 fi
 [ -f "$CONF" ] || { echo "no such conf: $CONF" >&2; exit 2; }
 
+# PLACEMENT TRAVELS AS ARGUMENTS 2 AND 3, NOT IN THE ENVIRONMENT.
+#
+# MODE and PARTITION are set in the submitting shell, and the job does NOT inherit that
+# shell. Several confs default them (`export PARTITION="${PARTITION:-ai}"`), so a job
+# submitted to `deimos` would re-source its conf, read `ai`, derive KIND=gpu, and try to
+# `module load CUDA/12.3` on a CPU node -- running as if it were on a cluster it is not
+# on. Measured by inspection 2026-09-09, before it cost anyone an allocation.
+#
+# Slurm hands a batch script its arguments unchanged, so they are the one channel that
+# survives submission. They take precedence over whatever the conf says.
+_ARG_MODE="${2:-}"
+_ARG_PARTITION="${3:-}"
+
+# Remembered BEFORE the conf can overwrite it, so the mismatch below can be detected.
+_CHAIN_FROM_ENV="${CHAIN:-}"
+
 # shellcheck disable=SC1090
 source "$CONF"
 
@@ -76,8 +96,8 @@ SPECIES="${SPECIES:?the conf must set SPECIES}"
 TAG="${TAG:-chain}"
 SEEDS="${SEEDS:-3}"
 THREADS="${THREADS:-4}"
-MODE="${MODE:-local}"
-PARTITION="${PARTITION:-ai}"
+MODE="${_ARG_MODE:-${MODE:-local}}"
+PARTITION="${_ARG_PARTITION:-${PARTITION:-ai}}"
 CHAIN="${CHAIN:-qha}"
 
 # ---------------------------------------------------------------------------------------
@@ -130,11 +150,36 @@ esac
 # D0-75 production quantum chemistry runs on deimos. Refusing here rather than in the
 # queue turns a wasted GPU allocation into a one-line error.
 case "$CHAIN" in
-    qha|identity|levels) ;;
-    *) echo "CHAIN must be qha, identity or levels, got '$CHAIN'" >&2; exit 2 ;;
+    conformers|qha|identity|levels) ;;
+    *) echo "CHAIN must be conformers, qha, identity or levels, got '$CHAIN'" >&2
+       exit 2 ;;
 esac
+
+# CHAIN COMES FROM THE CONF, AND SETTING IT IN THE ENVIRONMENT IS REFUSED.
+#
+# Not a style rule. The job re-sources the conf on the compute node and does NOT inherit
+# the submitting shell's environment (that is the whole point of not using --export). So
+# `CHAIN=conformers ... run_chain.sh some.conf` would dispatch as "conformers" on the
+# login node and then run whatever the conf says once the job starts -- a submission that
+# reports one thing and does another. Refusing is the only honest option; use a conf that
+# declares the chain you want.
+if [ -n "$_CHAIN_FROM_ENV" ] && [ "$_CHAIN_FROM_ENV" != "$CHAIN" ]; then
+    echo "CHAIN was set to '$_CHAIN_FROM_ENV' in the environment but the conf says" >&2
+    echo "  '$CHAIN'. The conf wins, because the JOB re-sources the conf and never sees" >&2
+    echo "  your shell. A submission that dispatched as '$_CHAIN_FROM_ENV' and ran" >&2
+    echo "  '$CHAIN' is exactly the confusion this script exists to avoid." >&2
+    echo "  Use a conf that declares the chain: eg examples/02a_qha_openmm_acetone/branchA.conf" >&2
+    exit 2
+fi
 if [ "$CHAIN" = "levels" ] && [ "$MODE" = "hpc" ] && [ "$KIND" != "cpu" ]; then
     echo "CHAIN=levels is ORCA RI-MP2 -- it has no GPU path. Use PARTITION=deimos" >&2
+    exit 2
+fi
+# Same reason, different tool: branch A is CREST + GFN2-xTB, xtb has no GPU path, and the
+# `openqha-gpu` environment does not contain crest or xtb at all.
+if [ "$CHAIN" = "conformers" ] && [ "$MODE" = "hpc" ] && [ "$KIND" != "cpu" ]; then
+    echo "CHAIN=conformers is CREST + GFN2-xTB -- xtb has no GPU path and openqha-gpu" >&2
+    echo "  contains neither crest nor xtb. Use PARTITION=deimos (or debug)." >&2
     exit 2
 fi
 
@@ -173,6 +218,28 @@ openqha_load_conda_module() {
 # and OPENQHA_ENV still overrides both.
 export OPENQHA_ROLE="${OPENQHA_ROLE:-$KIND}"
 
+# Has branch A already run for this (species, tag)? Asked in TWO places -- on the login
+# node before submitting, and again inside the job -- because the answer decides different
+# things there. `yes` / `no` / `unknown` (the package would not import).
+openqha_basins_present() {
+    python - "$SPECIES" "$TAG" <<'PY'
+import sys
+sys.path.insert(0, ".")
+try:
+    from openqha.store import basin_store
+    print("yes" if basin_store.exists(sys.argv[1], tag=sys.argv[2]) else "no")
+except Exception:                                                 # noqa: BLE001
+    print("unknown")
+PY
+}
+
+# The step-1 command for this example, quoted once so both refusals say the same thing.
+openqha_step1_hint() {
+    local d
+    d="$(dirname "$CONF")"
+    echo "    MODE=hpc PARTITION=deimos bash examples/run_chain.sh $d/branchA.conf"
+}
+
 if [ "$MODE" = "hpc" ] && [ -z "$SLURM_JOB_ID" ]; then
     LOGDIR="${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs"
     mkdir -p "$LOGDIR"          # Slurm opens --output BEFORE the script runs (rule 6)
@@ -201,6 +268,28 @@ print("engine   {}  sha256 {}  pinned={}".format(
     p["engine"], p["sha256"][:16], p["sha256_pinned"]))
 PY
 
+    # STEP 2 NEEDS STEP 1, AND SAYING SO HERE IS THE WHOLE POINT.
+    #
+    # This check used to live only in the body of the script -- which runs on the compute
+    # node, i.e. after the allocation has been granted and queued for. A GPU chain with no
+    # basins would have sat in the queue, started, and refused, having spent the wait and
+    # the slot. Asked here it costs a second on the login node.
+    if [ "$CHAIN" != "conformers" ] && [ "$KIND" = "gpu" ]; then
+        if [ "$(openqha_basins_present)" != "yes" ]; then
+            echo "openQHA: no branch A product for species '$SPECIES' under tag" \
+                 "'$TAG'." >&2
+            echo "  This is a GPU partition and branch A is CREST + GFN2-xTB: xtb has" >&2
+            echo "  no GPU path, and openqha-gpu contains neither crest nor xtb. Not" >&2
+            echo "  submitting -- the job would start and then fail for an unrelated" >&2
+            echo "  reason." >&2
+            echo >&2
+            echo "  Run step 1 on the CPU cluster first, with the SAME tag:" >&2
+            openqha_step1_hint >&2
+            exit 2
+        fi
+        echo "branch A  present for tag '$TAG' -- step 2 will reuse it"
+    fi
+
     echo "submitting  $CONF  ->  $PARTITION  chain=$CHAIN  via $SUBMIT" \
          "(${SB_TIME}, gpus=${SB_GPUS})"
     # The conf path is the script's ARGUMENT. No --export: see the header.
@@ -214,7 +303,7 @@ PY
     exec "$SUBMIT" --partition="$PARTITION" --time="$SB_TIME" "${GPUFLAG[@]}" \
         --output="$LOGDIR/openqha_${CHAIN}_${TAG}_%j.out" \
         --error="$LOGDIR/openqha_${CHAIN}_${TAG}_%j.err" \
-        "$0" "$CONF"
+        "$0" "$CONF" "$MODE" "$PARTITION"
 fi
 
 # ---------------------------------------------------------------------------------------
@@ -257,13 +346,69 @@ echo "======================================================================"
 #    configs/branchB_protocol.yaml.
 # ---------------------------------------------------------------------------------------
 
-# Branch A first in all three chains: every one of them starts from the basins.
-echo
-echo "---- branch A: conformer search -> every basin ------------------------"
-python -u scripts/production/s0_A_pipeline.py \
-    --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
+# =======================================================================================
+# BRANCH A: MADE ONCE, ON THE CPU, AND CONSUMED BY EVERYTHING ELSE
+# =======================================================================================
+# Every chain starts from the basins, but only ONE of them makes them. That split is what
+# lets a molecule be run as two submissions -- a CPU job that establishes the basins, then
+# any number of GPU jobs that consume them -- instead of every GPU job repeating a CREST
+# search it cannot even run.
+#
+# It cannot even run it: `openqha-gpu` has NO crest and NO xtb (they need the OpenMP
+# OpenBLAS build, which has no solution together with a CUDA torch -- see hpc/env/tianhe.sh).
+# So a GPU chain that reached branch A would fail on the compute node for a reason having
+# nothing to do with the science it was submitted for. It is refused here instead, with
+# the command that fixes it.
+#
+# Keyed by (SPECIES, TAG): step 1 and step 2 must share a TAG or step 2 will not find
+# anything. Each example's `branchA.conf` carries the same TAG as its `chain.conf` for
+# exactly that reason.
+BASINS_PRESENT="$(openqha_basins_present)"
+
+if [ "$CHAIN" = "conformers" ]; then
+    echo
+    echo "---- branch A: conformer search -> every basin ------------------------"
+    [ "$BASINS_PRESENT" = "yes" ] && echo "(a record already exists for tag '$TAG'; \
+re-running it -- this chain's product IS branch A)"
+    python -u scripts/production/s0_A_pipeline.py \
+        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
+elif [ "$BASINS_PRESENT" = "yes" ]; then
+    echo
+    echo "---- branch A: already done for tag '$TAG' -- reusing those basins ----"
+    echo "     (re-make them with the matching branchA.conf if you want them redone)"
+elif [ "$KIND" = "gpu" ]; then
+    echo
+    echo "openQHA: no branch A product for species '$SPECIES' under tag '$TAG', and this" >&2
+    echo "  is a GPU partition. Branch A is CREST + GFN2-xTB: xtb has no GPU path, and" >&2
+    echo "  the openqha-gpu environment does not contain crest or xtb at all, so running" >&2
+    echo "  it here would fail on the compute node for an unrelated reason." >&2
+    echo >&2
+    echo "  Run step 1 on the CPU cluster first, with the SAME tag:" >&2
+    openqha_step1_hint >&2
+    exit 2
+else
+    echo
+    echo "---- branch A: conformer search -> every basin ------------------------"
+    echo "     (no record for tag '$TAG' yet, and this is a CPU run, so making it here)"
+    python -u scripts/production/s0_A_pipeline.py \
+        --species "$SPECIES" --tag "$TAG" --threads "$THREADS" --hessian-mode analytic
+fi
 
 case "$CHAIN" in
+
+# =======================================================================================
+conformers)   # branch A and nothing else
+# =======================================================================================
+# Branch A is CPU work -- CREST with the GFN2-xTB workhorse, then MACE `refine="opt"` and
+# an analytic Hessian per basin -- so it belongs on `deimos`, and it is the sensible first
+# thing to run on a cluster you have not used before: it exercises the environment, the
+# weights and the scratch layout without spending a GPU allocation.
+#
+# Nothing follows it. The basins land in the basin store and every other chain starts
+# from them, so this is a checkpoint, not a truncated run.
+echo
+echo "branch A only. The basins are the product; nothing else runs."
+;;
 
 # =======================================================================================
 qha)   # the conformational free energy: A -> B -> collect -> F_conf
