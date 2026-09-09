@@ -1,20 +1,20 @@
-"""把逐分子的 parquet 拼成全局表 —— 集群上由 `--dependency` 挂在计算作业之后跑.
+"""Concatenate the per-molecule parquet files into the global tables -- run on the cluster after the compute job via `--dependency`.
 
 PRODUCTION. Concatenates the per-molecule parquet files into the global basin table.
 
-每个分子的 `mol/<编号>.parquet` 都是**同构的"一行一个盆"表**，
-所以汇总就是一次 `concat`，**不需要重算任何东西**。
+Every molecule `mol/<index>.parquet` is the **same shape, one row per basin**, so the
+summary is a single `concat` and **nothing has to be recomputed**.
 
-产物::
+Products::
 
-    <结果根>/<段>/collected/basins.parquet      一行一个盆（全部分子）
-    <结果根>/<段>/collected/molecules.parquet   一行一个分子（去重后的分子级列）
-    <结果根>/<段>/collected/failures.parquet    一行一个失败
-    <结果根>/<段>/collected/summary.log         总览（人读）
+    <result root>/<segment>/collected/basins.parquet      one row per basin (all molecules)
+    <result root>/<segment>/collected/molecules.parquet   one row per molecule (the molecule-level columns, deduplicated)
+    <result root>/<segment>/collected/failures.parquet    one row per failure
+    <result root>/<segment>/collected/summary.log         overview, for a person to read
 
-用法::
+Usage::
 
-    python scripts/production/s0_package1_collect.py --root <结果根>/result-s0tf_1_16000/1_4000
+    python scripts/production/s0_package1_collect.py --root <result root>/result-s0tf_1_16000/1_4000
     python scripts/production/s0_package1_collect.py --root ... --stage stage2-mace
 """
 import argparse
@@ -39,7 +39,7 @@ def _repo_root():
 sys.path.insert(0, str(_repo_root()))
 from openqha import S0_ROOT, record, report
 
-#: 分子级的列（其余都是盆级的）。用于 drop_duplicates 拆出分子表。
+#: The molecule-level columns (everything else is basin-level). Used with drop_duplicates to split out the molecule table.
 BASIN_COLS = ("basin", "energy_eV", "relative_kcal", "provenance",
               "boltzmann_weight", "n_imaginary", "n_rigid_modes_removed",
               "lowest_frequency_cm_inv", "hessian_asymmetry_eV_A2",
@@ -49,9 +49,9 @@ BASIN_COLS = ("basin", "energy_eV", "relative_kcal", "provenance",
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True,
-                    help="结果根下的段目录，例如 .../result-s0tf_1_16000/1_4000")
-    ap.add_argument("--stage", default="", help="子目录名（分阶段时给）")
-    ap.add_argument("--out", default="", help="输出目录，默认 <root>/<stage>/collected")
+                    help="the segment directory under the result root, for example .../result-s0tf_1_16000/1_4000")
+    ap.add_argument("--stage", default="", help="subdirectory name (when staging)")
+    ap.add_argument("--out", default="", help="output directory; defaults to <root>/<stage>/collected")
     args = ap.parse_args()
 
     import pandas as pd
@@ -63,7 +63,7 @@ def main():
         root = root / args.stage
     mol_dir = root / "mol"
     if not mol_dir.exists():
-        raise SystemExit("没有 mol/ 目录: {}".format(mol_dir))
+        raise SystemExit("no mol/ directory: {}".format(mol_dir))
     out = Path(args.out) if args.out else (root / "collected")
     out.mkdir(parents=True, exist_ok=True)
 
@@ -71,19 +71,19 @@ def main():
     bad = sorted(mol_dir.glob("*.FAILED.parquet"))
 
     print("=" * 96)
-    print("汇总逐分子 parquet -> 全局表")
+    print("collecting the per-molecule parquet files -> global tables")
     print("=" * 96)
-    print("源   {}".format(mol_dir))
-    print("成功 {} 份, 失败 {} 份".format(len(good), len(bad)))
+    print("source    {}".format(mol_dir))
+    print("{} succeeded, {} failed".format(len(good), len(bad)))
     if not good:
-        raise SystemExit("没有可汇总的产物。")
+        raise SystemExit("there is nothing to collect.")
 
-    # ---- 拼接（分块，避免一次性吃掉太多内存）------------------------------------------
+    # ---- concatenate, in chunks so that memory is not eaten all at once ----------------
     chunks, step = [], 2000
     for i in range(0, len(good), step):
         chunks.append(pd.concat([pd.read_parquet(p) for p in good[i:i + step]],
                                 ignore_index=True))
-        print("   已读 {}/{} 份".format(min(i + step, len(good)), len(good)), flush=True)
+        print("   read {}/{}".format(min(i + step, len(good)), len(good)), flush=True)
     basins = pd.concat(chunks, ignore_index=True)
     del chunks
 
@@ -92,30 +92,30 @@ def main():
 
     basins.to_parquet(out / "basins.parquet", index=False)
     mols.to_parquet(out / "molecules.parquet", index=False)
-    print("   写出 basins.parquet   {} 行 x {} 列".format(*basins.shape))
-    print("   写出 molecules.parquet {} 行 x {} 列".format(*mols.shape))
+    print("   wrote basins.parquet    {} row(s) x {} column(s)".format(*basins.shape))
+    print("   wrote molecules.parquet {} row(s) x {} column(s)".format(*mols.shape))
 
     fails = None
     if bad:
         fails = pd.concat([pd.read_parquet(p) for p in bad], ignore_index=True)
         fails.to_parquet(out / "failures.parquet", index=False)
-        print("   写出 failures.parquet {} 行".format(len(fails)))
+        print("   wrote failures.parquet {} row(s)".format(len(fails)))
 
-    # ---- 总览 .log ----------------------------------------------------------------------
-    r = report.Report("包 1 · CREST 支路   全局汇总",
+    # ---- the overview .log ---------------------------------------------------------------
+    r = report.Report("package 1 - CREST branch   global summary",
                       subtitle=str(root))
-    r.section("规模")
+    r.section("scale")
     r.kv("molecules", len(mols))
     r.kv("basins", len(basins))
     r.kv("failures", len(fails) if fails is not None else 0)
-    r.section("表")
-    rows = [["basins.parquet", len(basins), "一行一个盆（含每个盆的全部频率）"],
-            ["molecules.parquet", len(mols), "一行一个分子"]]
+    r.section("tables")
+    rows = [["basins.parquet", len(basins), "one row per basin (with every frequency of that basin)"],
+            ["molecules.parquet", len(mols), "one row per molecule"]]
     if fails is not None:
-        rows.append(["failures.parquet", len(fails), "一行一个失败的分子"])
-    r.table(["文件", "行数", "内容"], rows)
+        rows.append(["failures.parquet", len(fails), "one row per failed molecule"])
+    r.table(["file", "rows", "content"], rows)
 
-    r.section("分布")
+    r.section("distributions")
     stats = []
     for k, unit in (("n_basins", ""), ("n_conformers_crest", ""),
                     ("n_basins_crest_only", ""), ("n_basins_etkdg_only", ""),
@@ -133,31 +133,31 @@ def main():
                       "{:.4f}".format(np.median(v)), "{:.4f}".format(v.min()),
                       "{:.4f}".format(v.max())])
     if stats:
-        r.table(["量", "单位", "n", "均值", "中位", "最小", "最大"], stats)
+        r.table(["quantity", "unit", "n", "mean", "median", "minimum", "maximum"], stats)
 
     if "crest_terminated_early" in mols.columns:
         e = pd.to_numeric(mols["crest_terminated_early"], errors="coerce").fillna(0)
-        r.section("判据")
-        r.verdict("每个分子的 CREST 运行里 terminated EARLY 的次数必须是 0",
-                  "非零的分子 {} 个".format(int((e > 0).sum())), bool((e > 0).sum() == 0))
+        r.section("criteria")
+        r.verdict("every molecule CREST run must have terminated EARLY exactly 0 times",
+                  "{} molecule(s) are non-zero".format(int((e > 0).sum())), bool((e > 0).sum() == 0))
     if "n_imaginary" in basins.columns:
         im = pd.to_numeric(basins["n_imaginary"], errors="coerce").fillna(0)
-        r.verdict("进入盆清单的结构必须零虚频",
-                  "虚频不为零的盆 {} 个".format(int((im > 0).sum())),
+        r.verdict("a structure entering the basin list must have no imaginary frequency",
+                  "{} basin(s) have a non-zero imaginary count".format(int((im > 0).sum())),
                   bool((im > 0).sum() == 0))
     if "shake_fallback_used" in mols.columns:
         n_fb = int(mols["shake_fallback_used"].notna().sum())
-        r.section("SHAKE 回退")
+        r.section("SHAKE fallback")
         r.kv("molecules_using_fallback", n_fb,
-             note="这些分子在默认 SHAKE 下会 terminated EARLY，用 shake=1 重试后成功")
+             note="these molecules hit terminated EARLY under the default SHAKE and succeeded on a retry with shake=1")
 
-    r.section("读法")
+    r.section("how to read this")
     r.note("import pandas as pd; df = pd.read_parquet('collected/basins.parquet')")
-    r.note("**带精度的是 parquet**（float64 原值）；本 .log 的数字是排版过的，"
-           "不要用它做逐位比较。")
+    r.note("**The precision lives in the parquet** (raw float64); the numbers in this .log are "
+           "formatted for reading, so do not use them for digit-for-digit comparison.")
     p = r.write(out / "summary.log")
     print()
-    print("落盘: {}".format(out))
+    print("written: {}".format(out))
     print("      {}".format(p.name))
 
 

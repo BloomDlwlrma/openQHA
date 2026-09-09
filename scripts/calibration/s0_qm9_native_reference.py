@@ -1,22 +1,24 @@
-"""QM9 原生数据构成的**免费独立对比样**: 刚转子-谐振子热力学项.
+"""A **free, independent control** built from the native QM9 data: rigid-rotor harmonic-oscillator thermodynamic terms.
 
 CALIBRATION. The docstring below settles it: a comparison sample at a different
 level of theory, explicitly not a stage 0 result.
 
-QM9 对每个分子都给了 B3LYP/6-31G(2df,p) 下的:
-  * 三个转动常数 A, B, C (GHz)  -> 转动项, 连几何都不用读
-  * 全部 3N-6 个谐振频率 (cm^-1) -> 振动项 (刚转子-谐振子)
-  * 零点能 zpve, 以及 U0 / U / H / G (Hartree)
+For every molecule QM9 gives, at B3LYP/6-31G(2df,p):
+  * the three rotational constants A, B, C (GHz)  -> the rotational term, without even reading a geometry
+  * all 3N-6 harmonic frequencies (cm^-1)         -> the vibrational term (rigid rotor harmonic oscillator)
+  * the zero-point energy zpve, and U0 / U / H / G (Hartree)
 
-于是可以零成本地得到一个 `(G - E_el)` 的**谐振参考值**, 用来和 stage 0 的
-态密度路线对照。两者之差 = 非谐 + 构象 + 势面之差, 这正是 stage 0 要量的东西。
+So a **harmonic reference value** for `(G - E_el)` is available at no cost, to compare
+against stage 0's density-of-states route. The difference between them = anharmonicity +
+conformers + the difference of potential surfaces, which is exactly what stage 0 measures.
 
-**这不是 stage 0 的结果，是对比样。** 它的层级是 B3LYP/6-31G(2df,p)，
-与讲义的 MACE-OFF23-SC 不同势面, 所以差值里混着势面之差 —— 必须写明。
+**This is not a stage 0 result, it is a control.** Its level is B3LYP/6-31G(2df,p), a
+different surface from the lecture notes' MACE-OFF23-SC, so the difference also contains
+the difference of surfaces -- which must be stated.
 
-用法:
+Usage:
     python scripts/calibration/s0_qm9_native_reference.py
-产物:
+Products:
     analysis/qm9_native_reference.json
 """
 import csv
@@ -37,7 +39,7 @@ def _repo_root():
     raise RuntimeError("openQHA package not found above " + __file__)
 
 
-# ---------------------------------------------------------------- 物理常数
+# ---------------------------------------------------------------- physical constants
 KB_KCAL = 1.987204259e-3            # kcal/(mol*K)
 HC_KCAL = 2.85914308e-3             # kcal/mol per cm^-1
 T_REF = 298.15
@@ -51,24 +53,24 @@ INDEX = (ROOT.parent / "stage1-qm9-alchemical-reaction-energy" / "source-data"
          / "index_Chem_composition.csv")
 
 EDGE = "C2H5O1N1_19_36"
-# 物种 -> QM9 编号. 边名里的 19 / 36 就是 QM9 索引 (已核对 index_Chem_composition.csv)
+# species -> QM9 index. The 19 / 36 in an edge name are the QM9 indices (checked against index_Chem_composition.csv)
 SPECIES_QM9 = {"acetamide": "dsgdb9nsd_000019",
                "N-methylformamide": "dsgdb9nsd_000036"}
-SYMMETRY_NUMBER = {"acetamide": 1, "N-methylformamide": 1}   # 显式声明, 绝不自动推导
+SYMMETRY_NUMBER = {"acetamide": 1, "N-methylformamide": 1}   # declared explicitly, never derived automatically
 REACTANT, PRODUCT = list(SPECIES_QM9)
 
 
 def a_harmonic_kcal(nu_cm, temperature_K=T_REF):
-    """量子谐振子亥姆霍兹自由能 (含零点能), 零点取势阱底."""
+    """Quantum harmonic-oscillator Helmholtz free energy (including the zero-point energy), with the zero at the bottom of the well."""
     kt = KB_KCAL * temperature_K
     x = HC_KCAL * nu_cm / kt
     return kt * (0.5 * x + math.log1p(-math.exp(-x)))
 
 
 def a_rot_from_constants_kcal(a_ghz, b_ghz, c_ghz, sigma, temperature_K=T_REF):
-    """由三个转动常数 (GHz) 直接给刚转子转动自由能.
+    """Rigid-rotor rotational free energy, straight from the three rotational constants (GHz).
 
-        Theta_i = h * nu_i / k_B      (nu_i 是以 Hz 计的转动常数)
+        Theta_i = h * nu_i / k_B      (nu_i is the rotational constant in Hz)
         q_rot   = (sqrt(pi)/sigma) * sqrt(T^3 / (Theta_A Theta_B Theta_C))
     """
     theta = [H_SI * g * 1e9 / KB_SI for g in (a_ghz, b_ghz, c_ghz)]     # K
@@ -86,18 +88,18 @@ def load_qm9():
                 rows[r["qm9_index"]] = r
     missing = want - set(rows)
     if missing:
-        raise KeyError("QM9 索引表里缺: {} —— 拒绝用估计值顶替".format(sorted(missing)))
+        raise KeyError("missing from the QM9 index table: {} -- refusing to substitute an estimate".format(sorted(missing)))
     return rows
 
 
 def main():
     qm9 = load_qm9()
     out = dict(edge=EDGE, temperature_K=T_REF,
-               level="B3LYP/6-31G(2df,p)  (QM9 原生)",
+               level="B3LYP/6-31G(2df,p)  (QM9 native)",
                source=str(INDEX), species={})
 
     print("=" * 92)
-    print("QM9 原生 B3LYP/6-31G(2df,p) 的刚转子-谐振子参考   边 {}".format(EDGE))
+    print("QM9 native B3LYP/6-31G(2df,p) rigid-rotor harmonic-oscillator reference   edge {}".format(EDGE))
     print("=" * 92)
     for name, qid in SPECIES_QM9.items():
         r = qm9[qid]
@@ -105,7 +107,7 @@ def main():
         n_at = sum(int(r[k + "_num"]) for k in ("C", "H", "O", "N", "F"))
         expect = 3 * n_at - 6
         if len(freqs) != expect:
-            raise ValueError("{}: 频率 {} 个, 应为 3N-6 = {}".format(name, len(freqs), expect))
+            raise ValueError("{}: {} frequencies, expected 3N-6 = {}".format(name, len(freqs), expect))
         n_imag = sum(1 for f in freqs if f <= 0.0)
         a_vib = sum(a_harmonic_kcal(f) for f in freqs)
         a_rot, theta, q_rot = a_rot_from_constants_kcal(
@@ -122,15 +124,15 @@ def main():
                    qm9_U0_hartree=float(r["U0"]), qm9_G_hartree=float(r["G"]))
         out["species"][name] = rec
         print()
-        print("  {:20s} {}   {}   {} 个原子".format(name, qid, r["qm9_smiles"], n_at))
-        print("     频率 {} 个 (3N-6 = {}), 虚频 {} 个, 最低 {:.2f} cm^-1".format(
+        print("  {:20s} {}   {}   {} atom(s)".format(name, qid, r["qm9_smiles"], n_at))
+        print("     {} frequencies (3N-6 = {}), {} imaginary, lowest {:.2f} cm^-1".format(
             len(freqs), expect, n_imag, min(freqs)))
-        print("     转动常数 (GHz)  {:8.5f} {:8.5f} {:8.5f}".format(*rec["rotational_constants_GHz"]))
-        print("     转动温度 (K)    {:8.5f} {:8.5f} {:8.5f}   T/Theta_max = {:.0f}".format(
+        print("     rotational constants (GHz)  {:8.5f} {:8.5f} {:8.5f}".format(*rec["rotational_constants_GHz"]))
+        print("     rotational temperatures (K) {:8.5f} {:8.5f} {:8.5f}   T/Theta_max = {:.0f}".format(
             *theta, T_REF / max(theta)))
         print("     A_vib = {:+9.4f}   A_rot = {:+9.4f}   (G - E_el) = {:+9.4f} kcal/mol".format(
             a_vib, a_rot, a_vib + a_rot))
-        print("     QM9 自带: zpve = {:.6f} Eh = {:.4f} kcal/mol".format(
+        print("     from QM9 itself: zpve = {:.6f} Eh = {:.4f} kcal/mol".format(
             float(r["zpve"]), float(r["zpve"]) * HARTREE_KCAL))
 
     s = out["species"]
@@ -142,21 +144,21 @@ def main():
 
     print()
     print("=" * 92)
-    print("差值   {} -> {}".format(REACTANT, PRODUCT))
+    print("difference   {} -> {}".format(REACTANT, PRODUCT))
     print("=" * 92)
-    print("   Delta A_vib   (谐振)            = {:+9.4f} kcal/mol".format(d_vib))
-    print("   Delta A_rot   (刚转子)          = {:+9.4f} kcal/mol".format(d_rot))
-    print("   Delta (G - E_el)  合计          = {:+9.4f} kcal/mol   <-- 本脚本的产品".format(
+    print("   Delta A_vib   (harmonic)         = {:+9.4f} kcal/mol".format(d_vib))
+    print("   Delta A_rot   (rigid rotor)      = {:+9.4f} kcal/mol".format(d_rot))
+    print("   Delta (G - E_el)  total          = {:+9.4f} kcal/mol   <-- the product of this script".format(
         d_therm))
     print()
-    print("   对照 QM9 自带的完整量 (同为 B3LYP/6-31G(2df,p)):")
-    print("      Delta G  (QM9 的 G 列)       = {:+9.4f} kcal/mol".format(d_G_qm9))
-    print("      Delta U0 (QM9 的 U0 列)      = {:+9.4f} kcal/mol".format(d_U0_qm9))
-    print("      两者之差 = Delta(G - U0)     = {:+9.4f} kcal/mol".format(d_G_qm9 - d_U0_qm9))
+    print("   against the complete quantities QM9 ships (also B3LYP/6-31G(2df,p)):")
+    print("      Delta G  (the QM9 G column)   = {:+9.4f} kcal/mol".format(d_G_qm9))
+    print("      Delta U0 (the QM9 U0 column)  = {:+9.4f} kcal/mol".format(d_U0_qm9))
+    print("      their difference = Delta(G - U0) = {:+9.4f} kcal/mol".format(d_G_qm9 - d_U0_qm9))
     print()
-    print("   注意: QM9 的 G 列含电子能, 本脚本的 (G - E_el) 不含 —— 两者不可直接比。")
-    print("         能比的是: Delta G(QM9) - Delta(G-E_el)(本脚本) 应约等于 Delta E_el(B3LYP),")
-    print("         即 {:+.4f} kcal/mol。".format(d_G_qm9 - d_therm))
+    print("   Note: the QM9 G column includes the electronic energy and this script (G - E_el) does not -- they are not directly comparable.")
+    print("         What is comparable: Delta G(QM9) - Delta(G-E_el)(this script) should be about Delta E_el(B3LYP),")
+    print("         that is {:+.4f} kcal/mol.".format(d_G_qm9 - d_therm))
     out["delta"] = dict(A_vib=d_vib, A_rot=d_rot, G_minus_E_el=d_therm,
                         qm9_G=d_G_qm9, qm9_U0=d_U0_qm9,
                         implied_delta_E_el_b3lyp=d_G_qm9 - d_therm)
@@ -166,11 +168,13 @@ def main():
     p = outdir / "qm9_native_reference.json"
     p.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     print()
-    print("落盘:", p)
+    print("written:", p)
     print()
-    print("**这是对比样, 不是 stage 0 的结果。** 层级是 B3LYP/6-31G(2df,p), 与讲义的")
-    print("MACE-OFF23-SC 不同势面; 且它是纯谐振的, 不含非谐与构象贡献 —— 而那正是")
-    print("stage 0 的态密度路线要捕捉的东西。两者之差 = 非谐 + 构象 + 势面之差。")
+    print("**This is a control, not a stage 0 result.** Its level is B3LYP/6-31G(2df,p), a")
+    print("different surface from the lecture notes MACE-OFF23-SC; and it is purely harmonic,")
+    print("carrying no anharmonic or conformational contribution -- which is precisely what")
+    print("the stage 0 density-of-states route captures. The difference between the two =")
+    print("anharmonicity + conformers + the difference of surfaces.")
 
 
 if __name__ == "__main__":

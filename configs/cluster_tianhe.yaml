@@ -20,28 +20,31 @@
 # ======================================================================================
 
 # --------------------------------------------------------------------------------------
-# 集群（天河 TianheXY-AI）—— 用户 2026-08-31 提供的现场信息
+# Cluster (Tianhe TianheXY-AI) -- site information supplied by the user on 2026-08-31
 # --------------------------------------------------------------------------------------
-# **这一段是"记录已知的现场事实"，不是"本仓会自动去用它"。**
-# 作业脚本在 .mem/plan/plan_pkg1-cluster-tianhe.md 里，需要人工投递。
+# **This section RECORDS known site facts; it is not something the repository consults
+# automatically.** The job scripts are in .mem/plan/plan_pkg1-cluster-tianhe.md and are
+# submitted by hand.
 cluster:
   name: "TianheXY-AI"
   scheduler:
-    submit: "yhbatch"           # 交互式是 yhrun
-    directives: "#SBATCH"       # **实测现场脚本用的就是 #SBATCH** —— 是 Slurm 派生
-    gpu_flag: "-G"              # **必须显式给 -G，否则作业提不上**（2025-06-24 站点公告）
+    submit: "yhbatch"           # the interactive form is yhrun
+    directives: "#SBATCH"       # **the site scripts really do use #SBATCH** -- it is a Slurm derivative
+    gpu_flag: "-G"              # **-G must be given explicitly or the job is not accepted** (site announcement 2025-06-24)
     examples:
-      - "yhrun -p 分区 -G 1 hostname"
-      - "yhbatch -p 分区 -G <GPU 数> <脚本>"
-    max_walltime_per_job_days: 7      # 用户 2026-08-31：单个作业 < 7 天即可
+      - "yhrun -p <partition> -G 1 hostname"
+      - "yhbatch -p <partition> -G <number of GPUs> <script>"
+    max_walltime_per_job_days: 7      # user, 2026-08-31: any single job under 7 days is fine
     note: >
-      站点公告说 hx/h100x/a100x/a800x/v100x 分区的分配粒度是 **GPU 卡**，
-      调度系统按 -G 分配相应数量的卡。**作业阵列是否可用尚未确认** ——
-      现场样例用的是循环投多个独立作业，本仓的 --shard k/n 两种方式都支持。
+      The site announcement says the hx/h100x/a100x/a800x/v100x partitions allocate at
+      **GPU card** granularity, and the scheduler hands out that many cards per -G.
+      **Whether job arrays are available has not been confirmed** -- the site example
+      submits several independent jobs in a loop, and this repository's --shard k/n
+      supports either way.
   partitions:
     - name: "h100x"
       kind: "gpu"
-      note: "H100 80 GB；1 GPU / 14 CPUs / 240 GB（D0-56）。**按 GPU 计费**"
+      note: "H100 80 GB; 1 GPU / 14 CPUs / 240 GB (D0-56). **Billed per GPU**"
     - name: "a100x"
       kind: "gpu"
     - name: "a800x"
@@ -52,33 +55,39 @@ cluster:
       kind: "gpu"
   paths:
     home: "/HOME/hku2021_fos4/hku2021_fos4xy_2"
-    home_alt: "/XYAIFS00/HOME/hku2021_fos4/hku2021_fos4xy_2"   # 同一份，另一个挂载名
-    conda_init: "~/init_conda.sh"        # miniforge3 + mamba，已由用户建好
+    home_alt: "/XYAIFS00/HOME/hku2021_fos4/hku2021_fos4xy_2"   # the same one, under another mount name
+    conda_init: "~/init_conda.sh"        # miniforge3 + mamba, already set up by the user
     proxy: "source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138"
     proxy_note: >
-      **有代理可上外网** —— 所以 conda/pip 装包是可行的，
-      不必走 Apptainer 镜像。这解决了计划里"软件环境"那条待确认。
+      **A proxy is available and reaches the outside network**, so installing packages
+      with conda/pip is workable and an Apptainer image is not needed. This settles the
+      "software environment" item the plan had left open.
   scratch:
-    # 用户 2026-08-31 指定的写法（照搬他给的 ORCA_SCR 模式）：
-    #   优先 $TMPDIR（节点本地 NVMe/SSD），退回 /tmp；**绝不在 Lustre 上写临时文件**
+    # The form the user specified on 2026-08-31 (copied from the ORCA_SCR pattern they
+    # gave): prefer $TMPDIR (node-local NVMe/SSD), fall back to /tmp, and
+    # **never write temporary files on Lustre**.
     prefer: "$TMPDIR"
     fallback: "/tmp"
     pattern: "${TMPDIR:-/tmp}/$USER/s0tf_${SLURM_JOB_ID}_${ARRAY_ID}"
     why: >
-      CREST 在并行 _N 子目录里写大量小文件（本机实测一个分子的工作目录
-      2.6–15 MB、几十个文件）。在 Lustre 上做这件事既慢又拖累整个文件系统。
+      CREST writes many small files into parallel _N subdirectories (measured on this
+      workstation: one molecule's working directory is 2.6-15 MB across dozens of
+      files). Doing that on Lustre is slow for the job and slow for the whole filesystem.
   quirks:
-    - "ulimit -l unlimited  —— 现场脚本注明不加会让并行计算失败"
-    - "export GLEX_USE_ZC_RNDV=0  —— 现场脚本里有，与 GLEX 网络有关"
-    - "环境里已有 CUDA 11.8 与 gcc 11.4（conda 环境 cuda11），可直接用于构建"
-  # ---- 分阶段（用户 2026-08-31 裁定）----------------------------------------------------
-  # 阶段一 CREST 采样放纯 CPU 分区；阶段二（收紧 + Hessian）再看 GPU 值不值得。
-  # 两段的产物落在**同一个结果根的不同子目录**下，用 --stage 区分。
+    - "ulimit -l unlimited  -- the site script notes that the parallel run fails without it"
+    - "export GLEX_USE_ZC_RNDV=0  -- present in the site script; related to the GLEX network"
+    - "CUDA 11.8 and gcc 11.4 are already available (conda environment cuda11) and can be used for building directly"
+  # ---- Staging (user ruling 2026-08-31) ------------------------------------------------
+  # Stage one puts CREST sampling on a pure CPU partition; stage two (tightening +
+  # Hessian) is where it is worth asking whether a GPU pays for itself.
+  # The products of the two stages land in **different subdirectories of the same result
+  # root**, told apart by --stage.
   staging:
     stage1: {name: "stage1-crest", phase: "crest",
-             note: "GFN-FF 驱动元动力学 + refine=sp 的 MACE 单点（MACE 跑在 CPU 上）"}
+             note: "GFN-FF driven metadynamics + MACE single points at refine=sp (MACE runs on the CPU)"}
     stage2: {name: "stage2-mace", phase: "analyse",
-             note: "收紧到 fmax=1e-4 + 并池去重 + Hessian；唯一**可能**吃到 GPU 的一段"}
+             note: "tightening to fmax=1e-4 + pooled deduplication + Hessian; the one stage that **might** benefit from a GPU"}
     submit_note: >
-      阶段二用 --dependency=afterok:<阶段一作业号> 挂在阶段一之后自动开跑；
-      汇总（parquet 拼接）再挂在阶段二之后。
+      Stage two is chained after stage one with --dependency=afterok:<stage one job id>
+      so it starts automatically; the summary step (parquet concatenation) is chained
+      after stage two in turn.

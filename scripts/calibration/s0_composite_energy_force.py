@@ -1,48 +1,48 @@
-"""把 MACE-OFF23-SC 的**能量与力**对标复合参考；**频率能力存在，默认关闭**。
+"""Benchmark the **energies and forces** of MACE-OFF23-SC against a composite reference; **the frequency capability exists but is off by default**.
 
 CALIBRATION. Benchmarks energies and forces against the composite reference.
 
-范围经过两次裁定，后一次修订前一次，两条都写在这里，不覆盖历史：
+The scope was ruled on twice, the second revising the first. Both are recorded here; history is not overwritten:
 
-* **2026-08-29（上午）**：我们关心的是**能量与力**的精度；**频率的验证代价过高**
-  （要验证复合频率就得真算一次 `CCSD(T)/cc-pVTZ` 的 61 次梯度，约 5.1 天），
-  而原文给的 0.073 eV/Å 是**力**的误差，**力的精度不自动等于频率的精度**。
-* **2026-08-29（下午）**：用户指示「改为能够产出」。于是 `--hessian` 恢复了这个能力：
-  由**复合力**做中心差分得到复合 Hessian，再走与包 2 相同的 Eckart 投影与对角化。
-  **默认关闭**；打开时先把 `6N ×（项池大小）` 次单点的代价算给你看，
-  不加 `--hessian-confirm-cost` 就只报代价、不开跑。
-  裁定「代价过高」针对的是**把频率当作生产参考量**，不是禁止这个能力存在。
+* **2026-08-29 (morning)**: what we care about is the accuracy of **energies and forces**;
+    **validating frequencies costs too much** (validating a composite frequency means really
+    running 61 `CCSD(T)/cc-pVTZ` gradients, about 5.1 days), and the 0.073 eV/Angstrom in the original paper is a **force** error -- **force accuracy is not automatically frequency accuracy**.
+* **2026-08-29 (afternoon)**: the user asked for it to "be able to produce them". So `--hessian`
+    restores the capability: central differences of the **composite forces** give a composite Hessian, which then goes through the same Eckart projection and diagonalisation as package 2.
+    **Off by default**; when switched on it first shows you the cost of `6N x (pool size)`
+    single points, and without `--hessian-confirm-cost` it reports that cost and runs nothing.
+    The "too expensive" ruling was about **treating frequencies as a production reference quantity**, not about forbidding the capability.
 
-两个度量，口径不同，必须分开：
+Two measures, on different terms, which must be kept apart:
 
-* **力** —— 逐分量比，单位 eV/Å。与 Allen 等原文同口径（他们报的 0.073 eV/Å
-  就是「每个力分量的均方根误差」）。**只能在离开极小点的结构上读** ——
-  在 MACE 自己的极小点上，MACE 的力按构造约等于零，「偏差」恒等于参考力本身，
-  量到的是两个极小点的几何差，不是力的精度（`D0-81`）。
-* **能量** —— **只能比相对量**。MACE 的绝对能量与耦合簇的绝对能量零点不同，
-  相减没有意义；能比的是**同一物种不同构象之间的能量差**、
-  **热位移结构相对它自己母极小点的能量差**，以及同分子式两个物种之间的反应能。
+* **Forces** -- compared component by component, in eV/Angstrom, on the same terms as Allen et al.
+    (their 0.073 eV/Angstrom is "the root-mean-square error of each force component").
+    **They can only be read on structures away from a minimum** -- at a MACE minimum the MACE force
+    is about zero by construction, the "deviation" is identically the reference force, and what is measured is the geometric difference of two minima, not force accuracy (`D0-81`).
+* **Energies** -- **only relative quantities are comparable**. The absolute energy of MACE and of
+    coupled cluster have different zeros, so subtracting them is meaningless. What is comparable:
+    **energy differences between conformers of one species**, **the energy of a thermally displaced structure relative to its own parent minimum**, and the reaction energy between two species of the same formula.
 
-**项池**：一条基组阶梯（DZ → TZ* → QZ*）里，低几级的单点是高一级的子集。
-本脚本按**去重后的项池**求解，所以量出整条阶梯的代价 = 量出最高一级的代价，
-中间几级是**免费**的 —— 「阶梯收敛了没有」于是从假设变成一个可读的数。
+**The term pool**: along a basis ladder (DZ -> TZ* -> QZ*) the single points of the lower rungs are
+a subset of the higher one. This script solves over the **deduplicated pool**, so measuring the whole
+ladder costs what measuring the top rung costs and the middle rungs are **free** -- turning "has the ladder converged" from an assumption into a number you can read.
 
-用法::
+Usage::
 
-    # 冒烟：单项 MP2/cc-pVDZ
+    # smoke test: the single term MP2/cc-pVDZ
     python scripts/calibration/s0_composite_energy_force.py --recipe smoke_mp2_dz --limit 3 --displace 3
 
-    # E2（2026-08-29 用户裁定的精度「MP2 DZ* -> QZ*」）：44 个结构、一条阶梯
+    # E2 (the accuracy ruled by the user on 2026-08-29, "MP2 DZ* -> QZ*"): 44 structures, one ladder
     python scripts/calibration/s0_composite_energy_force.py --ladder mp2_dz_to_qz --displace 3 \
         --nprocs 12 --tag E2 --resume
 
-    # 频率能力（默认关闭；先看代价）
+    # the frequency capability (off by default; look at the cost first)
     python scripts/calibration/s0_composite_energy_force.py --recipe dz_base --limit 1 --hessian
 
-产物::
+Products::
 
-    analysis/composite_energy_force_<tag>.json           最终汇总
-    analysis/composite_energy_force_<tag>.partial.jsonl  每算完一个结构就落一行（可续跑）
+    analysis/composite_energy_force_<tag>.json           the final summary
+    analysis/composite_energy_force_<tag>.partial.jsonl  one line per finished structure (resumable)
 """
 import argparse
 import json
@@ -73,31 +73,31 @@ OUT = S0_ROOT / "analysis"
 
 
 def load_structures(cfg, limit=None):
-    """取包 2 已经落盘的每个物种的每个盆（真极小点）。"""
+    """Take every basin of every species already written by package 2 (true minima)."""
     pkg2 = OUT / "package2"
     if not pkg2.exists():
         raise FileNotFoundError(
-            "{} 不存在 —— 先跑 scripts/calibration/s0_package2_hessian_benchmark.py".format(pkg2))
+            "{} does not exist -- run scripts/calibration/s0_package2_hessian_benchmark.py first".format(pkg2))
     from ase.io import read
     items = []
     for qid, spec in sorted(cfg["species"].items()):
         d = pkg2 / spec["name"]
         for xyz in sorted(d.glob("basin*.xyz")):
-            items.append(dict(qm9_index=qid, name=spec["name"], zh=spec["zh"],
+            items.append(dict(qm9_index=qid, name=spec["name"],
                               basin=int(xyz.stem.replace("basin", "")),
                               path=str(xyz), atoms=read(str(xyz))))
     if not items:
-        raise FileNotFoundError("在 {} 下没有找到任何 basin*.xyz".format(pkg2))
+        raise FileNotFoundError("no basin*.xyz found under {}".format(pkg2))
     return items[:limit] if limit else items
 
 
 def resolve_recipes(p2, args):
-    """把 `--recipe` / `--recipes` / `--ladder` 化成 [(名字, terms), ...]。"""
+    """Turn `--recipe` / `--recipes` / `--ladder` into [(name, terms), ...]."""
     recipes = p2["composite_recipes"]
     if args.ladder:
         ladders = p2.get("recipe_ladders", {})
         if args.ladder not in ladders:
-            raise KeyError("配置里没有阶梯 {!r}；可选: {}".format(
+            raise KeyError("no ladder {!r} in the configuration; available: {}".format(
                 args.ladder, sorted(ladders)))
         names = list(ladders[args.ladder]["recipes"])
     elif args.recipes:
@@ -107,7 +107,7 @@ def resolve_recipes(p2, args):
     out = []
     for n in names:
         if n not in recipes:
-            raise KeyError("配置里没有配方 {!r}；可选: {}".format(n, sorted(recipes)))
+            raise KeyError("no recipe {!r} in the configuration; available: {}".format(n, sorted(recipes)))
         out.append((n, [[t[0], t[1], t[2]] for t in recipes[n]["terms"]]))
     return out
 
@@ -121,27 +121,27 @@ def key_of(it):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--recipe", default=None,
-                    help="单个配方名；缺省用配置里的 reference_level")
-    ap.add_argument("--recipes", default=None, help="逗号分隔的多个配方，共用一个项池")
-    ap.add_argument("--ladder", default=None, help="配置里 recipe_ladders 的名字")
-    ap.add_argument("--limit", type=int, default=None, help="只算前 N 个极小点（冒烟用）")
+                    help="a single recipe name; defaults to reference_level from the configuration")
+    ap.add_argument("--recipes", default=None, help="several comma-separated recipes sharing one term pool")
+    ap.add_argument("--ladder", default=None, help="the name of a recipe_ladders entry in the configuration")
+    ap.add_argument("--limit", type=int, default=None, help="use only the first N minima (for a smoke test)")
     ap.add_argument("--nprocs", type=int, default=8)
-    ap.add_argument("--timeout", type=float, default=None, help="单次 ORCA 的秒数上限")
+    ap.add_argument("--timeout", type=float, default=None, help="time limit in seconds for one ORCA run")
     ap.add_argument("--displace", type=int, default=0,
-                    help="每个极小点额外采 N 个热位移结构。"
-                         "**力的对标必须用它** —— 在 MACE 自己的极小点上比力是退化的")
+                    help="sample N extra thermally displaced structures per minimum. "
+                         "**The force benchmark requires this** -- comparing forces at a MACE minimum is degenerate")
     ap.add_argument("--temperature", type=float, default=298.15)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--tag", default=None, help="产物文件名的后缀；缺省用配方/阶梯名")
+    ap.add_argument("--tag", default=None, help="suffix of the product filename; defaults to the recipe/ladder name")
     ap.add_argument("--resume", action="store_true",
-                    help="读已有的 .partial.jsonl，跳过已算完的结构")
+                    help="read an existing .partial.jsonl and skip the structures already done")
     ap.add_argument("--hessian", action="store_true",
-                    help="**默认关闭的能力**：由复合力做中心差分给出复合 Hessian 与频率。"
-                         "只对极小点做。不加 --hessian-confirm-cost 就只报代价、不开跑")
+                    help="**a capability that is off by default**: central differences of the composite forces give a composite Hessian and frequencies. "
+                         "Minima only. Without --hessian-confirm-cost it reports the cost and runs nothing")
     ap.add_argument("--hessian-confirm-cost", action="store_true",
-                    help="看过代价之后，真的开跑复合 Hessian")
+                    help="having seen the cost, actually run the composite Hessian")
     ap.add_argument("--hessian-delta", type=float, default=hessian.DELTA_A,
-                    help="复合 Hessian 的中心差分位移，Å")
+                    help="central-difference displacement for the composite Hessian, in Angstrom")
     args = ap.parse_args()
 
     cfg = config.load()
@@ -153,10 +153,10 @@ def main():
     calc, engine_name, prov = engine.calculator()
     items = load_structures(cfg, args.limit)
 
-    # ---- 热位移: 力的对标必须离开极小点 ----------------------------------------------
+    # ---- thermal displacement: the force benchmark has to leave the minimum -------------
     displaced_rec = None
     if args.displace:
-        print("采 {} 个 {:.2f} K 热位移结构/极小点 ...".format(
+        print("sampling {} thermally displaced structures at {:.2f} K per minimum ...".format(
             args.displace, args.temperature))
         extra, displaced_rec = [], []
         for it in items:
@@ -167,10 +167,10 @@ def main():
             displaced_rec.append(rec)
             for j, st in enumerate(s_list):
                 extra.append(dict(qm9_index=it["qm9_index"], name=it["name"],
-                                  zh=it["zh"], basin=it["basin"],
+                                  basin=it["basin"],
                                   path=it["path"] + "#displaced{}".format(j),
                                   displaced=j, atoms=st))
-            print("   {:20s} 盆 {}  均方根位移 {} A  拒绝 {} 次".format(
+            print("   {:20s} basin {}  rms displacement {} A  {} rejection(s)".format(
                 it["name"], it["basin"],
                 [round(x, 3) for x in rec["rms_displacement_A"]],
                 rec["n_draws_rejected"]))
@@ -178,21 +178,21 @@ def main():
         print()
 
     print("=" * 100)
-    print("能量与力的对标   {}  vs  {}".format(engine_name, tag))
+    print("energy and force benchmark   {}  vs  {}".format(engine_name, tag))
     print("=" * 100)
     for name, terms in chosen:
-        print("配方 {}".format(name))
+        print("recipe {}".format(name))
         for c, m, b in terms:
             print("      {:+d}  {:8s} {}".format(int(c), m, b))
-    print("项池（去重后每个几何只跑这些）: {}".format(
+    print("term pool (deduplicated; only these run per geometry): {}".format(
         ", ".join("{}/{}".format(m, b) for m, b in pool_terms)))
-    print("自旋 {}   ORCA {}".format(p2.get("reference_spin", "?"), orca.orca_binary()))
-    print("结构 {} 个（{} 个真极小点 + {} 个热位移）".format(
+    print("spin {}   ORCA {}".format(p2.get("reference_spin", "?"), orca.orca_binary()))
+    print("{} structure(s) ({} true minima + {} thermally displaced)".format(
         len(items), sum(1 for i in items if i.get("displaced") is None),
         sum(1 for i in items if i.get("displaced") is not None)))
     print()
 
-    # ---- 断点续跑 ---------------------------------------------------------------------
+    # ---- resume from a checkpoint -------------------------------------------------------
     part = OUT / "composite_energy_force_{}.partial.jsonl".format(tag)
     part.parent.mkdir(parents=True, exist_ok=True)
     done = {}
@@ -201,7 +201,7 @@ def main():
             if line.strip():
                 r = json.loads(line)
                 done[r["key"]] = r
-        print("续跑：已有 {} 个结构的结果，跳过它们。".format(len(done)))
+        print("resuming: results already exist for {} structure(s); skipping them.".format(len(done)))
         print()
 
     results, t0 = [], time.time()
@@ -215,10 +215,10 @@ def main():
         e_mace = float(a.get_potential_energy())
         f_mace = a.get_forces()
 
-        print("   {:>2}/{:<2} {:20s} 盆 {} {}".format(
+        print("   {:>2}/{:<2} {:20s} basin {} {}".format(
             k + 1, len(items), it["name"], it["basin"],
             "" if it.get("displaced") is None
-            else "位移 {}".format(it["displaced"])), flush=True)
+            else "displaced {}".format(it["displaced"])), flush=True)
 
         def prog(i, n, m, b, s):
             print("      [{}/{}] {:8s} {:9s} {:7.1f} s".format(i, n, m, b, s),
@@ -237,8 +237,8 @@ def main():
                 forces_ref_eV_A=ref["forces_eV_A"].tolist(),
                 force_metrics=fm, orca_version=ref["orca_version"],
                 per_term=ref["per_term"])
-            print("      {:24s} 力: 平均绝对偏差 {:.4f}  均方根偏差 {:.4f}  "
-                  "最大 {:.4f}   （参考力本身的均方根 {:.4f}）eV/A".format(
+            print("      {:24s} forces: mean absolute deviation {:.4f}  rms deviation {:.4f}  "
+                  "maximum {:.4f}   (rms of the reference force itself {:.4f}) eV/A".format(
                       name, fm["mae_eV_A"], fm["rmse_eV_A"],
                       fm["max_abs_eV_A"], fm["ref_rms_eV_A"]), flush=True)
 
@@ -249,11 +249,11 @@ def main():
                    pool_seconds=float(sum(r["seconds"] for r in pool.values())),
                    per_recipe=per_recipe)
         results.append(rec)
-        # **每算完一个结构就落盘** —— 8 小时的跑不能只在结尾写一次
+        # **Write after every finished structure** -- an 8-hour run must not write only at the end
         with open(str(part), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    # ---- 汇总 -------------------------------------------------------------------------
+    # ---- summary ------------------------------------------------------------------------
     at_min = [r for r in results if r.get("displaced") is None]
     off_min = [r for r in results if r.get("displaced") is not None]
 
@@ -266,7 +266,7 @@ def main():
         return orca.force_metrics(aa, bb)
 
     def relative_energies(name):
-        """(a) 构象相对能量：只用极小点；(b) 位移能量：相对各自的母极小点。"""
+        """(a) conformer relative energies: minima only; (b) displacement energies: relative to each parent minimum."""
         conf, by_species = [], {}
         for r in at_min:
             by_species.setdefault(r["qm9_index"], []).append(r)
@@ -307,7 +307,7 @@ def main():
     summary = {}
     print()
     print("=" * 100)
-    print("汇总")
+    print("summary")
     print("=" * 100)
     for name, _terms in chosen:
         fa, fo = pool_forces(at_min, name), pool_forces(off_min, name)
@@ -318,36 +318,36 @@ def main():
                              energy_stat_conformers=stat(conf),
                              energy_stat_displacements=stat(disp))
         print()
-        print("### 配方 {}".format(name))
+        print("### recipe {}".format(name))
         for tagline, pm, degenerate in (
-                ("极小点上（**退化，不可当作力的精度**）", fa, True),
-                ("热位移上（**这才是力的精度**）", fo, False)):
+                ("at the minima (**degenerate; not force accuracy**)", fa, True),
+                ("on thermal displacements (**this is force accuracy**)", fo, False)):
             if pm is None:
                 continue
-            print("  力 —— {}".format(tagline))
-            print("     {} 个分量: 平均绝对偏差 {:.4f}  **均方根偏差 {:.4f}**  "
-                  "最大 {:.4f} eV/A".format(
+            print("  forces -- {}".format(tagline))
+            print("     {} component(s): mean absolute deviation {:.4f}  **rms deviation {:.4f}**  "
+                  "maximum {:.4f} eV/A".format(
                       pm["n_components"], pm["mae_eV_A"], pm["rmse_eV_A"],
                       pm["max_abs_eV_A"]))
-            print("     有符号均值 {:+.4f}；参考力本身的均方根 {:.4f} eV/A".format(
+            print("     signed mean {:+.4f}; rms of the reference force itself {:.4f} eV/A".format(
                 pm["signed_mean_eV_A"], pm["ref_rms_eV_A"]))
             if degenerate:
-                print("     ** MACE 的力在这里按构造约等于零，偏差恒等于参考力本身。")
-        for lab, st in (("构象相对能量（只用极小点）",
+                print("     ** here the MACE force is about zero by construction, so the deviation is identically the reference force.")
+        for lab, st in (("conformer relative energies (minima only)",
                          summary[name]["energy_stat_conformers"]),
-                        ("热位移能量（相对各自母极小点）",
+                        ("thermal displacement energies (relative to each parent minimum)",
                          summary[name]["energy_stat_displacements"])):
             if st is None:
-                print("  {}: 无可比对象，跳过。".format(lab))
+                print("  {}: nothing to compare against; skipped.".format(lab))
                 continue
-            print("  {}（{} 个）: 平均绝对偏差 {:.4f}  均方根偏差 {:.4f}  "
-                  "最大 {:.4f} kcal/mol".format(
+            print("  {} ({}): mean absolute deviation {:.4f}  rms deviation {:.4f}  "
+                  "maximum {:.4f} kcal/mol".format(
                       lab, st["n"], st["mae_kcal"], st["rmse_kcal"],
                       st["max_abs_kcal"]))
     print()
-    print("   参照：Allen 等原文的复合式相对真 CCSD(T)/QZ 力的均方根误差是 0.073 eV/A")
+    print("   for reference: in Allen et al. the composite has an rms force error of 0.073 eV/A against true CCSD(T)/QZ")
 
-    # ---- 阶梯：相邻两级之间的差 ---------------------------------------------------------
+    # ---- the ladder: the difference between adjacent rungs -------------------------------
     ladder = None
     if len(chosen) > 1:
         ladder = []
@@ -368,25 +368,25 @@ def main():
                 force_rms_change_eV_A=float(np.sqrt((dfa ** 2).mean())),
                 force_max_change_eV_A=float(np.abs(dfa).max())))
         print()
-        print("阶梯：相邻两级**参考本身**的差（不是与 MACE 比，是参考收敛到哪了）")
+        print("ladder: the difference between adjacent rungs **of the reference itself** (not against MACE; this is how far the reference has converged)")
         for r in ladder:
-            print("   {:22s} -> {:22s}  力的均方根变化 {:.4f} eV/A（最大 {:.4f}）；"
-                  "能量平移 {:+.3f} ± {:.3f} kcal/mol".format(
+            print("   {:22s} -> {:22s}  rms change in force {:.4f} eV/A (maximum {:.4f}); "
+                  "energy shift {:+.3f} +/- {:.3f} kcal/mol".format(
                       r["lower"], r["upper"], r["force_rms_change_eV_A"],
                       r["force_max_change_eV_A"], r["energy_shift_mean_kcal"],
                       r["energy_shift_spread_kcal"]))
-        print("   能量平移的**均值**无意义（绝对零点变了），有意义的是它的**离散**：")
-        print("   离散小 = 这一级基组修正对不同结构几乎是同一个常数 = 相对量已经收敛。")
+        print("   the **mean** energy shift is meaningless (the absolute zero moved); what matters is its **spread**:")
+        print("   a small spread = this basis correction is nearly the same constant for every structure = the relative quantities have converged.")
 
-    # ---- 复合 Hessian（默认关闭的能力）-------------------------------------------------
+    # ---- the composite Hessian (a capability that is off by default) ---------------------
     hess = None
     if args.hessian:
         hess = run_hessian(args, chosen, at_min, calc)
 
     payload = dict(
         generated_by="scripts/calibration/s0_composite_energy_force.py",
-        scope=("能量与力为主（2026-08-29 上午裁定）；频率能力存在但默认关闭"
-               "（2026-08-29 下午用户指示「改为能够产出」）"),
+        scope=("energies and forces primarily (ruled 2026-08-29 morning); the frequency capability exists but is off by default "
+               "(the user asked on the afternoon of 2026-08-29 for it to be able to produce them)"),
         engine=prov, tag=tag,
         recipes={n: t for n, t in chosen},
         pool_terms=[list(x) for x in pool_terms],
@@ -397,31 +397,31 @@ def main():
         ladder_between_levels=ladder,
         displacement_sampling=displaced_rec,
         composite_hessian=hess,
-        note_forces=("在 MACE 自己的极小点上比力是**退化的**: MACE 的力约等于零, "
-                     "偏差恒等于参考力本身。力的精度只能在**热位移结构**上读。"),
-        note_energy=("绝对能量不可比（MACE 与耦合簇零点不同）；"
-                     "这里比的是同一物种内部的相对量。"),
-        literature_reference=("Allen 等, Reactive Chemistry at Unrestricted Coupled "
-                              "Cluster Level: 复合式相对真 CCSD(T)/QZ 力的均方根误差 "
+        note_forces=("comparing forces at a MACE minimum is **degenerate**: the MACE force is about zero, "
+                     "and the deviation is identically the reference force. Force accuracy can be read only on **thermally displaced structures**."),
+        note_energy=("absolute energies are not comparable (MACE and coupled cluster have different zeros); "
+                     "what is compared here are relative quantities within one species."),
+        literature_reference=("Allen et al., Reactive Chemistry at Unrestricted Coupled "
+                              "Cluster Level: the composite has an rms force error against true CCSD(T)/QZ of "
                               "0.073 eV/Å"),
         per_structure=results, total_seconds=time.time() - t0)
     out = OUT / "composite_energy_force_{}.json".format(tag)
     out.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     print()
-    print("落盘:", out)
-    print("逐结构续跑文件:", part)
-    print("总用时 {:.0f} s".format(time.time() - t0))
+    print("written:", out)
+    print("per-structure resume file:", part)
+    print("total time {:.0f} s".format(time.time() - t0))
 
 
 def run_hessian(args, chosen, at_min, calc):
-    """复合 Hessian —— 先报代价，确认过才跑。只对极小点做（位移结构不是极小点）。"""
+    """Composite Hessian -- report the cost first, run only once confirmed. Minima only (a displaced structure is not a minimum)."""
     from ase.io import read
-    name, terms = chosen[-1]        # 阶梯里最高的一级
+    name, terms = chosen[-1]        # the top rung of the ladder
     print()
     print("=" * 100)
-    print("复合 Hessian（**默认关闭的能力**，本次被 --hessian 打开）  配方 {}".format(name))
+    print("composite Hessian (**a capability off by default**, switched on here by --hessian)  recipe {}".format(name))
     print("=" * 100)
-    # 用**本次实测**的单点耗时做代价估计，而不是用配置里的估计值
+    # Estimate the cost from the single-point times **measured in this run**, not from an estimate in the configuration
     spt = {}
     for r in at_min:
         for t in r["per_recipe"][name]["per_term"]:
@@ -431,35 +431,35 @@ def run_hessian(args, chosen, at_min, calc):
     for r in at_min:
         c = orca.hessian_cost(r["n_atoms"], terms, spt)
         total_s += c["estimated_seconds"]
-        print("   {:20s} 盆 {}  {} 个原子 -> {} 个位移几何 × {} 项 = {} 次单点，"
-              "约 {:.1f} 小时".format(
+        print("   {:20s} basin {}  {} atoms -> {} displaced geometries x {} terms = {} single points, "
+              "about {:.1f} hours".format(
                   r["name"], r["basin"], c["n_atoms"], c["n_displaced_geometries"],
                   c["n_terms_per_geometry"], c["n_single_points"],
                   c["estimated_hours"]))
-    print("   —— 合计约 {:.1f} 小时（{:.2f} 天），用的是**本次实测**的单点耗时".format(
+    print("   -- about {:.1f} hours in total ({:.2f} days), from the single-point times **measured in this run**".format(
         total_s / 3600.0, total_s / 86400.0))
     if not args.hessian_confirm_cost:
-        print("   **未加 --hessian-confirm-cost，只报代价，不开跑。**")
+        print("   **--hessian-confirm-cost was not given: the cost is reported and nothing is run.**")
         return dict(mode="cost_only", recipe=name,
                     estimated_seconds=total_s,
                     estimated_hours=total_s / 3600.0,
                     seconds_per_term_measured={"{}/{}".format(*k): v
                                                for k, v in spt.items()},
-                    note="能力存在、默认关闭、代价先报。加 --hessian-confirm-cost 才真跑。")
+                    note="the capability exists, is off by default, and reports its cost first. It runs only with --hessian-confirm-cost.")
     out = []
     for r in at_min:
         a = read(r["path"])
-        print("   跑 {} 盆 {} ...".format(r["name"], r["basin"]), flush=True)
+        print("   running {} basin {} ...".format(r["name"], r["basin"]), flush=True)
         h, asym, logs = orca.composite_hessian(
             a.get_chemical_symbols(), a.get_positions(), terms,
             delta_A=args.hessian_delta, nprocs=args.nprocs,
             timeout_s=args.timeout,
-            progress=lambda i, n: print("      坐标 {}/{}".format(i, n), flush=True))
+            progress=lambda i, n: print("      coordinate {}/{}".format(i, n), flush=True))
         rec = hessian.project_and_diagonalise(h, a.get_masses(), a.get_positions())
         rec.update(name=r["name"], basin=r["basin"], recipe=name,
                    hessian_asymmetry_eV_A2=asym, delta_A=args.hessian_delta,
                    n_single_points=len(logs) * len(orca.unique_terms([terms])))
-        # 同一几何上的 MACE 频率，供直接对照
+        # MACE frequencies on the same geometry, for a direct comparison
         a2 = a.copy()
         a2.calc = calc
         hm, _asym_m = hessian.finite_difference_hessian(a2, calc,
@@ -473,7 +473,7 @@ def run_hessian(args, chosen, at_min, calc):
             rmse_cm_inv=float(np.sqrt((d ** 2).mean())),
             max_abs_cm_inv=float(np.abs(d).max()),
             signed_mean_cm_inv=float(d.mean()))
-        print("      频率偏差: 平均绝对 {:.2f}  均方根 {:.2f}  最大 {:.2f} cm^-1".format(
+        print("      frequency deviation: mean absolute {:.2f}  rms {:.2f}  maximum {:.2f} cm^-1".format(
             rec["frequency_deviation"]["mae_cm_inv"],
             rec["frequency_deviation"]["rmse_cm_inv"],
             rec["frequency_deviation"]["max_abs_cm_inv"]))

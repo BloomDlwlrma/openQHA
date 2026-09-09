@@ -188,7 +188,7 @@ with the code it was checking:
 
 * `tests/unit/t_module_entry_points.py` — every `python -m openqha.<x>` named anywhere in
   the repository resolves.
-* `tests/unit/t_legacy_import_forms.py` — each import form in a **fresh interpreter**,
+* `tests/unit/t_legacy_import_forms.py` (retired 2026-09-09) — each import form in a **fresh interpreter**,
   with that form first. An in-process check cannot catch this class of bug: touching
   `openqha.thermo` as an attribute registers it in `sys.modules`, after which
   `from openqha.thermo import X` cannot fail. That is exactly how the first version of

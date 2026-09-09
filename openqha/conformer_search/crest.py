@@ -53,7 +53,7 @@ from .. import S0_ROOT
 #: nothing had read it for some time: `write_input` builds the TOML inline. The
 #: constant is gone rather than the file restored, because two sources of truth
 #: for the same content is how they drift apart. Removed 2026-09-04 after
-#: t_translation_preserved_numbers reported it MISSING.
+#: t_translation_preserved_numbers reported it MISSING (that gate was retired 2026-09-09).
 
 # --------------------------------------------------------------------------------------
 # The environment every CREST call must carry

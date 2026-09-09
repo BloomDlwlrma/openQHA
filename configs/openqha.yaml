@@ -1,11 +1,14 @@
-# stage 0 生产配置 —— **本仓唯一的事实来源**
+# stage 0 production configuration -- **the single source of truth in this repository**
 #
-# 2026-08-28 起，stage 0 是一个**独立的开源框架**，将单独推到 GitHub。
-# 因此它**不再从 stage 1 / stage 2 读取任何东西**：边集、物种表、对称数、参数、
-# 数据路径，全部在本文件里重写一遍。凡是从别处抄来的，都在 `provenance` 里写明
-# 出处与抄写日期，并留一个校验和，好让日后的漂移能被发现，而不是被继承。
+# Since 2026-08-28 stage 0 is an **independent open-source framework** that will be
+# pushed to GitHub on its own. It therefore **reads nothing from stage 1 / stage 2 any
+# more**: the edge set, the species table, symmetry numbers, parameters and data paths
+# are all rewritten here. Anything copied from elsewhere records its origin and the date
+# it was copied under `provenance`, plus a checksum, so that later drift is detected
+# rather than inherited.
 #
-# 参数分类沿用 stage 1 / stage 2 的五类（见 .mem/skills/skill_stage0-standards.md §1.4）：
+# Parameters carry the same five classes as stage 1 / stage 2
+# (see .mem/skills/skill_stage0-standards.md section 1.4):
 #   physical_constant | derived_criterion | literature_value | modifiable_convention
 #   | numerical_tolerance | resource_budget
 
@@ -23,40 +26,48 @@ include:
 
 meta:
   name: "stage0-production"
-  description: "不含炼金的对比样：构象 → 动力学 → 态密度 → 加耦合簇单点"
+  description: "The control without alchemy: conformers -> dynamics -> density of states -> coupled-cluster single points"
   written: "2026-08-28"
 
 # --------------------------------------------------------------------------------------
-# 运行时的落地位置 —— **本仓在机器上写东西的唯一根**
+# Where a run lands -- **the one root this repository writes under on any machine**
 # --------------------------------------------------------------------------------------
-# 用户 2026-08-31 裁定：「不要直接把东西存在 ~ 下，/home 里文件太多了；
-# 改到 \wsl.localhost\Ubuntu-24.04\home\ubuntu\runs\openQHA」（即 /home/ubuntu/runs/openQHA）。
+# User ruling 2026-08-31, verbatim: "do not put things directly under ~, there are too
+# many files in /home; move it to \wsl.localhost\Ubuntu-24.04\home\ubuntu\runs\openQHA"
+# (that is, /home/ubuntu/runs/openQHA).
 #
-# **为什么重活不放 /mnt/c**：CREST 在并行 `_N` 子目录里写大量小文件，
-# 走 9p（Windows 挂载）会被 I/O 拖住。产物算完再拷回仓内 —— 拷的是结果，不是过程。
+# **Why the heavy work does not go on /mnt/c**: CREST writes many small files into
+# parallel `_N` subdirectories, and doing that across 9p (the Windows mount) is
+# I/O-bound. Products are copied back into the repository once computed -- the result is
+# copied, not the process.
 #
-# 目录约定（全部由 openqha.config.runs_dir() 派生，脚本里不再出现字面路径）：
-#   crest_batch/  包 1 批量的 CREST 工作目录       crest_work/  单物种实验
-#   build/        CREST 构建树                     verify/      补丁验证
-#   sockets/      常驻 MACE 服务端的套接字与日志    logs/        驱动日志
-#   legacy/       2026-08-31 之前散落在 ~ 下的旧目录    tmp/  临时
+# Directory convention (all derived by openqha.config.runs_dir(); no literal path appears
+# in a script any more):
+#   crest_batch/  CREST working directories for the package 1 batch
+#   crest_work/   single-species experiments
+#   build/        the CREST build tree           verify/  patch verification
+#   sockets/      sockets and logs of the resident MACE server
+#   logs/         driver logs
+#   legacy/       the old directories scattered under ~ before 2026-08-31
+#   tmp/          temporary
 runtime:
-  runs_root: "~/runs/openQHA"        # resource_budget；可被环境变量 S0_RUNS_ROOT 覆盖
-  # `~/crest_build` 现在是一个**符号链接**，指向 runs_root/build/crest_build。
-  # 留它的唯一理由：build-patched/crest 的 RUNPATH 里烧死了
-  # `/home/ubuntu/crest_build/lib` 这个绝对路径，删掉链接那个二进制就找不到自己的 .so。
-  legacy_symlink_note: "~/crest_build -> runs_root/build/crest_build (RUNPATH 是绝对路径)"
+  runs_root: "~/runs/openQHA"        # resource_budget; overridable by S0_RUNS_ROOT
+  # `~/crest_build` is now a **symbolic link** to runs_root/build/crest_build.
+  # The only reason it is kept: the RUNPATH of build-patched/crest has the absolute path
+  # `/home/ubuntu/crest_build/lib` burned into it, so deleting the link leaves that
+  # binary unable to find its own .so.
+  legacy_symlink_note: "~/crest_build -> runs_root/build/crest_build (RUNPATH is absolute)"
 
 # --------------------------------------------------------------------------------------
-# 热力学状态
+# Thermodynamic state
 # --------------------------------------------------------------------------------------
 thermodynamics:
-  temperature_K: 298.15          # modifiable_convention：目标态；换温度须整条链一起换
-  pressure_Pa: 100000.0          # modifiable_convention：1 bar 标准态
-  target_accuracy_kcal: 1.0      # derived_criterion：每一项近似都拿它当判据尺度
+  temperature_K: 298.15          # modifiable_convention: the target state; changing the temperature means changing the whole chain
+  pressure_Pa: 100000.0          # modifiable_convention: the 1 bar standard state
+  target_accuracy_kcal: 1.0      # derived_criterion: the scale every approximation is judged against
 
 # --------------------------------------------------------------------------------------
-# 势 —— 唯一的一个
+# The potential -- there is only one
 # --------------------------------------------------------------------------------------
 engine:
   # ALIGNED 2026-09-09. This said "MACE-OFF23-SC" while DEFAULT_ENGINE in
@@ -72,12 +83,13 @@ engine:
   # subdirectory (ruling 2026-09-09). S0_MACE_ROOT moves the whole directory;
   # S0_MACE_MODEL overrides one file.
   weights: "data/potentials/MACE-OFF23_medium.model"
-  sha256: "4842c52ad210d6e1"        # 前 16 位；完整值由 openqha.engine.provenance() 现算并比对
-  dtype: "float64"                  # numerical_tolerance：几何优化与有限差分 Hessian 都要它
+  sha256: "4842c52ad210d6e1"        # first 16 characters; openqha.engine.provenance() recomputes and compares the full value
+  dtype: "float64"                  # numerical_tolerance: geometry optimisation and finite-difference Hessians both need it
   device: "cpu"
-  licence: "Academic Software Licence (ASL) —— 学术非商业"
+  licence: "Academic Software Licence (ASL) -- academic non-commercial"
   source: "https://arxiv.org/abs/2312.15211"
-  # 权重缺失时**抛异常，绝不回退到别的势**。静默换势会让下游每个数字失去它标称的层级。
+  # A missing weight file **raises; it never falls back to another potential**. A silent
+  # swap strips every downstream number of the level it claims to be at.
   fallback_allowed: false
   # Still selectable, and must stay: every package-1 basin and every number in
   # D0-P2-11/12/14 lives on that surface and cannot be reproduced without it.
@@ -85,15 +97,16 @@ engine:
   #   superseded_default: "MACE-OFF23-SC"  (sha256 32c9fb51704f96da, arXiv 2405.18171)
 
 # --------------------------------------------------------------------------------------
-# 数据 —— 本地路径，不指向任何别的 stage
+# Data -- local paths, pointing at no other stage
 # --------------------------------------------------------------------------------------
-# QM9 原始数据体量大（索引 119 MB、几何 224 MB），**不进 git**。
-# 用 `python scripts/tooling/s0_prepare_data.py --from <某个 QM9 目录>` 把它放进 data/，
-# 或设环境变量 S0_QM9_ROOT 指向别处。
-# 只有 7 个目标物种的参考几何是**随仓库分发**的（7 个文件，几 KB），
-# 这样 stage 0 的核心交付（包 2）零外部数据即可复现。
+# The raw QM9 data is large (index 119 MB, geometries 224 MB) and **is not in git**.
+# Put it under data/ with `python scripts/tooling/s0_prepare_data.py --from <a QM9 dir>`,
+# or set S0_QM9_ROOT to point elsewhere.
+# Only the reference geometries of the 7 target species are **distributed with the
+# repository** (7 files, a few kB), so that stage 0's core deliverable (package 2) is
+# reproducible with no external data at all.
 data:
-  qm9_root: "data/qm9"                       # 相对本仓根；可被 S0_QM9_ROOT 覆盖
+  qm9_root: "data/qm9"                       # relative to the repository root; overridable by S0_QM9_ROOT
   qm9_index_csv: "index_Chem_composition.csv"
   qm9_xyz_dir: "xyz_files"
   # curatedQM9: repaired geometries for the molecules QM9 could not characterise.
@@ -105,11 +118,10 @@ data:
   #     dsgdb9_XXXXXX_new.xyz         1 573   repaired, short tag
   # A lookup assuming one pattern would silently miss most of the repairs.
   curated_qm9_dir: "133660_curatedQM9_outof_133885"
-  vendored_reference_geometries: "data/reference-geometries"   # 随仓库分发的 7 个
+  vendored_reference_geometries: "data/reference-geometries"   # the 7 distributed with the repository
   upstream:
     dataset: "QM9 (GDB-9), Ramakrishnan et al., Sci. Data 2014, 1, 140022"
     note: >
-      索引表的列（转动常数 A/B/C、全部 3N-6 个谐振频率、zpve、U0/U/H/G、Cv）
-      是 B3LYP/6-31G(2df,p) 的原生值，stage 0 只把它们当**免费的对比样**，
-      不当作参考层级。
-
+      The columns of the index table (rotational constants A/B/C, all 3N-6 harmonic
+      frequencies, zpve, U0/U/H/G, Cv) are the native B3LYP/6-31G(2df,p) values.
+      stage 0 treats them only as a **free control**, never as a reference level.

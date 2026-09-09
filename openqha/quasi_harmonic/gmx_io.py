@@ -12,7 +12,7 @@ where four measurements live -- the 452x `gmx anaeig -entropy` defect, the
 `-[no]mwa (no)` default that silently returns a wrong number, the `.gro`
 quantisation against a 0.03 angstrom amplitude, and the .g96 1e-8 angstrom
 resolution -- and a move that dropped them would be the deletion
-`tests/unit/t_translation_preserved_numbers.py` exists to catch.
+`tests/unit/t_translation_preserved_numbers.py` was written to catch (retired 2026-09-09 with the migration it guarded).
 
 Original module documentation, preserved verbatim:
 

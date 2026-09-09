@@ -34,7 +34,7 @@ def _repo_root():
     raise RuntimeError("openQHA package not found above " + __file__)
 
 nb_path = Path(_sys.argv[1]) if len(_sys.argv) > 1 else _repo_root() / "docs" / "s0-1_conformer-to-free-energy.ipynb"
-_unused = (  # 旧的硬编码路径, 保留只为记录来历
+_unused = (  # the old hard-coded paths, kept only to record where they came from
     "/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/"
                "lambda-qm9-reaction-deltan_0-mace_v1/stage0-tradition-free-energy-calc/"
                "docs/s0-1_conformer-to-free-energy.ipynb")
@@ -44,7 +44,7 @@ bound = set(dir(builtins))
 problems = []
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 
-# 从笔记本里解析出 SPECIES 的键 —— 硬编码物种名的检查只针对这些字符串.
+# Parse the SPECIES keys out of the notebook -- the hard-coded-species check applies only to these strings.
 SPECIES_KEYS = set()
 for _cell in nb["cells"]:
     if _cell["cell_type"] != "code":
@@ -109,7 +109,7 @@ def local_names(tree):
                         out.add((al.asname or al.name).split(".")[0])
                 if isinstance(sub, ast.ExceptHandler) and sub.name:
                     out.add(sub.name)
-                # 嵌套的 def / class 也绑定它自己的名字 (例如 run_md 里的闭包 grab)
+                # a nested def / class binds its own name too (for example the closure grab inside run_md)
                 if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     out.add(sub.name)
         if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
@@ -140,13 +140,13 @@ for idx, cell in enumerate(nb["cells"]):
         problems.append((idx, "FORWARD-REF", u))
     bound |= this_cell
 
-    # 硬编码的物种名: 换边时它们会变成 KeyError, 已经发生过一次 (KeyError: 'propanal').
-    # 只报物种名 —— 记录字典用字符串键是正常写法, 不能一律报警.
+    # Hard-coded species names: they turn into a KeyError when the edge changes, which has happened once (KeyError: 'propanal').
+    # Only species names are reported -- string keys in a record dict are normal and must not all be flagged.
     for node in ast.walk(tree):
         if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) \
                 and isinstance(node.slice.value, str) and node.slice.value in SPECIES_KEYS:
             problems.append((idx, "HARD-CODED-SPECIES",
-                             "{}[{!r}] -- 请用 REACTANT / PRODUCT 或遍历 SPECIES".format(
+                             "{}[{!r}] -- use REACTANT / PRODUCT, or iterate over SPECIES".format(
                                  getattr(node.value, "id", "<expr>"), node.slice.value)))
 
 if problems:

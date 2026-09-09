@@ -1,10 +1,10 @@
-"""测量 Egret-1 与 MACE-OFF23-SC 的单步力计算耗时, 以及线程数的影响.
+"""Per-step force timing for Egret-1 and MACE-OFF23-SC, and the effect of thread count.
 
 CALIBRATION. Per-step force timing and thread scaling; its numbers size the
 molecular-dynamics budget.
 
-讲义的分子动力学预算: (3 ps 平衡 x 3 轮 + 6 ps 生产) / 0.5 fs = 30000 步/物种,
-两个物种共 60000 步. 用下面的实测每步耗时可以直接换算出总时长.
+The molecular-dynamics budget from the lecture notes: (3 ps equilibration x 3 rounds
++ 6 ps production) / 0.5 fs = 30000 steps per species, 60000 steps for the two species. The measured per-step cost below converts straight into a total wall time.
 """
 import os
 import time
@@ -86,18 +86,18 @@ def geometry():
 
 
 atoms = geometry()
-STEPS_TOTAL = 2 * (3 * 3.0 + 6.0) * 1000 / 0.5     # 两个物种的总步数
+STEPS_TOTAL = 2 * (3 * 3.0 + 6.0) * 1000 / 0.5     # total steps for the two species
 
 
 def bench(calc, label, n=40):
     a = atoms.copy(); a.calc = calc
-    a.get_forces()                                   # 预热
+    a.get_forces()                                   # warm-up
     t0 = time.time()
     for _ in range(n):
         a.calc.results.clear()
         a.get_forces()
     dt = (time.time() - t0) / n
-    print("   {:22s} {:8.1f} ms/步   -> 讲义全部 {:.0f} 步约 {:6.1f} 分钟".format(
+    print("   {:22s} {:8.1f} ms/step -> all {:.0f} steps of the lecture notes, about {:6.1f} min".format(
         label, dt * 1e3, STEPS_TOTAL, dt * STEPS_TOTAL / 60))
     return dt
 
@@ -114,6 +114,6 @@ for nthreads in (torch.get_num_threads(), max(1, (os.cpu_count() or 4) - 2)):
     bench(mace_off(model=EGRET_S, default_dtype="float64", device="cpu"), "Egret-1S")
 
 print()
-print("float32 对照 (只看速度, 不用于生产 —— 优化与频率需要 float64):")
+print("float32 control (speed only; not for production -- optimisation and frequencies need float64):")
 torch.set_num_threads(max(1, (os.cpu_count() or 4) - 2))
 bench(mace_off(model=EGRET, default_dtype="float32", device="cpu"), "Egret-1 float32")

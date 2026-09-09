@@ -1,13 +1,13 @@
-"""按 skills 第 2.4(c) 条: nbconvert 的成败只能由笔记本自身判定.
+"""Per skills section 2.4(c): whether nbconvert succeeded can be judged only by the notebook itself.
 
 TOOLING. Renders a notebook and judges the run by the notebook's own counters.
 Produces no science.
 
-用 errors / figures / code-cells-without-output 三个计数, 绝不依赖 shell 退出码 ——
-后者已经失效三次: `| tail`; `| grep` 配 `set -o pipefail`; `wsl bash -lc` 里的退出码捕获.
-每一次都把失败报成 0.
+Three counters decide it -- errors / figures / code-cells-without-output -- and never the
+shell exit code, which has already failed three times: `| tail`; `| grep` under
+`set -o pipefail`; capturing the exit code inside `wsl bash -lc`. Each time it reported a failure as 0.
 
-用法:  python scripts/tooling/dump_notebook.py [notebook.ipynb]
+Usage:  python scripts/tooling/dump_notebook.py [notebook.ipynb]
 """
 import json
 import sys

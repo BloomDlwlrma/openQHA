@@ -1,28 +1,28 @@
-"""把 `analysis/` 里的 JSON 变成**能读的东西** —— `.log` 文本 + parquet 表.
+"""Turn the JSON under `analysis/` into **something readable** -- `.log` text plus parquet tables.
 
 TOOLING. Converts JSON under analysis/ into readable text plus parquet tables.
 Produces no science.
 
-用户 2026-08-31：「`analysis/` 里全是 JSON，读不懂」。
+User, 2026-08-31: "`analysis/` is all JSON, I cannot read it".
 
-**做法（三层，各司其职）**：
+**The approach: three layers, each with one job**:
 
-| 层 | 产物 | 谁读 |
+| layer | product | who reads it |
 |---|---|---|
-| 存档 | `xxx.json` | 机器；断点标准要求的完整记录。**不删、不改** |
-| 报告 | `xxx.log` | **人**。ORCA/CREST 风格：横幅、分节、点线引导、对齐的表、单位在表头 |
-| 表 | `xxx__<表名>.parquet` | pandas。**只在有大批同构数字时才生成** |
+| archive | `xxx.json` | machines; the complete record the checkpoint standard requires. **Never deleted, never edited** |
+| report | `xxx.log` | **people**. ORCA/CREST style: banner, sections, dotted leaders, aligned tables, units in the header |
+| table | `xxx__<table>.parquet` | pandas. **Generated only where there are many numbers of the same shape** |
 
-**`.log` 与 parquet 都是从 JSON 生成的**，所以三者不可能漂移；
-JSON 变了重跑一次即可。**JSON 仍是唯一的事实来源。**
+**Both the `.log` and the parquet are generated from the JSON**, so the three cannot drift;
+when the JSON changes, regenerate. **The JSON remains the single source of truth.**
 
-逐分子的那两个目录（各 4000 份 JSON）**不逐份转 `.log`** ——
-4000 个文本文件同样不可读。它们转成 **parquet 表**：
-一行一个分子、一行一个盆、一行一个频率，用 pandas 一句话就能查。
+The two per-molecule directories (4000 JSON files each) are **not converted one by one**
+-- 4000 text files are just as unreadable. They become **parquet tables**:
+one row per molecule, one row per basin, one row per frequency, queried in one line of pandas.
 
-用法::
+Usage::
 
-    python scripts/tooling/s0_analysis_to_readable.py            # 全部
+    python scripts/tooling/s0_analysis_to_readable.py            # everything
     python scripts/tooling/s0_analysis_to_readable.py --only-logs
     python scripts/tooling/s0_analysis_to_readable.py --only-parquet
 """
@@ -49,7 +49,7 @@ from openqha import S0_ROOT, report
 
 ANALYSIS = S0_ROOT / "analysis"
 
-#: 逐分子 JSON 的两个集合：**不逐份转 `.log`**，转成 parquet
+#: The two per-molecule JSON collections: **not converted one by one**, converted to parquet
 PER_MOLECULE = (
     ("etkdg", ANALYSIS / "package1" / "1_16000" / "1_4000" / "mol"),
     ("crest", ANALYSIS / "package1" / "crest" / "1_16000" / "1_4000" / "mol"),
@@ -57,7 +57,7 @@ PER_MOLECULE = (
 
 
 # ======================================================================================
-# 一、通用：每份 JSON 一份 .log
+# 1. general: one .log per JSON
 # ======================================================================================
 def convert_logs():
     skip_dirs = {p.resolve() for _, p in PER_MOLECULE if p.exists()}
@@ -70,16 +70,16 @@ def convert_logs():
         try:
             out = report.json_to_log(p)
             made.append((out, out.stat().st_size))
-        except Exception as exc:                     # 记全, 不吞
-            print("   转换失败 {} —— {}: {}".format(p.name, type(exc).__name__, exc))
+        except Exception as exc:                     # record it all; swallow nothing
+            print("   conversion failed {} -- {}: {}".format(p.name, type(exc).__name__, exc))
     return made
 
 
 # ======================================================================================
-# 二、逐分子集合 -> parquet
+# 2. the per-molecule collections -> parquet
 # ======================================================================================
 def _crest_rows(d):
-    """一份 CREST 支路记录 -> (分子行, 盆行列表, 频率行列表, 收紧行列表)."""
+    """one CREST-branch record -> (molecule row, basin rows, frequency rows, tightening rows)."""
     q = d["qm9_index"]
     run = d.get("crest_run") or {}
     tc = d.get("tighten_crest") or {}
@@ -185,37 +185,37 @@ def convert_parquet():
 
 
 def _collection_log(tag, stem, mols, basins, freqs, fails):
-    """给每个逐分子集合写一份**总览** `.log` —— 4000 份 JSON 的入口。"""
+    """Write one **overview** `.log` per per-molecule collection -- the entry point to 4000 JSON files."""
     import numpy as np
-    name = {"etkdg": "包 1 · ETKDG 普查", "crest": "包 1 · CREST 支路"}[tag]
-    r = report.Report(name + "   编号 1-4000",
-                      subtitle="逐分子记录的总览；明细在同名 parquet 表里")
-    r.section("这份文件是什么")
-    r.note("逐分子的完整记录是 {} 份 JSON，逐份转成文本同样读不了。"
-           "所以明细走 parquet，这里只给总览与入口。".format(len(mols)))
-    r.note("读法： import pandas as pd; "
+    name = {"etkdg": "package 1 - ETKDG census", "crest": "package 1 - CREST branch"}[tag]
+    r = report.Report(name + "   indices 1-4000",
+                      subtitle="overview of the per-molecule records; the detail is in the parquet table of the same name")
+    r.section("what this file is")
+    r.note("The complete per-molecule record is {} JSON files, and converting them one by one to text "
+           "is just as unreadable. So the detail goes to parquet and this file is the overview and entry point.".format(len(mols)))
+    r.note("How to read it: import pandas as pd; "
            "df = pd.read_parquet('analysis/{}__molecules.parquet')".format(stem.name))
-    r.section("规模")
+    r.section("scale")
     r.kv("molecules_done", len(mols))
     r.kv("basins_total", len(basins))
     if freqs:
         r.kv("frequencies_total", len(freqs))
     r.kv("failures", len(fails))
-    r.section("表")
+    r.section("tables")
     rows = [("{}__molecules.parquet".format(stem.name), len(mols),
-             "一行一个分子"),
+             "one row per molecule"),
             ("{}__basins.parquet".format(stem.name), len(basins),
-             "一行一个盆（能量、相对能量、玻尔兹曼权重、来源、虚频数）")]
+             "one row per basin (energy, relative energy, Boltzmann weight, source, imaginary count)")]
     if freqs:
         rows.append(("{}__frequencies.parquet".format(stem.name), len(freqs),
-                     "一行一个简正模"))
+                     "one row per normal mode"))
     if fails:
         rows.append(("{}__failures.parquet".format(stem.name), len(fails),
-                     "一行一个失败的分子（异常类型与消息）"))
-    r.table(["文件", "行数", "内容"], rows)
+                     "one row per failed molecule (exception type and message)"))
+    r.table(["file", "rows", "content"], rows)
 
     if mols:
-        r.section("分布（当前样本）")
+        r.section("distributions (current sample)")
         def col(k):
             v = [m[k] for m in mols if m.get(k) is not None]
             return np.asarray(v, dtype=float) if v else None
@@ -230,14 +230,14 @@ def _collection_log(tag, stem, mols, basins, freqs, fails):
                           "{:.4f}".format(a.mean()), "{:.4f}".format(np.median(a)),
                           "{:.4f}".format(a.min()), "{:.4f}".format(a.max())])
         if stats:
-            r.table(["量", "单位", "n", "均值", "中位", "最小", "最大"], stats)
+            r.table(["quantity", "unit", "n", "mean", "median", "minimum", "maximum"], stats)
     if fails:
-        r.section("失败清单")
-        r.table(["编号", "SMILES", "异常", "消息"],
+        r.section("failures")
+        r.table(["index", "SMILES", "exception", "message"],
                 [[f["qm9_index"], f["smiles"], f["error_type"],
                   (f["error"] or "")[:48]] for f in fails[:30]])
     p = r.write(stem.with_suffix(".log"))
-    print("   总览: {}".format(p.name))
+    print("   overview: {}".format(p.name))
 
 
 def main():
@@ -247,29 +247,29 @@ def main():
     args = ap.parse_args()
 
     print("=" * 96)
-    print("把 analysis/ 的 JSON 转成可读形态")
+    print("converting the JSON under analysis/ into a readable form")
     print("=" * 96)
-    print("JSON 仍是唯一的事实来源；.log 与 parquet 都是从它生成的，因此不会漂移。")
+    print("The JSON remains the single source of truth; the .log and the parquet are generated from it, so they cannot drift.")
     print()
 
     if not args.only_parquet:
-        print("[一] 每份 JSON 一份 .log")
+        print("[1] one .log per JSON")
         made = convert_logs()
         for p, n in made:
             print("   {:52s} {:8.1f} KB".format(p.name, n / 1024))
-        print("   共 {} 份".format(len(made)))
+        print("   {} in total".format(len(made)))
 
     if not args.only_logs:
         print()
-        print("[二] 逐分子集合 -> parquet（4000 份 JSON 不逐份转文本）")
+        print("[2] per-molecule collections -> parquet (4000 JSON files are not converted one by one)")
         made = convert_parquet()
         for p, n, cols in made:
-            print("   {:52s} {:6d} 行  {} 列".format(p.name, n, len(cols)))
+            print("   {:52s} {:6d} row(s)  {} column(s)".format(p.name, n, len(cols)))
 
     print()
-    print("读法:")
-    print("   .log      直接打开；ORCA/CREST 风格")
-    print("   .parquet  import pandas as pd; pd.read_parquet(路径)")
+    print("how to read them:")
+    print("   .log      open it directly; ORCA/CREST style")
+    print("   .parquet  import pandas as pd; pd.read_parquet(path)")
 
 
 if __name__ == "__main__":

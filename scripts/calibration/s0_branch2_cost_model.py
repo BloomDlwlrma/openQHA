@@ -1,28 +1,28 @@
 # -*- coding: utf-8 -*-
-"""分路 2 的代价模型 —— **由实测探针外推到全部 436 个构象**.
+"""Cost model for branch 2 -- **extrapolated from measured probes to all 436 conformers**.
 
 CALIBRATION. Extrapolates measured probes to all conformers to decide what branch 2
 can afford. Its product is a budget, not a result.
 
-**为什么需要模型而不是直接跑**：包 1 给出的 436 个构象分布在 8 到 19 个原子之间，
-而 `RI-MP2/cc-pVTZ` 的数值 Hessian 要 `6N` 次位移梯度，每次梯度又随基函数数
-按接近四次方增长。**两端的代价能差一到两个数量级**，
-不先把这条曲线量出来就开跑，等于不知道要跑多久。
+**Why a model instead of just running it**: the 436 conformers package 1 produced span 8 to 19
+atoms, and a `RI-MP2/cc-pVTZ` numerical Hessian needs `6N` displaced gradients, each of which
+grows close to the fourth power of the number of basis functions. **The two ends differ by one
+to two orders of magnitude**, so starting without measuring that curve means not knowing how long the run takes.
 
-**模型形式**（三个参数，两个由探针定，一个由结构定）：
+**Model form** (three parameters: two fixed by the probes, one by the structure):
 
-    墙钟(一个构象) = t_opt + 6 * N_原子 * t_梯度(N_基函数)
-    t_梯度(N) = t0 * (N / N0) ** p
+    wall clock (one conformer) = t_opt + 6 * N_atoms * t_gradient(N_basis)
+    t_gradient(N) = t0 * (N / N0) ** p
 
-`p` 由两个不同尺寸的探针**实测**定出。**两点定一个指数，这很薄** ——
-所以本脚本把 `p` 与由它外推出的总量**一并报出**，并给出 `p = 3.0 / 3.5 / 4.0`
-三档的敏感性，好让读者自己判断外推有多可信。
+`p` is **measured** from two probes of different size. **Two points fixing an exponent is thin**,
+so this script reports `p` and the total extrapolated from it **together**, plus the sensitivity
+at `p = 3.0 / 3.5 / 4.0`, so a reader can judge how far to trust the extrapolation.
 
-**基函数数按 cc-pVTZ 的球谐计数**：H = 14，C/N/O/F = 30。
-2026-09-02 用探针分子 `OC(C=O)C=O`（C3H4O3）核对：`6*30 + 4*14 = 236`，
-与 ORCA 输出的 236 **完全一致**。
+**Basis functions are counted as spherical-harmonic cc-pVTZ**: H = 14, C/N/O/F = 30.
+Checked on 2026-09-02 with the probe molecule `OC(C=O)C=O` (C3H4O3): `6*30 + 4*14 = 236`,
+**exactly matching** the 236 in the ORCA output.
 
-用法::
+Usage::
 
     python scripts/calibration/s0_branch2_cost_model.py --probes analysis/branch2_probe_10.jsonl,analysis/branch2_probe_15.jsonl
 """
@@ -48,7 +48,7 @@ sys.path.insert(0, str(_repo_root()))
 
 from openqha import S0_ROOT
 
-# cc-pVTZ 球谐基函数数
+# cc-pVTZ spherical-harmonic basis-function counts
 CC_PVTZ = {"H": 14, "C": 30, "N": 30, "O": 30, "F": 30}
 BASINS = S0_ROOT / "analysis" / "package1_crest_1_4000__basins.parquet"
 MOLECULES = S0_ROOT / "analysis" / "package1_crest_1_4000__molecules.parquet"
@@ -61,7 +61,7 @@ def n_basis_from_smiles(smiles):
     for a in m.GetAtoms():
         s = a.GetSymbol()
         if s not in CC_PVTZ:
-            raise ValueError("没有 {} 的 cc-pVTZ 计数".format(s))
+            raise ValueError("no cc-pVTZ count for {}".format(s))
         n += CC_PVTZ[s]
     return n, m.GetNumAtoms()
 
@@ -83,12 +83,13 @@ def load_probes(paths):
                                 error=o.get("error")))
                 continue
             si = r.get("simple_input", "")
-            # **层级必须跟着每个点走。** 缺陷 52（2026-09-02）：第一版不记层级，
-            # 于是把 10 原子的 RIJK 与 15 原子的 RIJCOSX 混在一起拟合，
-            # 而 RIJCOSX 快约 3 倍 —— 标度指数被压成 1.06，总代价因此被低估两倍多。
-            # **混层级拟合出来的指数没有意义，必须分组。**
+            # **The level must travel with every point.** Defect 52 (2026-09-02): the first version
+            # did not record the level, so it fitted 10-atom RIJK together with 15-atom RIJCOSX,
+            # and RIJCOSX is about 3 times faster -- the scaling exponent was flattened to 1.06 and
+            # the total cost underestimated more than twofold.
+            # **An exponent fitted across mixed levels is meaningless; the points must be grouped.**
             method = ("RIJCOSX" if "RIJCOSX" in si else
-                      ("RIJK" if "RIJK" in si else "未知"))
+                      ("RIJK" if "RIJK" in si else "unknown"))
             out.append(dict(qm9_index=r["qm9_index"], n_atoms=r["n_atoms"],
                             smiles=r.get("smiles"), method=method,
                             n_basis=o.get("n_basis"),
@@ -108,9 +109,9 @@ def main():
                             "analysis/branch2_optfreq_shard1.jsonl,"
                             "analysis/branch2_optfreq_shard2.jsonl")
     ap.add_argument("--jobs", type=int, default=4,
-                    help="并发作业数（每个作业 4 核，本机 16 核）")
+                    help="number of concurrent jobs (4 cores each; 16 cores on this machine)")
     ap.add_argument("--method", default=None,
-                    help="只用这个层级的点拟合：RIJK / RIJCOSX。缺省取点最多的那个")
+                    help="fit using points of this level only: RIJK / RIJCOSX. Default: whichever has the most points")
     ap.add_argument("--out", default="analysis/branch2_cost_model.json")
     args = ap.parse_args()
 
@@ -119,35 +120,35 @@ def main():
     probes = load_probes(args.probes.split(","))
     good = [p for p in probes if not p["failed"] and p.get("wall")]
     print("=" * 96)
-    print("分路 2 代价模型")
+    print("branch 2 cost model")
     print("=" * 96)
     for p in probes:
         if p["failed"]:
-            print("探针 {:2d} 原子  **失败**  {}".format(
+            print("probe {:2d} atoms  **failed**  {}".format(
                 p.get("n_atoms") or 0, str(p.get("error"))[:70]))
         else:
-            print("{:2d} 原子  {}  {:8s}  基函数 {}  墙钟 {:.0f} s".format(
+            print("{:2d} atoms  {}  {:8s}  basis {}  wall {:.0f} s".format(
                 p["n_atoms"], p["qm9_index"], p["method"], p["n_basis"],
                 p["wall"]))
 
-    # **只在同一个层级内部拟合。** 混层级的指数没有意义（缺陷 52）。
+    # **Fit only within one level.** A mixed-level exponent is meaningless (defect 52).
     by_method = {}
     for r in good:
         by_method.setdefault(r["method"], []).append(r)
     print()
-    print("按层级分组：{}".format(
-        "，".join("{} {} 个点".format(k, len(v)) for k, v in by_method.items())))
+    print("grouped by level: {}".format(
+        ", ".join("{} {} point(s)".format(k, len(v)) for k, v in by_method.items())))
     method = args.method or max(by_method, key=lambda k: len(by_method[k]))
     good = by_method.get(method, [])
-    print("**本次用 {} 的 {} 个点拟合**（其余层级的点不参与）".format(method, len(good)))
+    print("**fitting the {} point(s) of {}**  (points of other levels take no part)".format(len(good), method))
     if len(good) < 2:
-        sys.exit("\n**{} 层级下不足两个成功的点，无法定标度指数。**\n"
-                 "  —— 不给假数字：等这个层级的第二个尺寸跑完再来。".format(method))
+        sys.exit("\n**Fewer than two successful points at level {}; the scaling exponent cannot be fixed.**\n"
+                 "  -- no invented number: wait until the second size at this level has finished.".format(method))
 
     good.sort(key=lambda r: r["n_basis"])
-    # 从总墙钟反推「每个位移的等效代价」：`wall / (6N)`。
-    # 优化段也算在里面 —— 它随同一标度走，且占比不大（10 原子探针实测 639/1613 = 40%）。
-    import math
+    # Work back from the total wall clock to "the equivalent cost of one displacement": `wall / (6N)`.
+    # The optimisation segment is included -- it follows the same scaling and is not a large share
+    # (measured on the 10-atom probe: 639/1613 = 40%).
     import numpy as np
     for r in good:
         r["t_per_disp"] = r["wall"] / (6.0 * r["n_atoms"])
@@ -155,24 +156,24 @@ def main():
     ta = a["t_per_disp"]
 
     if len(good) >= 3:
-        # **三个点以上就做最小二乘**，别再靠两点定指数。
+        # **Three points or more means least squares**; stop fixing an exponent from two points.
         x = np.log([r["n_basis"] / a["n_basis"] for r in good])
         y = np.log([r["t_per_disp"] / ta for r in good])
         p_fit, c0 = np.polyfit(x, y, 1)
         resid = y - (p_fit * x + c0)
         rms = float(np.sqrt((resid ** 2).mean()))
-        fit_note = "最小二乘，{} 个点，对数残差均方根 {:.3f}".format(len(good), rms)
+        fit_note = "least squares, {} point(s), root-mean-square log residual {:.3f}".format(len(good), rms)
         ta = ta * math.exp(c0)
     else:
         b = good[-1]
         p_fit = (math.log(b["t_per_disp"] / ta)
                  / math.log(b["n_basis"] / a["n_basis"]))
-        fit_note = "**两点定一个指数，很薄** —— 下面给三档敏感性"
+        fit_note = "**two points fixing an exponent, which is thin** -- three sensitivity values follow"
     print()
     for r in good:
-        print("  {:>4d} 基函数  每位移等效 {:7.2f} s   （{} 原子，总墙钟 {:.0f} s）".format(
+        print("  {:>4d} basis functions  {:7.2f} s equivalent per displacement   ({} atoms, total wall {:.0f} s)".format(
             r["n_basis"], r["t_per_disp"], r["n_atoms"], r["wall"]))
-    print("**实测标度指数 p = {:.2f}**   （{}）".format(p_fit, fit_note))
+    print("**measured scaling exponent p = {:.2f}**   ({})".format(p_fit, fit_note))
 
     basins = pd.read_parquet(BASINS)
     mols = pd.read_parquet(MOLECULES)
@@ -192,25 +193,25 @@ def main():
                          total_days_serial=float(tot / 86400.0),
                          total_days_parallel=float(tot / 86400.0 / args.jobs)))
     print()
-    print("全部 {} 个构象的总代价（{} 个并发作业 x 4 核）：".format(len(tbl), args.jobs))
+    print("total cost of all {} conformers ({} concurrent jobs x 4 cores):".format(len(tbl), args.jobs))
     print("{:>10s} {:>16s} {:>14s} {:>16s}".format(
-        "指数 p", "总核时(小时)", "串行(天)", "并发(天)"))
+        "exponent p", "total core-hours", "serial (days)", "concurrent (days)"))
     for r in rows:
-        tag = "  <- 实测" if abs(r["exponent"] - p_fit) < 1e-9 else ""
+        tag = "  <- measured" if abs(r["exponent"] - p_fit) < 1e-9 else ""
         print("{:>10.2f} {:>16.1f} {:>14.1f} {:>16.1f}{}".format(
             r["exponent"], r["total_seconds"] / 3600.0 * 4,
             r["total_days_serial"], r["total_days_parallel"], tag))
 
-    # 按分子尺寸拆开 —— 重尾在哪里要看得见
+    # split by molecule size -- the heavy tail has to be visible
     tbl["t_est_s"] = [6.0 * r.n_atoms * ta * (r.n_basis / a["n_basis"]) ** p_fit
                       for _, r in tbl.iterrows()]
     by = tbl.groupby("n_atoms").agg(
         n_basins=("basin", "size"), n_basis=("n_basis", "first"),
         hours_each=("t_est_s", lambda s: s.iloc[0] / 3600.0),
         hours_total=("t_est_s", lambda s: s.sum() / 3600.0))
-    by["占比"] = (by.hours_total / by.hours_total.sum() * 100).round(1)
+    by["share"] = (by.hours_total / by.hours_total.sum() * 100).round(1)
     print()
-    print("按分子尺寸（实测指数 p = {:.2f}）：".format(p_fit))
+    print("by molecule size (measured exponent p = {:.2f}):".format(p_fit))
     print(by.to_string())
 
     out = Path(args.out)
@@ -221,14 +222,14 @@ def main():
         n_basins=int(len(tbl)), jobs=args.jobs,
         projections=rows,
         by_size=json.loads(by.reset_index().to_json(orient="records")),
-        note=("模型：墙钟 = 6N * t0 * (N基/N0)^p。"
-              "**只在同一层级内部拟合** —— 混 RIJK 与 RIJCOSX 会把指数压平（缺陷 52）。"
-              "**两点定一个指数很薄**，故同时给出 p=3.0/3.5/4.0 的敏感性。"
-              "基函数数按 cc-pVTZ 球谐计数 H=14、C/N/O/F=30，"
-              "已用探针分子 OC(C=O)C=O 核对为 236，与 ORCA 输出一致。")),
+        note=("Model: wall = 6N * t0 * (N_basis/N0)^p. "
+              "**Fitted within one level only** -- mixing RIJK and RIJCOSX flattens the exponent (defect 52). "
+              "**Two points fixing an exponent is thin**, so the sensitivity at p=3.0/3.5/4.0 is given as well. "
+              "Basis functions are counted as spherical-harmonic cc-pVTZ, H=14 and C/N/O/F=30, "
+              "checked against the probe molecule OC(C=O)C=O as 236, matching the ORCA output.")),
         indent=2, ensure_ascii=False), encoding="utf-8")
     print()
-    print("落盘:", out)
+    print("written:", out)
 
 
 if __name__ == "__main__":

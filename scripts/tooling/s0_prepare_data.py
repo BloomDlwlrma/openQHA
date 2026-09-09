@@ -1,25 +1,25 @@
-"""把 QM9 数据放进 stage 0 自己的 `data/` 目录.
+"""Put the QM9 data into stage 0 own `data/` directory.
 
 TOOLING. Puts QM9 in place under data/. It moves data; it computes nothing.
 
-**为什么要有这个脚本**：2026-08-28 起 stage 0 是独立的开源框架，
-它不从 stage 1 / stage 2 的目录里读任何东西。但 QM9 原始数据太大（索引 119 MB、
-几何 224 MB），**不进 git**。所以本脚本负责一次性把它放到位。
+**Why this script exists**: since 2026-08-28 stage 0 is an independent open-source
+framework and reads nothing from the stage 1 / stage 2 directories. But the raw QM9 data
+is too large (index 119 MB, geometries 224 MB) and **does not go into git**, so this script puts it in place once.
 
-随仓库分发的只有 **7 个目标物种的参考几何**（`data/reference-geometries/`，11 KB），
-因此 **stage 0 的核心交付（包 2）零外部数据即可复现**；
-只有包 1 的大规模普查需要跑一次本脚本。
+Only the **reference geometries of the 7 target species** are distributed with the
+repository (`data/reference-geometries/`, 11 KB), which is what makes **stage 0's core
+deliverable (package 2) reproducible with no external data**; only the large package 1 census needs this script.
 
-用法:
-    python scripts/tooling/s0_prepare_data.py --from <某个 QM9 目录>       # 复制
-    python scripts/tooling/s0_prepare_data.py --from <目录> --link         # 建符号链接, 省磁盘
-    python scripts/tooling/s0_prepare_data.py --check                      # 只检查现状
+Usage:
+    python scripts/tooling/s0_prepare_data.py --from <a QM9 directory>     # copy
+    python scripts/tooling/s0_prepare_data.py --from <dir> --link          # symlink instead, to save disk
+    python scripts/tooling/s0_prepare_data.py --check                      # report the current state only
 
-`--from` 指向的目录里应当有:
+The directory `--from` points at should contain:
     index_Chem_composition.csv
     xyz_files/dsgdb9nsd_XXXXXX.xyz
 
-也可以完全不跑本脚本, 直接设环境变量:
+You can also skip this script entirely and set the environment variables:
     export S0_QM9_ROOT=/path/to/qm9
 """
 import argparse
@@ -48,7 +48,7 @@ from openqha import S0_ROOT, config
 
 
 def sha256_head(path, n_bytes=1 << 20):
-    """前 1 MB 的摘要 —— 119 MB 全文摘要太慢, 前 1 MB 足以发现"换了一份文件"。"""
+    """Digest of the first 1 MB -- digesting all 119 MB is too slow, and 1 MB is enough to notice that the file was swapped."""
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         h.update(fh.read(n_bytes))
@@ -57,9 +57,9 @@ def sha256_head(path, n_bytes=1 << 20):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--from", dest="src", default=None, help="QM9 数据所在目录")
-    ap.add_argument("--link", action="store_true", help="建符号链接而不是复制")
-    ap.add_argument("--check", action="store_true", help="只检查现状, 不动文件")
+    ap.add_argument("--from", dest="src", default=None, help="directory holding the QM9 data")
+    ap.add_argument("--link", action="store_true", help="create symlinks instead of copying")
+    ap.add_argument("--check", action="store_true", help="report the current state only; touch nothing")
     args = ap.parse_args()
 
     cfg = config.load()
@@ -69,43 +69,43 @@ def main():
     vend = S0_ROOT / cfg["data"]["vendored_reference_geometries"]
 
     print("=" * 92)
-    print("stage 0 数据准备")
+    print("stage 0 data preparation")
     print("=" * 92)
-    print("配置          {}".format(cfg["_path"]))
-    print("目标目录      {}{}".format(root, "   (来自 S0_QM9_ROOT)"
+    print("configuration  {}".format(cfg["_path"]))
+    print("target dir     {}{}".format(root, "   (from S0_QM9_ROOT)"
                                       if os.environ.get("S0_QM9_ROOT") else ""))
-    print("随仓库分发    {}  ({} 个文件)".format(
+    print("with the repo  {}  ({} file(s))".format(
         vend.relative_to(S0_ROOT), len(list(vend.glob("*.xyz"))) if vend.exists() else 0))
     print()
 
     if args.check or not args.src:
         idx = root / index_name
         xyz = root / xyz_name
-        print("索引表        {}  {}".format(idx, "存在" if idx.exists() else "**缺失**"))
+        print("index table    {}  {}".format(idx, "present" if idx.exists() else "**MISSING**"))
         if idx.exists():
-            print("              {:.1f} MB, 前 1 MB 摘要 {}".format(
+            print("               {:.1f} MB, digest of the first 1 MB {}".format(
                 idx.stat().st_size / 1048576, sha256_head(idx)[:16]))
-        print("几何目录      {}  {}".format(xyz, "存在" if xyz.exists() else "**缺失**"))
+        print("geometry dir   {}  {}".format(xyz, "present" if xyz.exists() else "**MISSING**"))
         if xyz.exists():
             n = sum(1 for _ in xyz.glob("dsgdb9nsd_*.xyz"))
-            print("              {} 个 xyz 文件".format(n))
+            print("               {} xyz file(s)".format(n))
         print()
         if not args.src:
             if idx.exists() and xyz.exists():
-                print("全量数据已就位, 包 1 可跑。")
+                print("The full data is in place; package 1 can run.")
             else:
-                print("全量数据未就位 —— **包 2 仍可跑**（它只用随仓库分发的 7 个几何）,")
-                print("包 1 的大规模普查需要先跑:")
-                print("    python scripts/tooling/s0_prepare_data.py --from <某个 QM9 目录>")
+                print("The full data is NOT in place -- **package 2 can still run** (it uses only the 7 geometries shipped with the repository),")
+                print("but the large package 1 census needs this first:")
+                print("    python scripts/tooling/s0_prepare_data.py --from <a QM9 directory>")
             return
 
     src = Path(args.src)
     if not src.exists():
-        raise FileNotFoundError("来源目录不存在: {}".format(src))
+        raise FileNotFoundError("source directory does not exist: {}".format(src))
     s_idx, s_xyz = src / index_name, src / xyz_name
     for p in (s_idx, s_xyz):
         if not p.exists():
-            raise FileNotFoundError("来源目录里缺 {}: {}".format(p.name, p))
+            raise FileNotFoundError("{} is missing from the source directory: {}".format(p.name, p))
 
     root.mkdir(parents=True, exist_ok=True)
     d_idx, d_xyz = root / index_name, root / xyz_name
@@ -113,30 +113,30 @@ def main():
     if args.link:
         for s, d in ((s_idx, d_idx), (s_xyz, d_xyz)):
             if d.exists() or d.is_symlink():
-                print("已存在, 跳过: {}".format(d))
+                print("already present, skipping: {}".format(d))
                 continue
             os.symlink(s.resolve(), d)
-            print("链接 {} -> {}".format(d, s.resolve()))
+            print("link {} -> {}".format(d, s.resolve()))
     else:
         if d_idx.exists():
-            print("已存在, 跳过: {}".format(d_idx))
+            print("already present, skipping: {}".format(d_idx))
         else:
-            print("复制索引表 {:.1f} MB ...".format(s_idx.stat().st_size / 1048576))
+            print("copying the index table, {:.1f} MB ...".format(s_idx.stat().st_size / 1048576))
             shutil.copy2(s_idx, d_idx)
         if d_xyz.exists():
-            print("已存在, 跳过: {}".format(d_xyz))
+            print("already present, skipping: {}".format(d_xyz))
         else:
             n = sum(1 for _ in s_xyz.glob("dsgdb9nsd_*.xyz"))
-            print("复制 {} 个 xyz 文件 ...".format(n))
+            print("copying {} xyz file(s) ...".format(n))
             shutil.copytree(s_xyz, d_xyz)
 
     print()
-    print("来源记录:")
-    print("   来源目录    {}".format(src.resolve()))
-    print("   索引表摘要  {} (前 1 MB)".format(sha256_head(d_idx)[:32]))
-    print("   数据集      {}".format(cfg["data"]["upstream"]["dataset"]))
+    print("provenance:")
+    print("   source dir     {}".format(src.resolve()))
+    print("   index digest   {} (first 1 MB)".format(sha256_head(d_idx)[:32]))
+    print("   dataset        {}".format(cfg["data"]["upstream"]["dataset"]))
     print()
-    print("完成。`data/qm9/` 已在 `data/.gitignore` 里, 不会进版本库。")
+    print("Done. `data/qm9/` is in `data/.gitignore` and will not enter version control.")
 
 
 if __name__ == "__main__":

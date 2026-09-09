@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""异构化反应能 dE_el：同分子式两个物种之间，绝对能量之差**是可比的**。
+"""Isomerisation reaction energy dE_el: between two species of the same formula the difference of absolute energies **is comparable**.
 
 PRODUCTION. The isomerisation electronic energy of the edges -- the script's own
 banner calls it one of stage 0's delivered quantities.
@@ -36,24 +36,24 @@ for r in mins:
     by_species.setdefault(r["qm9_index"], []).append(r)
 
 K = conformers.EV_TO_KCAL
-print("每个物种取**最低的盆**（按 MACE 与按参考各自取，若不同则标出）")
+print("For each species the **lowest basin** is taken (separately for MACE and for the reference; a disagreement is marked)")
 low = {}
 for qid, rs in sorted(by_species.items()):
     m = min(rs, key=lambda x: x["energy_mace_eV"])
     for rc in ["dz_base", "composite_TZstar_mp2", "composite_QZstar_mp2"]:
         rmin = min(rs, key=lambda x: x["per_recipe"][rc]["energy_ref_eV"])
         low.setdefault(rc, {})[qid] = (m, rmin, m["basin"] != rmin["basin"])
-    print("   {:20s} {} 个盆   MACE 最低 = 盆 {}".format(m["name"], len(rs), m["basin"]))
+    print("   {:20s} {} basin(s)   MACE lowest = basin {}".format(m["name"], len(rs), m["basin"]))
 
 print()
 print("=" * 96)
-print("异构化电子能 dE_el = E(乙) - E(甲)，kcal/mol   （**这是 stage 0 的交付量之一**）")
+print("Isomerisation electronic energy dE_el = E(B) - E(A), kcal/mol   (**one of stage 0 delivered quantities**)")
 print("=" * 96)
 for rc in ["dz_base", "composite_TZstar_mp2", "composite_QZstar_mp2"]:
     diffs = []
     print()
-    print("### 配方 {}".format(rc))
-    print("   {:24s} {:>12s} {:>12s} {:>10s}".format("边", "MACE", "参考", "差"))
+    print("### recipe {}".format(rc))
+    print("   {:24s} {:>12s} {:>12s} {:>10s}".format("edge", "MACE", "reference", "difference"))
     for e in cfg["edges"]:
         p = e.split("_")
         ia = "dsgdb9nsd_{:06d}".format(int(p[-2]))
@@ -68,6 +68,6 @@ for rc in ["dz_base", "composite_TZstar_mp2", "composite_QZstar_mp2"]:
         diffs.append(dm - dr)
         print("   {:24s} {:12.4f} {:12.4f} {:+10.4f}".format(e, dm, dr, dm - dr))
     d = np.array(diffs)
-    print("   -> {} 条边: 平均绝对偏差 {:.4f}   均方根偏差 {:.4f}   最大绝对 {:.4f} kcal/mol"
+    print("   -> {} edge(s): mean absolute deviation {:.4f}   root-mean-square deviation {:.4f}   maximum absolute {:.4f} kcal/mol"
           .format(len(d), np.abs(d).mean(), float(np.sqrt((d ** 2).mean())),
                   np.abs(d).max()))

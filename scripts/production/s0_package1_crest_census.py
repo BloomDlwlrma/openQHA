@@ -1,61 +1,61 @@
-"""包 1 的 **CREST 支路**, 批量版 —— **每个分子一个 worker 进程**.
+"""Package 1, the **CREST branch**, batch version -- **one worker process per molecule**.
 
 PRODUCTION. The batch CREST census, one worker process per molecule.
 
 --------------------------------------------------------------------------------------
-架构（2026-08-31 用户裁定后重写）
+Architecture (rewritten after the user ruling of 2026-08-31)
 --------------------------------------------------------------------------------------
-用户：「每个分子单独 worker 且单独加载 CREST 与 GFN-FF 构象搜索，**串行加载 MACE 模型**，
-一共 CPU 数个分子、或 最大内存/加载 MACE 所需内存 个分子同时运行」。
+The user: "one worker per molecule, each loading CREST and the GFN-FF conformer search on its own,
+**loading the MACE model serially**, with as many molecules at once as there are CPUs, or as maximum memory / the memory one MACE load needs".
 
-    主进程（**不加载 MACE 模型**）
-      +- 进程池, N = min(CPU 数, 可用内存/单 worker 内存 [, 显存/单 worker 显存])
-           +- worker（一个分子从头到尾）
-                1. **加锁**串行加载一份 MACE 模型      <- 见下"为什么串行"
-                2. 在本进程内起一个 MACE 套接字服务线程（复用同一份模型）
-                3. QM9 原生几何 --MACE 粗弛豫--> CREST 起点
-                4. 跑 CREST（GFN-FF 采样 + refine="sp" 经套接字问自己要 MACE 单点）
-                5. 收紧到 fmax=1e-4 -> 与 ETKDG 普查并池 -> 去重 -> Hessian
-                6. 落盘, 返回一份记录
+    main process (**loads no MACE model**)
+      +- process pool, N = min(CPU count, available memory / memory per worker [, VRAM / VRAM per worker])
+           +- worker (one molecule from start to finish)
+                1. load one MACE model serially, **under a lock**   <- see "why serially" below
+                2. start a MACE socket server thread in this process (reusing that same model)
+                3. native QM9 geometry --coarse MACE relaxation--> the CREST starting point
+                4. run CREST (GFN-FF sampling + refine="sp", asking itself for MACE single points over the socket)
+                5. tighten to fmax=1e-4 -> pool with the ETKDG census -> deduplicate -> Hessian
+                6. write to disk, return one record
 
-**一个 worker 只有一份 MACE 模型**（实测稳态 821 MB）：套接字服务线程与
-收紧/Hessian 用的是**同一个** calculator。若让 CREST 去连一个独立的服务端进程，
-同一个 worker 里就会有两份模型。
+**A worker holds exactly one MACE model** (measured steady state 821 MB): the socket server
+thread and the tightening/Hessian use **the same** calculator. Pointing CREST at a separate
+server process would put two models inside one worker.
 
-**为什么模型加载要串行**：加载一次约 5–10 秒，是磁盘 I/O + 反序列化密集的。
-N 个进程同时加载会互相抢 I/O；串行加载的总时长不变，但每个 worker
-一旦加载完就立刻开工。用一把跨进程的锁实现。
+**Why the model load is serial**: one load takes about 5-10 s and is disk-I/O and
+deserialisation heavy. N processes loading at once fight over I/O; loading serially takes the
+same total time, but each worker starts work the moment its own load finishes. Implemented with a cross-process lock.
 
-**为什么每个 worker 单线程**：实测 MACE 在小分子上的线程标度极差
-（丙酮：1 线程 111 ms、4 线程 72 ms、**8 线程 101 ms，比 4 线程还慢**）。
-分子太小，线程启动与同步的开销超过计算本身。
-**所以并行度要放在"进程之间"，不是"线程之内"。**
+**Why each worker is single-threaded**: measured, MACE scales very poorly with threads on small
+molecules (acetone: 1 thread 111 ms, 4 threads 72 ms, **8 threads 101 ms, slower than 4**).
+The molecules are too small; thread start-up and synchronisation cost more than the computation.
+**So the parallelism goes between processes, never inside threads.**
 
 --------------------------------------------------------------------------------------
 GPU
 --------------------------------------------------------------------------------------
-`--device cuda` 可用，但**本机实测不划算**。本仓生产精度是 `float64`
-（配置写死；几何优化与有限差分 Hessian 需要），而入门级 Turing 卡的双精度吞吐
-只有单精度的 1/32：
+`--device cuda` works, but **measured on this machine it does not pay**. Production precision
+here is `float64` (fixed in the configuration; geometry optimisation and finite-difference
+Hessians need it), and an entry-level Turing card has 1/32 the double-precision throughput of single:
 
-    NVIDIA T400 4GB, 每次力计算
-        丙酮 10 原子      CPU 101.6 ms   GPU  82.9 ms   （GPU 快 1.23 倍）
-        CCOCCCO 19 原子   CPU 151.1 ms   GPU 142.4 ms   （GPU 快 1.06 倍）
-        —— 同卡 float32 是 39.3 ms（快 2.1 倍），**但改精度是改科学，不做**
+    NVIDIA T400 4GB, per force call
+        acetone, 10 atoms    CPU 101.6 ms   GPU  82.9 ms   (GPU 1.23x faster)
+        CCOCCCO, 19 atoms    CPU 151.1 ms   GPU 142.4 ms   (GPU 1.06x faster)
+        -- float32 on the same card is 39.3 ms (2.1x faster), **but changing the precision changes the science, so it is not done**
 
-一块卡上又开不了多少 worker（每个 CUDA 上下文几百 MB），
-**所以本机默认 CPU 多进程**。
+And one card cannot hold many workers (a few hundred MB per CUDA context),
+**so the default on this machine is multi-process CPU**.
 
-**换到有全速双精度的卡（如 H100，FP64 约为 FP32 的 1/2）结论会反过来** ——
-届时**必须重测**，不要沿用这里的结论。
+**On a card with full-speed double precision (an H100, where FP64 is about 1/2 of FP32) the
+conclusion reverses** -- at that point it **must be re-measured**; do not carry this one over.
 
-用法::
+Usage::
 
-    python scripts/production/s0_package1_crest_census.py                 # 全 1-4000
+    python scripts/production/s0_package1_crest_census.py                 # all of 1-4000
     python scripts/production/s0_package1_crest_census.py --limit 40
     python scripts/production/s0_package1_crest_census.py --workers 8
     python scripts/production/s0_package1_crest_census.py --device cuda
-    python scripts/production/s0_package1_crest_census.py --plan-only      # 只报并发规划, 不跑
+    python scripts/production/s0_package1_crest_census.py --plan-only      # report the concurrency plan only; run nothing
 """
 import argparse
 import csv
@@ -69,8 +69,8 @@ import time
 import traceback
 from pathlib import Path
 
-# **必须在 import torch / numpy 之前设**：OpenMP 线程池一旦建起来就改不了。
-# 每个 worker 单线程（理由见模块开头）。
+# **Must be set before importing torch / numpy**: once the OpenMP thread pool exists it cannot be changed.
+# One thread per worker (the reason is at the top of this module).
 for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
            "NUMEXPR_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
@@ -107,18 +107,18 @@ FMAX_COARSE = float(P1["fmax_census_eV_A"])
 FMAX_TIGHT = float(CB["tighten_fmax_eV_A"])
 ORDER_SEED = int(CB["order_seed"])
 
-# 结果根：用户 2026-08-31 指定 `{根}/result-s0tf_1_16000/1_4000`。
-# 根可由环境变量 S0_RESULT_ROOT 覆盖（集群上指向共享盘），默认仍在仓内 analysis/ 下。
+# Result root: the user specified `{root}/result-s0tf_1_16000/1_4000` on 2026-08-31.
+# The root is overridable by S0_RESULT_ROOT (pointed at shared storage on a cluster); the default stays under analysis/ in the repository.
 _RES = os.environ.get("S0_RESULT_ROOT")
 SAVE_ROOT = (Path(_RES).expanduser() if _RES
              else S0_ROOT / "analysis" / "package1" / "crest")
 ETKDG_ROOT = S0_ROOT / "analysis" / "package1" / "{}_{}".format(*FULL_RANGE)
 
-#: 实测（`VmRSS`，算过 19 原子分子之后的稳态）。用于并发规划。
+#: Measured (`VmRSS`, the steady state after a 19-atom molecule). Used to plan concurrency.
 WORKER_HOST_MB = 821.0
-#: CUDA 上下文 + 模型 + 激活的粗估（实测显存分配峰值 42–75 MB，上下文另计约 300 MB）
+#: A rough estimate of CUDA context + model + activations (measured peak VRAM allocation 42-75 MB, with about 300 MB of context on top)
 WORKER_GPU_MB = 450.0
-#: 内存留白：不把可用内存吃满
+#: Memory headroom: do not consume all of the available memory
 MEM_MARGIN = 0.80
 
 
@@ -127,10 +127,10 @@ def qid_of(i):
 
 
 def _manifest(obj, stem, title=None):
-    """清单/小结也不写 JSON：写 `.log`（人读）+ `.parquet`（扁平的标量部分）。"""
+    """Manifests and summaries are not written as JSON either: a `.log` (for people) plus a `.parquet` (the flat scalar part)."""
     stem = Path(stem)
-    r = report.Report(title or stem.name, subtitle="包 1 · CREST 支路")
-    r.json_dump(obj, title="内容")
+    r = report.Report(title or stem.name, subtitle="package 1 - CREST branch")
+    r.json_dump(obj, title="contents")
     r.write(stem.with_suffix(".log"))
     flat = {k: v for k, v in obj.items()
             if isinstance(v, (str, int, float, bool)) or v is None}
@@ -140,7 +140,7 @@ def _manifest(obj, stem, title=None):
 
 
 # ======================================================================================
-# 并发规划
+# concurrency planning
 # ======================================================================================
 def mem_available_mb():
     try:
@@ -166,46 +166,46 @@ def gpu_free_mb(device):
 
 
 def plan_workers(device="cpu", requested=0, reserve_cpus=0):
-    """N = min(CPU 数, 可用内存/单 worker 内存 [, 可用显存/单 worker 显存])。
+    """N = min(CPU count, available memory / memory per worker [, available VRAM / VRAM per worker]).
 
-    用户 2026-08-31 指定的就是这个式子。这里把**每一项都报出来**，
-    好让"为什么是这个数"可查，而不是一个凭空的常数。
+    That is the formula the user specified on 2026-08-31. **Every term is reported**, so that
+    "why this number" can be checked, rather than being a constant out of nowhere.
     """
     n_cpu_total = os.cpu_count() or 1
     n_cpu = max(1, n_cpu_total - int(reserve_cpus))
     host = mem_available_mb()
     n_mem = int(host * MEM_MARGIN / WORKER_HOST_MB) if host == host else n_cpu
-    limits = [("CPU 数 os.cpu_count() = {} 减去预留 {}".format(
+    limits = [("CPU count os.cpu_count() = {} minus the reserve {}".format(
                   n_cpu_total, int(reserve_cpus)), n_cpu),
-              ("可用内存 {:.0f} MB x {:.0%} / 单 worker {:.0f} MB".format(
+              ("available memory {:.0f} MB x {:.0%} / {:.0f} MB per worker".format(
                   host, MEM_MARGIN, WORKER_HOST_MB), n_mem)]
     n = min(n_cpu, n_mem)
     g = gpu_free_mb(device)
     if g is not None:
         n_gpu = max(1, int(g * MEM_MARGIN / WORKER_GPU_MB))
-        limits.append(("可用显存 {:.0f} MB x {:.0%} / 单 worker {:.0f} MB".format(
+        limits.append(("available VRAM {:.0f} MB x {:.0%} / {:.0f} MB per worker".format(
             g, MEM_MARGIN, WORKER_GPU_MB), n_gpu))
         n = min(n, n_gpu)
     if requested:
-        limits.append(("命令行 --workers", requested))
+        limits.append(("--workers on the command line", requested))
         n = min(n, requested)
     return max(1, int(n)), limits
 
 
 # ======================================================================================
-# worker 侧
+# the worker side
 # ======================================================================================
-_W = {}          # worker 进程内的全局状态：calculator、套接字、服务线程
+_W = {}          # global state inside a worker process: calculator, socket, server thread
 
 
 def _worker_init(lock, device):
-    """每个 worker 进程起来时跑一次。**模型加载在锁里**，所以是串行的。"""
+    """Run once as each worker process starts. **The model load is inside the lock**, so it is serial."""
     import torch
     torch.set_num_threads(1)
-    with lock:                                     # <- 串行加载
+    with lock:                                     # <- serial load
         t0 = time.time()
         calc, name, prov = engine.calculator(device=device)
-        try:                                       # 预热：建图、选 kernel、分配显存
+        try:                                       # warm-up: build the graph, select kernels, allocate VRAM
             from ase import Atoms
             a = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
             a.calc = calc
@@ -221,10 +221,10 @@ def _worker_init(lock, device):
 
 
 def _worker_one(task):
-    """一个分子从头到尾。在 worker 进程里跑，返回一份可序列化的记录。"""
+    """One molecule from start to finish. Runs in a worker process and returns one serialisable record."""
     qid, smiles, args = task
-    # ---- 墙钟预算：到点之后不再**开始**新分子 ------------------------------------------
-    # 已经在跑的不腰斩（那份机时会白花）；只是不再领新活。
+    # ---- wall-clock budget: past the deadline no new molecule is **started** ------------
+    # Nothing already running is cut short (that machine time would be wasted); it simply takes no new work.
     dl = args.get("deadline")
     if dl and time.time() >= dl:
         return dict(ok=False, skipped=True, qm9_index=qid)
@@ -238,7 +238,7 @@ def _worker_one(task):
         if phase in ("full", "crest"):
             run_rec, start_info = _crest_stage(qid, smiles, wd, calc, args)
             if phase == "crest":
-                # 阶段一到此为止：把**系综**与原生输出交给阶段二
+                # stage one ends here: hand the **ensemble** and the native output to stage two
                 return _finish_crest_only(qid, smiles, wd, run_rec, start_info,
                                           args, t_start)
         else:
@@ -252,8 +252,8 @@ def _worker_one(task):
                              socket=_W["socket"])
         rec["stage"] = args.get("stage") or "full"
         if not args["pilot"]:
-            # **不写 JSON**（用户 2026-08-31）：.log 给人读、.parquet 带精度、
-            # CREST 原生输出只改名。
+            # **No JSON** (user, 2026-08-31): the .log is for people, the .parquet carries the precision,
+            # and the native CREST output is only renamed.
             record.write_molecule(rec, args["dirs"], qid, basins=basins,
                                   crest_out=wd / "crest.out",
                                   keep_crest_out=bool(CB["keep_crest_out"]))
@@ -264,7 +264,7 @@ def _worker_one(task):
                   seconds=time.time() - t_start)
         if not args["pilot"]:
             record.write_failure(fr, args["dirs"], qid)
-            # 失败时 CREST 的原生输出**更要留**——根因就在里面
+            # On failure the native CREST output matters **more**, not less -- the root cause is in it
             if CB["keep_crest_out"] and (wd / "crest.out").exists():
                 try:
                     d = Path(args["dirs"]["out"])
@@ -276,13 +276,13 @@ def _worker_one(task):
 
 
 def _finish_crest_only(qid, smiles, wd, run_rec, start_info, args, t_start):
-    """阶段一的收尾：系综 + 原生输出 + 运行记录（不做任何 MACE 的收紧/Hessian）。"""
+    """The end of stage one: ensemble + native output + run record (no MACE tightening or Hessian at all)."""
     import shutil as _sh
     d = Path(args["dirs"]["ens"])
     d.mkdir(parents=True, exist_ok=True)
     src = Path(wd) / "crest_conformers.xyz"
     if not src.exists():
-        raise RuntimeError("阶段一结束但没有 crest_conformers.xyz")
+        raise RuntimeError("stage one finished but there is no crest_conformers.xyz")
     _sh.copy2(src, d / "{}_ensemble.xyz".format(qid))
     for extra in ("crest_rotamers.xyz", "start.xyz"):
         if (Path(wd) / extra).exists():
@@ -305,7 +305,7 @@ def _finish_crest_only(qid, smiles, wd, run_rec, start_info, args, t_start):
                n_conformers_reported_by_crest=n_conf,
                ensemble_path=str(d / "{}_ensemble.xyz".format(qid)),
                total_seconds=time.time() - t_start,
-               note="阶段一（CREST 采样）产物。收紧 / 去重 / Hessian 由阶段二完成。")
+               note="the product of stage one (CREST sampling). Tightening / deduplication / Hessian are done by stage two.")
     if not args["pilot"]:
         record.write_molecule(rec, args["dirs"], qid, basins=None,
                               crest_out=None, keep_crest_out=False)
@@ -313,10 +313,10 @@ def _finish_crest_only(qid, smiles, wd, run_rec, start_info, args, t_start):
 
 
 def _load_crest_stage(qid, args):
-    """阶段二：把阶段一存下来的系综与运行记录读回来。"""
+    """Stage two: read back the ensemble and run record stage one saved."""
     ens = Path(args["dirs"]["ens"]) / "{}_ensemble.xyz".format(qid)
     if not ens.exists():
-        raise RuntimeError("阶段二找不到阶段一的系综: {}".format(ens))
+        raise RuntimeError("stage two cannot find the stage one ensemble: {}".format(ens))
     args["_ens"] = str(ens)
     return (dict(seconds=None, terminated_normally=True, n_terminated_early=0,
                  from_stage1=True),
@@ -324,7 +324,7 @@ def _load_crest_stage(qid, args):
 
 
 def _crest_stage(qid, smiles, wd, calc, args):
-    """准备起点 + 跑 CREST。复用**已跑完且设置相符**的工作目录（缺陷 57）。"""
+    """Prepare the starting point and run CREST. Reuses a working directory only if it **finished and its settings match** (defect 57)."""
     if wd.exists() and not args["redo_crest"] and (wd / "crest.out").exists():
         try:
             r = crest.record_from_dir(wd)
@@ -351,12 +351,12 @@ def _crest_stage(qid, smiles, wd, calc, args):
                          backend=C["backend"], shake=shake,
                          engine_client=S0_ROOT / C["engine_client"])
 
-    run_rec = _go(C.get("shake"))          # null => 用 CREST 自己的默认
-    # ---- `terminated EARLY` 的定点重试 ------------------------------------------------
-    # 根因（2026-08-31 实测，见 openqha/crest.py 的 shake 注释）：CREST 默认
-    # `shake = 2`（约束全部键）在**张力环**体系上迭代不收敛 -> 分子动力学被判失败。
-    # `shake = 1`（只约束含氢键）实测把三个失败分子的 EARLY 全部清零。
-    # **只在失败时重试**，不改动已经跑通的分子的采样条件。
+    run_rec = _go(C.get("shake"))          # null => use CREST own default
+    # ---- targeted retry for `terminated EARLY` ------------------------------------------
+    # Root cause (measured 2026-08-31; see the shake comment in openqha/crest.py): the CREST default
+    # `shake = 2` (constrain every bond) fails to converge on **strained rings**, so the molecular dynamics is judged to have failed.
+    # `shake = 1` (constrain only bonds to hydrogen) measurably cleared EARLY on all three failing molecules.
+    # **Retried only on failure**, so the sampling conditions of molecules that already worked are untouched.
     fb = CB.get("shake_fallback")
     if (not run_rec.get("ok") and fb is not None
             and (run_rec.get("n_terminated_early") or 0) > 0):
@@ -366,15 +366,15 @@ def _crest_stage(qid, smiles, wd, calc, args):
         run_rec["n_terminated_early_before_fallback"] = early0
     if not run_rec.get("ok"):
         raise RuntimeError(
-            "CREST 未通过判据: 正常收尾 {}, terminated EARLY {}, 返回码 {}{}".format(
+            "CREST did not pass the criteria: finished normally {}, terminated EARLY {}, return code {}{}".format(
                 run_rec.get("terminated_normally"), run_rec.get("n_terminated_early"),
                 run_rec.get("returncode"),
-                "（已用 shake={} 重试过）".format(fb) if fb is not None else ""))
+                " (already retried with shake={})".format(fb) if fb is not None else ""))
     return run_rec, start_info
 
 
 def _slim(rec):
-    """回传给主进程的精简记录 —— 完整记录已落盘，不必再走一次管道。"""
+    """The compact record returned to the main process -- the full record is already on disk and need not cross the pipe again."""
     keep = ("qm9_index", "smiles", "n_conformers_reported_by_crest", "n_basins",
             "n_basins_crest_only", "n_basins_etkdg_only", "n_basins_both",
             "n_saddles_rejected", "conformational_correction_kcal",
@@ -390,7 +390,7 @@ def _slim(rec):
 
 
 # ======================================================================================
-# 单分子的各步（数值行为与改架构之前完全一致）
+# The steps for one molecule (numerically identical to before the architecture change)
 # ======================================================================================
 def starting_geometry(qid, smiles, calc):
     from ase.io import read
@@ -427,7 +427,7 @@ def analyse_one(qid, smiles, workdir, calc, start_info, run_rec, do_hessian=True
                 ensemble=None):
     ens = Path(ensemble) if ensemble else Path(workdir) / "crest_conformers.xyz"
     if not ens.exists():
-        raise RuntimeError("CREST 没有产出 crest_conformers.xyz")
+        raise RuntimeError("CREST produced no crest_conformers.xyz")
     frames, comments = crest_census.read_ensemble_atoms(ens)
     t0 = time.time()
     tight_c, basins_c, e_c = crest_census.tighten_frames(
@@ -447,7 +447,7 @@ def analyse_one(qid, smiles, workdir, calc, start_info, run_rec, do_hessian=True
     if do_hessian:
         hess, keep, saddles = crest_census.hessian_screen(pooled, calc)
     if not keep:
-        raise RuntimeError("并池去重 + 虚频筛选之后一个盆都不剩")
+        raise RuntimeError("no basin survives pooling, deduplication and the imaginary-frequency filter")
 
     e_pool = np.asarray(gb["global_energies_eV"])[keep]
     order = np.argsort(e_pool)
@@ -495,7 +495,7 @@ def analyse_one(qid, smiles, workdir, calc, start_info, run_rec, do_hessian=True
             rel, T_REF),
         dedup_threshold_A=DEDUP_A, tighten_fmax_eV_A=FMAX_TIGHT,
         analysis_seconds=time.time() - t0,
-        free_energy_note="没有算自由能 —— 对称数与电子简并度必须显式声明，本仓不自动推导。")
+        free_energy_note="no free energy is computed -- the symmetry number and electronic degeneracy must be declared explicitly; this repository does not derive them automatically.")
     if etk is not None:
         er = etk["record"]
         rec["etkdg_reference"] = dict(
@@ -519,7 +519,7 @@ def write_basins_xyz(path, basins, energies, prov, qid):
 
 
 # ======================================================================================
-# 主进程
+# the main process
 # ======================================================================================
 def load_index(lo, hi):
     want = {qid_of(i) for i in range(lo, hi + 1)}
@@ -532,11 +532,11 @@ def load_index(lo, hi):
 
 
 def processing_order(ids, schedule="random"):
-    """默认**固定种子的随机置换** —— 任何前缀都是无偏样本。
+    """The default is a **random permutation with a fixed seed** -- any prefix is an unbiased sample.
 
-    `schedule="lpt"` 改成"最长作业优先"（按构象柔性预测的成本降序）：
-    能缩短总墙钟，**但会破坏前缀的无偏性**（前缀会系统性偏向高柔性分子），
-    所以它不是默认。
+    `schedule="lpt"` switches to longest-processing-time first (descending predicted cost by conformational
+    flexibility): it shortens the total wall clock **but destroys the unbiasedness of a prefix** (a prefix
+    is then systematically biased towards flexible molecules), so it is not the default.
     """
     if schedule == "lpt":
         try:
@@ -546,7 +546,7 @@ def processing_order(ids, schedule="random"):
             rank = {q: i for i, q in enumerate(df["qm9_index"])}
             return sorted(ids, key=lambda q: rank.get(q, 10 ** 9))
         except Exception as exc:
-            print("   最长作业优先所需的排名表读不到（{}），退回随机置换".format(exc))
+            print("   the ranking table longest-processing-time-first needs could not be read ({}); falling back to the random permutation".format(exc))
     rng = np.random.default_rng(ORDER_SEED)
     return [ids[i] for i in rng.permutation(len(ids))]
 
@@ -558,32 +558,32 @@ def main():
     ap.add_argument("--pilot", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=0,
-                    help="上限；默认 min(CPU 数, 可用内存/单 worker 内存[, 显存/…])")
+                    help="upper bound; defaults to min(CPU count, available memory / memory per worker[, VRAM / ...])")
     ap.add_argument("--crest-threads", type=int, default=1,
-                    help="每个 CREST 的线程数；每分子一个 worker 时应为 1")
+                    help="threads per CREST; should be 1 when there is one worker per molecule")
     ap.add_argument("--device", default="cpu", help="cpu | cuda | cuda:N")
     ap.add_argument("--schedule", choices=("random", "lpt"), default="random")
     ap.add_argument("--scratch", default=None)
     ap.add_argument("--no-hessian", action="store_true")
     ap.add_argument("--redo", action="store_true")
     ap.add_argument("--redo-crest", action="store_true")
-    ap.add_argument("--plan-only", action="store_true", help="只报并发规划, 不跑")
+    ap.add_argument("--plan-only", action="store_true", help="report the concurrency plan only; run nothing")
     ap.add_argument("--reserve-cpus", type=int, default=0,
-                    help="留给别的会话的逻辑核数（例如另一个会话要跑 GPU 分子动力学）")
+                    help="logical cores to leave for another session (for example one running GPU molecular dynamics)")
     ap.add_argument("--max-hours", type=float, default=0.0,
-                    help="墙钟预算（小时）。到点后不再开始新分子；在跑的让它跑完")
+                    help="wall-clock budget in hours. Past it no new molecule starts; whatever is running finishes")
     ap.add_argument("--phase", choices=("full", "crest", "analyse"), default="full",
-                    help="full=一个 worker 从头做到尾（本机默认）; "
-                         "crest=只做 CREST 采样（阶段一，CPU 节点）; "
-                         "analyse=只做收紧+去重+Hessian（阶段二，读阶段一的系综）")
+                    help="full=one worker does everything end to end (the default on this machine); "
+                         "crest=CREST sampling only (stage one, on a CPU node); "
+                         "analyse=tightening + deduplication + Hessian only (stage two, reading the stage one ensemble)")
     ap.add_argument("--ens-from", default="",
-                    help="阶段二从哪个阶段的目录读系综（默认同一个 --stage 目录）")
+                    help="which stage directory stage two reads the ensemble from (defaults to the same --stage directory)")
     ap.add_argument("--stage", default="",
-                    help="分阶段跑时的子目录名（例如 stage1-gfnff / stage2-mace）。"
-                         "留空则不分子目录")
+                    help="subdirectory name when running in stages (for example stage1-gfnff / stage2-mace). "
+                         "Leave it empty for no subdirectory")
     ap.add_argument("--shard", default="0/1",
-                    help="k/n —— 作业阵列的第 k 个分片（共 n 片）。"
-                         "按处理顺序取模，所以每片仍是无偏随机样本")
+                    help="k/n -- shard k of n in a job array. "
+                         "Taken modulo the processing order, so each shard is still an unbiased random sample")
     args = ap.parse_args()
 
     chunk_dir = (SAVE_ROOT / "result-s0tf_{}_{}".format(*FULL_RANGE)
@@ -599,23 +599,23 @@ def main():
 
     n_workers, limits = plan_workers(args.device, args.workers, args.reserve_cpus)
     v = crest.crest_version()
-    prov = engine.provenance()          # **只读权重做哈希，不加载模型**
+    prov = engine.provenance()          # **hashes the weights only; loads no model**
 
     print("=" * 104)
-    print("包 1 · CREST 支路   编号 {}-{}   每分子一个 worker".format(args.lo, args.hi))
+    print("package 1 - CREST branch   indices {}-{}   one worker per molecule".format(args.lo, args.hi))
     print("=" * 104)
     print("CREST        {} (commit {})  runtype={} refine={} optlev={}".format(
         v["version"], v["commit"], C["runtype"], C["refine"], C["optlev"]))
-    print("引擎         MACE-OFF23-SC  SHA-256 {}...  dtype={}  device={}".format(
+    print("engine       MACE-OFF23-SC  SHA-256 {}...  dtype={}  device={}".format(
         prov["sha256"][:16], prov["dtype"], args.device))
     print()
-    print("[并发规划]  N = min(下列各项)")
+    print("[concurrency plan]  N = min(the terms below)")
     for label, val in limits:
         print("   {:<56} {:>5}".format(label, val))
-    print("   {:<56} {:>5}".format("**采用**", n_workers))
-    print("   每 worker: 1 个 torch 线程, {} 个 CREST 线程, 一份 MACE 模型（约 {:.0f} MB）"
+    print("   {:<56} {:>5}".format("**chosen**", n_workers))
+    print("   per worker: 1 torch thread, {} CREST thread(s), one MACE model (about {:.0f} MB)"
           .format(args.crest_threads, WORKER_HOST_MB))
-    print("   模型加载**串行**（跨进程锁），加载完即开工")
+    print("   the model load is **serial** (a cross-process lock); a worker starts as soon as its own load finishes")
     if args.plan_only:
         return
 
@@ -627,23 +627,23 @@ def main():
     order = processing_order(ids, args.schedule)
 
     print()
-    print("门 {} -> 通过 {} 个 / 区间 {} 个".format("/".join(gates), len(ids), len(all_ids)))
-    print("顺序         {}".format(
-        "固定种子 {} 的随机置换（任何前缀都是无偏样本）".format(ORDER_SEED)
+    print("gates {} -> {} passed / {} in the range".format("/".join(gates), len(ids), len(all_ids)))
+    print("order        {}".format(
+        "a random permutation with fixed seed {} (any prefix is an unbiased sample)".format(ORDER_SEED)
         if args.schedule == "random" else
-        "**最长作业优先** —— 缩短总墙钟, 但前缀不再无偏"))
+        "**longest processing time first** -- shorter total wall clock, but a prefix is no longer unbiased"))
     try:
         shard_k, shard_n = (int(x) for x in args.shard.split("/"))
     except ValueError:
-        raise SystemExit("--shard 要写成 k/n，例如 3/16")
+        raise SystemExit("--shard must be written k/n, for example 3/16")
     if not (0 <= shard_k < shard_n):
-        raise SystemExit("--shard 的 k 必须在 [0, n) 内")
+        raise SystemExit("k in --shard must lie in [0, n)")
     if shard_n > 1:
         order = [q for i, q in enumerate(order) if i % shard_n == shard_k]
-        print("分片         {}/{} -> 本片 {} 个分子（按处理顺序取模，"
-              "所以本片仍是无偏随机样本）".format(shard_k, shard_n, len(order)))
+        print("shard        {}/{} -> {} molecule(s) in this shard (taken modulo the processing "
+              "order, so this shard is still an unbiased random sample)".format(shard_k, shard_n, len(order)))
 
-    # 续跑判据：产物是 <编号>.parquet（带精度的那一份）。不再看 .json。
+    # Resume criterion: the product is <index>.parquet (the one carrying the precision). .json is no longer consulted.
     todo = [q for q in order
             if args.redo or not (dirs["mol"] / (q + ".parquet")).exists()]
     n_done_before = len(order) - len(todo)
@@ -651,14 +651,14 @@ def main():
         todo = todo[:args.pilot]
     elif args.limit:
         todo = todo[:max(0, args.limit - n_done_before)]
-    print("已有产物 {} 个; 本次要跑 {} 个".format(n_done_before, len(todo)))
+    print("{} product(s) already present; {} to run this time".format(n_done_before, len(todo)))
     if not todo:
-        print("没有要跑的分子。")
+        print("there is no molecule to run.")
         return
 
     if not args.pilot:
         _manifest(dict(
-            package="包 1 · CREST 支路（每分子一个 worker）",
+            package="package 1 - CREST branch (one worker per molecule)",
             generated_by="scripts/production/s0_package1_crest_census.py",
             qm9_range=[args.lo, args.hi], config_path=CFG["_path"],
             engine=prov, crest=v, crest_settings=dict(C),
@@ -666,7 +666,7 @@ def main():
             concurrency=dict(n_workers=n_workers, device=args.device,
                              limits=[dict(label=l, value=x) for l, x in limits],
                              worker_host_mb=WORKER_HOST_MB,
-                             model_loading="串行（跨进程锁）",
+                             model_loading="serial (a cross-process lock)",
                              torch_threads_per_worker=1,
                              crest_threads_per_worker=args.crest_threads),
             shard=args.shard,
@@ -690,9 +690,9 @@ def main():
                            if args.max_hours > 0 else None))
     tasks = [(q, rows[q]["qm9_smiles"], wargs) for q in todo]
     if args.max_hours > 0:
-        print("墙钟预算     {:.1f} 小时；到点后不再开始新分子（在跑的让它跑完)".format(
+        print("wall budget  {:.1f} hours; past it no new molecule starts (whatever is running finishes)".format(
             args.max_hours))
-        print("             按当前实测吞吐，预计能完成的分子数会在小结里报出")
+        print("             the number expected to finish at the currently measured throughput is reported in the summary")
 
     ctx = mp.get_context("fork")
     lock = ctx.Lock()
@@ -705,21 +705,21 @@ def main():
             if res["ok"]:
                 r = res["record"]
                 done.append(r)
-                # **按 phase 分支**：阶段一还没有盆级字段（它们是 None），
-                # 用一行通用格式去打会抛 TypeError 并**杀掉主循环**，
-                # 连带丢掉还在飞的那个分子（2026-08-31 端到端测试实测）。
+                # **Branch on the phase**: stage one has no basin-level fields yet (they are None), and printing
+                # them with one generic format raises TypeError and **kills the main loop**, taking the molecule
+                # still in flight with it (measured in the end-to-end test on 2026-08-31).
                 if args.phase == "crest":
-                    print("   [{:5d}/{:5d}] {}  CREST {:3d} 构象 / {:6.0f} s; "
-                          "EARLY {}; 单分子 {:6.0f} s; 吞吐 {:.0f} s/分子".format(
+                    print("   [{:5d}/{:5d}] {}  CREST {:3d} conformer(s) / {:6.0f} s; "
+                          "EARLY {}; {:6.0f} s for this molecule; throughput {:.0f} s/molecule".format(
                               i, len(tasks), r["qm9_index"],
                               r.get("n_conformers_reported_by_crest") or 0,
                               _f(r.get("crest_seconds")),
                               r.get("crest_terminated_early"),
                               _f(r.get("total_seconds")), el / i), flush=True)
                 else:
-                    print("   [{:5d}/{:5d}] {}  CREST {:3d} 构象/{:5.0f} s -> {:3d} 盆 "
-                          "(仅C {:2d}/仅E {:2d}); 修正 {:+.4f}; 单分子 {:5.0f} s; "
-                          "吞吐 {:.0f} s/分子".format(
+                    print("   [{:5d}/{:5d}] {}  CREST {:3d} conformer(s)/{:5.0f} s -> {:3d} basin(s) "
+                          "(C only {:2d}/E only {:2d}); correction {:+.4f}; {:5.0f} s for this molecule; "
+                          "throughput {:.0f} s/molecule".format(
                               i, len(tasks), r["qm9_index"],
                               r.get("n_conformers_reported_by_crest") or 0,
                               _f(r.get("crest_seconds")), r.get("n_basins") or 0,
@@ -733,13 +733,13 @@ def main():
             else:
                 f = res["failure"]
                 failed.append(f)
-                print("   [{:5d}/{:5d}] 失败 {} {} —— {}: {}".format(
+                print("   [{:5d}/{:5d}] failed {} {} -- {}: {}".format(
                     i, len(tasks), f["qm9_index"], f["smiles"], f["error_type"],
                     str(f["error"])[:70]), flush=True)
 
     if skipped:
         print()
-        print("   墙钟预算到点，未开始的分子 {} 个（下次运行会接着跑）".format(len(skipped)))
+        print("   the wall budget is spent; {} molecule(s) were not started (the next run continues from here)".format(len(skipped)))
     _summarise(done, failed, order, time.time() - t0, chunk_dir, args, prov, v,
                n_workers, limits, skipped)
 
@@ -748,9 +748,9 @@ def _summarise(done, failed, order, elapsed, chunk_dir, args, prov, v,
                n_workers, limits, skipped=()):
     print()
     print("=" * 104)
-    print("小结")
+    print("summary")
     print("=" * 104)
-    print("成功 {} 个, 失败 {} 个, 墙钟 {:.0f} s = {:.2f} 小时, {} 个 worker".format(
+    print("{} succeeded, {} failed, wall clock {:.0f} s = {:.2f} hours, {} worker(s)".format(
         len(done), len(failed), elapsed, elapsed / 3600, n_workers))
     payload = dict(n_success=len(done), n_failed=len(failed),
                    n_skipped_by_budget=len(skipped),
@@ -765,22 +765,22 @@ def _summarise(done, failed, order, elapsed, chunk_dir, args, prov, v,
         arr = lambda k: np.array([r.get(k) if r.get(k) is not None else np.nan
                                   for r in done], dtype=float)
         if args.phase == "crest":
-            # 阶段一只报它自己算出来的量
+            # stage one reports only the quantities it computed itself
             nc = arr("n_conformers_reported_by_crest")
             cr, tot = arr("crest_seconds"), arr("total_seconds")
             ee = arr("crest_terminated_early")
             per = elapsed / max(len(done) + len(failed), 1)
-            print("CREST 构象  均值 {:.2f} 中位 {:.0f} 最大 {:.0f}".format(
+            print("CREST conformers  mean {:.2f} median {:.0f} maximum {:.0f}".format(
                 np.nanmean(nc), np.nanmedian(nc), np.nanmax(nc)))
-            print("单分子耗时  均值 {:.0f} s 中位 {:.0f} s 最大 {:.0f} s".format(
+            print("time per molecule  mean {:.0f} s median {:.0f} s maximum {:.0f} s".format(
                 np.nanmean(tot), np.nanmedian(tot), np.nanmax(tot)))
-            print("**吞吐**    {:.0f} s/分子; 并行加速 {:.1f} 倍（{} 个 worker）".format(
+            print("**throughput** {:.0f} s/molecule; parallel speed-up {:.1f}x ({} worker(s))".format(
                 per, np.nanmean(tot) / max(per, 1e-9), n_workers))
             n_bad = int(np.nansum(ee > 0))
-            print("terminated EARLY 不为 0 的分子: {} 个   <- 判据: 必须是 0".format(n_bad))
+            print("molecules with a non-zero terminated EARLY count: {}   <- criterion: must be 0".format(n_bad))
             remaining = len(order) - len(done)
             print()
-            print("成本外推    剩余 {} 个 -> {:.1f} 小时 = {:.1f} 天".format(
+            print("cost extrapolation  {} left -> {:.1f} hours = {:.1f} days".format(
                 remaining, per * remaining / 3600, per * remaining / 86400))
             payload["statistics"] = dict(
                 phase="crest",
@@ -796,24 +796,24 @@ def _summarise(done, failed, order, elapsed, chunk_dir, args, prov, v,
         co, eo = arr("n_basins_crest_only"), arr("n_basins_etkdg_only")
         corr, w0 = arr("conformational_correction_kcal"), arr("weight_of_lowest")
         per = elapsed / max(len(done) + len(failed), 1)
-        print("CREST 构象  均值 {:.2f} 最大 {:.0f}; 并池后盆数 均值 {:.2f} 最大 {:.0f}".format(
+        print("CREST conformers  mean {:.2f} maximum {:.0f}; basins after pooling mean {:.2f} maximum {:.0f}".format(
             np.nanmean(nc), np.nanmax(nc), np.nanmean(nb), np.nanmax(nb)))
-        print("盆的来源    仅 CREST 均值 {:.2f}; 仅 ETKDG 均值 {:.2f}".format(
+        print("basin source  CREST only mean {:.2f}; ETKDG only mean {:.2f}".format(
             np.nanmean(co), np.nanmean(eo)))
-        print("单分子耗时  均值 {:.0f} s 中位 {:.0f} s 最大 {:.0f} s "
-              "(其中 CREST 均 {:.0f} s, 分析 均 {:.0f} s)".format(
+        print("time per molecule  mean {:.0f} s median {:.0f} s maximum {:.0f} s "
+              "(of which CREST mean {:.0f} s, analysis mean {:.0f} s)".format(
                   np.nanmean(tot), np.nanmedian(tot), np.nanmax(tot),
                   np.nanmean(cr), np.nanmean(an)))
-        print("**吞吐**    {:.0f} s/分子（墙钟/分子数）; 单分子串行 {:.0f} s "
-              "=> 并行加速 {:.1f} 倍（{} 个 worker）".format(
+        print("**throughput** {:.0f} s/molecule (wall clock / molecule count); {:.0f} s serially per molecule "
+              "=> parallel speed-up {:.1f}x ({} worker(s))".format(
                   per, np.nanmean(tot), np.nanmean(tot) / max(per, 1e-9), n_workers))
-        print("最低盆权重  均值 {:.3f}; < 0.9 的占 {:.1%}".format(
+        print("lowest-basin weight  mean {:.3f}; fraction below 0.9 {:.1%}".format(
             np.nanmean(w0), float(np.nanmean(w0 < 0.9))))
-        print("构象修正    均值 {:+.4f} 中位 {:+.4f} 最负 {:+.4f} kcal/mol".format(
+        print("conformational correction  mean {:+.4f} median {:+.4f} most negative {:+.4f} kcal/mol".format(
             np.nanmean(corr), np.nanmedian(corr), np.nanmin(corr)))
         remaining = len(order) - len(done)
         print()
-        print("成本外推    剩余 {} 个 -> {:.1f} 小时 = {:.1f} 天".format(
+        print("cost extrapolation  {} left -> {:.1f} hours = {:.1f} days".format(
             remaining, per * remaining / 3600, per * remaining / 86400))
         payload["statistics"] = dict(
             seconds_per_molecule_wall=float(per),
@@ -828,23 +828,23 @@ def _summarise(done, failed, order, elapsed, chunk_dir, args, prov, v,
 
 
 def _f(v):
-    """None -> nan，好让 {:.0f} 这类格式不炸。"""
+    """None -> nan, so that a format like {:.0f} does not blow up."""
     return float("nan") if v is None else float(v)
 
 
 def _finish_summary(payload, failed, chunk_dir, args):
     if failed:
         print()
-        print("失败清单 ({} 个):".format(len(failed)))
+        print("failures ({}):".format(len(failed)))
         for f in failed[:20]:
             print("   {} {:24s} {}: {}".format(f["qm9_index"], f["smiles"],
                                                f["error_type"], str(f["error"])[:70]))
     if not args.pilot:
         name = ("summary" if args.shard == "0/1"
                 else "summary_shard{}".format(args.shard.replace("/", "of")))
-        _manifest(payload, chunk_dir / name, title="包 1 · CREST 支路   本次运行小结")
+        _manifest(payload, chunk_dir / name, title="package 1 - CREST branch   summary of this run")
         print()
-        print("落盘: {} 与同名 .log".format(chunk_dir))
+        print("written: {} and the .log of the same name".format(chunk_dir))
 
 
 if __name__ == "__main__":

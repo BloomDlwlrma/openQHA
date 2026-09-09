@@ -504,7 +504,7 @@ they must not share an `.mdp`.
 | deduplication is CREST's own published criterion | RTHR 0.125 Å + ETHR 0.05 kcal/mol + BTHR 1%, all three |
 | σ comes from geometry, per basin | 13/13 on the validation set, including the four cases the first version got wrong |
 | the environment builds and is measured | one CPU environment (3.2 GB, 3m20s), one CUDA environment for branch C |
-| numbers are not lost when files move | `configs/baseline.yaml` + `t_translation_preserved_numbers`, 109 files, 0 lost |
+| numbers are not lost when files move | `configs/baseline.yaml` + `t_translation_preserved_numbers`, 109 files, 0 lost (that gate was retired 2026-09-09 once the migration finished) |
 
 ### What blocks publication
 
@@ -516,8 +516,12 @@ they must not share an `.mdp`.
    a run made with `refine="opt"`; its loading cell now prefers the shipped-default
    product and prints which one it used, so the state is visible either way. Its outputs
    are measurements and are never hand-edited — they change by re-running the notebook.
-3. **`t_code_is_english` fails**: 25 files still hold non-English text, plus 28 under
-   `_superseded/` counted but not failed. An open ruling (`S0-D-2`).
+3. ~~**`t_code_is_english` fails**: 25 files still hold non-English text.~~
+   **Closed 2026-09-09.** The live tree is English: the final run reported `ok -- 0 lines`
+   after clearing 26 files / 1278 lines, with `t_translation_preserved_numbers` confirming
+   `no number lost`. The 28 files under `_superseded/` were counted but never failed and
+   remain an open ruling (`S0-D-2`) -- they are marked ready to delete, not to translate.
+   Both gates have been retired now that the migration they policed is complete.
 4. **`t_filters_f7` fails on one case** — `dsgdb9nsd_000080` passes F7 under
    `f7_scope="identity_from_geometry_only"` because its index uses the relaxed SMILES,
    which its geometry matches. Pre-existing and not yet ruled on.

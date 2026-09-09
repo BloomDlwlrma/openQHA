@@ -7,15 +7,19 @@
 # number came with it verbatim.
 # ======================================================================
 
-  # **两个必须看见的问题**（2026-08-31 实测）：
-  # 1. 乙酰胺 Tc = 761 K、N-甲基甲酰胺 Tc = 725 K，Tr=0.886 时是 674 K 与 642 K，
-  #    **外推跨度 344–376 K**，而五个 C3H6O 物种只跨 130–185 K。
-  #    且 MACE-OFF23-SC 的训练分布里几乎没有 674 K 的构型 —— **热稳定性存疑**。
-  #    **唯一含四元素的边 C2H5O1N1_19_36 正好是这两个物种，不是边角情形。**
-  # 2. 环丙醇的临界常数是基团贡献法估计值，**不是实验值**，误差未知。
+  # **Two problems that must stay visible** (measured 2026-08-31):
+  # 1. acetamide Tc = 761 K, N-methylformamide Tc = 725 K; at Tr = 0.886 those are
+  #    674 K and 642 K, an **extrapolation span of 344-376 K**, while the five C3H6O
+  #    species span only 130-185 K.
+  #    MACE-OFF23-SC's training distribution also holds almost no 674 K configurations
+  #    -- **thermal stability is in doubt**.
+  #    **The only four-element edge, C2H5O1N1_19_36, is exactly these two species; this
+  #    is not a corner case.**
+  # 2. The critical constants of cyclopropanol are a group-contribution estimate,
+  #    **not an experimental value**, and the error is unknown.
 
 # --------------------------------------------------------------------------------------
-# 包 5 —— 电子项
+# Package 5 -- the electronic term
 # --------------------------------------------------------------------------------------
 package5:
   # 2026-09-09: the half after `//` follows DEFAULT_ENGINE from MACE-OFF23-SC to
@@ -23,13 +27,13 @@ package5:
   # engine.composite_notation() (which reads engine_name()), so the products were always
   # right; this hand-written line is what disagreed with them.
   composite_notation: "DLPNO-CCSD(T)/cc-pVTZ // MACE-OFF23_medium"
-  orca_version: "6.1.1"              # deimos 的 conda 环境 orca611（2026-08-29 用户裁定）
+  orca_version: "6.1.1"              # the conda environment orca611 on deimos (user ruling 2026-08-29)
   orca_env_script: "configs/env_orca611_tianhe.sh"
-  run_location: "deimos only"        # **WSL 只作为测试，不产生任何生产数字**
-  supersedes: "D0-26 的 5.0.4 版本锁 —— 与 hkuhpc 那批的逐位可比性就此放弃，见 D0-75"
+  run_location: "deimos only"        # **WSL is for testing only; it produces no production number**
+  supersedes: "the 5.0.4 version lock of D0-26 -- digit-for-digit comparability with the hkuhpc batch is given up here; see D0-75"
   keyword_line: "! DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C"
   tcut_pairs: "1e-6"
   loc_method: "AHFB"
-  maxcore_mb: 3900                   # resource_budget：运行时由集群脚本改写
-  nprocs: 4                          # resource_budget：同上
-  level_consistency_bound_kcal: 0.05 # modifiable_convention：1.0 目标的 5%
+  maxcore_mb: 3900                   # resource_budget: rewritten at run time by the cluster script
+  nprocs: 4                          # resource_budget: likewise
+  level_consistency_bound_kcal: 0.05 # modifiable_convention: 5% of the 1.0 target
