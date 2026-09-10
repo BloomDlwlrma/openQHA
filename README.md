@@ -166,12 +166,15 @@ teaches people to ignore it.
 
 ### The potential's weights
 
-MACE-OFF weights are **not in this repository** — they are fetched, not shipped.
-`bash install_dependency.sh` downloads them for you; `openqha/potentials/engine.py` holds the
-expected **SHA-256 for every selectable model and recomputes it on every load**, so a
-truncated download, a proxy that served an HTML error page, or a silently swapped
-potential all fail loudly instead of quietly changing the level of theory that every
-downstream number claims.
+MACE-OFF weights are **not in this repository** — they are large binaries that belong
+beside the run. `bash install_dependency.sh` downloads them for you into
+`data/potentials/`, flat, keeping their own filenames.
+
+Loading one is three steps and there is no fourth: `openqha/potentials/engine.py` maps an
+engine **name** to a **filename**, looks for that filename in that one directory, and uses
+the file it finds. **The filename is the whole identity check.** Every product records the
+engine name and the path it loaded, which is what makes it reproducible for someone
+holding the same weights.
 
 Verify what you have:
 

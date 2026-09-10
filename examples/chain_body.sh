@@ -225,6 +225,74 @@ except Exception:                                                 # noqa: BLE001
 PY
 )
 
+if [ "$CHAIN" = "conformers_pair" ]; then
+    # =================================================================================
+    # TWO MOLECULES, CONCURRENTLY, IN **ONE** ALLOCATION
+    # =================================================================================
+    # Not two `sbatch` submissions. Branch A is embarrassingly parallel over molecules
+    # and useless to parallelise within one (CREST's own `threads` covers the
+    # metadynamics; MACE on ten atoms is 111/90/72/101 ms at 1/2/4/8 threads, so eight is
+    # slower than four). One job holding a whole deimos node therefore runs several
+    # molecules side by side rather than one molecule and 60 idle cores -- job 7347197
+    # used about 1.8% of the node it held exclusively.
+    #
+    # Each entry is:   SPECIES  TAG  THREADS  [extra arguments for this molecule]
+    # The extras are per molecule on purpose: a conformer ceiling is a claim about one
+    # specific molecule and must not be inherited by its neighbour.
+    #
+    # Each pipeline starts its OWN MACE server, and the socket name carries the pid
+    # (openqha/conformer_search/crest.py), so the two do not collide inside the one
+    # scratch directory this job has.
+    echo
+    echo "---- branch A x N, concurrently, in ONE job ----------------------------"
+    pair_pids=""; pair_tags=""; pair_n=0
+    LOGBASE="$ROOT/logs/openqha_pair${SLURM_JOB_ID:+_$SLURM_JOB_ID}"
+    mkdir -p "$ROOT/logs"
+    for _entry in "${PAIR_1:-}" "${PAIR_2:-}" "${PAIR_3:-}" "${PAIR_4:-}"; do
+        [ -n "$_entry" ] || continue
+        # shellcheck disable=SC2086  -- the entry is a deliberate word list
+        set -- $_entry
+        p_species="$1"; p_tag="$2"; p_threads="${3:-4}"; shift 3 2>/dev/null || shift $#
+        p_extra="$*"
+        p_log="${LOGBASE}_${p_tag}.log"
+        echo "     $p_species   tag $p_tag   threads $p_threads   ${p_extra:-(no extra args)}"
+        echo "       -> $p_log"
+        # shellcheck disable=SC2086
+        python -u scripts/production/s0_A_pipeline.py \
+            --species "$p_species" --tag "$p_tag" --threads "$p_threads" \
+            --hessian-mode analytic $BRANCH_A_ARGS $p_extra > "$p_log" 2>&1 &
+        pair_pids="$pair_pids $!"
+        pair_tags="$pair_tags $p_tag"
+        pair_n=$((pair_n + 1))
+    done
+    [ "$pair_n" -gt 0 ] || { echo "conformers_pair: the conf set no PAIR_1..PAIR_4" >&2; exit 2; }
+    echo "     $pair_n pipeline(s) running; waiting for all of them"
+
+    # **Wait for every one and report every one.** `wait` without arguments returns the
+    # status of the last job only, which would let one molecule fail invisibly beside a
+    # neighbour that succeeded.
+    pair_rc=0
+    set -- $pair_tags
+    for _pid in $pair_pids; do
+        _tag="$1"; shift
+        if wait "$_pid"; then
+            echo "     $_tag  OK"
+        else
+            _rc=$?
+            echo "     $_tag  FAILED (exit $_rc) -- see ${LOGBASE}_${_tag}.log" >&2
+            pair_rc=1
+        fi
+    done
+    echo
+    echo "---- the two logs, tail ------------------------------------------------"
+    for _tag in $pair_tags; do
+        echo "===== $_tag ====="
+        tail -25 "${LOGBASE}_${_tag}.log" 2>/dev/null || echo "(no log)"
+        echo
+    done
+    exit "$pair_rc"
+fi
+
 if [ "$CHAIN" = "conformers" ]; then
     echo
     echo "---- branch A: conformer search -> every basin ------------------------"

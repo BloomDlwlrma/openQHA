@@ -79,7 +79,7 @@ def main():
     print("ensemble    {}".format(args.ensemble))
     print("structures  {}{}".format(
         len(frames), "  (LIMITED -- smoke test, not a result)" if args.limit else ""))
-    print("engine      {}  sha256 {}".format(engine_name, prov["sha256"][:16]))
+    print("engine      {}  weights {}".format(engine_name, prov["weights_path"]))
     print("dedup       CREGEN three-fold, held FIXED at every rung:")
     print("            RMSD {} A, dE {} kcal/mol, dB {}".format(
         refine_analysis.conformers.DEDUP_RMSD_A,

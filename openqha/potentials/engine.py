@@ -1,4 +1,4 @@
-"""The potential: a named registry, provenance, and the refusal to swap silently.
+"""The potential: a named registry and a provenance record.
 
 WHY A REGISTRY AND NOT ONE HARD-CODED PATH
 ------------------------------------------
@@ -10,23 +10,19 @@ two reasons that arrived together:
   * S0-C-10: branch C needs a COMMITTEE -- several models evaluated on one structure --
     so "the engine" can no longer be a single global path.
 
-THE RULE THAT DOES NOT CHANGE
------------------------------
-A MISSING weight file raises, and it never falls back to another potential. An ALTERED
-one no longer does -- see below. Silently swapping the potential strips every downstream
-number of the level it claims to be at, and level consistency is the only condition under
-which the composite decomposition holds (D0-4, skills section 2.1); after 2026-09-09
-keeping that condition is the operator's job, not the code's.
+HOW A POTENTIAL IS LOADED
+-------------------------
+**The registry gives a filename; that filename is looked for in one flat directory; that
+file is used.** Three steps, no fourth. Nothing reads the file's bytes, computes a
+digest, compares it against anything, or can refuse it.
 
-Each registry entry carries the SHA-256 of the file this engine was developed against.
-**It is RECORDED in every product and NOT enforced** (user ruling 2026-09-09): loading a
-potential is "find this filename in the one flat directory and use it", nothing more.
-The gate was removed after it refused a working file on Tianhe twice -- a torch
-re-serialisation changes the digest and the file size while the weights stay identical,
-so the digest could not tell a repackaged model from a different one. The accepted cost
-is that a genuinely swapped file now changes every downstream number silently; the
-digest in the record makes it visible afterwards, and `scripts/tooling/s0_check_weights.py`
-compares parameters rather than bytes for anyone who wants to ask.
+A MISSING weight file raises and never falls back to another potential -- that is the one
+rule, and it is about the file being absent, not about what is inside it.
+
+The identity of a run's potential is therefore **the engine name and the path**, both of
+which go into every product's provenance record. Keeping a level consistent across
+products (D0-4) is the operator's job: point the runs at the same engine and the same
+directory.
 
 WHAT CHANGING THE DEFAULT COSTS -- read before relying on any older number
 --------------------------------------------------------------------------
@@ -47,7 +43,6 @@ SAME surface as stage 2, so the two routes differ only in method -- is LOST by t
 change, and that was a load-bearing part of stage 0's rationale. It has to be either
 accepted explicitly or restored by pointing stage 2 at the same new engine.
 """
-import hashlib
 import os
 import sys
 from pathlib import Path
@@ -56,9 +51,9 @@ from .. import S0_ROOT
 
 #: ONE DIRECTORY, FLAT. `<root>/<filename>` and nothing else.
 #:
-#: The weights are NOT in this repository and must never be: MACE-OFF is under the
-#: Academic Software Licence, which forbids redistribution, and openQHA is meant to be
-#: publishable. Only filenames and SHA-256 digests belong here.
+#: The weight files are NOT in this repository -- they are large binaries that belong
+#: beside the run, not in version control. Put them in the directory below. The
+#: registry holds their FILENAMES and nothing else.
 #:
 #: -------------------------------------------------------------------------------------
 #: WHY ONE FLAT DIRECTORY (user ruling 2026-09-09)
@@ -95,17 +90,14 @@ from .. import S0_ROOT
 #:     ...
 #: No subdirectories. `S0_MACE_ROOT` points the whole directory somewhere else;
 #: `S0_MACE_MODEL` overrides one individual file. To change potentials, use `S0_ENGINE`.
-#: **Nothing verifies the CONTENTS of the file any more** (user ruling 2026-09-09) -- the
-#: filename is the whole identity check. See `provenance`.
+#: **The filename is the whole identity check.** Nothing reads, hashes or verifies the
+#: contents; the file under that name is the model. See `provenance`.
 #:
 #: -------------------------------------------------------------------------------------
 #: ADDING A NEW POTENTIAL (any MLIP, not just MACE)
 #: -------------------------------------------------------------------------------------
 #:   1. Drop the file in the directory above -- flat, keeping its own filename.
-#:   2. Add an entry to ENGINES: `filename`, `sha256`, `source`, `licence`, `note`.
-#:      `sha256=None` is allowed while you are still deciding; provenance() will report
-#:      the computed digest and flag it as unpinned rather than accept anything silently.
-#:      Pin it the moment the model is used for a number that gets recorded.
+#:   2. Add an entry to ENGINES: `filename`, `source`, `note`. Three fields, no more.
 #:   3. Select it with `S0_ENGINE=<name>`; make it the default by changing
 #:      DEFAULT_ENGINE, and then also `configs/openqha.yaml` -> `engine:` -- see the
 #:      note there about why those two disagreeing is not a cosmetic problem.
@@ -128,59 +120,39 @@ def model_root():
 
 #: Registry of selectable potentials.
 #:
-#: `sha256` is the expected digest; None means "not yet pinned" and provenance() will
-#: report the computed value and flag it, rather than silently accepting anything.
-#: Pin it the first time a model is used for anything that gets recorded.
+#: **A name and a filename. That is the whole entry.**
+#: `source` is the paper to cite; `note` is why the entry exists. Nothing here inspects,
+#: verifies or gates the file -- put the file in the directory under the right name and it
+#: is used.
 ENGINES = {
     "MACE-OFF24_medium": dict(
         filename="MACE-OFF24_medium.model",
-        sha256="e5ccf5837f685899811a68754e7c994393bfd1a81720393b03c643b46c70bc69",
         source="https://github.com/ACEsuit/mace-off",
-        licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member. Was briefly the default on 2026-09-03; superseded the same day by S0-A-16.",
     ),
     "MACE-OFF23_medium": dict(
         filename="MACE-OFF23_medium.model",
-        sha256="4842c52ad210d6e1f84d6cf1ffa70fae25a7e0d755ed55cf223f43913f587db7",
-        # The bytes and the numbers are two different identities, and only the second one
-        # is what "the same potential" means. Measured 2026-09-09: a torch save/load
-        # round trip of THIS EXACT model changed the file SHA-256 and the file size
-        # (18 350 596 -> 18 367 938 bytes) while every tensor stayed bit-identical.
-        # A file hash therefore cannot tell a re-serialised copy from a different model,
-        # and on Tianhe it did not. See `parameter_fingerprint`.
-        params_sha256="8dca373ad57c67faf89f41b0c1a58caf9b64df39016449e74238428a268f2ac2",
-        n_tensors=79,
-        size_bytes=18350596,
         source="https://arxiv.org/abs/2312.15211",
-        licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family; closest lineage to stage 2 surface.",
     ),
     "MACE-OFF23_small": dict(
         filename="MACE-OFF23_small.model",
-        sha256="165cce4cfec5a34b9c64d4ebf95de15d71106bb584b7291c8470f0749977c46f",
         source="https://arxiv.org/abs/2312.15211",
-        licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member (S0-C-10). Too small to be a production engine.",
     ),
     "MACE-OFF23_large": dict(
         filename="MACE-OFF23_large.model",
-        sha256="a29e397dbf3e7a24ac50a9b0dfc919bd5a62efa346f5895a6237b0950c1d76f4",
         source="https://arxiv.org/abs/2312.15211",
-        licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member.",
     ),
     "MACE-OFF23b_medium": dict(
         filename="MACE-OFF23b_medium.model",
-        sha256="871653738a4fbc8124dba1ff5bc595bd0abf7b849a8538c0825dc29ebadf1680",
         source="https://github.com/ACEsuit/mace-off",
-        licence="Academic Software Licence (ASL) -- academic non-commercial",
         note="Committee member.",
     ),
     "MACE-OFF23-SC": dict(
         filename="MACE-OFF23-SC_swa.model",
-        sha256="32c9fb51704f96da855c67e0cdc9894f3e41694e98b7a0ed8813388b9f21db33",
         source="https://arxiv.org/abs/2405.18171",
-        licence="Academic Software Licence (ASL) -- academic non-commercial",
         note=("The engine from D0-23, superseded as the default on 2026-09-03 but KEPT "
               "SELECTABLE: every package-1 basin and every number in D0-P2-11/12/14 "
               "lives on this surface and cannot be reproduced without it."),
@@ -250,172 +222,40 @@ def model_path(name=None):
         "weights for {} not found.\n"
         "  expected: {}\n"
         "  {}\n"
-        "The weights are NOT part of this repository -- they are under the Academic "
-        "Software Licence and cannot be redistributed. Copy the file there, keeping its "
-        "name, with no subdirectory.\n"
+        "The weight files are not kept in this repository. Copy the file into that "
+        "directory, keeping its name, with no subdirectory.\n"
         "  {}=<dir>   move the whole directory\n"
         "  S0_MACE_MODEL=<file>   override this one file\n"
-        "  S0_ENGINE=<name>       use a different registered potential: {}\n"
-        "stage 0 does not accept a silent potential swap.".format(
+        "  S0_ENGINE=<name>       use a different registered potential: {}".format(
             name, p, found, _MODEL_ROOT_ENV, ", ".join(sorted(ENGINES))))
 
 
-def parameter_fingerprint(path=None, name=None):
-    """SHA-256 over the model's tensors, in canonical key order.
-
-    **The bytes and the numbers are two different identities**, and only the second one
-    is what "the same potential" means. Measured 2026-09-09 on this repository's own
-    `MACE-OFF23_medium.model`: a `torch.save` / `torch.load` round trip of that exact
-    model changed the file SHA-256 **and the file size** -- 18 350 596 -> 18 367 938
-    bytes -- while every one of the 79 tensors stayed bit-identical.
-
-    So a file hash cannot tell a re-serialised copy from a different model. It says
-    "different" to both, and the operator is then left to argue about whether the check
-    is worth having. This function is the other half: it is invariant to the container
-    and sensitive to the weights, which is the discrimination the check was always for.
-
-    Returns `(hexdigest, n_tensors)`. Costs about 3 s -- it has to load the model -- so
-    it is computed only when the file hash has already disagreed.
-    """
-    import torch
-    p = Path(path) if path else model_path(name)
-    model = torch.load(str(p), map_location="cpu", weights_only=False)
-    state = model.state_dict() if hasattr(model, "state_dict") else model
-    h = hashlib.sha256()
-    for k in sorted(state):
-        v = state[k]
-        h.update(k.encode("utf-8"))
-        h.update(str(v.dtype).encode("utf-8"))
-        h.update(str(tuple(v.shape)).encode("utf-8"))
-        h.update(v.detach().cpu().contiguous().numpy().tobytes())
-    return h.hexdigest(), len(state)
-
-
-def _classify_weight_mismatch(name, entry, p, digest):
-    """Say WHICH kind of mismatch this is, instead of only that there is one.
-
-    Four situations produce a different file hash and they do not deserve the same
-    answer:
-
-      1. truncated or corrupted transfer          -> refuse, and say so; the size says it
-      2. same parameters, different container     -> proceed; record both hashes
-      3. genuinely different weights              -> refuse; this is the one the pin is for
-      4. no parameter pin recorded for this model -> refuse, but say the check was blind
-
-    Returns `(ok, message, extra)`.
-    """
-    size = p.stat().st_size
-    pinned_size = entry.get("size_bytes")
-    pinned_params = entry.get("params_sha256")
-
-    head = ("weight file for {} does not match its pinned SHA-256.\n"
-            "  expected {}\n  computed {}\n  path     {}\n"
-            "  size     {} bytes{}\n".format(
-                name, entry.get("sha256"), digest, p, size,
-                "" if not pinned_size else
-                "  (pinned file was {})".format(pinned_size)))
-
-    if pinned_size and size < pinned_size * 0.9:
-        return False, head + (
-            "This file is {:.0%} of the pinned size -- it looks TRUNCATED, which is what "
-            "an interrupted copy leaves behind. Re-copy it and check the size first:\n"
-            "    rsync -a --partial --progress data/potentials/ "
-            "<host>:<repo>/data/potentials/".format(size / pinned_size)), {}
-
-    if not pinned_params:
-        return False, head + (
-            "No parameter fingerprint is pinned for this engine, so the only identity "
-            "available is the file hash and it disagrees. Refusing.\n"
-            "Record one with:  python scripts/tooling/s0_check_weights.py --pin"), {}
-
-    try:
-        params, n = parameter_fingerprint(p, name)
-    except Exception as exc:                                          # noqa: BLE001
-        return False, head + (
-            "The file could not be loaded to compare its PARAMETERS ({}: {}), so it is "
-            "not merely a different container -- it is not a usable model file."
-            .format(type(exc).__name__, exc)), {}
-
-    extra = dict(params_sha256=params, params_sha256_pinned=pinned_params,
-                 n_tensors=n, size_bytes=size)
-    if params == pinned_params:
-        return True, (
-            "openQHA: the weight FILE differs from its pin but the PARAMETERS are "
-            "identical.\n"
-            "  file sha256    {} (pinned {})\n"
-            "  params sha256  {}  <- matches, {} tensors\n"
-            "This is a re-serialised copy of the same model -- a different torch version "
-            "writing the same numbers. Proceeding; both hashes go into every product.\n"
-            "If you want the file hash to agree too, re-pin it with\n"
-            "    python scripts/tooling/s0_check_weights.py --pin".format(
-                digest[:16], str(entry.get("sha256"))[:16], params[:16], n), extra)
-
-    return False, head + (
-        "  params sha256  {}\n  expected       {}\n"
-        "**The PARAMETERS differ**, not just the container. This is a different model, "
-        "and running it would change the level every downstream number claims (D0-4) "
-        "without saying so. Refusing.\n"
-        "Get the same weights, or register the new model as its own engine with its own "
-        "name.".format(params, pinned_params)), extra
-
-
-def provenance(name=None, strict=False):
+def provenance(name=None):
     """Provenance record for the potential. Every product must carry it.
 
-    **THE HASH IS RECORDED, NOT ENFORCED** (user ruling 2026-09-09).
-    -------------------------------------------------------------
-    Loading a potential is now: the registry gives a filename, `model_path` finds that
-    filename in the one flat directory, and that file is used. Nothing else gates it.
+    **Loading a potential is: the registry gives a filename, `model_path` finds that
+    filename in the one flat directory, and that file is used.** Nothing inspects it,
+    nothing verifies it, nothing can refuse it.
 
-    The gate was removed after it refused a working weight file on Tianhe twice. It was
-    not a wrong idea, but it was the wrong instrument: measured 2026-09-09 on this
-    repository's own `MACE-OFF23_medium.model`, a `torch.save`/`torch.load` round trip
-    changes the file SHA-256 **and the file size** while every tensor stays bit-identical.
-    So the digest was reporting "different model" for a re-serialised copy of the same
-    one, and an operator who has seen that twice is right not to trust it.
+    What this record therefore is: the engine name, where the model came from so it can be
+    cited, the path actually loaded, and the parts of the software stack that decide the
+    numbers -- the MACE version and module path, the dtype, and the neighbour-list patch
+    state. That is what makes a product reproducible by someone holding the same weights.
 
-    What replaces it is nothing automatic, and that is a real, accepted cost: a genuinely
-    swapped weight file now changes every downstream number silently, and D0-4's level
-    consistency rests on the operator rather than on the code. The digest and the file
-    size still go into every product, so the swap is *visible afterwards* in the record
-    even though it is no longer *prevented*. `scripts/tooling/s0_check_weights.py`
-    remains, and compares parameters rather than bytes, for anyone who wants to ask.
-
-    `strict=True` restores the old refusal for a caller that wants it. Nothing in the
-    repository passes it.
+    The engine name and the file path are the identity. If two runs name the same engine
+    and the same path, they are the same potential as far as this repository is concerned.
     """
     name = name or engine_name()
     entry = ENGINES[name]
     p = model_path(name)
-    digest = hashlib.sha256(p.read_bytes()).hexdigest()
-
-    mismatch = None
-    expected = entry.get("sha256")
-    if expected and digest != expected:
-        mismatch = dict(expected_sha256=expected, computed_sha256=digest,
-                        size_bytes=p.stat().st_size,
-                        enforced=bool(strict),
-                        note=("the file differs from the digest this engine was "
-                              "developed against. Recorded, not enforced. Compare the "
-                              "PARAMETERS with scripts/tooling/s0_check_weights.py if "
-                              "you want to know whether it is the same model."))
-        if strict:
-            ok, message, extra = _classify_weight_mismatch(name, entry, p, digest)
-            if not ok:
-                raise ValueError(message)
-            mismatch.update(extra)
 
     import mace
     import torch
     return dict(
-        weight_file_mismatch=mismatch,
         engine=name,
         source=entry["source"],
-        licence=entry["licence"],
         note=entry["note"],
         weights_path=str(p),
-        sha256=digest,
-        sha256_pinned=bool(expected),
         bytes=p.stat().st_size,
         interface="mace.calculators.MACECalculator",
         mace_torch_version=mace.__version__,

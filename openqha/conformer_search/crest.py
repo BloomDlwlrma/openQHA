@@ -641,7 +641,18 @@ def start_servers(n, socket_prefix=None, torch_threads=1,
     from .. import config
     py = python or sys.executable
     if socket_prefix is None:
-        socket_prefix = str(config.socket_dir() / "s0_mace_pool")
+        # **The process id is in the name, and that is not decoration.** `socket_dir()`
+        # is per JOB, which separates two jobs on two nodes -- the 2026-09-09 collision.
+        # It does not separate two pipelines inside ONE job, and running two molecules
+        # concurrently in a single allocation is exactly what
+        # `examples/02ab_pair/branchA-pair.conf` does: both would otherwise open
+        # `<socket_dir>/s0_mace_pool_0.sock`, and whichever bound second would unlink the
+        # first one's socket. Same defect, one level down.
+        #
+        # `sun_path` is 108 bytes and truncates silently, so this stays short: the pid is
+        # at most 7 digits and config.socket_path() checks the total against
+        # SOCKET_PATH_LIMIT.
+        socket_prefix = str(config.socket_dir() / "s0_mace_pool_{}".format(os.getpid()))
     servers = []
     for k in range(n):
         sock = "{}_{}.sock".format(socket_prefix, k)

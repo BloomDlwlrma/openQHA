@@ -608,8 +608,8 @@ def main():
     print("=" * 104)
     print("CREST        {} (commit {})  runtype={} refine={} optlev={}".format(
         v["version"], v["commit"], C["runtype"], C["refine"], C["optlev"]))
-    print("engine       MACE-OFF23-SC  SHA-256 {}...  dtype={}  device={}".format(
-        prov["sha256"][:16], prov["dtype"], args.device))
+    print("engine       {}  dtype={}  device={}".format(
+        prov["engine"], prov["dtype"], args.device))
     print()
     print("[concurrency plan]  N = min(the terms below)")
     for label, val in limits:

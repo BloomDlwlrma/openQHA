@@ -33,7 +33,7 @@ BRANCH A -- the science. Changing anything here changes the answer.
   openqha/conformer_search/crest_census.py  the census a product is built from
   openqha/conformer_search/filters.py       F0-F7
   openqha/conformer_search/symmetry.py      sigma per basin
-  openqha/potentials/engine.py              THE POTENTIAL: registry, path, SHA-256
+  openqha/potentials/engine.py              THE POTENTIAL: registry, path, provenance
   openqha/potentials/mace_server.py         the resident MACE server CREST talks to
   openqha/potentials/mace_patch.py          translation-invariant neighbour list
   openqha/thermochem/hessian.py             analytic / finite-difference Hessians
@@ -228,18 +228,17 @@ The line that is confusing:
 
 > **MACE-OFF weights** — NOT downloaded on a login node — outbound traffic goes through a
 > proxy and a 100 MB pull from a login node is antisocial. Fetch them where you have
-> bandwidth and rsync them in; the SHA-256 is recomputed on load, so a truncated transfer
-> fails loudly.
+> bandwidth and rsync them in.
 
-Unpacked, it is four separate facts:
+Unpacked, it is three separate facts:
 
-**1. The weights are not in this repository and never will be.** MACE-OFF is under the
-Academic Software Licence — academic, non-commercial, no redistribution. openQHA ships
-only *paths and SHA-256 digests*. `openqha/potentials/engine.py` says this in the code.
+**1. The weights are not in this repository.** They are large binaries that belong beside
+the run rather than in version control. The registry in `openqha/potentials/engine.py`
+holds their *filenames*, and nothing else about them.
 
 **2. `install_dependency.sh` downloads them for you — except in `--tianhe` mode.**
 On a workstation it fetches `MACE-OFF23_medium.model` (~100 MB) from
-`github.com/ACEsuit/mace-off`, checks the digest, and only then renames it into place.
+`github.com/ACEsuit/mace-off` and puts it in `data/potentials/`.
 Under `--tianhe` it deliberately does not, and prints the rsync line instead.
 
 **3. Why not on a login node.** The login node reaches the internet only through the site
@@ -250,18 +249,15 @@ in increasing order of how much they will cost you:
      charged for its whole walltime;
    - **a proxy can return an HTML error page under a 200 status.** That is a perfectly
      valid file and a completely wrong potential, and it looks like a successful download.
-
-**4. The check is automatic and it is not optional.** `engine.provenance()` recomputes the
-SHA-256 on *every load* and raises on a mismatch. So a truncated rsync fails at the first
-molecule of the first job, with the expected and computed digests printed — not three
-hours into a campaign, and never as a puzzling number.
+     Nothing downstream inspects the file, so check the size where you copy it from —
+     `ls -l data/potentials/` — before you rsync.
 
 ### The actual procedure
 
 ```bash
 # --- on your workstation, where you have bandwidth -----------------------------------
 cd openQHA
-bash install_dependency.sh                    # downloads + hash-checks the default
+bash install_dependency.sh                    # downloads the default
 # or:  bash install_dependency.sh --all-weights   # the whole committee, for branch C
 
 ls -l data/potentials/
@@ -277,16 +273,16 @@ from openqha import engine, json
 print(json.dumps(engine.provenance(), indent=1, default=str))"
 ```
 
-Expect `sha256_pinned: true` and no exception. If the digest disagrees, the file is wrong —
-re-copy it; do not "fix" the pin.
+Read back `engine` and `weights_path` — those two are the identity of the potential this
+run will use, and they are what every product records.
 
 ### Where the model setting lives
 
 | what | where | note |
 |---|---|---|
-| the registry | `openqha/potentials/engine.py` → `ENGINES` | name → **filename**, sha256, licence, source, note — no paths |
+| the registry | `openqha/potentials/engine.py` → `ENGINES` | name → **filename**, source, note — no paths, nothing verified |
 | the directory | `openqha/potentials/engine.py` → `model_root()` | `<repo>/data/potentials`, or `S0_MACE_ROOT` |
-| add a potential | an `ENGINES` entry: `filename=`, `sha256=` | any MLIP. Drop the file in that directory, flat |
+| add a potential | an `ENGINES` entry: `filename=`, `source=`, `note=` | any MLIP. Drop the file in that directory, flat |
 | production default | `openqha/potentials/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` since 2026-09-03 (S0-A-16) |
 | select another | `S0_ENGINE=MACE-OFF23_large` | must be a registered name; unknown names raise |
 | move the directory | `S0_MACE_ROOT=/path/to/potentials` | the one flat directory of weights |

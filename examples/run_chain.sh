@@ -89,8 +89,8 @@ TAG="${TAG:-chain}"
 CHAIN="${CHAIN:-qha}"
 
 case "$CHAIN" in
-    conformers|qha|levels|identity) ;;
-    *) echo "CHAIN must be conformers, qha, levels or identity, got '$CHAIN'" >&2
+    conformers|conformers_pair|qha|levels|identity) ;;
+    *) echo "CHAIN must be conformers, conformers_pair, qha, levels or identity, got '$CHAIN'" >&2
        exit 2 ;;
 esac
 
@@ -99,7 +99,7 @@ esac
 # job costs the queue wait and the allocation.
 if [ "$KIND" = "gpu" ]; then
     case "$CHAIN" in
-        conformers)
+        conformers|conformers_pair)
             echo "CHAIN=conformers is CREST + GFN2-xTB: xtb has no GPU path and" >&2
             echo "  openqha-gpu contains neither crest nor xtb. Use deimos or debug." >&2
             exit 2 ;;
@@ -112,7 +112,7 @@ fi
 
 # Does step 1 exist? A pure filesystem question -- the basin store's layout is
 # <root>/<tag>/<shard>/<species>.basins.json -- so it needs no python and no imports.
-if [ "$CHAIN" != "conformers" ] && [ "$KIND" = "gpu" ]; then
+if [ "$CHAIN" != "conformers" ] && [ "$CHAIN" != "conformers_pair" ] && [ "$KIND" = "gpu" ]; then
     BASINS_ROOT="${S0_BASIN_ROOT:-data/basins}"
     if ! find "$BASINS_ROOT/$TAG" -name "${SPECIES}.basins.json" -print -quit 2>/dev/null \
          | grep -q .; then

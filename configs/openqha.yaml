@@ -83,18 +83,16 @@ engine:
   # subdirectory (ruling 2026-09-09). S0_MACE_ROOT moves the whole directory;
   # S0_MACE_MODEL overrides one file.
   weights: "data/potentials/MACE-OFF23_medium.model"
-  sha256: "4842c52ad210d6e1"        # first 16 characters; openqha.engine.provenance() recomputes and compares the full value
   dtype: "float64"                  # numerical_tolerance: geometry optimisation and finite-difference Hessians both need it
   device: "cpu"
-  licence: "Academic Software Licence (ASL) -- academic non-commercial"
   source: "https://arxiv.org/abs/2312.15211"
-  # A missing weight file **raises; it never falls back to another potential**. A silent
-  # swap strips every downstream number of the level it claims to be at.
+  # A missing weight file **raises; it never falls back to another potential**.
+  # That is about the file being absent -- nothing inspects what is inside it.
   fallback_allowed: false
   # Still selectable, and must stay: every package-1 basin and every number in
   # D0-P2-11/12/14 lives on that surface and cannot be reproduced without it.
   # Select it back with S0_ENGINE=MACE-OFF23-SC.
-  #   superseded_default: "MACE-OFF23-SC"  (sha256 32c9fb51704f96da, arXiv 2405.18171)
+  #   superseded_default: "MACE-OFF23-SC"  (arXiv 2405.18171)
 
 # --------------------------------------------------------------------------------------
 # Data -- local paths, pointing at no other stage

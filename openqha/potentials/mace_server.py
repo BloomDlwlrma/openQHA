@@ -64,8 +64,10 @@ def serve(socket_path, device="cpu", quiet=False):
 
     calc, name, prov = engine.calculator(device=device)
     if not quiet:
-        print("[s0-mace-server] engine {} loaded, SHA-256 {}".format(
-            name, prov["sha256"][:16]), flush=True)
+        # The name and the path ARE the identity -- print both, because "which file did
+        # this server actually open" is the question a log has to be able to answer.
+        print("[s0-mace-server] engine {} loaded from {}".format(
+            name, prov["weights_path"]), flush=True)
 
     if os.path.exists(socket_path):
         os.unlink(socket_path)

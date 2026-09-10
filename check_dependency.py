@@ -145,13 +145,12 @@ def main():
         prov = engine.provenance()
         print("potential  %s" % prov["engine"])
         print("  weights  %s" % prov["weights_path"])
-        print("  sha256   %s  (recomputed and matched)" % prov["sha256"][:32])
-        print("  licence  %s" % prov["licence"])
+        print("  source   %s" % prov["source"])
         engine_ok = True
     except Exception as exc:
         print("potential  UNAVAILABLE: %s: %s" % (type(exc).__name__, str(exc)[:180]))
         print("  The weights are not shipped with this repository. Fetch them:")
-        print("    bash install_dependency.sh            # downloads and hash-checks")
+        print("    bash install_dependency.sh            # downloads them")
         print("  or copy MACE-OFF23_medium.model into that directory yourself --")
         print("  FLAT, no subdirectory. The error above names the exact path.")
         print("  S0_MACE_ROOT moves the directory; S0_MACE_MODEL overrides one file.")

@@ -121,7 +121,7 @@ def main():
     print("configuration {}".format(CFG["_path"]))
     print("{} edge(s), checksum {}".format(len(edges), config.edge_list_sha256(CFG)[:16]))
     print("species: {}".format(len(SPECIES)))
-    print("weights SHA-256 {}".format(prov["sha256"][:16] + "..."))
+    print("weights {}".format(prov["weights_path"]))
     print()
 
     qids = [args.only] if args.only else list(SPECIES)

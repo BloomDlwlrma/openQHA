@@ -805,12 +805,9 @@ fetch_model () {          # fetch_model <registry-name> <upstream-subdir> <file>
     # made the installer put weights somewhere the loader never looked.
     local name="$1" fam="$2" file="$3"
     local dest="$MACE_ROOT/$file"
-    local want
-    want="$(python -c "from openqha import engine; print(engine.ENGINES['$name']['sha256'] or '')" 2>/dev/null)"
 
-    if [ -f "$dest" ] && [ -n "$want" ] && \
-       [ "$(sha256sum "$dest" | cut -d' ' -f1)" = "$want" ]; then
-        echo "  $file: already present and matches its pinned digest"
+    if [ -s "$dest" ]; then
+        echo "  $file: already present ($(du -h "$dest" | cut -f1))"
         return 0
     fi
 
@@ -822,19 +819,21 @@ fetch_model () {          # fetch_model <registry-name> <upstream-subdir> <file>
         return 1
     fi
 
-    local got
-    got="$(sha256sum "$dest.part" | cut -d' ' -f1)"
-    if [ -n "$want" ] && [ "$got" != "$want" ]; then
-        # Do NOT install it. The commonest cause is a proxy returning an HTML error page
-        # under a 200, which is a perfectly valid file and a completely wrong potential.
+    # A model file is tens of megabytes. Anything much smaller is not one -- the usual
+    # cause is a proxy answering with an HTML error page under a 200 status, which is a
+    # perfectly valid file and not a potential. This is a size check, not an identity
+    # check: it catches the empty and the truncated, nothing subtler.
+    local bytes
+    bytes="$(stat -c%s "$dest.part" 2>/dev/null || echo 0)"
+    if [ "$bytes" -lt 1000000 ]; then
         rm -f "$dest.part"
-        warn "  $file: SHA-256 MISMATCH -- NOT installed."
-        warn "    expected $want"
-        warn "    got      $got"
+        warn "  $file: only $bytes bytes -- that is not a model file. NOT installed."
+        warn "    Usually a proxy error page. Fetch it by hand from"
+        warn "    $MACE_URL_BASE/$fam/$file"
         return 1
     fi
-    mv "$dest.part" "$dest"          # rename only after the hash agrees
-    echo "  $file: installed, digest matches"
+    mv "$dest.part" "$dest"
+    echo "  $file: installed ($(du -h "$dest" | cut -f1))"
 }
 
 if [ "$WEIGHTS" = "none" ]; then

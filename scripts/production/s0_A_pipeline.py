@@ -822,7 +822,7 @@ def main():
     print("Branch A pipeline -- {}".format(args.species or
                                            "{} ({})".format(label, args.smiles)))
     print("=" * 92)
-    print("engine      {}   sha256 {}".format(name, prov["sha256"][:16]))
+    print("engine      {}   weights {}".format(name, prov["weights_path"]))
     print("notation    {}".format(engine.composite_notation()))
     print("workhorse   {}   refine {}   shake {}   tstep {} fs".format(
         cfg["crest"]["workhorse"], cfg["crest"]["refine"],

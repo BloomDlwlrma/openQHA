@@ -88,8 +88,6 @@ HARTREE_KCAL = 627.5094740631
 #: GENEROUS proxy for what a fine-tuned committee would produce. See the module
 #: docstring on why that asymmetry matters.
 #:
-#: Licence: Academic Software Licence (ASL), academic non-commercial -- same terms as
-#: MACE-OFF23-SC (D0-23). Never redistributed by this repo.
 #: Resolved through `openqha.engine`, NOT by writing the location down here again. The
 #: reference tree moved out of this repository on 2026-09-04 (the weights are ASL and
 #: openQHA is meant to be publishable), and every literal path to it broke at once. The

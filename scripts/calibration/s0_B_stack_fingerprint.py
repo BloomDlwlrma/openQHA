@@ -89,7 +89,7 @@ def fingerprint(species=SPECIES, frames_dir=FRAMES, n_frames=2000):
     record["engine"] = name
     record["mace_torch_version"] = prov.get("mace_torch_version")
     record["mace_module_path"] = prov.get("mace_module_path")
-    record["weights_sha256"] = prov.get("sha256")
+    record["weights_path"] = prov.get("weights_path")
 
     # ---- the potential, at the QM9 geometry exactly as it is on disk -------------------
     record["energy_eV"] = float(atoms.get_potential_energy())

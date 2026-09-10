@@ -471,37 +471,33 @@ MKL). The old script hard-coded `openqha-gpu`, which would have put a CPU chain 
 environment with **no crest and no xtb** — branch A would then have failed on the compute
 node for a reason that had nothing to do with branch A.
 
-### When the weights hash disagrees — which of four things happened
+### Getting the weights onto the cluster
+
+Loading a potential is three steps: the registry maps an engine **name** to a
+**filename**, that filename is looked for in one flat directory, and that file is used.
+Nothing reads the file, hashes it, or can refuse it. So the whole job is *put the right
+file in the right place under the right name*.
 
 ```bash
-python scripts/tooling/s0_check_weights.py        # read the VERDICT line
+# on a machine with bandwidth
+bash install_dependency.sh                     # -> data/potentials/MACE-OFF23_medium.model
+ls -l data/potentials/                         # check the size here, where you can see it
+
+rsync -a --partial --progress data/potentials/ <you>@tianhe:~/openQHA/data/potentials/
+
+# on Tianhe
+ls -l ~/openQHA/data/potentials/               # same size? then it arrived
 ```
 
-A file SHA-256 answers *are these the same bytes*. The pin is asking *are these the same
-numbers*, and those are different questions. **Measured 2026-09-09 on this repository's
-own `MACE-OFF23_medium.model`: a `torch.save`/`torch.load` round trip of that exact model
-changed the file SHA-256 and the file size — 18 350 596 → 18 367 938 bytes — while all 79
-tensors stayed bit-identical.**
+Two things that decide which file a run actually opens, and both are printed:
 
-So the file hash alone cannot separate:
+* `S0_MACE_ROOT` moves the whole directory; `S0_MACE_MODEL` overrides one file.
+* the MACE server prints the engine name and the path it loaded on its first line, and
+  `engine.provenance()` puts both in every product. **If a run's numbers are wrong,
+  that line is where you look first** — it says which file produced them.
 
-| what happened | what to do |
-|---|---|
-| truncated or interrupted copy | re-copy; the **size** says so at a glance |
-| re-serialised by a different torch — **same numbers** | nothing. It is the same potential |
-| genuinely different weights | stop. This is what the pin exists for |
-| same file, different path | nothing |
-
-`provenance()` now classifies instead of only refusing: on a file-hash mismatch it
-computes the **parameter fingerprint** (SHA-256 over the state_dict in canonical key
-order), and if that matches the pin it proceeds with a loud note and records **both**
-hashes in every product. If the parameters differ it still refuses, because that really
-does change the level every downstream number claims (`D0-4`).
-
-Run the checker on the machine whose file you trust and on the cluster, and compare three
-lines: size, file sha, params sha. That decides it in one command instead of an argument.
-`--pin` prints the registry lines to paste into `openqha/potentials/engine.py` once you
-have decided the file is right.
+A truncated or wrong file will not be caught for you. It shows up as bad numbers, so
+compare the size at both ends before you start a campaign.
 
 ### The two-step flow: one CPU job, then one GPU job
 
