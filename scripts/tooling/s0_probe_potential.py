@@ -313,6 +313,20 @@ def main():
             out = tp(x, x)
             print("      tensor product       finite={}  max|.|={:.6g}".format(
                 bool(torch.isfinite(out).all()), float(out.abs().max())))
+            # MACE builds every `U_matrix_*` buffer from these Clebsch-Gordan
+            # coefficients (mace.tools.cg.U_matrix_real -> e3nn.o3.wigner_3j), and e3nn
+            # reads them from a cached `constants.pt` with torch.load -- the same load the
+            # TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD warning fires on. If these are wrong, every
+            # symmetric contraction is wrong, and no weight file is implicated.
+            w3 = [o3.wigner_3j(a_, b_, c_) for a_, b_, c_ in
+                  ((1, 1, 0), (1, 1, 2), (2, 2, 2), (1, 2, 3))]
+            w3_ok = all(bool(torch.isfinite(x).all()) for x in w3)
+            print("      wigner_3j            finite={}  max|.|={:.6g}".format(
+                w3_ok, max(float(x.abs().max()) for x in w3) if w3_ok else float("nan")))
+            if not w3_ok:
+                print("      **THE CLEBSCH-GORDAN COEFFICIENTS THEMSELVES ARE NaN.**")
+                print("      e3nn loads them from its cached constants.pt. Delete e3nn's")
+                print("      cache and reinstall e3nn; the weight file is not involved.")
             if not bool(torch.isfinite(sh).all()) or not bool(torch.isfinite(out).all()):
                 print("      **e3nn ITSELF PRODUCES NaN on this torch.** The model is")
                 print("      irrelevant -- change torch, not the weights.")
@@ -328,13 +342,32 @@ def main():
         #     also the part this section cannot see inside. Check (b) is the test for
         #     them: it exercises the same e3nn machinery with no MACE and no weights.
         print()
-        print("  (c) first layer to emit a non-finite value")
+        print("  (c) where the NaN is BORN, not merely where it is seen")
         try:
             from ase import Atoms as _Atoms
             engine._CACHE.clear()
             calc, _, _ = engine.calculator(device="cpu")
             model = calc.models[0]
             names = {id(m): n for n, m in model.named_modules()}
+
+            # (c1) the live model's own tensors. Section 3 read the FILE; this reads what
+            #      is in memory after loading, dtype conversion and e3nn's code
+            #      regeneration. MACE builds `U_matrix_*` from Wigner coefficients and
+            #      registers it as a buffer, so a buffer that is finite on disk and
+            #      non-finite here would be produced by the load, not by the file.
+            badt = []
+            for kind, it in (("param", model.named_parameters()),
+                             ("buffer", model.named_buffers())):
+                for nm, v in it:
+                    if (torch.is_tensor(v) and v.is_floating_point()
+                            and not bool(torch.isfinite(v).all())):
+                        badt.append("{} {} {}".format(kind, nm, tuple(v.shape)))
+            print("      live tensors non-finite: {}".format(
+                len(badt) if badt else "none"))
+            for b in badt[:6]:
+                print("        {}".format(b))
+
+            # (c2) input AND output, so the ORIGIN can be told from the propagation.
             hookable, scripted = [], 0
             for m in model.modules():
                 if m is model:
@@ -343,21 +376,19 @@ def main():
                     scripted += 1
                 else:
                     hookable.append(m)
-            print("      modules: {} hookable, {} TorchScript (e3nn codegen, opaque)"
-                  .format(len(hookable), scripted))
-            hits = []
+            seen = []
+
+            def anybad(o):
+                if torch.is_tensor(o):
+                    return o.is_floating_point() and not bool(torch.isfinite(o).all())
+                if isinstance(o, (list, tuple)):
+                    return any(anybad(x) for x in o)
+                if isinstance(o, dict):
+                    return any(anybad(x) for x in o.values())
+                return False
 
             def hook(mod, inp, out):
-                def anybad(o):
-                    if torch.is_tensor(o):
-                        return o.is_floating_point() and not bool(torch.isfinite(o).all())
-                    if isinstance(o, (list, tuple)):
-                        return any(anybad(x) for x in o)
-                    if isinstance(o, dict):
-                        return any(anybad(x) for x in o.values())
-                    return False
-                if anybad(out):
-                    hits.append(mod)
+                seen.append((mod, anybad(inp), anybad(out)))
 
             handles = [m.register_forward_hook(hook) for m in hookable]
             a = _Atoms(symbols=SYMBOLS, positions=POSITIONS)
@@ -368,15 +399,29 @@ def main():
                 pass
             for h in handles:
                 h.remove()
-            if hits:
-                print("      first non-finite output came from:")
-                for m in hits[:3]:
+
+            print("      modules: {} hookable, {} TorchScript (e3nn codegen, opaque)"
+                  .format(len(hookable), scripted))
+            born = [(m, i, o) for (m, i, o) in seen if o and not i]
+            propagated = [(m, i, o) for (m, i, o) in seen if o and i]
+            if born:
+                print("      **NaN IS BORN HERE** (input finite, output not):")
+                for m, _i, _o in born[:3]:
                     print("        {}  ({})".format(
                         names.get(id(m), "?"), type(m).__name__))
+                print("      That module computes it. Everything after is propagation.")
+            elif propagated:
+                print("      every non-finite module ALREADY RECEIVED a non-finite input.")
+                print("      The first one seen was:")
+                for m, _i, _o in propagated[:2]:
+                    print("        {}  ({})".format(
+                        names.get(id(m), "?"), type(m).__name__))
+                print("      So the origin is UPSTREAM of it, inside the {} TorchScript"
+                      .format(scripted))
+                print("      modules this hook cannot see into.")
             else:
-                print("      no hookable module emitted a non-finite value.")
-                print("      With check (b) passing, that points at the TorchScript")
-                print("      pieces above -- compiled by e3nn against THIS torch.")
+                print("      no hookable module emitted a non-finite value at all.")
+
         except Exception as exc:                                          # noqa: BLE001
             print("      could not be traced: {}: {}".format(type(exc).__name__, exc))
 
