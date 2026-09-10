@@ -143,8 +143,8 @@ automatically, reading the value from the `cuda-version=` pin so the two cannot 
 | | `openqha` | `openqha-gpu` |
 |---|---|---|
 | BLAS | OpenBLAS, **OpenMP build**, pinned; `nomkl` | MKL (the solver's choice) |
-| torch | CPU, 2.13.0 | CUDA 12.3, 2.5.1 |
-| numpy | 2.4.6 | 1.26.4 |
+| torch | CPU, **2.12.1** | CUDA 12.3, 2.5.1 |
+| numpy | **1.26.4** | 1.26.4 |
 | CREST + xtb | yes | **no** |
 | OpenMM stack | no | **yes** |
 | runs | branch A, QHA collection | branch B trajectories, branch C training |
@@ -175,7 +175,8 @@ the CPU cores of a GPU allocation.
 > into every job log.
 >
 > Products crossing between the two environments must go through parquet/HDF5/xyz —
-> **never pickle**. numpy 2.4.6 on one side, 1.26.4 on the other.
+> **never pickle**. The two now agree on numpy 1.26.4, but they differ in torch and in the
+> BLAS underneath, and a pickle carries whatever the writing side happened to have.
 
 ---
 
@@ -231,16 +232,21 @@ against conda-forge, linux-64.
 
 ```bash
 source ~/init_conda.sh
-module load CUDA/12.3
 source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138
-export CONDA_OVERRIDE_CUDA=12.3
 
 M="mamba install -y --override-channels -c conda-forge"
 ```
 
 ### 3.1 `openqha-gpu`
 
+**The two CUDA lines belong to this environment and to nothing else.** Section 3.2 is the
+CPU environment; it has no CUDA anything, and the deimos jobs that use it never load a
+CUDA module (`examples/chain_body.sh` loads it only when the partition is a GPU one).
+
 ```bash
+module load CUDA/12.3
+export CONDA_OVERRIDE_CUDA=12.3
+
 mamba create -y -n openqha-gpu --override-channels -c conda-forge python=3.11.16
 conda activate openqha-gpu
 ```
@@ -280,7 +286,7 @@ $M nomkl=1.0
 $M "libopenblas=0.3.34=openmp*"
 $M "libblas=3.11.0=*openblas"
 $M "liblapack=3.11.0=*openblas"
-$M numpy=2.4.6
+$M numpy=1.26.4
 $M scipy=1.17.1
 $M pyyaml=6.0.3
 $M pandas=3.0.5
@@ -289,13 +295,46 @@ $M matplotlib=3.11.1
 $M h5py=3.16.0
 $M ase=3.29.0
 $M rdkit=2026.03.6
-$M "pytorch=2.13.0=cpu_generic*"
+$M "pytorch=2.12.1=cpu_generic*"
 $M crest=3.0.2
 $M xtb=6.7.1
 $M pip=26.2.1
 
 pip install mace-torch==0.3.16 pymsym==0.3.5 parsl==2026.9.7
 ```
+
+> ### ⚠ Why numpy and pytorch are pinned to these exact versions
+>
+> **The two lines above used to read `numpy=2.4.6` and `pytorch=2.13.0=cpu_generic*`, and
+> that environment produced a potential that returns `NaN` for every structure.**
+> Measured on TianheXY-CN 2026-09-10: `MACE-OFF23_medium` gave a non-finite energy on
+> **1719 of 1719** calls, and on the run before it 1628 of 1628.
+>
+> The weight file was ruled out, not assumed: same size (18 350 596 bytes), same 77
+> tensors, same 2 265 399 parameters, **every one of them finite**. Only two packages
+> differed from the workstation, where the identical code and the identical geometry
+> return **−5259.489825324396 eV**:
+>
+> | | this list now | produced `NaN` |
+> |---|---|---|
+> | numpy | **1.26.4** | 2.4.6 |
+> | pytorch | **2.12.1 `cpu_generic`** | 2.13.0 `cpu_generic` |
+> | e3nn | 0.4.4 | 0.4.4 — same |
+> | mace-torch | 0.3.16 | 0.3.16 — same |
+>
+> `e3nn 0.4.4` compiles **18 of the model's modules to TorchScript at load time**, against
+> whichever torch is installed. That is how bit-identical weights can still evaluate to
+> `NaN` while every parameter reads back finite.
+>
+> **Which of the two it is has not been isolated** — both were moved to the workstation's
+> version together. If you ever need to know, change one back and run:
+>
+> ```bash
+> python scripts/tooling/s0_probe_potential.py     # exit 0 = the potential works
+> ```
+>
+> On failure that script also names the layer: the neighbour list, e3nn's primitives with
+> no MACE involved, or the TorchScript pieces.
 
 ### 3.3 Three notes on these lists
 

@@ -124,7 +124,13 @@ dependencies:
   # through parquet/HDF5/xyz, never pickle.
 
   - python=3.11
-  - numpy>=1.24
+  # PINNED, and not for taste. Left as `numpy>=1.24` the solver picked 2.4.6, and paired
+  # with the torch it also picked (2.13.0) that environment produced a potential that
+  # returned a NON-FINITE energy for every structure -- 1719 of 1719 calls on TianheXY-CN,
+  # 2026-09-10, and 1628 of 1628 the run before. The weight file was ruled out by
+  # inspection, not assumed: identical size, identical 77 tensors, identical 2 265 399
+  # parameters, every one of them finite. See docs/tianhe_install.md section 3.2.
+  - numpy=1.26.4
   - scipy>=1.10
   - pyyaml>=6.0
   - pandas>=1.5
@@ -138,7 +144,15 @@ dependencies:
   # ~1e5 GFN2-xTB gradient calls and xtb has no GPU path; MACE refines 10-20 atom
   # structures that cannot fill a card. Both branches A and B are MEASURED slower on this
   # project's GPU than on its CPU (D0-48, D0-C-5).
-  - pytorch>=2.0=*cpu*
+  #
+  # PINNED to the version this project's workstation runs. `e3nn 0.4.4` compiles 18 of
+  # the model's modules to TorchScript AT LOAD TIME against whichever torch is installed,
+  # which is how bit-identical weights can still evaluate to NaN. Moving to this version
+  # costs nothing: the same downgrade was measured on 2026-09-05
+  # (scripts/calibration/s0_B_stack_fingerprint.py, analysis/qha/fingerprint_*.json) and
+  # energy, forces, every Hessian frequency, T*S on 2000 frames and every quasi-harmonic
+  # frequency all came back BIT-IDENTICAL, 0.000e+00.
+  - pytorch=2.12.1=*cpu*
 
   # ---- the conformer search. No site module provides these. --------------------------
   - crest>=3.0.2

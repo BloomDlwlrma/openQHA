@@ -177,8 +177,125 @@ def main():
             print("  {:8s} RAISED {}: {}".format(dtype, type(exc).__name__, exc))
             ok = False
 
-    # ---- 5. the verdict ----------------------------------------------------------------
-    rule("5. VERDICT")
+    # ---- 5. where does it first go wrong -----------------------------------------------
+    # Runs on failure, and on demand: S0_PROBE_ALWAYS_DEEP=1 exercises it on a machine
+    # where the potential works, which is how the checks below are known to be correct
+    # rather than merely written.
+    import os as _os
+    if not ok or _os.environ.get("S0_PROBE_ALWAYS_DEEP"):
+        rule("5. WHERE THE NaN FIRST APPEARS")
+        print("  The parameters are clean, so something between the coordinates and the")
+        print("  energy produces it. These three checks say which layer.")
+
+        # (a) the neighbour list. r = 0 in a radial basis is the classic NaN source, and
+        #     the neighbour search is the one part openQHA replaces (mace_patch).
+        print()
+        print("  (a) neighbour list")
+        try:
+            from mace.data.neighborhood import get_neighborhood
+            pos = numpy.array(POSITIONS, dtype=float)
+            edge_index, shifts, unit_shifts, _cell = get_neighborhood(
+                positions=pos, cutoff=5.0, pbc=(False, False, False), cell=None)
+            ei = numpy.asarray(edge_index)
+            d = numpy.linalg.norm(pos[ei[1]] - pos[ei[0]], axis=1)
+            print("      edges {}   r_min {:.6f} A   r_max {:.6f} A".format(
+                ei.shape[1], d.min(), d.max()))
+            print("      zero-length edges {}   non-finite {}".format(
+                int((d == 0).sum()), int((~numpy.isfinite(d)).sum())))
+            if (d == 0).any():
+                print("      **r = 0 EDGES** -- the radial basis divides by this. This is")
+                print("      the defect; it is in the neighbour search, not in torch.")
+        except Exception as exc:                                          # noqa: BLE001
+            print("      could not be built: {}: {}".format(type(exc).__name__, exc))
+
+        # (b) e3nn on its own, with no MACE and no weights involved at all. If these are
+        #     NaN then the equivariant primitives are broken against this torch, and
+        #     nothing about the model or the molecule matters.
+        print()
+        print("  (b) e3nn primitives, no MACE, no weights")
+        try:
+            from e3nn import o3
+            torch.manual_seed(0)
+            vec = torch.randn(8, 3, dtype=torch.float64)
+            sh = o3.spherical_harmonics([0, 1, 2, 3], vec, normalize=True,
+                                        normalization="component")
+            print("      spherical_harmonics  finite={}  max|.|={:.6g}".format(
+                bool(torch.isfinite(sh).all()), float(sh.abs().max())))
+            irr = o3.Irreps("4x0e + 4x1o")
+            tp = o3.FullyConnectedTensorProduct(irr, irr, irr).to(torch.float64)
+            x = torch.randn(8, irr.dim, dtype=torch.float64)
+            out = tp(x, x)
+            print("      tensor product       finite={}  max|.|={:.6g}".format(
+                bool(torch.isfinite(out).all()), float(out.abs().max())))
+            if not bool(torch.isfinite(sh).all()) or not bool(torch.isfinite(out).all()):
+                print("      **e3nn ITSELF PRODUCES NaN on this torch.** The model is")
+                print("      irrelevant -- change torch, not the weights.")
+        except Exception as exc:                                          # noqa: BLE001
+            print("      raised: {}: {}".format(type(exc).__name__, exc))
+
+        # (c) which layer emits the first non-finite value.
+        #     Part of the model CANNOT be hooked: e3nn compiles its tensor products with
+        #     `torch.jit.script` **at load time**, using whatever torch is installed, and
+        #     hooks are not allowed on a ScriptModule. That is worth knowing on its own --
+        #     those compiled pieces are generated fresh against this torch, so they are
+        #     the part of the stack most exposed to a torch version change, and they are
+        #     also the part this section cannot see inside. Check (b) is the test for
+        #     them: it exercises the same e3nn machinery with no MACE and no weights.
+        print()
+        print("  (c) first layer to emit a non-finite value")
+        try:
+            from ase import Atoms as _Atoms
+            engine._CACHE.clear()
+            calc, _, _ = engine.calculator(device="cpu")
+            model = calc.models[0]
+            names = {id(m): n for n, m in model.named_modules()}
+            hookable, scripted = [], 0
+            for m in model.modules():
+                if m is model:
+                    continue
+                if isinstance(m, torch.jit.ScriptModule):
+                    scripted += 1
+                else:
+                    hookable.append(m)
+            print("      modules: {} hookable, {} TorchScript (e3nn codegen, opaque)"
+                  .format(len(hookable), scripted))
+            hits = []
+
+            def hook(mod, inp, out):
+                def anybad(o):
+                    if torch.is_tensor(o):
+                        return o.is_floating_point() and not bool(torch.isfinite(o).all())
+                    if isinstance(o, (list, tuple)):
+                        return any(anybad(x) for x in o)
+                    if isinstance(o, dict):
+                        return any(anybad(x) for x in o.values())
+                    return False
+                if anybad(out):
+                    hits.append(mod)
+
+            handles = [m.register_forward_hook(hook) for m in hookable]
+            a = _Atoms(symbols=SYMBOLS, positions=POSITIONS)
+            a.calc = calc
+            try:
+                a.get_potential_energy()
+            except Exception:                                             # noqa: BLE001
+                pass
+            for h in handles:
+                h.remove()
+            if hits:
+                print("      first non-finite output came from:")
+                for m in hits[:3]:
+                    print("        {}  ({})".format(
+                        names.get(id(m), "?"), type(m).__name__))
+            else:
+                print("      no hookable module emitted a non-finite value.")
+                print("      With check (b) passing, that points at the TorchScript")
+                print("      pieces above -- compiled by e3nn against THIS torch.")
+        except Exception as exc:                                          # noqa: BLE001
+            print("      could not be traced: {}: {}".format(type(exc).__name__, exc))
+
+    # ---- 6. the verdict ----------------------------------------------------------------
+    rule("6. VERDICT")
     if ok:
         print("  The potential works on this machine. If a run still produces non-finite")
         print("  energies, the difference is not the model -- look at what is being sent")
@@ -188,9 +305,10 @@ def main():
     print("  Every parameter in the checkpoint is finite, and the forward pass still is")
     print("  not. That is torch / e3nn / mace on this machine, not the weights.")
     print()
-    print("  Compare section 1 against the workstation:")
+    print("  Known-good on this project's workstation:")
     print("    numpy 1.26.4   torch 2.12.1   e3nn 0.4.4   mace 0.3.16")
-    print("  and rebuild the environment to match:  bash install_dependency.sh --tianhe")
+    print("  Section 5 says which layer to blame. Change ONE thing and rerun this")
+    print("  script -- it takes seconds, and it is the whole test.")
     return 1
 
 
