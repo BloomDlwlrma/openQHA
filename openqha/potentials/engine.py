@@ -298,7 +298,75 @@ def calculator(device="cpu", name=None):
         from mace.calculators import MACECalculator
         _CACHE[key] = MACECalculator(model_paths=str(model_path(name)),
                                      device=device, default_dtype=DTYPE)
+        check_weights_are_physical(_CACHE[key], name)
     return _CACHE[key], name, provenance(name)
+
+
+#: A trained interatomic-potential weight is O(1). MACE-OFF23_medium's largest actual
+#: weight is 37.07, and the largest tensor of any kind is the atomic reference energies
+#: at 7.005e4 eV. This ceiling is five orders above that: it cannot fire on a real model
+#: and it fires immediately on a corrupted one.
+WEIGHT_CEILING = 1.0e6
+
+#: Set to skip the check. It exists for a model whose parameters really are enormous --
+#: none is known -- and so that the check can never be the thing standing between an
+#: operator and a run they have decided to make.
+_SKIP_CHECK_ENV = "S0_SKIP_WEIGHT_CHECK"
+
+
+def check_weights_are_physical(calc, name, ceiling=None):
+    """Refuse a weight file whose parameters are not physically possible.
+
+    **THIS IS NOT AN IDENTITY CHECK AND NOT A HASH.** It does not care which model this
+    is, where it came from, or whether it matches anything. It asks one question about
+    the numbers themselves: are they the size a trained network's weights can be.
+
+    It exists because of a measured, expensive failure. On 2026-09-10 a Tianhe branch A
+    run returned a non-finite energy on **1719 of 1719** calls. The file was the right
+    size (18 350 596 bytes), held the right count of tensors (77) and parameters
+    (2 265 399), and **every one of them was finite** -- so every check that existed
+    passed it. `interactions.0.linear.weight` contained **2.084e+306**. Multiplied by an
+    ordinary O(1) feature two layers later that overflows float64, and the whole run
+    produced NaN. Three days of debugging went to a corrupt copy that announced itself
+    only as `nan`.
+
+    Finiteness is not enough, and a file's length is not enough. Magnitude is the cheapest
+    property that a corrupted transfer cannot fake, and it costs one pass over the
+    parameters (about 2.3 M numbers, a fraction of a second, once per process).
+    """
+    import os
+    if os.environ.get(_SKIP_CHECK_ENV):
+        return None
+    import torch
+    ceiling = WEIGHT_CEILING if ceiling is None else ceiling
+    worst_mag, worst_name, n_bad = 0.0, None, 0
+    for model in getattr(calc, "models", []):
+        for pname, v in list(model.named_parameters()) + list(model.named_buffers()):
+            if not (torch.is_tensor(v) and v.is_floating_point() and v.numel()):
+                continue
+            if not bool(torch.isfinite(v).all()):
+                n_bad += 1
+                worst_mag, worst_name = float("inf"), pname
+                continue
+            mag = float(v.abs().max())
+            if mag > worst_mag:
+                worst_mag, worst_name = mag, pname
+    if n_bad or worst_mag > ceiling:
+        raise ValueError(
+            "the weight file for {} is not usable.\n"
+            "  path            {}\n"
+            "  largest |value| {:.4g}   in {}\n"
+            "  ceiling         {:.4g}\n"
+            "{}"
+            "A trained potential's weights are O(1) -- this model's largest real weight "
+            "is 37.07. A value this size is a corrupted copy, and it produces NaN "
+            "energies rather than wrong ones, silently, on every call.\n"
+            "  Re-copy the file and check the size at both ends.\n"
+            "  {}=1 skips this check.".format(
+                name, model_path(name), worst_mag, worst_name, ceiling,
+                "  {} tensor(s) are not even finite\n".format(n_bad) if n_bad else "",
+                _SKIP_CHECK_ENV))
+    return worst_mag
 
 
 #: How far from the origin the vendored MACE stays translation invariant, in angstrom.

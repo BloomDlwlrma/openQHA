@@ -72,6 +72,17 @@ def energy_only():
     `ATEN_CPU_CAPABILITY` and `DNNL_MAX_CPU_ISA` are read while torch is initialising, so
     setting them from inside a process that has already imported torch proves nothing.
     """
+    import os
+    # e3nn decides HOW its einsums are compiled, and MACE's SymmetricContraction is built
+    # through e3nn's CodeGenMixin. Turning the optimisation off is a candidate fix that is
+    # not an environment variable but a call, so it lives here rather than in the loop.
+    off = os.environ.get("S0_PROBE_E3NN_OFF", "")
+    if off:
+        import e3nn
+        kw = dict(optimize_einsums=False) if off == "einsums" else dict(
+            optimize_einsums=False, jit_script_fx=False, specialized_code=False)
+        e3nn.set_optimization_defaults(**kw)
+        print("e3nn defaults now {}".format(e3nn.get_optimization_defaults()))
     from ase import Atoms
     from openqha.potentials import engine
     calc, _, _ = engine.calculator(device="cpu")
@@ -136,6 +147,7 @@ def main():
     rule("3. ARE THE PARAMETERS IN THE FILE FINITE?")
     print("  (this is the step that separates 'bad file' from 'bad stack')")
     bad = []
+    file_mag = []
     n_tensors = 0
     n_elements = 0
     try:
@@ -150,6 +162,8 @@ def main():
             if not bool(torch.isfinite(v).all()):
                 n_bad = int((~torch.isfinite(v)).sum())
                 bad.append((key, tuple(v.shape), n_bad, v.numel()))
+            elif v.numel():
+                file_mag.append((float(v.abs().max()), key, tuple(v.shape)))
     except Exception as exc:                                              # noqa: BLE001
         print("  THE FILE COULD NOT BE LOADED AT ALL: {}: {}".format(
             type(exc).__name__, exc))
@@ -170,7 +184,20 @@ def main():
         print("           can fix that. Re-copy the model file.")
         return 1
     print("  every parameter is finite")
-    verdicts.append("the file's parameters are clean")
+    # **Finite is not the same as sane.** A weight of 1e303 passes the check above and
+    # then turns an O(1) feature into an overflow three layers later, which is exactly
+    # what happened on Tianhe on 2026-09-10. So say how large the largest one actually is.
+    if file_mag:
+        file_mag.sort(reverse=True)
+        print("  largest |value| in the file: {:.4g}   ({})".format(
+            file_mag[0][0], file_mag[0][1]))
+        for mag, key, shape in file_mag[:3]:
+            print("    {:52s} {:>16s}  |max| {:.4g}".format(key[:52], str(shape), mag))
+        if file_mag[0][0] > 1e6:
+            print("  **THE WEIGHTS ON DISK ARE ALREADY ENORMOUS.** MACE weights are O(1);")
+            print("  this file is not usable whatever the machine. Re-copy it.")
+            return 1
+    verdicts.append("the file's parameters are clean, and none is absurdly large")
 
     # ---- 4. the forward pass -----------------------------------------------------------
     rule("4. WHAT COMES OUT FOR ONE FIXED ACETONE")
@@ -355,17 +382,33 @@ def main():
             #      regeneration. MACE builds `U_matrix_*` from Wigner coefficients and
             #      registers it as a buffer, so a buffer that is finite on disk and
             #      non-finite here would be produced by the load, not by the file.
-            badt = []
+            badt, live_mag = [], []
             for kind, it in (("param", model.named_parameters()),
                              ("buffer", model.named_buffers())):
                 for nm, v in it:
-                    if (torch.is_tensor(v) and v.is_floating_point()
-                            and not bool(torch.isfinite(v).all())):
+                    if not (torch.is_tensor(v) and v.is_floating_point() and v.numel()):
+                        continue
+                    if not bool(torch.isfinite(v).all()):
                         badt.append("{} {} {}".format(kind, nm, tuple(v.shape)))
+                    else:
+                        live_mag.append((float(v.abs().max()), kind, nm, tuple(v.shape)))
             print("      live tensors non-finite: {}".format(
                 len(badt) if badt else "none"))
             for b in badt[:6]:
                 print("        {}".format(b))
+            # The same lesson as section 3, one level later: these are the tensors AFTER
+            # loading and dtype conversion. If the file is sane and these are not, the
+            # load is what broke them.
+            if live_mag:
+                live_mag.sort(reverse=True)
+                print("      largest live |value|: {:.4g}   ({} {})".format(
+                    live_mag[0][0], live_mag[0][1], live_mag[0][2]))
+                for mag, kind, nm, shape in live_mag[:3]:
+                    print("        {:6s} {:44s} {:>14s}  |max| {:.4g}".format(
+                        kind, nm[:44], str(shape), mag))
+                if live_mag[0][0] > 1e6:
+                    print("      **A LIVE TENSOR IS ENORMOUS while the file was not.**")
+                    print("      Loading or dtype conversion produced it, not the file.")
 
             # (c2) input AND output, so the ORIGIN can be told from the propagation.
             hookable, scripted = [], 0
@@ -387,8 +430,36 @@ def main():
                     return any(anybad(x) for x in o.values())
                 return False
 
+            def biggest(o):
+                """Largest finite magnitude anywhere in o, or 0.0.
+
+                **Finiteness is not the criterion and this is why**: on Tianhe the module
+                that first produced a NaN was handed operands of 1.2e303 and 2.5e302 --
+                both `isfinite`, and their product overflows float64. The NaN was the
+                symptom of a divergence that had already happened somewhere upstream.
+                MACE node features are O(1); anything past ANOMALOUS below is broken
+                whether or not it is finite.
+                """
+                if torch.is_tensor(o):
+                    if not o.is_floating_point() or o.numel() == 0:
+                        return 0.0
+                    fin = o[torch.isfinite(o)]
+                    return float(fin.abs().max()) if fin.numel() else float("inf")
+                if isinstance(o, (list, tuple)):
+                    return max([biggest(x) for x in o] or [0.0])
+                if isinstance(o, dict):
+                    return max([biggest(x) for x in o.values()] or [0.0])
+                return 0.0
+
+            captured = {}
+
             def hook(mod, inp, out):
-                seen.append((mod, anybad(inp), anybad(out)))
+                bad_in, bad_out = anybad(inp), anybad(out)
+                if bad_out and not bad_in and "inputs" not in captured:
+                    captured["inputs"] = [
+                        v.detach().clone() for v in inp if torch.is_tensor(v)]
+                    captured["output"] = out.detach().clone() if torch.is_tensor(out) else None
+                seen.append((mod, bad_in, bad_out, biggest(inp), biggest(out)))
 
             handles = [m.register_forward_hook(hook) for m in hookable]
             a = _Atoms(symbols=SYMBOLS, positions=POSITIONS)
@@ -402,8 +473,42 @@ def main():
 
             print("      modules: {} hookable, {} TorchScript (e3nn codegen, opaque)"
                   .format(len(hookable), scripted))
-            born = [(m, i, o) for (m, i, o) in seen if o and not i]
-            propagated = [(m, i, o) for (m, i, o) in seen if o and i]
+            #: A node feature past this is not "large", it is broken. MACE features
+            #: are O(1)-O(100); the run on Tianhe reached 1e303 before overflowing.
+            ANOMALOUS = 1e6
+            first_big = None
+            for rec in seen:
+                if rec[4] > ANOMALOUS:
+                    first_big = rec
+                    break
+            print()
+            print("      magnitude through the model (|max| in -> |max| out):")
+            for rec in seen[:14]:
+                mark = "   <== ANOMALOUS" if rec[4] > ANOMALOUS else ""
+                print("        {:52s} {:.3g} -> {:.3g}{}".format(
+                    names.get(id(rec[0]), "?")[:52], rec[3], rec[4], mark))
+            if first_big is not None:
+                print()
+                print("      **THE DIVERGENCE STARTS HERE** (first output past {:g}):"
+                      .format(ANOMALOUS))
+                print("        {}  ({})   {:.3g} -> {:.3g}".format(
+                    names.get(id(first_big[0]), "?"), type(first_big[0]).__name__,
+                    first_big[3], first_big[4]))
+                if first_big[3] > ANOMALOUS:
+                    print("      Its INPUT was already past the threshold, so the origin is")
+                    print("      further upstream -- inside the TorchScript modules, or in")
+                    print("      whatever feeds them.")
+                else:
+                    print("      Its input was sane. **This module is the origin.**")
+            else:
+                print()
+                print("      no module output exceeded {:g}; magnitudes look normal."
+                      .format(ANOMALOUS))
+
+            born = [(m, i, o) for (m, i, o, _bi, _bo) in seen if o and not i]
+            born_module = born[0][0] if born else None
+            born_inputs = captured.get('inputs')
+            propagated = [(m, i, o) for (m, i, o, _bi, _bo) in seen if o and i]
             if born:
                 print("      **NaN IS BORN HERE** (input finite, output not):")
                 for m, _i, _o in born[:3]:
@@ -425,6 +530,132 @@ def main():
         except Exception as exc:                                          # noqa: BLE001
             print("      could not be traced: {}: {}".format(type(exc).__name__, exc))
 
+        # (e) DISSECT THE BIRTHPLACE.
+        #     `opt_einsum_fx` folds constants into the generated graph as plain
+        #     `_tensor_constant*` ATTRIBUTES -- not parameters, not buffers -- so the scan
+        #     in (c1) cannot see them and neither can `state_dict()`. A folded constant
+        #     that is NaN would explain every observation at once: the file is clean, the
+        #     buffers are clean, the inputs are clean, and the output is not.
+        print()
+        print("  (d) inside the module where the divergence STARTS")
+        try:
+            # Prefer the module that first produced an absurd magnitude over the one that
+            # merely overflowed afterwards. On Tianhe those are different modules, and the
+            # second one is a bystander.
+            origin = locals().get("first_big")
+            mod = origin[0] if origin is not None else locals().get("born_module")
+            if mod is not None:
+                print("      subject: {}  ({})".format(
+                    names.get(id(mod), "?"), type(mod).__name__))
+                for nm, v in mod.named_parameters(recurse=False):
+                    print("      param  {:30s} {:>16s}  |max| {:.6g}".format(
+                        nm[:30], str(tuple(v.shape)), float(v.abs().max())))
+            if mod is None:
+                print("      nothing diverged here; (d) has no subject.")
+            else:
+                bad_attrs = []
+                n_t = 0
+                for nm, v in list(vars(mod).items()) + list(getattr(mod, "_buffers", {}).items()):
+                    if torch.is_tensor(v) and v.is_floating_point():
+                        n_t += 1
+                        finite = bool(torch.isfinite(v).all())
+                        mark = "" if finite else "  <-- NON-FINITE"
+                        print("      {:28s} {:>18s}  |max| {:.6g}{}".format(
+                            str(nm)[:28], str(tuple(v.shape)),
+                            float(v.abs().max()) if finite else float("nan"), mark))
+                        if not finite:
+                            bad_attrs.append(nm)
+                if not n_t:
+                    print("      no tensor attributes on this module")
+                if bad_attrs:
+                    print()
+                    print("      **A FOLDED CONSTANT IN THE GENERATED GRAPH IS NON-FINITE.**")
+                    print("      opt_einsum_fx produced it while optimising the einsum, on")
+                    print("      THIS machine, at load time. The weights are not involved.")
+                code = getattr(mod, "code", "")
+                if code:
+                    lines = [l for l in str(code).splitlines() if l.strip()]
+                    print()
+                    print("      generated code ({} lines):".format(len(lines)))
+                    for l in lines[:18]:
+                        print("        {}".format(l[:96]))
+                    if len(lines) > 18:
+                        print("        ... {} more".format(len(lines) - 18))
+        except Exception as exc:                                          # noqa: BLE001
+            print("      could not be dissected: {}: {}".format(type(exc).__name__, exc))
+
+        # (f) THE MINIMAL REPRODUCER.
+        #     When the birthplace turns out to be a single `torch.einsum`, the defect is
+        #     reproducible with no MACE, no e3nn and no weights -- just two finite tensors
+        #     of the right shape. That is worth having for three reasons: it can be
+        #     reported upstream, it can be tested in a second, and it tells us whether an
+        #     equivalent formulation (a batched matmul) avoids it, which would be a fix.
+        print()
+        print("  (f) reproduce it with nothing but torch")
+        try:
+            ins = locals().get("born_inputs")
+            if not ins:
+                print("      no inputs were captured; nothing to reproduce.")
+            else:
+                for k, v in enumerate(ins):
+                    print("      input {}  shape {:>22s}  finite {}  |max| {:.6g}".format(
+                        k, str(tuple(v.shape)), bool(torch.isfinite(v).all()),
+                        float(v.abs().max())))
+                # The generated code is `einsum('abc,abdc->abd', y, x)` with forward(x, y),
+                # so the operands arrive in the order (x, y) and are used as (y, x).
+                x, y = (ins + ins)[0], (ins + ins)[1]
+                if x.dim() == 3 and y.dim() == 4:
+                    a3, a4 = x, y
+                else:
+                    a3, a4 = y, x
+                print("      3-d operand {}   4-d operand {}".format(
+                    tuple(a3.shape), tuple(a4.shape)))
+
+                real = torch.einsum("abc,abdc->abd", a3, a4)
+                print("      einsum on the REAL inputs        finite {}".format(
+                    bool(torch.isfinite(real).all())))
+
+                torch.manual_seed(0)
+                r3 = torch.randn_like(a3)
+                r4 = torch.randn_like(a4)
+                rnd = torch.einsum("abc,abdc->abd", r3, r4)
+                print("      einsum on RANDOM finite tensors  finite {}".format(
+                    bool(torch.isfinite(rnd).all())))
+
+                # out[a,b,d] = sum_c y[a,b,c] * x[a,b,d,c]  ==  x @ y.unsqueeze(-1)
+                mm = torch.matmul(a4, a3.unsqueeze(-1)).squeeze(-1)
+                mm_ok = bool(torch.isfinite(mm).all())
+                print("      SAME CONTRACTION as matmul       finite {}".format(mm_ok))
+                huge = max(float(a3.abs().max()), float(a4.abs().max()))
+                if huge > 1e100:
+                    print()
+                    print("      **THE OPERANDS ARE ALREADY 1e{:.0f}.** They are finite, and"
+                          .format(numpy.log10(huge)))
+                    print("      their product overflows float64 -- which is the whole of")
+                    print("      the NaN. The einsum is not at fault: the same contraction")
+                    print("      on RANDOM tensors of the same shape is finite above.")
+                    print("      **The defect is whatever produced operands this large.**")
+                elif mm_ok and not bool(torch.isfinite(real).all()):
+                    print()
+                    print("      **torch.einsum IS WRONG HERE AND matmul IS NOT.**")
+                    print("      Identical contraction, identical inputs, one gives NaN.")
+                    print("      That is a torch defect on this build, not a MACE problem,")
+                    print("      and rewriting the contraction avoids it.")
+                elif mm_ok:
+                    print("      (both fine on this machine -- nothing to compare)")
+
+                try:
+                    torch.backends.opt_einsum.enabled = False
+                    off = torch.einsum("abc,abdc->abd", a3, a4)
+                    print("      einsum with opt_einsum OFF       finite {}".format(
+                        bool(torch.isfinite(off).all())))
+                    torch.backends.opt_einsum.enabled = True
+                except Exception as exc:                                  # noqa: BLE001
+                    print("      opt_einsum toggle unavailable: {}".format(
+                        type(exc).__name__))
+        except Exception as exc:                                          # noqa: BLE001
+            print("      could not be reproduced: {}: {}".format(type(exc).__name__, exc))
+
         # (d) THE FIX, TESTED RATHER THAN SUGGESTED.
         #     The failing layer is MACE's SymmetricContraction, whose contractions are
         #     `torch.fx` GraphModules built by opt_einsum_fx -- large einsums, not the
@@ -440,7 +671,7 @@ def main():
         #     returned a finite energy, every candidate would come back finite too and the
         #     word FIXED would mean nothing.
         print()
-        print("  (d) does forcing a narrower instruction set fix it?")
+        print("  (e) can any single setting fix it?")
         if ok:
             print("      skipped -- section 4 already returned a finite energy here, so")
             print("      there is nothing for these settings to fix.")
@@ -448,10 +679,17 @@ def main():
             try:
                 import subprocess
                 fixed = None
-                for var, val in (("ATEN_CPU_CAPABILITY", "avx2"),
-                                 ("ATEN_CPU_CAPABILITY", "default"),
-                                 ("DNNL_MAX_CPU_ISA", "AVX2"),
-                                 ("OMP_NUM_THREADS", "1")):
+                # OPENBLAS_CORETYPE comes FIRST because it is the one that was never
+                # actually tested: an einsum reaches OpenBLAS through reshapes and batched
+                # shapes that the 256x256 matmul in (0) does not exercise, so (0) passing
+                # does not clear the BLAS. The e3nn switches change how the einsum is
+                # compiled rather than how it is executed.
+                for var, val in (("OPENBLAS_CORETYPE", "Haswell"),
+                                 ("OPENBLAS_CORETYPE", "Nehalem"),
+                                 ("OPENBLAS_CORETYPE", "SkylakeX"),
+                                 ("S0_PROBE_E3NN_OFF", "einsums"),
+                                 ("S0_PROBE_E3NN_OFF", "all"),
+                                 ("ATEN_CPU_CAPABILITY", "avx2")):
                     env = dict(_os.environ)
                     env[var] = val
                     env["S0_PROBE_ENERGY_ONLY"] = "1"
@@ -472,8 +710,15 @@ def main():
                         break
                 if fixed:
                     print()
-                    print("      Put it in hpc/env/common.sh so every job gets it:")
-                    print("        export {}={}".format(*fixed))
+                    if fixed[0] == "S0_PROBE_E3NN_OFF":
+                        print("      **e3nn's einsum optimisation is the culprit.**")
+                        print("      Not an environment variable -- add this before the")
+                        print("      model is built, in openqha/potentials/engine.py:")
+                        print("        import e3nn")
+                        print("        e3nn.set_optimization_defaults(optimize_einsums=False)")
+                    else:
+                        print("      Put it in hpc/env/common.sh so every job gets it:")
+                        print("        export {}={}".format(*fixed))
                 else:
                     print()
                     print("      None of them fixed it. The instruction set is not the")
