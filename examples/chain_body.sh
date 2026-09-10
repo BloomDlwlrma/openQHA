@@ -184,7 +184,14 @@ fi
 # on Lustre. Set after the environment files have run, because that is what defines
 # S0_SCRATCH.
 if [ -n "${MACE_TRACE:-}" ]; then
-    S0_MACE_TRACE="${S0_SCRATCH:-$ROOT/logs}/trace"
+    # A value containing a slash is taken as the directory itself. That is for a run whose
+    # work is on the shared filesystem (examples/02a.../branchA-fs.conf): there the trace
+    # should be written where it already survives, rather than node-local and dependent on
+    # the end-of-job copy-back. Anything else (conventionally `1`) goes node-local.
+    case "$MACE_TRACE" in
+        */*) S0_MACE_TRACE="$MACE_TRACE" ;;
+        *)   S0_MACE_TRACE="${S0_SCRATCH:-$ROOT/logs}/trace" ;;
+    esac
     mkdir -p "$S0_MACE_TRACE"
     export S0_MACE_TRACE
     echo "trace     $S0_MACE_TRACE   (one line per gradient, both ends of the socket)"
