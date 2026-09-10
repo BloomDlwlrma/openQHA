@@ -303,38 +303,44 @@ $M pip=26.2.1
 pip install mace-torch==0.3.16 pymsym==0.3.5 parsl==2026.9.7
 ```
 
-> ### ⚠ Why numpy and pytorch are pinned to these exact versions
+> ### ⚠ OPEN: this environment produces a potential that returns `NaN` for every structure
 >
-> **The two lines above used to read `numpy=2.4.6` and `pytorch=2.13.0=cpu_generic*`, and
-> that environment produced a potential that returns `NaN` for every structure.**
-> Measured on TianheXY-CN 2026-09-10: `MACE-OFF23_medium` gave a non-finite energy on
-> **1719 of 1719** calls, and on the run before it 1628 of 1628.
+> **Measured on TianheXY-CN, three runs, 2026-09-10.** `MACE-OFF23_medium` returns a
+> non-finite energy on **every** call — 1628 of 1628, then 1719 of 1719, then again after
+> the environment was rebuilt. The same code and the same acetone geometry return
+> **−5259.489825324396 eV** on this project's workstation.
 >
-> The weight file was ruled out, not assumed: same size (18 350 596 bytes), same 77
-> tensors, same 2 265 399 parameters, **every one of them finite**. Only two packages
-> differed from the workstation, where the identical code and the identical geometry
-> return **−5259.489825324396 eV**:
+> **What has been ruled out, by measurement rather than by argument:**
 >
-> | | this list now | produced `NaN` |
-> |---|---|---|
-> | numpy | **1.26.4** | 2.4.6 |
-> | pytorch | **2.12.1 `cpu_generic`** | 2.13.0 `cpu_generic` |
-> | e3nn | 0.4.4 | 0.4.4 — same |
-> | mace-torch | 0.3.16 | 0.3.16 — same |
+> | | ruled out because |
+> |---|---|
+> | the weight file | same size (18 350 596 B), same 77 tensors, same 2 265 399 parameters, **every one finite** |
+> | numpy | was 2.4.6, now **1.26.4** — same as the workstation. Still `NaN` |
+> | pytorch | was 2.13.0, now **2.12.1 `cpu_generic`** — same as the workstation. Still `NaN` |
+> | e3nn, mace-torch | 0.4.4 / 0.3.16 on both |
+> | matscipy (the neighbour-list backend) | 1.2.0 on both |
+> | BLAS | `nomkl` + `libopenblas 0.3.34 openmp*` + `libblas *_openblas` on both |
+> | OpenMP runtime | `_openmp_mutex 8_kmp_llvm` + `llvm-openmp 23.1` on both |
 >
-> `e3nn 0.4.4` compiles **18 of the model's modules to TorchScript at load time**, against
-> whichever torch is installed. That is how bit-identical weights can still evaluate to
-> `NaN` while every parameter reads back finite.
+> The pins above are still the right ones — they now match a machine that works, and the
+> same downgrade was measured on 2026-09-05 to change **no number at all**
+> (`s0_B_stack_fingerprint.py`: energy, forces, every Hessian frequency, T·S on 2000
+> frames and every quasi-harmonic frequency, all `0.000e+00`). **But they are not the
+> fix, and this box will not claim they are.**
 >
-> **Which of the two it is has not been isolated** — both were moved to the workstation's
-> version together. If you ever need to know, change one back and run:
+> **Where to look next**, in the order the probe checks them:
 >
 > ```bash
-> python scripts/tooling/s0_probe_potential.py     # exit 0 = the potential works
+> python scripts/tooling/s0_probe_potential.py
 > ```
 >
-> On failure that script also names the layer: the neighbour list, e3nn's primitives with
-> no MACE involved, or the TorchScript pieces.
+> Its section 5 starts *below* every library: it compares a `torch` matmul against numpy
+> on the same matrices, and prints the CPU model. With every package version matched, what
+> remains underneath is the kernel **OpenBLAS selects for this CPU at runtime**. If that
+> check fails, no version pin can help and the things to try are
+> `OPENBLAS_CORETYPE=Haswell`, `OPENBLAS_NUM_THREADS=1`, or a `pthreads` OpenBLAS build.
+> If it passes, the section then isolates the neighbour list, e3nn's primitives with no
+> MACE involved, and the model's own layers.
 
 ### 3.3 Three notes on these lists
 

@@ -187,6 +187,59 @@ def main():
         print("  The parameters are clean, so something between the coordinates and the")
         print("  energy produces it. These three checks say which layer.")
 
+        # (0) THE FLOOR: plain arithmetic, no MACE, no e3nn, no model.
+        #     Added 2026-09-10 after numpy, torch, e3nn, mace, matscipy, the BLAS provider
+        #     and the OpenMP runtime were all matched to a machine that works and the NaN
+        #     stayed. When every library version agrees, what is left below them is the
+        #     CPU and the kernel OpenBLAS selects for it AT RUNTIME. If a matmul is wrong,
+        #     nothing above it can be right, and no version pin will fix it.
+        print()
+        print("  (0) plain arithmetic -- no MACE, no e3nn, no model")
+        try:
+            cpu = ""
+            try:
+                with open("/proc/cpuinfo") as fh:
+                    for line in fh:
+                        if line.lower().startswith("model name"):
+                            cpu = line.split(":", 1)[1].strip()
+                            break
+            except OSError:
+                pass
+            print("      cpu                  {}".format(cpu or "unknown"))
+            for var in ("OPENBLAS_CORETYPE", "OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
+                import os as _o
+                print("      {:20s} {}".format(var, _o.environ.get(var, "[not set]")))
+            info = torch.__config__.parallel_info()
+            for line in info.splitlines():
+                if "parallel backend" in line or "get_num_threads" in line:
+                    print("      {}".format(line.strip()))
+
+            torch.manual_seed(0)
+            a = torch.randn(256, 256, dtype=torch.float64)
+            b = torch.randn(256, 256, dtype=torch.float64)
+            t_mm = a @ b
+            n_mm = torch.from_numpy(numpy.asarray(a.numpy()) @ numpy.asarray(b.numpy()))
+            mm_finite = bool(torch.isfinite(t_mm).all())
+            mm_err = float((t_mm - n_mm).abs().max()) if mm_finite else float("nan")
+            print("      torch matmul finite  {}".format(mm_finite))
+            print("      vs numpy matmul      max|diff| = {:.3e}".format(mm_err))
+            v = torch.randn(1000, dtype=torch.float64)
+            print("      exp/sum/sqrt finite  {}".format(bool(
+                torch.isfinite(v.exp().sum()).all()
+                and torch.isfinite(v.abs().sqrt().sum()).all())))
+            ev = torch.linalg.eigvalsh(a @ a.T)
+            print("      eigvalsh finite      {}".format(bool(torch.isfinite(ev).all())))
+            if not mm_finite or not (mm_err == mm_err and mm_err < 1e-8):
+                print()
+                print("      **THE LINEAR ALGEBRA ITSELF IS WRONG ON THIS MACHINE.**")
+                print("      No package version above this can fix it. This is OpenBLAS")
+                print("      picking a kernel for this CPU. Try, in order:")
+                print("        OPENBLAS_CORETYPE=Haswell python ...   (force a safe kernel)")
+                print("        OPENBLAS_NUM_THREADS=1     python ...   (rule out threading)")
+                print("        mamba install 'libopenblas=*=pthreads*' (other build)")
+        except Exception as exc:                                          # noqa: BLE001
+            print("      could not be tested: {}: {}".format(type(exc).__name__, exc))
+
         # (a) the neighbour list. r = 0 in a radial basis is the classic NaN source, and
         #     the neighbour search is the one part openQHA replaces (mace_patch).
         print()
