@@ -65,7 +65,29 @@ def rule(title):
     print("=" * 78)
 
 
+def energy_only():
+    """Print one line: the acetone energy, or `ENERGY nan`. Used by the retry in 5(d).
+
+    A separate process is the only honest way to test an instruction-set setting:
+    `ATEN_CPU_CAPABILITY` and `DNNL_MAX_CPU_ISA` are read while torch is initialising, so
+    setting them from inside a process that has already imported torch proves nothing.
+    """
+    from ase import Atoms
+    from openqha.potentials import engine
+    calc, _, _ = engine.calculator(device="cpu")
+    a = Atoms(symbols=SYMBOLS, positions=POSITIONS)
+    a.calc = calc
+    try:
+        print("ENERGY {!r}".format(float(a.get_potential_energy())))
+    except Exception as exc:                                              # noqa: BLE001
+        print("ENERGY raised {}: {}".format(type(exc).__name__, exc))
+    return 0
+
+
 def main():
+    import os as _os
+    if _os.environ.get("S0_PROBE_ENERGY_ONLY"):
+        return energy_only()
     verdicts = []
 
     # ---- 1. the stack ------------------------------------------------------------------
@@ -196,19 +218,30 @@ def main():
         print()
         print("  (0) plain arithmetic -- no MACE, no e3nn, no model")
         try:
-            cpu = ""
+            cpu, flags = "", set()
             try:
                 with open("/proc/cpuinfo") as fh:
                     for line in fh:
-                        if line.lower().startswith("model name"):
+                        low = line.lower()
+                        if not cpu and low.startswith("model name"):
                             cpu = line.split(":", 1)[1].strip()
+                        elif not flags and low.startswith("flags"):
+                            flags = set(line.split(":", 1)[1].split())
+                        if cpu and flags:
                             break
             except OSError:
                 pass
             print("      cpu                  {}".format(cpu or "unknown"))
-            for var in ("OPENBLAS_CORETYPE", "OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
-                import os as _o
-                print("      {:20s} {}".format(var, _o.environ.get(var, "[not set]")))
+            # AVX-512 is the difference that survived every version comparison: this
+            # project's workstation (Raptor Lake i7) does not have it; a Xeon Platinum
+            # 8358P does, and torch dispatches different kernels on it.
+            avx512 = sorted(f for f in flags if f.startswith("avx512"))
+            print("      avx512               {}".format(
+                " ".join(avx512[:6]) + (" ..." if len(avx512) > 6 else "")
+                if avx512 else "absent"))
+            for var in ("ATEN_CPU_CAPABILITY", "DNNL_MAX_CPU_ISA",
+                        "OPENBLAS_CORETYPE", "OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
+                print("      {:20s} {}".format(var, _os.environ.get(var, "[not set]")))
             info = torch.__config__.parallel_info()
             for line in info.splitlines():
                 if "parallel backend" in line or "get_num_threads" in line:
@@ -346,6 +379,63 @@ def main():
                 print("      pieces above -- compiled by e3nn against THIS torch.")
         except Exception as exc:                                          # noqa: BLE001
             print("      could not be traced: {}: {}".format(type(exc).__name__, exc))
+
+        # (d) THE FIX, TESTED RATHER THAN SUGGESTED.
+        #     The failing layer is MACE's SymmetricContraction, whose contractions are
+        #     `torch.fx` GraphModules built by opt_einsum_fx -- large einsums, not the
+        #     small matmul check (0) exercises. When every package version matches a
+        #     machine that works, the remaining difference is the CPU: this project's
+        #     workstation is a Raptor Lake i7 with **no AVX-512**, and a Xeon Platinum
+        #     8358P (Ice Lake-SP) has it. torch dispatches different kernels for it.
+        #
+        #     Both variables below are read while torch initialises, so each has to be
+        #     tried in a FRESH PROCESS. That is what makes this a test and not a guess.
+        #
+        #     Only when the baseline actually failed. On a machine where section 4 already
+        #     returned a finite energy, every candidate would come back finite too and the
+        #     word FIXED would mean nothing.
+        print()
+        print("  (d) does forcing a narrower instruction set fix it?")
+        if ok:
+            print("      skipped -- section 4 already returned a finite energy here, so")
+            print("      there is nothing for these settings to fix.")
+        else:
+            try:
+                import subprocess
+                fixed = None
+                for var, val in (("ATEN_CPU_CAPABILITY", "avx2"),
+                                 ("ATEN_CPU_CAPABILITY", "default"),
+                                 ("DNNL_MAX_CPU_ISA", "AVX2"),
+                                 ("OMP_NUM_THREADS", "1")):
+                    env = dict(_os.environ)
+                    env[var] = val
+                    env["S0_PROBE_ENERGY_ONLY"] = "1"
+                    try:
+                        r = subprocess.run([sys.executable, __file__], env=env,
+                                           capture_output=True, text=True, timeout=900)
+                        line = [x for x in r.stdout.splitlines()
+                                if x.startswith("ENERGY")]
+                        got = line[-1][7:] if line else "(no answer)"
+                    except Exception as exc:                          # noqa: BLE001
+                        got = "{}: {}".format(type(exc).__name__, exc)
+                    good = ("nan" not in got.lower() and "raised" not in got
+                            and "no answer" not in got)
+                    print("      {:34s} -> {}{}".format(
+                        var + "=" + val, got, "   **FIXED**" if good else ""))
+                    if good:
+                        fixed = (var, val)
+                        break
+                if fixed:
+                    print()
+                    print("      Put it in hpc/env/common.sh so every job gets it:")
+                    print("        export {}={}".format(*fixed))
+                else:
+                    print()
+                    print("      None of them fixed it. The instruction set is not the")
+                    print("      difference, or not the only one.")
+            except Exception as exc:                                  # noqa: BLE001
+                print("      could not be tested: {}: {}".format(
+                    type(exc).__name__, exc))
 
     # ---- 6. the verdict ----------------------------------------------------------------
     rule("6. VERDICT")
