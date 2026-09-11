@@ -30,7 +30,9 @@ the count the cost model was measured at and the one used here). The job is name
 product is filed under its tag: `data/basins/02c_prod/…`. `--tag prod` answers
 `no branch A product for dsgdb9nsd_000018 under tag 'prod'` even when `02c_prod` is
 sitting right there. Propanal under the same tag needs its own step 1:
-`SPECIES=dsgdb9nsd_000035 bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/branchA.conf deimos`.
+`bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/branchA-propanal.conf deimos`
+(a separate file: a conf's own `SPECIES=` line overrides anything set in the shell, and
+`run_chain.sh` refuses the `SPECIES=... bash ...` form for that reason).
 
 **`CHAIN=levels` runs on CPU partitions only.** ORCA has no GPU path in this repository
 and `D0-75` puts production quantum chemistry on deimos; `run_chain.sh` refuses a GPU

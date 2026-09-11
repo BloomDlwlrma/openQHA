@@ -54,7 +54,8 @@ if ! find "$BASINS_ROOT/$BASIN_TAG" -name "${SPECIES}.basins.json" -print -quit 
      | grep -q .; then
     echo "openQHA: no branch A product for '$SPECIES' under BASIN_TAG '$BASIN_TAG'." >&2
     echo "  Every row reads it. Make it once, on the CPU cluster:" >&2
-    echo "    bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos" >&2
+    echo "    bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos            # acetone" >&2
+    echo "    bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA-propanal.conf deimos   # propanal" >&2
     ls -1 "$BASINS_ROOT" 2>/dev/null | sed 's/^/  tags present: /' >&2
     exit 2
 fi

@@ -87,9 +87,26 @@ command -v "$SUBMIT" >/dev/null 2>&1 || {
 # Read the conf -- ONLY to check the submission makes sense. No imports, no torch, no
 # model loading: this runs on a login node.
 # ---------------------------------------------------------------------------------------
+# A conf's settings are plain assignments, so `source` overrides anything the shell set:
+# `SPECIES=x bash run_chain.sh conf` submits the conf's species, not x. That is the design
+# (what ran is the file), and on 2026-09-11 it silently resubmitted acetone when propanal
+# was meant. So it is now a refusal: if the shell had SPECIES or TAG set to something the
+# conf then replaced, stop and say which file to use instead.
+_SHELL_SPECIES="${SPECIES:-}"; _SHELL_TAG="${TAG:-}"
 # shellcheck disable=SC1090
 source "$CONF"
 SPECIES="${SPECIES:?the conf must set SPECIES}"
+for _pair in "SPECIES:$_SHELL_SPECIES:$SPECIES" "TAG:$_SHELL_TAG:${TAG:-}"; do
+    _name="${_pair%%:*}"; _rest="${_pair#*:}"; _shell="${_rest%%:*}"; _conf="${_rest#*:}"
+    if [ -n "$_shell" ] && [ -n "$_conf" ] && [ "$_shell" != "$_conf" ]; then
+        echo "openQHA: your shell has $_name=$_shell but $CONF sets $_name=$_conf, and the" >&2
+        echo "  conf wins -- the job sources the FILE, so the shell value would not run." >&2
+        echo "  Refusing rather than submitting $_conf under a name you did not intend." >&2
+        echo "  Use (or copy) a conf that says $_name=$_shell; the examples carry one per" >&2
+        echo "  molecule (branchA.conf / branchA-propanal.conf)." >&2
+        exit 2
+    fi
+done
 TAG="${TAG:-chain}"
 CHAIN="${CHAIN:-qha}"
 

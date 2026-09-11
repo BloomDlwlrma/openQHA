@@ -72,7 +72,8 @@ logs/node_local/<jobid>_card<k>/                           each row's scratch en
 
 To change the experiment, edit `settings.tsv` and resubmit; `generated/` is rewritten. To
 run propanal, change `SPECIES` in `array.conf` after making its basins under `02d_prod`
-(`SPECIES=dsgdb9nsd_000035 bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos`).
+(`bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA-propanal.conf deimos`
+-- a separate file, because a conf's own `SPECIES=` line overrides the shell).
 
 Slurm references: [job arrays](https://slurm.schedmd.com/job_array.html),
 [overview](https://slurm.schedmd.com/overview.html); the fine-grained environment's rules
