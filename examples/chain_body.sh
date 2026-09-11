@@ -343,6 +343,7 @@ qha)    # the conformational free energy: A -> B -> collect -> F_conf
     python -u scripts/production/s0_E_branchB_parsl.py \
         --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
         --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+        ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
         ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"}
 
     echo
@@ -375,6 +376,7 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
     python -u scripts/production/s0_E_branchB_parsl.py \
         --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
         --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+        ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
         ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
         ${SAMPLE_EVERY:+--sample-every "$SAMPLE_EVERY"}
 

@@ -287,13 +287,17 @@ def main():
     ap.add_argument("--prod-ps", type=float, default=_PROTOCOL["production_ps"])
     ap.add_argument("--equil-ps", type=float, default=_PROTOCOL["equilibration_ps"])
     ap.add_argument("--sample-every", type=int, default=None,
-                    help="frames every N steps; default comes from the protocol. "
-                         "Raise the density for the ZPE/enthalpy question (02d)")
-    ap.add_argument("--sample-every", type=int, default=None,
                     help="save a frame every N steps; default comes from "
                          "configs/branchB_protocol.yaml. Raise the density for the "
                          "zero-point-energy question -- see examples/02d")
-    ap.add_argument("--max-workers", type=int, default=None)
+    ap.add_argument("--max-workers", type=int, default=None,
+                    help="cap the worker pool. The default fills the node, which "
+                         "is right for a campaign and wrong for one molecule: "
+                         "acetone is 1 basin x 3 seeds = 3 tasks.")
+    ap.add_argument("--gpus", type=int, default=None,
+                    help="cards per parsl BLOCK, GPU sites only. The default "
+                         "takes the node (tianhe_a: 8). Three trajectories do not "
+                         "need eight cards.")
     ap.add_argument("--wall-budget-s", type=float, default=None,
                     help="per-task budget; default comes from the resource config")
     ap.add_argument("--account", default=None, help="scheduler account (cluster only)")
@@ -458,6 +462,15 @@ def main():
         kw["account"] = args.account
     if args.partition:
         kw["partition"] = args.partition
+    if args.gpus is not None:
+        # Refused rather than dropped, for the same reason as --debug below: a card count
+        # that is silently ignored is a whole-node allocation the operator thinks they
+        # avoided.
+        if "gpus" not in accepted:
+            raise SystemExit(
+                "--gpus is not supported by resource config {!r}. It is a GPU-site "
+                "option; tianhe_a and tianhe_ai accept it.".format(args.resource))
+        kw["gpus"] = args.gpus
     if args.debug:
         # Refused rather than ignored. Silently running production settings under a flag
         # that says "debug" is how a 30-minute intention becomes a 7-day allocation.

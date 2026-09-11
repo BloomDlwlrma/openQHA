@@ -20,12 +20,40 @@ different filesystems:
 |---|---|---|---|---|---|---|
 | **TianheXY-C** | `tianhe_cpu.py` | CPU | `debug`, `deimos` | whole node, 64 cores | **required** | n/a |
 | **TianheXY-AI** | `tianhe_ai.py` | GPU | `hx`, `h100x`, `a100x`, `a800x`, `v100x` | **per card** | **BANNED** | **mandatory** |
-| **TianheXY-A** | `tianhe_a.py` | GPU | `temp`, `ai` | node, 8 cards, 56 cores | not passed¹ | passed |
+| **TianheXY-A** | `tianhe_a.py` | GPU | `ai` (fine-grained²) | **per card**: 12 CPUs, 120 GB | never (= 8 cards) | **mandatory²** |
 
 ¹ By the 2026-09-05 ruling TianheXY-A follows TianheXY-AI's rules. Recorded tension: A's
 own manual says its nodes are exclusive and its `yhbatch --help` *does* list the flag. If
 a submission is ever refused for want of exclusivity, `EXCLUSIVE` in `tianhe_a.py` is the
 line to change.
+
+² **TianheXY-A has TWO Slurm environments behind one login prompt.** Measured on ln207,
+2026-09-11, and explained by the site document 星逸 AI 集群 GPU 细粒度调用使用说明:
+
+| | how you get there | `ai` nodes | gres | allocation | `-G` | `--mem` |
+|---|---|---|---|---|---|---|
+| default | fresh login | an[9..43] | `(null)` | by CPU | **refused** | — |
+| fine-grained | `source /APP/u22/ai_x86/toolshs/set-XY-I.sh` (a PATH to a Slurm 24.05 client) | an[45-47,49-51,53,65] — 8 × (96 CPU, 960 GB, 8 × A800) | `gpu:a800:8` | **by card**: 1 GPU = 12 CPUs = 120 GB (= the node ÷ 8) | **mandatory** | **forbidden** |
+
+Billing in the fine-grained environment is `max(gpus, ceil(cpus/12)) × hours × weight`
+on the invoice (site PDF), over Slurm's own `TRESBillingWeights=CPU=1.0,Mem=0.0,GRES/gpu:a800=4.0`
+(one card + 12 CPUs = 16, a node = 128). So a card's 12 CPUs cost nothing extra and a
+13th costs a whole card. `nvidia-smi` inside a job shows only the allocated cards. The 12
+CPUs are **6 physical cores × 2 threads** (`ThreadsPerCore=2`), which is why a worker
+here is single-threaded. Limits: `MaxSubmit=10`, no node quota, `OverSubscribe=NO`,
+`MaxTime=UNLIMITED`. **It is the controller's only partition** — `sinfo` after the script
+lists `ai` and nothing else; the default controller's `temp` (2 h) is not reachable from
+it, so the 30-minute gate is a short job on `ai`. **At the 2026-09-11 reading all 64
+cards were allocated** while 248 CPUs sat idle — a new job waits on cards, not on CPUs.
+
+**This project uses the fine-grained environment.** `examples/run_chain.sh` refuses to
+submit to `ai` until `sinfo -h -p ai -o %G` mentions gpu — that is, until the script has
+been sourced in the submitting shell. `D0-C-25` ("Tianhe requires an explicit `-G`") and
+the 2026-09-11 "any `-G` is refused" are both true, of the two environments respectively.
+
+One job carries the driver and the workers: `tianhe_a.py` sees `SLURM_JOB_ID` and runs
+parsl in-allocation, so there is no second allocation and no idle driver card.
+`S0_PARSL_NESTED=1` restores block submission for campaigns.
 
 **Note how opposite the first two are.** `--exclusive` is required on one and rejected by
 the other. Parsl's `SlurmProvider` defaults it to `True`, so a stock provider is refused
@@ -57,6 +85,67 @@ resource config enforces the cap with `min()` and `describe()` reports it beside
 setting. `tianhexy-i` appears in the table and this repository knows nothing else about it.
 
 ---
+
+## 0b. Storage: two filesystems, and which clusters share one  **[storage tags read 2026-09-11]**
+
+| filesystem | mounted by | path for this project |
+|---|---|---|
+| **XYFS02** | `tianhexy-cn`, `tianhexy-a`, `k8s_xingyi`, `k8s_xingyiAI` | `/XYFS02/HDD_POOL/<acct>/<user>/…/openQHA-main` |
+| **XYAIFS00** | `tianhexy-ai`, `k8s_xingyiAI_2` | `/XYAIFS00/HDD_POOL/<acct>/<user>/…/openQHA-main` (and `/XYAIFS00/HOME/<acct>/<user>`) |
+
+**TianheXY-CN and TianheXY-A see the same files.** So the two-step flow — branch A on
+`deimos`, branch B on `ai` — needs no data movement at all: the basin list branch A writes
+under `data/basins/<tag>/` is the file branch B reads, in the same repository checkout.
+Submit both from the XYFS02 checkout and forget about copying.
+
+**TianheXY-AI (`h100x`) is on a different filesystem.** Its checkout is a separate copy,
+and the manual's §3.2.2 recipe is the only way across:
+
+```bash
+# once: upload the TianheXY-AI account's key to the XYFS02 side and lock it down
+chmod 400 ~/accountB.id
+
+# then, from the XYFS02 checkout: what h100x needs ...
+bash hpc/tools/xfer_tianhe_ai.sh push data/basins/acetone data/potentials
+# ... and what it produced
+bash hpc/tools/xfer_tianhe_ai.sh pull data/trajectories/acetone
+```
+
+The script is `scp -i accountB.id -r …  accountB@XYAIFS00:…` with both roots filled in
+(`XYAI_KEY`, `XYAI_ACCOUNT`, `XYAI_ROOT` override the defaults). Paths are relative to
+the repository root on both sides so the trees stay congruent.
+
+Practical consequence: **prefer `ai` over `h100x` for branch B** — not for the cards, but
+because nothing has to be copied.
+
+### Slurm semantics this project relies on  **[slurm.schedmd.com, read 2026-09-11]**
+
+TianheXY-A's manual points at the stock Slurm documentation, so these are quoted from it
+rather than from memory:
+
+| option / variable | meaning (quoted) | how this project uses it |
+|---|---|---|
+| `--gpus`, `-G N` | "total number of GPUs required for the job" | the card count, per job |
+| `--gpus-per-node` | "equivalent to the `--gres` option for GPUs" | not used; one node |
+| `--gpus-per-task` | per task; "requires the job to specify a task count" | not used — that is the MPI shape |
+| `--cpus-per-task`, `-c` | "job steps will require ncpus processors per task"; since 22.05 propagates as `SRUN_CPUS_PER_TASK` | `12 × G` on `ai` (what a card brings); `THREADS` on deimos |
+| `--cpus-per-gpu` | CPUs per allocated GPU; inheriting steps imply `--exact` | not used; the site fixes 12 |
+| `--mem`, `--mem-per-gpu` | memory | **forbidden** on `ai` (site PDF) |
+| `CUDA_VISIBLE_DEVICES` | "set for each job step … restricted to allocated GPUs"; with cgroup fencing **renumbered from 0** inside the job | why `nvidia-smi -L` inside the job equals the allocation, and why parsl's card indices are `0..G-1` |
+| `SLURM_GPUS` / `SLURM_GPUS_ON_NODE` / `SLURM_JOB_GPUS` | total / per node / "global GPU IDs allocated to the job" | `tianhe_a.py` reads them to size the in-allocation pool |
+| `SLURM_CPUS_PER_TASK`, `SLURM_CPUS_ON_NODE` | what `-c` asked for; CPUs on this node | same |
+| `#SBATCH` parsing | stops at "the first non-comment, non-whitespace line" | every directive precedes the first command in each `.slurm` |
+| MPS | "GRES types of GPU and MPS can not be requested within a single job"; one MPS server per node | not something a job can enable for itself here |
+
+**The shape: one task, many processes.** `--nodes=1 --ntasks=1 --gpus=G --cpus-per-task=12G`.
+Parsl's worker pool is the fan-out (12 workers per card for branch B), and it pins each
+worker to a card from `available_accelerators`. `--gpus-per-task` and `srun -n` are for
+one process per card and are not what a bag of independent trajectories wants.
+
+**Multi-threading on the CPU cluster** is the same option read the other way:
+`--cpus-per-task=N` with `OMP_NUM_THREADS=N` inside — `hpc/env/common.sh` does that from
+`THREADS`, and `deimos` still charges the whole 64-core node (`--exclusive` is required
+there), so the way to use it is more molecules per node, not more threads per molecule.
 
 ## 1. First login — five minutes, no allocation spent  **[unverified]**
 
@@ -701,7 +790,9 @@ dozens of small files, and that is slow for you and for everyone else on the mac
 `hpc/env/tianhe.sh` sets this up; a worker that does not source it is a different machine.
 
 Home is quota'd at 100 GB and is for configuration. Code, data and job output go in
-`HDD_POOL`. **XYFS01 has no backup** — a deleted file is gone.
+`HDD_POOL` — on **XYFS02** for the CN and A clusters (one checkout serves both), on
+**XYAIFS00** for the AI cluster (a separate copy; see §0b). **XYFS01 has no backup** — a
+deleted file is gone.
 
 ---
 

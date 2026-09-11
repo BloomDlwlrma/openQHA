@@ -1,113 +1,190 @@
-"""Parsl resource configuration: TianheXY-A (login ln206). The GPU cluster we prefer.
+"""Parsl resource configuration: TianheXY-A (login ln206 / ln207), GPU, **fine-grained**.
 
 THIS IS THE THIRD TIANHE CLUSTER. There are three, not two.
 -----------------------------------------------------------
     TianheXY-C   tianhe_cpu.py   CPU   debug / deimos          64 cores, whole-node
     TianheXY-AI  tianhe_ai.py    GPU   hx/h100x/a100x/...      per GPU card, 80 GB
-    TianheXY-A   this file       GPU   temp / ai               56 cores, 8 cards/node
+    TianheXY-A   this file       GPU   ai (fine-grained)       per GPU card: 12 cpus, 120 GB
 
-**Prefer this cluster for GPU work** (user ruling 2026-09-07). Eight cards per allocation
-against TianheXY-AI's one is the whole reason.
+ONE LOGIN NODE, TWO SLURM ENVIRONMENTS  (measured 2026-09-11 + site PDF)
+-------------------------------------------------------------------------
+This is the fact that reconciles every contradictory measurement this project has made
+on ln207, and it comes from the site's own document, "星逸 AI 集群 GPU 细粒度调用使用说明":
 
-USING THE WHOLE NODE: 56 WORKERS, 8 CARDS, 7 WORKERS PER CARD
---------------------------------------------------------------
-The node is **2 x 28 = 56 cores + 8 cards + 1024 GB**. An earlier version of this file ran
-**8 workers, one per card** -- which used every card and **48 of the 56 cores sat idle**.
+    DEFAULT environment (what a fresh login gives you)
+        $ sinfo -p ai -o "%P %N %G %c %m"
+        ai   an[9,11-17,20-23,25-26,28-29,31-32,34-35,38-40,42-43]   (null)   56+   983040+
+      Gres=(null) on all 25 nodes. Allocated BY CPU. The 8 cards per node exist and
+      `nvidia-smi` sees all of them, but Slurm does not track them, so **any** card
+      request is refused: "Invalid generic resource (gres) specification". Two jobs on a
+      node both see all 8 cards.
 
-That is the wrong shape for this workload. A branch B trajectory is a serial chain of
-single-structure MACE calls on a 10-19 atom molecule. On an 80 GB H100 one such call
-occupies a rounding error of the card: the cost is kernel-launch latency and Python, not
-arithmetic. **One trajectory cannot fill a card, so seven of them share one.**
+    FINE-GRAINED environment ("tianhexy-i")
+        $ source /APP/u22/ai_x86/toolshs/set-XY-I.sh      # = export PATH=/usr/local/slurm.24051/bin:$PATH
+        $ sinfo -h -p ai -N -o "%N %G %c %m"
+        an45 gpu:a800:8 96 983040      (an[45-47,49-51,53,65]: 8 nodes, all identical)
+        $ scontrol show node an45
+        CoresPerSocket=24 Sockets=2 ThreadsPerCore=2 CPUTot=96 RealMemory=983040
+        Gres=gpu:a800:8 Version=24.05.1
+        CfgTRES=cpu=96,mem=960G,billing=128,gres/gpu:a800=8
+        $ scontrol show partition ai
+        OverSubscribe=NO ExclusiveUser=NO MaxNodes=UNLIMITED MaxTime=UNLIMITED
+        AllowGroups=root,tianhexy_i_ai   TRES=cpu=768,mem=7.50T,node=8,gres/gpu:a800=64
+        TRESBillingWeights=CPU=1.0,Mem=0.0,GRES/gpu:a800=4.0
+      The environment script is nothing but a PATH change to a Slurm 24.05 client that
+      talks to a second controller. Allocated BY CARD. The PDF's policy **1 GPU = 12 CPUs
+      = 120 GB** is simply the node divided by eight: 96 logical CPUs (48 cores x 2
+      threads) / 8 = 12, 960 GB / 8 = 120. `-G N` or `--gres=gpu:N` is **mandatory**
+      (`srun -p ai hostname` -> "Unable to allocate resources"). `--mem` is **forbidden**
+      (same error). `nvidia-smi` inside the job shows only the allocated cards.
+      Billing, two layers: Slurm's weights make one card + its 12 CPUs = 4 + 12 = 16 units
+      (a node = 128); the site's invoice rule on top is max(GPUs, ceil(CPUs/12)) card-
+      equivalents x hours x weight.
 
-    role     workers/node   cores/worker   cards   workers per card
-    qha      56             1              8       7
-    train     8             7              8       1
+**This file uses the fine-grained environment.** It is what the user's site document
+describes, it is what a small job actually needs, and it is the one where the scheduler
+does the card isolation instead of hoping nobody else lands on the node.
 
-`train` keeps one task per card because a fine-tune genuinely does use the card, and a
-committee wants one model per member. `qha` is the one that was leaving the node empty.
+The two environments are the same physical machine and the same login prompt. Which one
+a command talks to depends only on whether `set-XY-I.sh` has been sourced in that shell.
+`examples/run_chain.sh` checks (`sinfo -h -p ai -o %G` must mention `gpu`) before it
+submits, and `examples/slurm/ai.slurm` sources the script inside the job so the driver's
+own submissions -- if any -- go to the same controller.
 
-At the 5-node quota: **5 x 56 = 280 concurrent trajectories**, against 40 before.
+WHAT THIS RESOLVES
+------------------
+  * `D0-C-25` "Tianhe requires an explicit -G" -- TRUE, in the fine-grained environment.
+  * 2026-09-11 "TianheXY-A refuses any -G" -- TRUE, in the default environment.
+  * The 2026-09-05 ruling "no --exclusive here" -- now MOOT. In a per-card environment
+    `--exclusive` would take the node and be billed as 8 cards. EXCLUSIVE stays False,
+    and there is nothing left to rule on (memory.md open item 39 is closed by this).
+  * "Two jobs sharing a node both pin from device 0" -- cannot happen here: the job sees
+    only its own cards.
 
-    MPS. Without it, kernels from different processes time-slice on the card rather than
-    running concurrently, so seven workers per card is a real gain but a sub-linear one.
-    `nvidia-cuda-mps-control -d` in the job's prologue makes them concurrent. It is NOT
-    enabled here: it needs the site to permit it, and an unmeasured change that also
-    changes the failure modes is not something to switch on by default. Measure both.
+SIZING: PAY FOR CARDS, USE EVERY CPU THEY BRING
+-----------------------------------------------
+The bill counts cards, and 12 CPUs come with each one whether they are used or not. So
+the pool is sized in cards, and the CPUs follow:
 
-HOW THE CARD IS CHOSEN, AND THE TRAP IN IT
-------------------------------------------
-`available_accelerators` is passed as an **int**, and that is load-bearing. Parsl's worker
-does its own partitioning (`process_worker_pool.py`):
+    role    workers per card    cores per worker      what a card runs
+    qha     12                  1                     12 branch B trajectories
+    train   1                   12                    one fine-tune
 
-    procs_per_cuda_device = pool_size // num_cuda_devices      # 56 // 8 = 7
-    CUDA_VISIBLE_DEVICES  = int(accelerator) // procs_per_cuda_device
+A branch B trajectory is a serial chain of single-structure MACE calls on a 10-19 atom
+molecule; one cannot fill an 80 GB card, so twelve share it (the earlier layout was 7 per
+card from 56 cores / 8 cards; the policy now hands out 12 per card and it is the policy
+that is billed).
 
-With the int, parsl expands it to `['0' ... '55']` and the arithmetic spreads the workers
-7 per card, all 8 used -- verified by replaying that arithmetic. **Passing a hand-built
-list of device ids instead (`['0']*7 + ['1']*7 + ...`) puts 49 of the 56 workers on card
-0**, because parsl divides again by 7 on a number that is already a device id.
+Acetone (`examples/02a`) is 1 basin x 3 seeds = 3 trajectories. That is **one card**,
+billed as one card, with 9 of its 12 CPUs idle -- and no cheaper request exists.
 
-That is the THIRD time this project has met the same failure: correct results, badly
-placed workers, and a wall clock that reads as "the GPU is slow" rather than as a bug.
-The other two were `CUDA_VISIBLE_DEVICES` in `worker_init` (runs once per block, not per
-worker) and the same variable set once in a job script.
+TWO WAYS TO RUN, AND WHICH IS THE DEFAULT
+-----------------------------------------
+    IN-ALLOCATION (default when the driver is already inside a Slurm job)
+        The driver and the workers share ONE job: `yhbatch -G 1 -c 12 ai.slurm conf`.
+        Parsl uses a LocalProvider on the node it is already on. No second allocation,
+        no driver card sitting idle, no submission from a compute node. This is what a
+        one-molecule example wants and what `examples/run_chain.sh` produces.
 
-TWO PARTITIONS, TWO WALLTIMES (user ruling 2026-09-07)
-------------------------------------------------------
-    temp    30 minutes    smoke test. `sinfo` gives the queue a 2 h ceiling and one node.
-    ai      7 days        production.
+    NESTED (the driver submits its own blocks; set S0_PARSL_NESTED=1 to force it)
+        The original design: the driver holds a small job and parsl submits up to
+        MAX_BLOCKS further jobs of GPUS_PER_BLOCK cards each. For a campaign of hundreds
+        of molecules this is how the quota gets filled. The driver's own card is the
+        price of it, so it is not the default for one molecule.
 
-`--debug` on the drivers selects the first pair. **There is no `--dry-run` gate before
-production**: a 30-minute real job on `temp` tests what a rendered plan cannot -- that
-CUDA/12.3 loads, that conda activates on a compute node, that the weights hash matches
-there, and that a card is actually visible to the worker that was given it.
+HOW THE CARD IS CHOSEN, AND WHY A SMALL POOL IS SAFE
+----------------------------------------------------
+`available_accelerators` is passed as an **int** equal to the worker count. Parsl's
+worker (`process_worker_pool.py:730-745`, read 2026-09-11 rather than assumed):
 
-MEASURED 2026-09-05 (`sinfo` on ln206)
---------------------------------------
-    PARTITION  AVAIL  TIMELIMIT  NODES(A/I/O/T)  CPUS   MEMORY
-    ai         up     infinite   15/1/9/25       56     1030000 MB
-    temp       up     2:00:00    1/0/0/1         56     1030000 MB
+    num_cuda_devices  = `nvidia-smi -L | wc -l`      -> the cards THIS JOB can see
+    procs_per_device  = pool_size // num_cuda_devices
+    CUDA_VISIBLE_DEVICES = int(accelerator) // procs_per_device
+    except ZeroDivisionError: CUDA_VISIBLE_DEVICES = accelerator
 
-**9 of the 25 `ai` nodes were in state O (other/down) at that reading.** Effective
-capacity is smaller than the node count suggests; check `yhi` before planning a campaign
-around 25.
+In the fine-grained environment `nvidia-smi` reports only the allocated cards, so with
+G cards and 12G workers every card gets 12; with 1 card and 3 workers, 3 // 1 = 3 and
+0 // 3 = 1 // 3 = 2 // 3 = 0 -- all three on the one card, which is right. The one shape
+that misplaces workers is a pool that is not a multiple of the card count (5 workers on
+2 cards puts one on a card index that does not exist), so `config()` rounds the pool to
+a multiple. **Never pass a hand-built list of device ids**: parsl divides a list entry by
+`procs_per_device` again, and `['0']*6 + ['1']*6` puts all twelve on card 0. That
+mistake has been made three times in this project; it shows up only as wall clock.
+
+    MPS. Without it, kernels from different processes time-slice on the card. It is NOT
+    enabled: it needs the site to permit it and it changes the failure modes.
+
+SLURM SEMANTICS THIS FILE LEANS ON  (slurm.schedmd.com gres.html + sbatch.html, read 2026-09-11)
+-----------------------------------------------------------------------------------------
+    --gpus / -G N          "total number of GPUs required for the job". Per JOB.
+    --gpus-per-node N      "equivalent to the --gres option for GPUs". Per node.
+    --gpus-per-task N      per task; "requires the job to specify a task count" (-n).
+    --cpus-per-gpu N       CPUs per allocated GPU; steps inheriting it imply --exact.
+    --cpus-per-task / -c   "job steps will require ncpus processors per task". Since
+                           22.05 it propagates to srun as SRUN_CPUS_PER_TASK.
+    --mem-per-gpu          memory per GPU -- here FORBIDDEN by site policy, like --mem.
+    CUDA_VISIBLE_DEVICES   "set for each job step ... restricted to allocated GPUs", and
+                           with cgroup device fencing it is RENUMBERED from 0 inside the
+                           job (the Prolog sees 1, the job sees 0). That is why parsl's
+                           `nvidia-smi -L` count equals the allocation and why worker ids
+                           are card indices 0..G-1 and nothing else.
+    SLURM_GPUS             "total number of GPUs allocated to the job"
+    SLURM_GPUS_ON_NODE     "number of GPUs allocated to the job on each node"
+    SLURM_JOB_GPUS         "global GPU IDs allocated to the job" (comma list)
+    SLURM_CPUS_PER_TASK    what -c asked for;  SLURM_CPUS_ON_NODE  CPUs on this node
+    #SBATCH parsing        stops at "the first non-comment, non-whitespace line" -- the
+                           `if` in ai.slurm comes AFTER every directive for that reason.
+    MPS                    "GRES types of GPU and MPS can not be requested within a
+                           single job" and only one user's MPS server per node -- so MPS
+                           is not something a job here can switch on for itself.
+
+    THE SHAPE THIS PROJECT USES: one task, many worker PROCESSES on it:
+        --nodes=1 --ntasks=1 --gpus=G --cpus-per-task=12G
+    not --gpus-per-task (that is for one process per card, MPI-style). Parsl's worker
+    pool is the fan-out, and it pins each worker to a card itself.
+
+STORAGE: TWO FILESYSTEMS, AND WHICH CLUSTERS SHARE ONE  (storage tags read 2026-09-11)
+--------------------------------------------------------------------------------------
+    XYFS02     tianhexy-cn, tianhexy-a, k8s_xingyi, k8s_xingyiAI
+    XYAIFS00   tianhexy-ai, k8s_xingyiAI_2
+
+**TianheXY-CN and TianheXY-A share XYFS02.** A basin list branch A writes on deimos is
+already there for branch B on `ai`: no transfer, same relative path, same repository.
+TianheXY-AI (h100x) is on XYAIFS00 and everything it needs must be copied there and
+back -- `hpc/tools/xfer_tianhe_ai.sh` is the manual's 3.2.2 scp recipe with the paths
+filled in. Prefer this cluster for branch B for that reason too.
+
+MEASUREMENT HISTORY (kept; each was true of what it measured)
+-------------------------------------------------------------
+    2026-09-05  `sinfo` on ln206 (default env): ai 15/1/9/25 nodes, 56 cpus, 1030000 MB;
+                temp 1 node, 2 h ceiling. 9 of 25 `ai` nodes in state O.
+    2026-09-07  modules from /APP/u22/ai_x86/modulepath/: CUDA/11.3 ... 12.3 (ceiling; no
+                12.4), cudnn/8.9.6.50-cuda12, nccl/2.19.3-cuda-12.3, no MPI loaded.
+                Node: 2 x 28 = 56 cores, 8 cards, 1024 GB, 80 GB HBM2e/card, driver
+                535.104.12. Layout then: 56 workers, 7 per card.
+    2026-09-11  default env: Gres=(null) on all 25 `ai` nodes; `--gpus=8` refused.
+    2026-09-11  parsl source read: the ZeroDivisionError fallback above.
+    2026-09-11  site PDF: fine-grained env, 1gpu/12cpu/120GB, -G mandatory, --mem
+                forbidden, an[44-53] (2024 screenshot), billing rule. Driver 535.104.12,
+                CUDA 12.2 in the screenshots (module CUDA/12.3 still loads).
+    2026-09-11  fine-grained env read directly (evening): 8 nodes an[45-47,49-51,53,65],
+                each 96 CPUs (2x24 cores, HT) / 960 GB / gpu:a800:8, Slurm 24.05.1,
+                OverSubscribe=NO, TRESBillingWeights CPU=1 GPU=4, MaxSubmit=10, no
+                GrpTRES. At that reading ALL 64 CARDS WERE ALLOCATED while 248 of 672
+                CPUs on the mixed nodes were idle -- cards are the scarce resource, and
+                a new job queues on cards, not on CPUs. Default env at the same time:
+                `temp` (2 h) exists there; 22 of 25 `ai` nodes drain/drng/inval.
 
 WHAT RUNS HERE
 --------------
-    qha    **Branch B production trajectories** (user ruling 2026-09-07): OpenMM with
-           openqha/openmm_mace.py on the CUDA platform, 7 trajectories per card.
-    train  Branch C MACE fine-tuning with the PHL loss, one model per card.
+    qha    branch B production trajectories: OpenMM + openqha/openmm_mace.py, CUDA.
+    train  branch C MACE fine-tuning, one model per card.
 
-    CAVEAT ON BRANCH B, recorded rather than buried: this repository's only GPU
-    measurement of branch B is D0-C-5, where the same trajectory ran 3.5x SLOWER on the
-    GPU than on the CPU. That was a T400, a 2 GB entry-level card, against 80 GB HBM2e
-    here, so the number does not transfer -- but nothing has replaced it either. Take
-    seconds-per-ps off the `temp` smoke test before sizing a campaign.
-
-MODULES: MEASURED 2026-09-07 from `/APP/u22/ai_x86/modulepath/`
-----------------------------------------------------------------
-    GPU_compiler    CUDA/11.3 11.7 11.8 12.0 12.1 12.2 12.3
-                    mpi/openmpi/4.1.5-gcc-11.4.0
-                    mpi/openmpi/5.0.0-gcc-11.4.0-cuda12.2
-                    mpi/openmpi/5.0.0-{icc,icx}-oneapi2023.2-cuda12.2
-                    intel/oneapi2023.2, nvhpc/{22.11,24.1}-openmpi4
-    GPU_lib         cudnn/8.9.6.50-cuda12, cudnn/8.9.7.29-cuda11
-                    nccl/2.19.3-cuda-{12.0,12.2,12.3}, gdrcopy/2.4-cuda-{11.8,12.2}
-    GPU_application anaconda3/2023.09, miniforge/24.7.1, python/3.10.10, 3.12.10
-                    Pytorch/{1.11.0-cuda11.3, 2.1.2-cuda11.8, 2.7.0-cuda11.8}
-                    gromacs/2022.06, fftw, hdf5, OpenBLAS/0.3.30, ...
-
-**CUDA/12.3 is the ceiling and there is no CUDA/12.4** -- which is what
-`environment-tianhe-gpu.yml` pins, and this listing is the evidence for it.
-
-**No MPI is loaded.** 56 independent single-card-sharing workers need no collectives, and
-the openmpi module names differ between the two GPU clusters -- so not needing MPI is
-exactly what let one environment file serve both. `NCCL_MODULE` below is recorded for the
-day a genuine DDP job is added; nothing loads it today.
-
-The site's own `Pytorch/*` modules are deliberately unused: they are CUDA 11.3/11.8 and
-would drag their own Python. conda-forge supplies the whole stack above CUDA.
+    CAVEAT: this repository's only GPU measurement of branch B is D0-C-5, 3.5x SLOWER on
+    a T400 than on CPU. Not transferable to an 80 GB card, and not yet replaced. Take
+    seconds-per-ps off the first real job before sizing a campaign.
 """
+import math
 import os
 import sys
 
@@ -119,87 +196,98 @@ import labels as _labels  # noqa: E402
 # =========================================================================================
 ACCOUNT = None
 
-#: Production partition and walltime (user ruling 2026-09-07).
+#: The script that switches a shell from the default Slurm environment to the fine-grained
+#: one. From the site PDF, section "登录方法" (2). Sourced in `examples/slurm/ai.slurm`;
+#: checked for (by its effect, not by an env var) in `examples/run_chain.sh`.
+ENV_SCRIPT = "/APP/u22/ai_x86/toolshs/set-XY-I.sh"
+
+#: Production partition and walltime. `ai` = an[45-47,49-51,53,65], 8 nodes (measured
+#: 2026-09-11 evening; the PDF's 2024 screenshot showed an[44-53]). MaxTime=UNLIMITED.
 PARTITION = "ai"
 WALLTIME = "7-00:00:00"
 
-#: Smoke-test partition and walltime. 30 minutes, inside `temp`'s own 2 h ceiling.
-DEBUG_PARTITION = "temp"
+#: Smoke test. **The fine-grained controller has ONE partition** (measured 2026-09-11:
+#: `source set-XY-I.sh && sinfo` lists only `ai`). `temp` (2 h, 1 node) exists on the
+#: DEFAULT controller only. So a smoke test here is a short job on `ai`.
+DEBUG_PARTITION = "ai"
 DEBUG_WALLTIME = "00:30:00"
 
-#: The node, from the site manual section 1.1 (and matching `sinfo`):
-#:     2 x 28 = 56 cores, 8 GPU cards, 1024 GB RAM
-#:     80 GB HBM2e per card, driver 535.104.12
-CORES_PER_NODE = 56
+#: **The fine-grained policy** (site PDF), and where the numbers come from (measured):
+#: a node is 96 logical CPUs = 2 sockets x 24 cores x 2 threads, 960 GB, 8 x A800; divide
+#: by eight. So the 12 CPUs a card brings are **6 physical cores hyper-threaded**, which is
+#: why a worker here gets ONE thread (cores_per_worker=1, OMP_NUM_THREADS=1) and not more.
+#: Asking for fewer CPUs saves nothing on the invoice; asking for more is another card.
+CPUS_PER_GPU = 12
+MEM_GB_PER_GPU = 120          #: NEVER requested -- `--mem` is refused. Recorded for sizing.
+THREADS_PER_CORE = 2          #: measured; 12 CPUs = 6 cores
+GPU_MODEL = "a800"            #: `gpu:a800:8` on every node; 80 GB
+SLURM_VERSION = "24.05.1"     #: so --cpus-per-task propagates to srun (>= 22.05)
+
+#: Cards per node, measured (`Gres=gpu:a800:8`, CfgTRES gres/gpu:a800=8, all 8 nodes).
 GPUS_PER_NODE = 8
-MEM_MB_PER_NODE = 1030000
+NODES_IN_PARTITION = 8        #: TRES node=8; 64 cards in the partition
 
-#: Quota (Starlight, 2026-09-05): 10 running jobs, **5 nodes**. The node quota binds
-#: first, so 5 allocations -- and at 56 workers each that is 280 concurrent tasks.
-NODE_QUOTA = 5
+#: Slurm's own billing weights on this partition (scontrol show partition ai):
+#: CPU=1.0, Mem=0.0, GRES/gpu:a800=4.0. One card + 12 CPUs = 16; a node = 128.
+BILLING_WEIGHTS = dict(cpu=1.0, mem=0.0, gpu=4.0)
+
+#: Limits, measured 2026-09-11 (`sacctmgr show assoc user=$USER`): MaxSubmit=10, no
+#: GrpTRES, no MaxTRES, no MaxJobs. QoS available: emergency, normal, st(andard?) --
+#: truncated by sacctmgr; none is passed. There is NO node quota in this environment; the
+#: partition's 8 nodes are the bound.
 JOB_QUOTA = 10
+NODE_QUOTA = NODES_IN_PARTITION
 
-#: CUDA, measured 2026-09-07 from this site's own module tree: 12.3 is the ceiling and
-#: there is no 12.4. `environment-tianhe-gpu.yml` pins the same number on the conda side.
-#: Change them together or neither.
+#: CUDA module (2026-09-07 module tree): 12.3 is the ceiling. `environment-tianhe-gpu.yml`
+#: pins the same. Change them together or neither.
 CUDA_VERSION = "12.3"
-#: Recorded, NOT loaded. See the module docstring: nothing here needs collectives.
-NCCL_MODULE = "nccl/2.19.3-cuda-12.3"
+NCCL_MODULE = "nccl/2.19.3-cuda-12.3"     #: recorded, not loaded
 MPI_MODULE = None
-CUDNN_MODULE = "cudnn/8.9.6.50-cuda12"
+CUDNN_MODULE = "cudnn/8.9.6.50-cuda12"    #: recorded, not loaded
 
-#: USER RULING 2026-09-05: TianheXY-A follows TianheXY-AI's rules --
-#: `--gpus` is passed, `--exclusive` is not.
-#:
-#: One tension recorded rather than hidden: this cluster's own manual says its nodes are
-#: used exclusively, and `yhbatch --help` here DOES list `--exclusive`. So the flag is
-#: probably accepted, unlike on TianheXY-AI where it is disabled. The ruling is followed;
-#: if a submission is ever refused for want of exclusivity, EXCLUSIVE is the line to change.
-GPUS_PER_JOB = GPUS_PER_NODE   #: 8 -- take the node's cards, since the node is exclusive
+#: Never. In a per-card environment this would take the whole node and be billed as 8
+#: cards. (The 2026-09-05 ruling reached the same value for a different reason.)
 EXCLUSIVE = False
 
-#: **Branch B: one worker per CORE, seven workers per CARD.** See the module docstring.
-#: This is the setting that took the node from 8 busy cores to 56.
-QHA_WORKERS_PER_NODE = CORES_PER_NODE                     # 56
+#: Layouts, per CARD.
+QHA_WORKERS_PER_GPU = CPUS_PER_GPU        # 12 trajectories share a card
 QHA_CORES_PER_WORKER = 1
-#: Derived, and reported by describe() so the layout is legible without arithmetic.
-WORKERS_PER_CARD = QHA_WORKERS_PER_NODE // GPUS_PER_NODE  # 7
+TRAIN_WORKERS_PER_GPU = 1                 # a fine-tune uses the card
+TRAIN_CORES_PER_WORKER = CPUS_PER_GPU
 
-#: **Branch C: one worker per CARD.** A fine-tune does use the card, and a committee wants
-#: one model per member, so here the card is the scarce thing and the cores follow it.
-TRAIN_WORKERS_PER_NODE = GPUS_PER_NODE                    # 8
-TRAIN_CORES_PER_WORKER = CORES_PER_NODE // GPUS_PER_NODE  # 7
-
-#: Kept for anything that still reads the old names.
-WORKERS_PER_NODE = QHA_WORKERS_PER_NODE
-CPUS_PER_WORKER = QHA_CORES_PER_WORKER
-
+#: Nested mode only: cards per parsl block, and how many blocks.
+GPUS_PER_BLOCK = 1
 NODES_PER_BLOCK = 1
-#: 5 nodes x 56 workers = 280 concurrent trajectories, the whole quota.
-MAX_BLOCKS = NODE_QUOTA
+#: MaxSubmit is 10 and in nested mode the driver's own job is one of them.
+MAX_BLOCKS = JOB_QUOTA - 1
 
 #: Per-task budget at 90% of the walltime, so a branch B task stops and flushes its last
 #: chunk rather than being killed between a write and a rename.
 QHA_WALL_BUDGET_S = int(0.90 * 7 * 24 * 3600)
 
-#: OpenMM platform for branch B tasks here. The whole point of this cluster.
 OPENMM_PLATFORM = "CUDA"
-
-#: NOT enabled. `nvidia-cuda-mps-control -d` would let the 7 workers on a card run
-#: concurrently instead of time-slicing. It needs the site to permit it and it changes the
-#: failure modes, so it is a measurement to make, not a default to assume.
 USE_MPS = False
+
+#: Kept for anything that still reads the node-shaped names.
+CORES_PER_NODE = GPUS_PER_NODE * CPUS_PER_GPU             # 96 if the whole node were taken
+QHA_WORKERS_PER_NODE = GPUS_PER_NODE * QHA_WORKERS_PER_GPU
+WORKERS_PER_NODE = QHA_WORKERS_PER_NODE
+CPUS_PER_WORKER = QHA_CORES_PER_WORKER
+WORKERS_PER_CARD = QHA_WORKERS_PER_GPU
 # =========================================================================================
 
-#: role -> (workers per node, cores per worker)
+#: Filled by config(): the placement the last built pool will get.
+LAST_PLACEMENT = {}
+
+#: role -> (workers per CARD, cores per worker)
 _LAYOUT = {
-    "qha": (QHA_WORKERS_PER_NODE, QHA_CORES_PER_WORKER),
-    "train": (TRAIN_WORKERS_PER_NODE, TRAIN_CORES_PER_WORKER),
+    "qha": (QHA_WORKERS_PER_GPU, QHA_CORES_PER_WORKER),
+    "train": (TRAIN_WORKERS_PER_GPU, TRAIN_CORES_PER_WORKER),
 }
 
 
 def layout(role):
-    """(workers_per_node, cores_per_worker) for a role. Unknown roles raise."""
+    """(workers_per_card, cores_per_worker) for a role. Unknown roles raise."""
     if role not in _LAYOUT:
         raise KeyError(
             "role {!r} does not run on TianheXY-A. This cluster serves {}.\n"
@@ -208,23 +296,90 @@ def layout(role):
     return _LAYOUT[role]
 
 
-def cards_for(workers):
+def cards_for(workers, gpus):
     """Which card each of `workers` workers lands on, by parsl's own arithmetic.
 
-    Reproduced here rather than trusted, because getting it wrong is invisible: the job
-    runs, the numbers are right, and only the wall clock is wrong. `describe()` reports
-    the histogram so a misconfiguration is readable before submission rather than after.
+    Reproduced from `process_worker_pool.py:738-745` so a misplacement is readable before
+    submission rather than after. `gpus` is what `nvidia-smi -L` will report inside the
+    job -- in the fine-grained environment, exactly the cards allocated.
     """
-    per_card = max(1, workers // GPUS_PER_NODE)
+    per_card = workers // max(1, gpus)
+    if per_card == 0:                       # ZeroDivisionError branch: id used as-is
+        return list(range(workers))
     return [i // per_card for i in range(workers)]
+
+
+def size_pool(workers, gpus, cores):
+    """Round a pool so parsl places it correctly, and say what it costs.
+
+    Returns (workers, gpus, cpus_to_request). `workers` is rounded UP to a multiple of
+    `gpus` (a few idle workers cost nothing -- the CPUs are paid for with the card; a
+    worker on a non-existent card costs a whole trajectory's wall clock). `cpus_to_request`
+    is the full CPUS_PER_GPU x gpus, because that is what is billed regardless.
+    """
+    gpus = max(1, int(gpus))
+    workers = max(gpus, int(workers))
+    if workers % gpus:
+        workers = gpus * math.ceil(workers / gpus)
+    cpus = gpus * CPUS_PER_GPU
+    if workers * cores > cpus:
+        raise ValueError(
+            "{} workers x {} cores = {} CPUs, but {} card(s) bring {} x {} = {}. "
+            "Either fewer workers or more cards; the policy is fixed at {} CPUs per card."
+            .format(workers, cores, workers * cores, gpus, gpus, CPUS_PER_GPU, cpus,
+                    CPUS_PER_GPU))
+    return workers, gpus, cpus
+
+
+def _allocated_gpus():
+    """How many cards THIS job holds, from Slurm's own variables, else nvidia-smi, else 1.
+
+    Inside a fine-grained allocation Slurm restricts the visible cards, so every one of
+    these agrees; the order is cheapest first.
+    """
+    for var in ("SLURM_GPUS_ON_NODE", "SLURM_GPUS", "SLURM_JOB_GPUS"):
+        v = os.environ.get(var, "")
+        if v:
+            try:
+                return int(v) if v.isdigit() else len([x for x in v.split(",") if x])
+            except ValueError:
+                pass
+    cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if cvd:
+        return len([x for x in cvd.split(",") if x])
+    try:
+        import subprocess
+        out = subprocess.run("nvidia-smi -L", shell=True, capture_output=True, text=True,
+                             timeout=20)
+        n = len([l for l in out.stdout.splitlines() if l.startswith("GPU ")])
+        if out.returncode == 0 and n:
+            return n
+    except Exception:                                   # noqa: BLE001
+        pass
+    return 1
+
+
+def _allocated_cpus():
+    for var in ("SLURM_CPUS_PER_TASK", "SLURM_CPUS_ON_NODE", "SLURM_JOB_CPUS_PER_NODE"):
+        v = os.environ.get(var, "")
+        if v and v.split("(")[0].isdigit():
+            return int(v.split("(")[0])
+    return os.cpu_count() or 1
+
+
+def in_allocation_now():
+    """True when the caller is already inside a Slurm job and has not asked to nest.
+
+    `S0_PARSL_NESTED=1` forces the nested mode from inside a job -- for a campaign that
+    wants parsl to submit further blocks.
+    """
+    return bool(os.environ.get("SLURM_JOB_ID")) and os.environ.get("S0_PARSL_NESTED") != "1"
 
 
 def _worker_init(here):
     """Modules first -- compute nodes are a minimal environment.
 
-    Only CUDA. No MPI: independent single-card workers exchange nothing, and the openmpi
-    module names differ between the two GPU clusters, so not loading one is what lets a
-    single environment file serve both.
+    Only CUDA. No MPI: independent single-card workers exchange nothing.
 
     The SLURM_/PMI_ unset and the `mkdir -p` are rules 7 and 6 of this project's HPC
     skill: inherited task-layout variables make a child process try to relaunch itself
@@ -234,8 +389,8 @@ def _worker_init(here):
     falls back to the CPU and takes far longer for reasons that appear nowhere.
 
     **`CUDA_VISIBLE_DEVICES` must not be set here.** worker_init runs once per BLOCK,
-    before the worker pool starts, so anything set here is inherited identically by all 56
-    workers. Parsl assigns the card per worker; see the module docstring.
+    before the worker pool starts, so anything set here is inherited identically by every
+    worker. Parsl assigns the card per worker; see the module docstring.
     """
     return "; ".join([
         "mkdir -p ${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs",
@@ -254,34 +409,77 @@ def _worker_init(here):
 
 def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
            walltime=None, run_dir=None, worker_init=None, max_workers=None,
-           gpus=None, exclusive=None, role="qha", debug=False):
-    """Parsl Config for TianheXY-A. Every argument defaults to SETTINGS.
+           gpus=None, exclusive=None, role="qha", debug=False, in_allocation=None):
+    """Parsl Config for TianheXY-A's fine-grained environment.
 
-    `role` is `qha` (branch B trajectories, 56 workers over 8 cards) or `train`
-    (branch C, 8 workers one per card). They differ in layout and in the executor label,
-    so that a branch B app and a branch C app can never be scheduled onto each other's
-    pool by accident.
+    `role` is `qha` (12 workers per card) or `train` (1 per card). `gpus` is cards per
+    block in nested mode, and is ignored in-allocation (the job already has its cards).
+    `max_workers` caps the pool; in-allocation it defaults to what the cards bring.
 
-    `debug=True` swaps in DEBUG_PARTITION and DEBUG_WALLTIME and caps the run at one
-    allocation: one node, 30 minutes, on the `temp` queue.
+    `in_allocation=None` means: look. Inside a Slurm job (and without S0_PARSL_NESTED=1)
+    the workers run in THIS job under a LocalProvider. Otherwise parsl submits blocks
+    with `--gpus=N` through `TianheSlurmProvider`.
+
+    `debug=True` swaps in DEBUG_PARTITION and DEBUG_WALLTIME and caps at one block.
     """
     from parsl.config import Config
     from parsl.executors import HighThroughputExecutor
     from parsl.launchers import SimpleLauncher
 
-    from providers import TianheSlurmProvider
-
-    workers, cores = layout(role)
-    workers = int(max_workers or workers)
-
+    per_card, cores = layout(role)
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    gpus = GPUS_PER_JOB if gpus is None else gpus
-    excl = EXCLUSIVE if exclusive is None else exclusive
-    blocks = MAX_BLOCKS
-    if debug:
-        partition = partition or DEBUG_PARTITION
-        walltime = walltime or DEBUG_WALLTIME
-        blocks = 1
+    nested = not (in_allocation_now() if in_allocation is None else in_allocation)
+
+    if exclusive:
+        raise ValueError(
+            "--exclusive would allocate the whole node in a per-card environment and be "
+            "billed as {} cards. Not offered here.".format(GPUS_PER_NODE))
+
+    if nested:
+        # -------- the driver will submit blocks of `gpus` cards each --------------------
+        from providers import TianheSlurmProvider
+        gpus = int(gpus or GPUS_PER_BLOCK)
+        workers = int(max_workers or per_card * gpus)
+        workers, gpus, cpus = size_pool(workers, gpus, cores)
+        blocks = MAX_BLOCKS
+        if debug:
+            partition = partition or DEBUG_PARTITION
+            walltime = walltime or DEBUG_WALLTIME
+            blocks = 1
+        provider = TianheSlurmProvider(
+            partition or PARTITION,
+            account=account if account is not None else ACCOUNT,
+            nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
+            # Rendered as `#SBATCH --cpus-per-task=N`. It is the CPUs the cards bring,
+            # not the worker count: the bill is the same and idle CPUs are free.
+            cores_per_node=cpus,
+            # `--mem` is FORBIDDEN in this environment (site PDF, 注意事项 3). parsl only
+            # renders it when mem_per_node is given, so it is never given.
+            mem_per_node=None,
+            init_blocks=0, min_blocks=0,
+            max_blocks=min(int(max_blocks or blocks), JOB_QUOTA),
+            # `-G N` / `--gpus=N`: MANDATORY here (site PDF, 注意事项 1). The `--gpus=`
+            # spelling is the one that has been accepted on both GPU clusters.
+            scheduler_options="#SBATCH --gpus={}".format(gpus),
+            exclusive=False,
+            launcher=SimpleLauncher(),
+            worker_init=worker_init or _worker_init(here),
+            walltime=walltime or WALLTIME,
+            cmd_timeout=60,
+        )
+    else:
+        # -------- run inside the job the driver already holds ---------------------------
+        from parsl.providers import LocalProvider
+        gpus = _allocated_gpus()
+        cpus_here = _allocated_cpus()
+        workers = int(max_workers or per_card * gpus)
+        workers = min(workers, max(gpus, cpus_here // max(1, cores)))
+        workers, gpus, _cpus_billed = size_pool(workers, gpus, cores)
+        provider = LocalProvider(
+            init_blocks=1, min_blocks=1, max_blocks=1,
+            launcher=SimpleLauncher(),
+            worker_init=worker_init or _worker_init(here),
+        )
 
     cfg = Config(
         executors=[
@@ -289,32 +487,11 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                 label=_labels.label(role),
                 max_workers_per_node=workers,
                 cores_per_worker=float(cores),
-                # AN INT, NOT A LIST. parsl expands it to ['0'..'N-1'] and its worker then
-                # computes  CUDA_VISIBLE_DEVICES = int(acc) // (pool_size // n_devices),
-                # which spreads N workers evenly over the node's cards. Handing it a list
-                # of device ids instead makes it divide a device id by 7 and puts 49 of 56
-                # workers on card 0 -- the job runs, the results are right, and it is
-                # seven times slower for a reason nothing reports.
+                # AN INT, NOT A LIST -- see the module docstring for parsl's arithmetic
+                # and for what a list does. Passed ALWAYS: parsl is what places the
+                # workers on the cards the job holds.
                 available_accelerators=workers,
-                provider=TianheSlurmProvider(
-                    partition or PARTITION,
-                    account=account if account is not None else ACCOUNT,
-                    nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
-                    init_blocks=0, min_blocks=0,
-                    max_blocks=min(int(max_blocks or blocks),
-                                   NODE_QUOTA // int(nodes_per_block or NODES_PER_BLOCK),
-                                   JOB_QUOTA),
-                    # `--gpus=N`: the spelling TianheXY-AI's manual requires, applied here
-                    # by the 2026-09-05 ruling. NOT parsl's `gpus_per_node`, which renders
-                    # `--gpus-per-node=N`, a different Slurm option.
-                    scheduler_options=("#SBATCH --gpus={}".format(gpus)
-                                       if gpus else ""),
-                    exclusive=excl,
-                    launcher=SimpleLauncher(),
-                    worker_init=worker_init or _worker_init(here),
-                    walltime=walltime or WALLTIME,
-                    cmd_timeout=60,
-                ),
+                provider=provider,
             ),
         ],
         run_dir=run_dir or os.path.join(
@@ -325,6 +502,13 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         strategy="simple",
     )
     _labels.check(cfg, expect=_labels.label(role))
+    # Legible before submission: the placement this pool will get. Module-level rather
+    # than an attribute on the Config, which is a typed object.
+    global LAST_PLACEMENT
+    LAST_PLACEMENT = dict(
+        mode="in-allocation" if not nested else "nested",
+        workers=workers, gpus=gpus, cores_per_worker=cores,
+        cards=cards_for(workers, gpus))
     return cfg
 
 
@@ -336,30 +520,40 @@ def describe():
     except Exception:                                    # pragma: no cover
         commands, confirmed = {}, []
     hist = {}
-    for card in cards_for(QHA_WORKERS_PER_NODE):
+    for card in cards_for(QHA_WORKERS_PER_GPU * GPUS_PER_BLOCK, GPUS_PER_BLOCK):
         hist[card] = hist.get(card, 0) + 1
     return dict(
-        site="tianhe_a", cluster="TianheXY-A", partition=PARTITION, walltime=WALLTIME,
+        site="tianhe_a", cluster="TianheXY-A", environment="fine-grained (tianhexy-i)",
+        env_script=ENV_SCRIPT,
+        partition=PARTITION, walltime=WALLTIME,
         debug_partition=DEBUG_PARTITION, debug_walltime=DEBUG_WALLTIME,
-        partitions_available=["ai", "temp"],
-        cores_per_node=CORES_PER_NODE, gpus_per_node=GPUS_PER_NODE,
-        mem_mb_per_node=MEM_MB_PER_NODE,
-        gpus_per_job=GPUS_PER_JOB, exclusive=EXCLUSIVE,
-        layouts={r: dict(workers_per_node=w, cores_per_worker=c,
-                         workers_per_card=max(1, w // GPUS_PER_NODE))
+        partitions_available=["ai"],           # the only one; measured 2026-09-11
+        policy=dict(cpus_per_gpu=CPUS_PER_GPU, mem_gb_per_gpu=MEM_GB_PER_GPU,
+                    threads_per_core=THREADS_PER_CORE, gpu_model=GPU_MODEL,
+                    gpu_request="mandatory (-G / --gpus / --gres)",
+                    mem_request="forbidden",
+                    billing_site="max(gpus, ceil(cpus/12)) card-equivalents x hours x weight",
+                    billing_slurm_weights=BILLING_WEIGHTS),
+        nodes=["an45", "an46", "an47", "an49", "an50", "an51", "an53", "an65"],
+        slurm_version=SLURM_VERSION,
+        gpus_per_node=GPUS_PER_NODE, cores_per_node=CORES_PER_NODE,
+        gpus_per_block=GPUS_PER_BLOCK, exclusive=EXCLUSIVE,
+        layouts={r: dict(workers_per_card=w, cores_per_worker=c,
+                         workers_per_node=w * GPUS_PER_NODE)
                  for r, (w, c) in _LAYOUT.items()},
-        workers_per_node=QHA_WORKERS_PER_NODE, cpus_per_worker=QHA_CORES_PER_WORKER,
-        workers_per_card=WORKERS_PER_CARD,
+        workers_per_node=QHA_WORKERS_PER_NODE, qha_workers_per_node=QHA_WORKERS_PER_NODE,
+        cpus_per_worker=QHA_CORES_PER_WORKER, workers_per_card=QHA_WORKERS_PER_GPU,
         card_assignment_histogram=hist,
-        node_utilisation=dict(
-            cores_used=QHA_WORKERS_PER_NODE * QHA_CORES_PER_WORKER,
-            cores_available=CORES_PER_NODE,
-            cards_used=len(hist), cards_available=GPUS_PER_NODE),
+        modes=dict(
+            in_allocation="default inside a Slurm job: LocalProvider, the job's own cards",
+            nested="S0_PARSL_NESTED=1 or a login-node driver: blocks of GPUS_PER_BLOCK "
+                   "cards, up to MAX_BLOCKS"),
         max_blocks=MAX_BLOCKS, node_quota=NODE_QUOTA, job_quota=JOB_QUOTA,
-        max_tasks_in_flight={r: MAX_BLOCKS * w for r, (w, _c) in _LAYOUT.items()},
+        max_tasks_in_flight={r: MAX_BLOCKS * w * GPUS_PER_BLOCK
+                             for r, (w, _c) in _LAYOUT.items()},
         roles=sorted(_LAYOUT),
-        strategy=("branch B: 56 workers over 8 cards, 7 per card, one core each -- the "
-                  "whole node. branch C: 8 workers, one card each."),
+        strategy=("pay in cards, use every CPU a card brings: qha 12 workers per card, "
+                  "train 1 per card. One-molecule examples run in-allocation."),
         gpu_pinning="parsl available_accelerators passed as an INT (see the docstring)",
         mps_enabled=USE_MPS,
         openmm_platform=OPENMM_PLATFORM,
@@ -370,29 +564,36 @@ def describe():
         labels=[_labels.label(r) for r in sorted(_LAYOUT)],
         scheduler_commands=commands, scheduler_commands_confirmed=confirmed,
         notes=[
-            "Preferred cluster for GPU work: 8 cards per allocation against "
-            "TianheXY-AI's one.",
-            "Branch B uses the WHOLE node: 56 workers, 1 core each, 7 sharing each card. "
-            "The previous 8-worker layout left 48 of 56 cores idle.",
-            "CUDA 12.3 is the ceiling here, measured from the site module tree "
-            "2026-09-07; there is no CUDA/12.4.",
-            "No MPI module is loaded; NCCL and cuDNN are recorded for a future DDP job.",
-            "`temp` is a 2-hour single-node queue: 30-minute smoke tests go there.",
-            "9 of 25 `ai` nodes were in state O at the 2026-09-05 reading; effective "
-            "capacity is below the node count.",
+            "ONE login node, TWO Slurm environments. This file targets the fine-grained "
+            "one, entered by sourcing " + ENV_SCRIPT + ".",
+            "Fine-grained policy (site PDF): 1 GPU = 12 CPUs = 120 GB; -G mandatory; "
+            "--mem forbidden; billed by max(gpus, ceil(cpus/12)).",
+            "The default environment (no script sourced) has Gres=(null) and refuses any "
+            "card request -- measured 2026-09-11. Same prompt, different controller.",
+            "In-allocation is the default inside a job: no second allocation, no idle "
+            "driver card. S0_PARSL_NESTED=1 restores block submission for campaigns.",
+            "CUDA 12.3 is the module ceiling (2026-09-07); the PDF's nodes show driver "
+            "535.104.12 / CUDA 12.2.",
+            "Shape: --nodes=1 --ntasks=1 --gpus=G --cpus-per-task=12G. One task, parsl "
+            "fans out the processes and pins each to a card (slurm.schedmd.com, read "
+            "2026-09-11: CUDA_VISIBLE_DEVICES is per-step, restricted, renumbered from 0).",
+            "Storage: XYFS02 is shared by tianhexy-cn and tianhexy-a -- branch A products "
+            "need no transfer to reach branch B here. tianhexy-ai is on XYAIFS00; use "
+            "hpc/tools/xfer_tianhe_ai.sh.",
+            "Measured 2026-09-11: 8 nodes x (96 CPU, 960 GB, 8 x A800), Slurm 24.05.1, "
+            "billing CPU=1 GPU=4, MaxSubmit=10, no node quota. All 64 cards were allocated "
+            "at the reading: expect to queue on cards.",
         ],
         assumptions=[
-            "EXCLUSIVE=False follows the user ruling that this cluster uses TianheXY-AI's "
-            "rules. Its own manual says nodes are exclusive and `yhbatch --help` lists "
-            "--exclusive, so the flag is probably accepted here; revisit if a submission "
-            "is refused for want of exclusivity.",
-            "7 workers per card is an ARGUMENT (a 10-19 atom molecule cannot fill an "
-            "80 GB card), not a measurement. Without MPS the seven time-slice rather "
-            "than run concurrently, so the gain is real but sub-linear and unmeasured.",
-            "Branch B on a card is UNMEASURED here. The only GPU number this repository "
-            "has for it (D0-C-5) is 3.5x SLOWER than CPU, on a T400 -- not transferable "
-            "to an 80 GB card, and not a substitute for measuring it.",
-            "Nothing has been submitted to any Tianhe cluster yet.",
+            "12 trajectories per card is an ARGUMENT (a 10-19 atom molecule cannot fill "
+            "an 80 GB card), not a measurement; without MPS they time-slice.",
+            "12 trajectories per card time-slice without MPS; the per-ps cost on an A800 "
+            "is unmeasured until the first real job.",
+            "12 CPUs per card are 6 physical cores hyper-threaded; 12 single-thread "
+            "workers per card is therefore 2 per core. Fine for a launch-latency-bound "
+            "MACE call chain, unmeasured.",
+            "Branch B on a card is UNMEASURED here (D0-C-5 was a T400, 3.5x slower "
+            "than CPU).",
         ],
         verified=False,
     )

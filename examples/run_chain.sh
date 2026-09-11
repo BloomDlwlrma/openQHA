@@ -5,8 +5,8 @@
 #     bash examples/run_chain.sh <conf>                 # run it here, now
 #     bash examples/run_chain.sh <conf> deimos          # TianheXY-CN,  CPU, 3 days
 #     bash examples/run_chain.sh <conf> debug           # TianheXY-CN,  CPU, 30 min
-#     bash examples/run_chain.sh <conf> ai              # TianheXY-A,   8 cards, 7 days
-#     bash examples/run_chain.sh <conf> temp            # TianheXY-A,   8 cards, 30 min
+#     bash examples/run_chain.sh <conf> ai              # TianheXY-A fine-grained, per card, 7 days
+#     bash examples/run_chain.sh <conf> temp            # same queue, 30 min (there is no `temp` there)
 #     bash examples/run_chain.sh <conf> h100x           # TianheXY-AI,  1 card, 3 days
 #
 # WHY THIS IS TWO FILES AND NOT ONE (user ruling 2026-09-09)
@@ -21,6 +21,11 @@
 #     be passed as command-line flags -- which meant the file you read was not the job
 #     that ran, and `--ntasks` / `--cpus-per-task` / `--exclusive`, which differ per
 #     cluster and cannot be flags in a sane way, were simply absent;
+#     (2026-09-11: the size of the allocation IS passed as flags again, when and only when
+#     the conf sets NODES / CPUS / GPUS / WALLTIME. The reason is that the right size is a
+#     property of the work -- 3 trajectories do not need 8 cards -- so it belongs in the
+#     conf with THREADS and SEEDS. The submit line is echoed in full to keep the job
+#     legible; see "THE ALLOCATION" at the foot of this file.)
 #   * the login node did real work first (importing torch, loading the potential, probing
 #     the basin store), which is exactly what a login node is not for.
 #
@@ -125,10 +130,94 @@ if [ "$CHAIN" != "conformers" ] && [ "$CHAIN" != "conformers_pair" ] && [ "$KIND
     fi
 fi
 
+# ---------------------------------------------------------------------------------------
+# THE ALLOCATION. The .slurm file carries a default for its queue; a conf may size the
+# allocation to the WORK instead. Only what the conf actually sets is passed, so a conf
+# that says nothing submits exactly the file you can read -- unchanged behaviour.
+#
+# This bends the 2026-09-09 rule that the file you read is the job that ran, and it bends
+# it on purpose. A `#SBATCH` line cannot say "four cores because THREADS is 4", and the
+# alternative was one .slurm per (queue, size). The mitigation is that the exact command
+# is echoed below, so the job is still legible -- from the conf plus that echo, rather
+# than from the .slurm alone.
+#
+#   NODES     -N               whole nodes.
+#   CPUS      -c               cores for the one task. A queue may still hand over a whole
+#                              node anyway (TianheXY-C allocates by node and requires
+#                              `--exclusive`), in which case this bounds what is USED, not
+#                              what is charged.
+#   GPUS      --gpus=N         cards. Mandatory on both GPU clusters' per-card
+#                              environments. On ai|temp it defaults to 1 and CPUS follows
+#                              as 12 x GPUS, because that is what a card brings and bills.
+#                              OPENQHA_GRES=gpu:1 sends the `--gres=` spelling instead
+#                              (h100x only; ai|temp always use --gpus).
+#   WALLTIME  -t
+# ---------------------------------------------------------------------------------------
+RES_ARGS=()
+if [ -n "${NODES:-}" ];    then RES_ARGS+=(--nodes="$NODES"); fi
+if [ -n "${CPUS:-}" ];     then RES_ARGS+=(--ntasks=1 --cpus-per-task="$CPUS"); _CPUS_ADDED=1; fi
+# ---------------------------------------------------------------------------------------
+# TianheXY-A: ONE login node, TWO Slurm environments (site PDF; measured 2026-09-11).
+#
+#   default        `ai` = an[9..43], Gres=(null), allocated by CPU: ANY card request is
+#                  refused -- "Invalid generic resource (gres) specification".
+#   fine-grained   after `source /APP/u22/ai_x86/toolshs/set-XY-I.sh`: `ai` = an[44-53],
+#                  1 card = 12 CPUs = 120 GB, -G MANDATORY, --mem FORBIDDEN,
+#                  billed max(gpus, ceil(cpus/12)).
+#
+# This project submits to the fine-grained one. The check below is of the EFFECT (what
+# `sinfo` says about gres), not of an environment variable, because the script's internals
+# are the site's business. OPENQHA_SKIP_ENV_CHECK=1 bypasses it.
+# ---------------------------------------------------------------------------------------
+case "$PARTITION" in
+    ai|temp)
+        if [ "${OPENQHA_SKIP_ENV_CHECK:-}" != "1" ] && command -v sinfo >/dev/null 2>&1; then
+            if ! sinfo -h -p ai -o %G 2>/dev/null | grep -qi gpu; then
+                echo "openQHA: this shell is in TianheXY-A's DEFAULT Slurm environment" >&2
+                echo "  (sinfo shows no gres on 'ai'). A card request there is refused." >&2
+                echo "  Enter the fine-grained environment first:" >&2
+                echo "      source /APP/u22/ai_x86/toolshs/set-XY-I.sh" >&2
+                echo "  then submit again. (OPENQHA_SKIP_ENV_CHECK=1 to override.)" >&2
+                exit 2
+            fi
+        fi
+        # The bill counts cards; 12 CPUs come with each. Ask for all of them.
+        GPUS="${GPUS:-1}"
+        CPUS="${CPUS:-$(( GPUS * 12 ))}"
+        if [ "$CPUS" -gt $(( GPUS * 12 )) ]; then
+            echo "openQHA: CPUS=$CPUS exceeds 12 x GPUS=$GPUS; the site bills the excess" >&2
+            echo "  as ceil($CPUS/12) cards. Raise GPUS instead, or lower CPUS." >&2
+            exit 2
+        fi
+        # CPUS was defaulted above, so it is added here (the generic block ran earlier).
+        [ -n "${_CPUS_ADDED:-}" ] || RES_ARGS+=(--ntasks=1 --cpus-per-task="$CPUS")
+        RES_ARGS+=(--gpus="$GPUS") ;;
+    *)
+        if [ -n "${OPENQHA_GRES:-}" ]; then
+            RES_ARGS+=(--gres="$OPENQHA_GRES")
+        elif [ -n "${GPUS:-}" ]; then
+            RES_ARGS+=(--gpus="$GPUS")
+        fi ;;
+esac
+if [ -n "${WALLTIME:-}" ]; then RES_ARGS+=(--time="$WALLTIME"); fi
+
+case "$PARTITION" in
+    ai|temp)
+        for a in "${RES_ARGS[@]}"; do
+            case "$a" in --mem*) echo "openQHA: --mem is FORBIDDEN in the fine-grained environment (site PDF)." >&2; exit 2 ;; esac
+        done ;;
+esac
+
 mkdir -p logs        # the .slurm files write --output/--error there, relative to here
 
-echo "submit    $SUBMIT $SLURMFILE"
+echo "submit    $SUBMIT ${RES_ARGS[*]} $SLURMFILE $CONF"
 echo "  conf      $CONF"
 echo "  chain     $CHAIN   species $SPECIES   tag $TAG"
+if [ ${#RES_ARGS[@]} -gt 0 ]; then
+    echo "  alloc     from the conf: ${RES_ARGS[*]}"
+    echo "            (overrides the #SBATCH defaults in $SLURMFILE)"
+else
+    echo "  alloc     the #SBATCH defaults in $SLURMFILE"
+fi
 echo "  logs      logs/openqha_*_<jobid>.{out,err}"
-exec "$SUBMIT" "$SLURMFILE" "$CONF"
+exec "$SUBMIT" "${RES_ARGS[@]}" "$SLURMFILE" "$CONF"

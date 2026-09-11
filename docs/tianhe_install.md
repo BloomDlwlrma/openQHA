@@ -16,7 +16,10 @@ place.
 source ~/init_conda.sh
 source /APP/u22/ai_x86/toolshs/setproxy.sh 172.16.31.200 3138
 
-cd /HOME/<acct>/<user>/HDD_POOL/<you>/openQHA-main
+# XYFS02 -- shared by TianheXY-CN and TianheXY-A, so ONE checkout serves deimos and ai.
+# TianheXY-AI (h100x) is on XYAIFS00, a different filesystem: a separate copy, see
+# docs/tianhe_runbook.md section 0b and hpc/tools/xfer_tianhe_ai.sh.
+cd /XYFS02/HDD_POOL/<acct>/<user>/<you>/openQHA-main
 bash install_dependency.sh --tianhe-cuda --both     # builds openqha AND openqha-gpu
 ```
 

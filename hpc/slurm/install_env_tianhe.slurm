@@ -7,8 +7,11 @@
 #     # both environments in one job
 #     ROLE=both yhbatch -p h100x --gpus=1 -t 02:00:00 hpc/slurm/install_env_tianhe.slurm
 #
-#     # TianheXY-A
-#     yhbatch -p temp --gpus=1 -t 01:00:00 hpc/slurm/install_env_tianhe.slurm
+#     # TianheXY-A, fine-grained environment: enter it first, then -G is mandatory
+#     # (1 card = 12 CPUs = 120 GB; --mem forbidden). Without the script the same
+#     # prompt talks to a controller with Gres=(null) that refuses --gpus.
+#     source /APP/u22/ai_x86/toolshs/set-XY-I.sh
+#     yhbatch -p ai -G 1 -c 12 -t 01:00:00 hpc/slurm/install_env_tianhe.slurm
 #
 #     # TianheXY-CN (CPU cluster) -- but READ SECTION 3 FIRST, $HOME may not be the same
 #     ROLE=cpu yhbatch -p debug -t 00:30:00 hpc/slurm/install_env_tianhe.slurm

@@ -666,7 +666,8 @@ python hpc/labels.py            # the table
 |---|---|
 | every config builds, every role, debug and production | **8/8 pass** |
 | every job script renders (`#SBATCH` directives read) | **pass** |
-| `--gpus=8` present, `--exclusive` absent on the GPU clusters | **pass** |
+| `--exclusive` absent on the GPU clusters | **pass** |
+| `--gpus=N` present on TianheXY-A, submitted from the fine-grained environment | **revised 2026-09-11** — mandatory there (1 card = 12 CPUs = 120 GB); refused in the default environment, which has `Gres=(null)`. N is sized to the work, not to the node. See `docs/tianhe_runbook.md` footnote 2. |
 | `--exclusive` present on the CPU cluster | **pass** |
 | per-card pinning gives `['0'…'7']` | **pass** |
 | all four `.slurm` and two `.sh` parse (`bash -n`) | **pass** |

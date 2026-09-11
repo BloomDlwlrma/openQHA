@@ -3,7 +3,8 @@
 #
 #     # 30-minute smoke test on `temp`
 #     PARTITION=temp WALLTIME=00:30:00 PROD_PS=2 TAG=a_debug \
-#         yhbatch -p temp --gpus=8 -t 00:30:00 hpc/slurm/branchB_traj_tianhe_a.slurm
+#         source /APP/u22/ai_x86/toolshs/set-XY-I.sh   # fine-grained env FIRST
+        yhbatch -p ai -G 1 -c 12 -t 00:30:00 hpc/slurm/branchB_traj_tianhe_a.slurm
 #
 #     # production on `ai`
 #     bash hpc/slurm/submit_branchB_tianhe_a.sh prod
@@ -31,10 +32,17 @@
 #SBATCH --job-name=openqha_B_traj
 #SBATCH --partition=ai
 #SBATCH --nodes=1
-#SBATCH --gpus=8
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=12
 #SBATCH --time=7-00:00:00
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
+# **ONE CARD, 12 CPUs -- the fine-grained environment's unit.** Submit from a shell that
+# has run `source /APP/u22/ai_x86/toolshs/set-XY-I.sh`; there `-G` is MANDATORY and `--mem`
+# is FORBIDDEN (site PDF). Without the script the same prompt talks to the DEFAULT
+# controller, where Gres=(null) and this very `--gpus=1` is refused -- measured 2026-09-11.
+# Raise --gpus (and --cpus-per-task = 12 x gpus) for more trajectories per job.
+#
 # NO --exclusive. Banned on TianheXY-AI (manual 6.2.2) and, by the 2026-09-05 ruling,
 # not passed here either -- even though this cluster's own manual calls its nodes
 # exclusive and its `yhbatch --help` does list the flag. If a submission is ever refused

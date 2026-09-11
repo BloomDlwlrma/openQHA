@@ -89,8 +89,11 @@ print(len(read('$BASINS', index=':')))" 2>/dev/null || echo 1)
     else
         echo "  $s  no branch A basin list -- ONE geometry, and the record will say so"
     fi
+    # Fine-grained environment (source /APP/u22/ai_x86/toolshs/set-XY-I.sh first):
+    # one card and the 12 CPUs it brings, per species. -G is mandatory there; in the
+    # DEFAULT environment this same line is refused (Gres=(null), measured 2026-09-11).
     OUT=$(yhbatch \
-        --partition="$PARTITION" --time="$WALLTIME" --gpus=8 \
+        --partition="$PARTITION" --time="$WALLTIME" --gpus=1 --cpus-per-task=12 \
         --export=ALL,SPECIES="$s",TAG="$TAG",BASINS_FILE="$BASINS",N_BASINS="$NB",WALL_BUDGET_S="$BUDGET",PROD_PS="$PROD_PS" \
         --output="$LOGDIR/openqha_B_${TAG}_${s}_%j.out" \
         --error="$LOGDIR/openqha_B_${TAG}_${s}_%j.err" \
