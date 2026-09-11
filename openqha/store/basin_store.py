@@ -131,6 +131,39 @@ def exists(qm9_index, cfg=None, tag=None, **kw):
     return paths_for(qm9_index, cfg, tag, **kw)[0].exists()
 
 
+def tags_for(qm9_index, cfg=None, **kw):
+    """The tags under which this molecule HAS a basin list, sorted.
+
+    For the error message a reader gets when it asks for a tag that does not hold the
+    molecule. `no branch A product under tag 'prod'` was, on 2026-09-11, the whole of the
+    diagnosis offered while `02c_prod` sat in the same directory; the one `ls` that
+    resolved it belongs in the message.
+    """
+    base = root(cfg)
+    if not base.is_dir():
+        return []
+    r, c = shard(qm9_index, kw.get("chunk", CHUNK), kw.get("rng", RANGE))
+    stem = str(qm9_index) + ".basins.json"
+    out = []
+    for d in sorted(base.iterdir()):
+        if d.is_dir() and (d / r / c / stem).exists():
+            out.append(d.name)
+    return out
+
+
+def missing_message(qm9_index, tag, cfg=None):
+    """One sentence that says what is missing and, if anything, what is there instead."""
+    have = tags_for(qm9_index, cfg)
+    msg = "no branch A product for {} under tag {!r}".format(qm9_index, tag)
+    if have:
+        msg += ".\n  This molecule HAS basins under: {}.\n  The tag is the one the " \
+               "branchA.conf that produced them set (data/basins/<tag>/...); pass " \
+               "--tag {}.".format(", ".join(have), have[0])
+    else:
+        msg += ".\n  No tag under {} holds it. Run branch A first.".format(root(cfg))
+    return msg
+
+
 def completed(cfg=None, tag=None, chunk_dir=None):
     """QM9 indices already computed. The set a resume subtracts from its worklist.
 

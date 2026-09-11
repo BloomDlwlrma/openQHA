@@ -57,20 +57,44 @@ if they are missing and reuses them if they are not.
 
 ```bash
 bash examples/run_chain.sh <conf>            # here, now — no scheduler
-bash examples/run_chain.sh <conf> deimos     # TianheXY-CN, CPU,     3 days
-bash examples/run_chain.sh <conf> debug      # TianheXY-CN, CPU,     30 min
-bash examples/run_chain.sh <conf> ai         # TianheXY-A,  8 cards, 7 days
-bash examples/run_chain.sh <conf> temp       # TianheXY-A,  8 cards, 30 min
-bash examples/run_chain.sh <conf> h100x      # TianheXY-AI, 1 card,  3 days
+bash examples/run_chain.sh <conf> deimos     # TianheXY-CN, CPU, whole node (64 cores), 3 days
+bash examples/run_chain.sh <conf> debug      # TianheXY-CN, CPU, whole node,            30 min
+bash examples/run_chain.sh <conf> ai         # TianheXY-A,  GPU, per card (12 CPUs),    7 days
+bash examples/run_chain.sh <conf> temp       # TianheXY-A,  same queue,                 30 min
+bash examples/run_chain.sh <conf> h100x      # TianheXY-AI, GPU, per card (14 CPUs),    3 days
 ```
+
+**Before `ai` or `temp`, once per shell:** `source /APP/u22/ai_x86/toolshs/set-XY-I.sh`.
+TianheXY-A's login node has two Slurm controllers behind one prompt; the fine-grained
+one (cards are the unit, `-G` mandatory, `--mem` forbidden, 1 GPU = 12 CPUs = 120 GB) is
+the one this project uses, and `run_chain.sh` refuses to submit until `sinfo` shows it
+is the one in effect. The whole story, with the measurements, is
+[`docs/tianhe_runbook.md`](../docs/tianhe_runbook.md) §0 and §0b; the scheduler itself
+is stock Slurm — [slurm.schedmd.com/overview.html](https://slurm.schedmd.com/overview.html)
+— and the options this project relies on are quoted from its manual in §0b.
 
 Three files, and the split is what makes the output land where you expect:
 
 | file | what it is |
 |---|---|
-| `run_chain.sh` | **submits.** Reads the conf, picks the `.slurm`, hands it to `sbatch`/`yhbatch`, prints the job id and exits. Does nothing heavy — it runs on a login node |
-| `slurm/<partition>.slurm` | **one queue's directives.** `--partition`, `--nodes`, `--ntasks`, `--cpus-per-task`, `--time`, `--gpus`/`--exclusive`, and `--output`/`--error` into `logs/` |
+| `run_chain.sh` | **submits.** Reads the conf, picks the `.slurm`, sizes the allocation from the conf (`NODES`, `CPUS`, `GPUS`, `WALLTIME`, passed as flags that override the file's defaults), prints the exact command, hands it to `sbatch`/`yhbatch` and exits. Does nothing heavy — it runs on a login node |
+| `slurm/<partition>.slurm` | **one queue's defaults.** `--partition`, `--nodes`, `--ntasks`, `--cpus-per-task`, `--time`, `--gpus` or `--exclusive` as the queue requires, and `--output`/`--error` into `logs/` |
 | `chain_body.sh` | **the work.** Sourced by every `.slurm` and used directly for a local run, so the five queues can differ in allocation and cannot differ in what they compute |
+
+**The GPU allocation is one job.** Driver and workers share it: `tianhe_a.py` sees
+`SLURM_JOB_ID` and runs parsl inside the allocation, so a one-molecule example is
+`--gpus=1 --cpus-per-task=12` and nothing else. Acetone's branch B is 1 basin × 3 seeds =
+3 trajectories on one card. `S0_PARSL_NESTED=1` restores block submission for a campaign.
+
+**Tags must match.** Every branch A product lands under `data/basins/<TAG>/`, where `TAG`
+is the one in the `branchA.conf` that made it. A command that reads it must name the same
+tag — `--tag 02c_prod` for 02c, `--tag 02d_prod` for 02d, `acetone`/`propanal` for 02a/02b.
+`no branch A product for <species> under tag '<x>'` means exactly that: look in
+`data/basins/` for the tag that exists.
+
+**Storage.** TianheXY-CN and TianheXY-A share one filesystem (`/XYFS02/...`), so branch A
+on `deimos` and branch B on `ai` use the same checkout and nothing is copied. TianheXY-AI
+(`h100x`) is on `/XYAIFS00/`; `hpc/tools/xfer_tianhe_ai.sh` moves files there and back.
 
 It used to be one self-submitting file. That failed on the machine: the job's output
 arrived on the **login node's terminal** instead of its `--output` file, so the prompt
@@ -79,7 +103,8 @@ never came back to submit step 2; `#SBATCH` lines cannot be parameterised, so
 the login node did real work (importing torch, loading the potential) before submitting.
 
 `sbatch` on the CPU cluster, `yhbatch` on the GPU ones. Job output goes to
-`logs/openqha_<name>_<jobid>.{out,err}` under the repository.
+`logs/openqha_<name>_<jobid>.{out,err}` under the repository. The submitted line is
+printed in full before submission, so what ran is legible from the conf plus that echo.
 
 ### `02a_qha_openmm_acetone/` is the debug check for the whole chain
 

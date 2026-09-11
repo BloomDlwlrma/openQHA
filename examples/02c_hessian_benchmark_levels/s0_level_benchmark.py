@@ -34,7 +34,7 @@ THREE THINGS THAT WOULD MAKE THIS MEASUREMENT MEAN LESS THAN IT LOOKS
    quantity that actually matters downstream.
 
     python examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
-        --species dsgdb9nsd_000018 --tag prod --levels mace,gfn2
+        --species dsgdb9nsd_000018 --tag 02c_prod --levels mace,gfn2
 """
 import argparse
 import json
@@ -250,7 +250,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", default="dsgdb9nsd_000018")
-    ap.add_argument("--tag", default="prod")
+    # The default is what examples/02c_hessian_benchmark_levels/branchA.conf writes. Until
+    # 2026-09-11 it was "prod", which no conf in this repository sets.
+    ap.add_argument("--tag", default="02c_prod",
+                    help="branch A tag to read the basins from; = branchA.conf's TAG")
     ap.add_argument("--levels", default="mace,gfn2",
                     help="comma separated subset of mace,gfn2,rimp2")
     ap.add_argument("--basin", type=int, default=None)
@@ -273,8 +276,7 @@ def main():
 
     rec_a = basin_store.read(args.species, tag=args.tag)
     if rec_a is None:
-        raise SystemExit("no branch A product for {} under tag {!r}".format(
-            args.species, args.tag))
+        raise SystemExit(basin_store.missing_message(args.species, args.tag))
     lines = Path(rec_a["basin_store"]["xyz"]).read_text(encoding="utf-8").splitlines()
     geoms, i = [], 0
     while i < len(lines) and lines[i].strip():

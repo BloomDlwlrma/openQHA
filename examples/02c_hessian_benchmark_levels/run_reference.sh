@@ -12,7 +12,10 @@ mkdir -p "$(dirname "$LOG")"
 
 cd "$ROOT"
 {
-  for spec in "dsgdb9nsd_000018 prod" "dsgdb9nsd_000035 multibasin"; do
+  # Tags are the ones branchA.conf wrote: 02c_prod for both molecules (propanal's step 1
+  # is the same conf with SPECIES=dsgdb9nsd_000035). Until 2026-09-11 this said "prod"
+  # and "multibasin", and neither directory exists.
+  for spec in "dsgdb9nsd_000018 02c_prod" "dsgdb9nsd_000035 02c_prod"; do
     set -- $spec
     echo "=== $1  tag $2  $(date -Is) ==="
     "$PY" examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \

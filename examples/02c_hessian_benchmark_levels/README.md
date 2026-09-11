@@ -3,9 +3,12 @@
 Three levels, the same two molecules, energies and forces through to `G − E_el`.
 
 ```bash
-# seconds: MACE + GFN2
+# step 1, once, on the CPU cluster: the basins, under THIS example's tag (02c_prod)
+bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/branchA.conf deimos
+
+# seconds: MACE + GFN2. The tag is the one branchA.conf wrote -- 02c_prod, not prod.
 python examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
-    --species dsgdb9nsd_000018 --tag prod --levels mace,gfn2
+    --species dsgdb9nsd_000018 --tag 02c_prod --levels mace,gfn2
 
 # PRODUCTION: all three levels, every basin, on the CPU cluster
 bash examples/run_chain.sh \
@@ -14,6 +17,12 @@ bash examples/run_chain.sh \
 # hours, here, detached, both molecules
 bash examples/02c_hessian_benchmark_levels/run_reference.sh
 ```
+
+**The tag is `02c_prod`**, because that is what `branchA.conf` here sets, and a branch A
+product is filed under its tag: `data/basins/02c_prod/…`. `--tag prod` answers
+`no branch A product for dsgdb9nsd_000018 under tag 'prod'` even when `02c_prod` is
+sitting right there. Propanal under the same tag needs its own step 1:
+`SPECIES=dsgdb9nsd_000035 bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/branchA.conf deimos`.
 
 **`CHAIN=levels` runs on CPU partitions only.** ORCA has no GPU path in this repository
 and `D0-75` puts production quantum chemistry on deimos; `run_chain.sh` refuses a GPU

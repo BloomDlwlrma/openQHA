@@ -10,19 +10,27 @@ can be built from **one** spectrum instead of two, and the hybrid splice — Hes
 the stiff modes, QHA for the soft ones — is unnecessary machinery.
 
 ```bash
-# seconds, no MD at all: the harmonic-limit control
-python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
-    --species dsgdb9nsd_000018 --tag prod --stage harmonic
+# step 1, once, on the CPU cluster: the basins, under THIS example's tag (02d_prod)
+bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos
 
-# PRODUCTION: 500 ps, one frame per 2 fs, every basin, three seeds
-bash examples/run_chain.sh \
-    examples/02d_qha_frequency_identity/chain.conf ai
+# seconds, no MD at all: the harmonic-limit control. --tag is the one branchA.conf wrote.
+python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
+    --species dsgdb9nsd_000018 --tag 02d_prod --stage harmonic
+
+# PRODUCTION: 500 ps, one frame per 2 fs, every basin, three seeds -- one card, one job
+source /APP/u22/ai_x86/toolshs/set-XY-I.sh                 # once per shell, TianheXY-A
+bash examples/run_chain.sh examples/02d_qha_frequency_identity/chain.conf ai
 bash examples/run_chain.sh examples/02d_qha_frequency_identity/chain.conf   # or here
 
 # a trajectory you already have
 python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
-    --species dsgdb9nsd_000018 --tag prod --stage all --traj-tag ex02d
+    --species dsgdb9nsd_000018 --tag 02d_prod --stage all --traj-tag ex02d
 ```
+
+The tag is `02d_prod` because that is what `branchA.conf` here sets and a branch A
+product is filed under its tag (`data/basins/02d_prod/…`); `--tag prod` fails with
+`no branch A product … under tag 'prod'`. Acetone's branch B for this example is 1 basin
+× 3 seeds = 3 dense trajectories, which is one card.
 
 ---
 

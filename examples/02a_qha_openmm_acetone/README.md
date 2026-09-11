@@ -160,11 +160,15 @@ from 250 to 3000 frames, and **all 24 modes are recovered at 2 ps spacing**. Tha
 the direct disproof of the idea that downsampling filters stiff modes out of the covariance
 — if it did, T·S would fall below the closed form.
 
-**`examples/run_chain.sh`** — the whole chain, and the only file that submits anything.
-It carries the invariant `#SBATCH` directives, takes partition / walltime / `--gpus` as
-`yhbatch` flags (a `#SBATCH` line cannot be parameterised), and passes the conf as the
-script's **argument** for the job to `source` — not `--export=ALL`. See
-[`../../docs/branchB_production.md`](../../docs/branchB_production.md) §6.
+**`examples/run_chain.sh`** — the submitter, and the only file that submits anything.
+It picks `examples/slurm/<partition>.slurm` (one queue's directives), sizes the allocation
+from this conf (`GPUS=1`, `CPUS=12`, `MAX_WORKERS=3` — one card, what a card brings, one
+worker per trajectory), prints the exact `yhbatch` line, and passes the conf as the
+script's **argument** for the job to `source` — not `--export=ALL`. The work itself is
+`examples/chain_body.sh`, shared by every queue. On `ai` the job is a single allocation:
+driver and the three trajectories together, `--gpus=1 --cpus-per-task=12`, after
+`source /APP/u22/ai_x86/toolshs/set-XY-I.sh`. See [`../README.md`](../README.md) and
+[`../../docs/tianhe_runbook.md`](../../docs/tianhe_runbook.md) §0b.
 
 ---
 

@@ -34,7 +34,7 @@ THREE STAGES, AND WHY THE ORDER MATTERS
    side, so the price of each choice is a number rather than an argument.
 
     python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
-        --species dsgdb9nsd_000018 --tag prod --stage harmonic
+        --species dsgdb9nsd_000018 --tag 02d_prod --stage harmonic
 """
 import argparse
 import json
@@ -84,10 +84,9 @@ def basin_geometries(species, tag):
     rec = basin_store.read(species, tag=tag)
     if rec is None:
         raise SystemExit(
-            "no branch A product for {} under tag {!r}. This example starts from the "
-            "basins branch A found.\n"
-            "  python scripts/production/s0_A_pipeline.py --species {} --tag {}"
-            .format(species, tag, species, tag))
+            basin_store.missing_message(species, tag)
+            + "\n  This example starts from the basins branch A found; to make them:\n"
+            "  bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos")
     lines = Path(rec["basin_store"]["xyz"]).read_text(encoding="utf-8").splitlines()
     out, i = [], 0
     while i < len(lines) and lines[i].strip():
@@ -265,7 +264,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", default="dsgdb9nsd_000018",
                     help="QM9 index. Acetone 000018, propanal 000035.")
-    ap.add_argument("--tag", default="prod")
+    # The default is what examples/02d_qha_frequency_identity/branchA.conf writes. Until
+    # 2026-09-11 it was "prod", which no conf in this repository sets.
+    ap.add_argument("--tag", default="02d_prod",
+                    help="branch A tag to read the basins from; = branchA.conf's TAG")
     ap.add_argument("--stage", default="harmonic",
                     choices=("harmonic", "real", "all"))
     ap.add_argument("--traj-tag", default=None,

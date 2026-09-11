@@ -130,10 +130,11 @@ def main():
     rec_a = basin_store.read(args.species, tag=args.tag)
     if rec_a is None:
         raise SystemExit(
-            "no branch A product for {} under tag {!r}. The ensemble is a sum over the "
-            "basins branch A found; without it there is nothing to sum.\n"
+            basin_store.missing_message(args.species, args.tag)
+            + "\n  The ensemble is a sum over the basins branch A found; without it there "
+            "is nothing to sum.\n"
             "  python scripts/production/s0_A_pipeline.py --species {} --tag {}"
-            .format(args.species, args.tag, args.species, args.tag))
+            .format(args.species, args.tag))
 
     e_rel = basin_electronic(rec_a)
     sets = ("all", "heavy") if args.atoms == "both" else (args.atoms,)

@@ -82,7 +82,7 @@ quietly run from the reference geometry.
 | cluster | this machine | TianheXY-A | TianheXY-AI |
 | resource config | `local` | `tianhe_a` | `tianhe_ai` |
 | route | ASE | OpenMM, CUDA | OpenMM, CUDA |
-| allocation | — | whole node, 8 cards, 56 cores | **one card**, 14 CPUs |
+| allocation | — | **one card**, 12 CPUs, 120 GB (fine-grained; `set-XY-I.sh` first) | **one card**, 14 CPUs |
 | walltime | — | 7 days | 3 days |
 
 ### The job gets its settings by `source`, not `--export`
@@ -95,9 +95,11 @@ Here the conf path is the script's **argument** — Slurm passes a batch script 
 unchanged — and the job sources it. The settings are a file that can be diffed, committed
 and re-run.
 
-`run_chain.sh` submits **itself**: it carries the invariant `#SBATCH` directives and takes
-partition, walltime and `--gpus` as `yhbatch` flags, because those depend on the cluster
-and a `#SBATCH` line cannot be parameterised.
+`run_chain.sh` submits `examples/slurm/<partition>.slurm`, whose `#SBATCH` lines are the
+queue's defaults; the conf's `GPUS`/`CPUS`/`NODES`/`WALLTIME`, when set, are passed as
+flags and override them, and the full command is echoed before submission. Propanal's
+branch B is 3 basins × 3 seeds = 9 trajectories: still one card (`GPUS=1`, up to 12
+workers), so the defaults need nothing from this conf.
 
 ---
 
