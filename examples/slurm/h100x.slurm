@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=14
 #SBATCH --gpus=1
 #SBATCH --time=3-00:00:00
-#SBATCH --output=logs/openqha_%x_%j.out
-#SBATCH --error=logs/openqha_%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 # =======================================================================================
 # TianheXY-AI. **The allocation IS one card**, and 14 CPUs come with it -- this cluster
 # allocates per card, not per node, and `--exclusive` is BANNED here (it is required on

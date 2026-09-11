@@ -153,7 +153,29 @@ fi
 #                              (h100x only; ai|temp always use --gpus).
 #   WALLTIME  -t
 # ---------------------------------------------------------------------------------------
-RES_ARGS=()
+# ---------------------------------------------------------------------------------------
+# THE JOB NAME carries the settings, so `squeue -o "%.60j"` and the log file name
+# (`logs/%x_%j.out`) say what a job IS without opening the conf. A conf may set JOB_NAME
+# outright; otherwise:
+#
+#   identity   openqha_<SPECIES>_identity_e<EQUIL_PS>_p<PROD_PS>_s<SAMPLE_EVERY>_x<SEEDS>_nu<NU_CUT>
+#   others     openqha_<SPECIES>_<CHAIN>_<TAG>
+#
+# Commas become '-' (a comma inside --job-name is legal but breaks every shell pipeline
+# that reads squeue). Slurm caps a job name well above this length; squeue's default
+# column does not, so widen it: squeue -u $USER -o "%.10i %.70j %.2t %.10M".
+# ---------------------------------------------------------------------------------------
+if [ -z "${JOB_NAME:-}" ]; then
+    case "$CHAIN" in
+        identity)
+            JOB_NAME="openqha_${SPECIES}_identity_e${EQUIL_PS:-proto}_p${PROD_PS:-proto}_s${SAMPLE_EVERY:-proto}_x${SEEDS:-3}_nu${NU_CUT:-default}" ;;
+        *)
+            JOB_NAME="openqha_${SPECIES}_${CHAIN}_${TAG}" ;;
+    esac
+fi
+JOB_NAME="$(printf '%s' "$JOB_NAME" | tr ', /' '-_-')"
+
+RES_ARGS=(--job-name="$JOB_NAME")
 if [ -n "${NODES:-}" ];    then RES_ARGS+=(--nodes="$NODES"); fi
 if [ -n "${CPUS:-}" ];     then RES_ARGS+=(--ntasks=1 --cpus-per-task="$CPUS"); _CPUS_ADDED=1; fi
 # ---------------------------------------------------------------------------------------
@@ -213,11 +235,12 @@ mkdir -p logs        # the .slurm files write --output/--error there, relative t
 echo "submit    $SUBMIT ${RES_ARGS[*]} $SLURMFILE $CONF"
 echo "  conf      $CONF"
 echo "  chain     $CHAIN   species $SPECIES   tag $TAG"
-if [ ${#RES_ARGS[@]} -gt 0 ]; then
-    echo "  alloc     from the conf: ${RES_ARGS[*]}"
+echo "  name      $JOB_NAME"
+if [ ${#RES_ARGS[@]} -gt 1 ]; then
+    echo "  alloc     from the conf: ${RES_ARGS[*]:1}"
     echo "            (overrides the #SBATCH defaults in $SLURMFILE)"
 else
     echo "  alloc     the #SBATCH defaults in $SLURMFILE"
 fi
-echo "  logs      logs/openqha_*_<jobid>.{out,err}"
+echo "  logs      logs/${JOB_NAME}_<jobid>.{out,err}"
 exec "$SUBMIT" "${RES_ARGS[@]}" "$SLURMFILE" "$CONF"

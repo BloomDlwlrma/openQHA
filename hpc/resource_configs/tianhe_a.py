@@ -435,6 +435,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
             "--exclusive would allocate the whole node in a per-card environment and be "
             "billed as {} cards. Not offered here.".format(GPUS_PER_NODE))
 
+    pin = True
     if nested:
         # -------- the driver will submit blocks of `gpus` cards each --------------------
         from providers import TianheSlurmProvider
@@ -470,8 +471,20 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
     else:
         # -------- run inside the job the driver already holds ---------------------------
         from parsl.providers import LocalProvider
-        gpus = _allocated_gpus()
-        cpus_here = _allocated_cpus()
+        card = os.environ.get("S0_CARD")
+        if card is not None:
+            # **ONE CARD OF A MULTI-CARD JOB.** examples/02d-2 packs G drivers into a
+            # `--gpus=G` job, one setting per card, each launched with
+            # `S0_CARD=k CUDA_VISIBLE_DEVICES=k`. Parsl must then NOT pin: its own
+            # arithmetic uses `nvidia-smi -L`, which ignores CUDA_VISIBLE_DEVICES and
+            # reports all G cards, and its fallback writes the worker's index into
+            # CUDA_VISIBLE_DEVICES -- so every driver's workers would land on cards
+            # 0, 1, 2 and collide. With no `available_accelerators` parsl leaves the
+            # variable alone and the workers inherit the one card they were given.
+            gpus, pin = 1, False
+        else:
+            gpus, pin = _allocated_gpus(), True
+        cpus_here = _allocated_cpus() if card is None else CPUS_PER_GPU
         workers = int(max_workers or per_card * gpus)
         workers = min(workers, max(gpus, cpus_here // max(1, cores)))
         workers, gpus, _cpus_billed = size_pool(workers, gpus, cores)
@@ -488,16 +501,19 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                 max_workers_per_node=workers,
                 cores_per_worker=float(cores),
                 # AN INT, NOT A LIST -- see the module docstring for parsl's arithmetic
-                # and for what a list does. Passed ALWAYS: parsl is what places the
-                # workers on the cards the job holds.
-                available_accelerators=workers,
+                # and for what a list does. Passed whenever parsl is the one placing the
+                # workers on the job's cards; withheld under S0_CARD (see above).
+                **(dict(available_accelerators=workers) if pin else {}),
                 provider=provider,
             ),
         ],
+        # Per card under S0_CARD: G drivers starting at once would otherwise race for
+        # parsl's numbered runinfo/NNN directories in one run_dir.
         run_dir=run_dir or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
                            os.path.expanduser("~/HDD_POOL/runs/openQHA")),
-            "parsl"),
+            "parsl" + ("_card{}".format(os.environ["S0_CARD"])
+                       if os.environ.get("S0_CARD") is not None else "")),
         retries=1,
         strategy="simple",
     )
@@ -508,7 +524,8 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
     LAST_PLACEMENT = dict(
         mode="in-allocation" if not nested else "nested",
         workers=workers, gpus=gpus, cores_per_worker=cores,
-        cards=cards_for(workers, gpus))
+        pinned_by_parsl=pin, card=os.environ.get("S0_CARD"),
+        cards=cards_for(workers, gpus) if pin else [int(os.environ["S0_CARD"])] * workers)
     return cfg
 
 

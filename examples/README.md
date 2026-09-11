@@ -15,6 +15,7 @@ the repository-scale version of a criterion nobody has built a failing case for.
 | `02b_qha_openmm_propanal/` | **the whole chain on a multi-basin molecule.** Propanal: 3 basins (one Cs, a degenerate gauche pair), branch A → branch B → collect → **F_conf** | **runs** |
 | `02c_hessian_benchmark_levels/` | **the scale.** MACE-OFF vs GFN2-xTB vs RI-MP2/cc-pVTZ on the same molecules, energies and forces through to `G − E_el`. Answers "how far is the potential's own thermochemistry from the reference", which every other deviation is measured against | **runs** (MACE + GFN2 in seconds; the reference level is hours) |
 | `02d_qha_frequency_identity/` | **can `ν(QHA)` stand in for `ω(Hessian)`?** Harmonic-limit control, real trajectory, and the hybrid spectrum priced against both. **Measured: yes for entropy, no for ZPE and enthalpy** — the obstacle is the frame count | **runs** |
+| `02d-2_qha_settings_array/` | **02d at many settings at once**: one row of `settings.tsv` per run, one card per row, packed into a Slurm job array of whole-node tasks. Length x sampling-interval grid by default | **submits** |
 
 Both new examples use the same two molecules as 02a and 02b, so their numbers can be
 carried straight across.
@@ -102,9 +103,12 @@ never came back to submit step 2; `#SBATCH` lines cannot be parameterised, so
 `--cpus-per-task` and `--exclusive` — which differ per cluster — were simply absent; and
 the login node did real work (importing torch, loading the potential) before submitting.
 
-`sbatch` on the CPU cluster, `yhbatch` on the GPU ones. Job output goes to
-`logs/openqha_<name>_<jobid>.{out,err}` under the repository. The submitted line is
-printed in full before submission, so what ran is legible from the conf plus that echo.
+`sbatch` on the CPU cluster, `yhbatch` on the GPU ones. **The job is named from the
+conf** -- `openqha_<species>_<chain>_<tag>`, and for `identity`
+`openqha_<species>_identity_e<equil>_p<prod>_s<sample>_x<seeds>_nu<cuts>` -- and the
+log is `logs/<that name>_<jobid>.{out,err}`, so a directory of logs reads as a table of
+settings. `squeue -u $USER -o "%.10i %.70j %.2t %.10M"` shows the full name. The
+submitted line is printed in full before submission.
 
 ### `02a_qha_openmm_acetone/` is the debug check for the whole chain
 

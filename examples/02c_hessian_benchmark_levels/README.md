@@ -6,17 +6,25 @@ Three levels, the same two molecules, energies and forces through to `G − E_el
 # step 1, once, on the CPU cluster: the basins, under THIS example's tag (02c_prod)
 bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/branchA.conf deimos
 
-# seconds: MACE + GFN2. The tag is the one branchA.conf wrote -- 02c_prod, not prod.
+# seconds of compute: MACE + GFN2 -- through Slurm, on the 30-minute CPU queue
+bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/quick.conf debug
+
+# hours: MACE + GFN2 + RI-MP2/RIJK/cc-pVTZ, every basin -- the production CPU queue
+bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/chain.conf deimos
+
+# on a workstation, no scheduler -- same script the job runs
 python examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
-    --species dsgdb9nsd_000018 --tag 02c_prod --levels mace,gfn2
-
-# PRODUCTION: all three levels, every basin, on the CPU cluster
-bash examples/run_chain.sh \
-    examples/02c_hessian_benchmark_levels/chain.conf deimos
-
-# hours, here, detached, both molecules
-bash examples/02c_hessian_benchmark_levels/run_reference.sh
+    --species dsgdb9nsd_000018 --tag 02c_prod --levels mace,gfn2,rimp2
+bash examples/02c_hessian_benchmark_levels/run_reference.sh      # both molecules, detached
 ```
+
+The two confs differ in one line, `LEVELS`, and share the tag, so `quick.conf` fills
+`analysis/levels/02c_prod/<species>_02c_level_benchmark.json` with the MACE and GFN2
+columns and `chain.conf` adds RI-MP2 to the same record. Both are `sbatch` jobs on
+TianheXY-CN (`debug`: 30 min; `deimos`: 3 days, `--exclusive` whole node -- the RI-MP2
+`TightOpt NumFreq` is 1613 s per 10-atom basin at 4 processes -- `%pal nprocs 4 end`,
+the count the cost model was measured at and the one used here). The job is named
+`openqha_<species>_levels_02c_prod`, which is also its log file under `logs/`.
 
 **The tag is `02c_prod`**, because that is what `branchA.conf` here sets, and a branch A
 product is filed under its tag: `data/basins/02c_prod/…`. `--tag prod` answers

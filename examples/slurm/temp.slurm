@@ -6,8 +6,8 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=12
 #SBATCH --time=00:30:00
-#SBATCH --output=logs/openqha_%x_%j.out
-#SBATCH --error=logs/openqha_%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 # =======================================================================================
 # TianheXY-A fine-grained environment, 30-MINUTE smoke test. Selected by
 # `bash examples/run_chain.sh <conf> temp`; identical to ai.slurm except the walltime.

@@ -138,7 +138,12 @@ fi
 # `logs/node_local/<jobid>/` first -- `cp -a`, which recreates socket nodes too, so the
 # end state is what you see -- and only then removed.
 if [ -n "$SLURM_JOB_ID" ] && [ -n "$S0_SCRATCH" ]; then
-    KEEP_DIR="$ROOT/logs/node_local/$SLURM_JOB_ID"
+    # S0_KEEP_DIR: several chain_body copies in ONE job (examples/02d-2, one per card)
+    # each need their own end-state directory, or the last to finish overwrites the
+    # others' MANIFEST.txt. Their scratch is already separate (S0_SCRATCH_OWNER carries
+    # the card), which is what keeps this trap's `rm -rf` from taking a sibling's
+    # running trajectories with it.
+    KEEP_DIR="${S0_KEEP_DIR:-$ROOT/logs/node_local/$SLURM_JOB_ID}"
     echo "scratch   $S0_SCRATCH"
     echo "          -> end state kept at logs/node_local/$SLURM_JOB_ID/"
     keep_scratch() {
@@ -372,9 +377,13 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
     # chosen for the ENTROPY, while the zero-point energy needs of order 12 500 frames,
     # which at 1.0 ps would be 12.5 ns. Both numbers are measured in 02d stage 1.
     echo
+    # BASIN_TAG: where branch A's basins are read from, when this run writes its
+    # trajectories under a different TAG. examples/02d-2 runs many settings off ONE branch
+    # A product; each row is its own TAG and they all read BASIN_TAG. Default: TAG.
     echo "---- branch B: dense trajectories, ${PROD_PS:-protocol} ps ------------"
     python -u scripts/production/s0_E_branchB_parsl.py \
-        --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
+        --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}" \
+        --resource "$RESOURCE" \
         --route "$ROUTE" --basins auto --seeds "$SEEDS" \
         ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
         ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
@@ -382,8 +391,11 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
 
     echo
     echo "---- 02d: G_total from omega and from nu, term by term ----------------"
+    # --tag reads the basins (BASIN_TAG); --traj-tag reads this run's trajectories; --out
+    # files the report under this run's tag, so two settings never overwrite each other.
     python -u examples/02d_qha_frequency_identity/s0_frequency_identity.py \
-        --species "$SPECIES" --tag "$TAG" --stage all --traj-tag "$TAG" \
+        --species "$SPECIES" --tag "${BASIN_TAG:-$TAG}" --stage all --traj-tag "$TAG" \
+        --out "analysis/qha/$TAG/${SPECIES}_02d_frequency_identity.json" \
         ${NU_CUT:+--nu-cut "$NU_CUT"}
     ;;
 

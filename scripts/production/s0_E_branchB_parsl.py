@@ -273,6 +273,11 @@ def main():
                     help="OpenMM platform for --route openmm. Default: the resource "
                          "config's OPENMM_PLATFORM, else CPU.")
     ap.add_argument("--tag", default="prod")
+    ap.add_argument("--basin-tag", default=None,
+                    help="tag to READ branch A's basins from, when it differs from --tag "
+                         "(which names the trajectories this run WRITES). examples/02d-2 "
+                         "runs many settings off one branch A product this way. Default: "
+                         "the same as --tag.")
     ap.add_argument("--basins", default="auto",
                     help="how many basins per species to run. 'auto' (the default) takes "
                          "the count from branch A's own record, so the number and the "
@@ -344,10 +349,11 @@ def main():
     # copies of one basin under five different indices. The count and the file now come
     # from the same place: branch A's product.
     basins_for, missing = {}, []
+    basin_tag = args.basin_tag or args.tag
     for s in species:
-        j, x = basin_store.paths_for(s, tag=args.tag)[:2]
+        j, x = basin_store.paths_for(s, tag=basin_tag)[:2]
         if j.exists() and x.exists():
-            rec = basin_store.read(s, tag=args.tag) or {}
+            rec = basin_store.read(s, tag=basin_tag) or {}
             n = len(rec.get("basins", [])) or 1
             basins_for[s] = (str(x), n)
         else:
@@ -383,7 +389,7 @@ def main():
         basin_files={s: basins_for[s][0] for s in species},
         species_without_branch_a=missing,
         seeds_per_basin=args.seeds,
-        tag=args.tag, prod_ps=args.prod_ps, equil_ps=args.equil_ps,
+        tag=args.tag, basin_tag=basin_tag, prod_ps=args.prod_ps, equil_ps=args.equil_ps,
         sample_every_steps_override=args.sample_every,
         wall_budget_s=budget,
         science_settings_source=("scripts/production/{} and configs/openqha.yaml -- "

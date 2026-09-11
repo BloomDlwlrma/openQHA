@@ -1,0 +1,18 @@
+# 02d-2: one row = one production run of 02d with these settings, on ONE card.
+# Columns are tab- or space-separated. NAME becomes the run's tag: 02d2_<NAME>.
+# Lines starting with # are ignored. Every value is a setting documented in
+# examples/02d_qha_frequency_identity/chain.conf, section by section.
+#
+# The grid below is the one the settings list proposes: length x sampling interval,
+# with the protocol's own row first. 9 rows -> 2 array tasks of 5 and 4 cards.
+#
+# NAME          EQUIL_PS  PROD_PS  SAMPLE_EVERY  SEEDS  NU_CUT
+p500_s2         50        500      2             3      25,50,100,150
+p500_s1         50        500      1             3      25,50,100,150
+p500_s5         50        500      5             3      25,50,100,150
+p1000_s2        50        1000     2             3      25,50,100,150
+p1000_s1        50        1000     1             3      25,50,100,150
+p1000_s5        50        1000     5             3      25,50,100,150
+p1500_s2        50        1500     2             3      25,50,100,150
+p1500_s1        50        1500     1             3      25,50,100,150
+p1500_s5        50        1500     5             3      25,50,100,150
