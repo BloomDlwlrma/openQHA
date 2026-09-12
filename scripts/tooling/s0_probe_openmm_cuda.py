@@ -245,7 +245,7 @@ def main():
             f = Path(prefix) / rel
             if not f.exists():
                 missing.append(rel)
-            elif rel in sizes and f.is_file() and not rel.endswith(".pyc")                     and f.stat().st_size != sizes[rel]:
+            elif rel in sizes and f.is_file() and not rel.endswith(".pyc")                     and not rel.startswith(("bin/", "Scripts/"))                     and Path(rel).name != "__config__.py"                     and f.stat().st_size != sizes[rel]:
                 resized.append((rel, sizes[rel], f.stat().st_size))
         # Anything under numpy/ that conda never installed.
         try:
@@ -284,10 +284,44 @@ def main():
             print("  numpy tree            matches the installed package exactly")
         else:
             print("  The numpy in this environment is NOT the package conda installed.")
-            print("  Repair it without a network, from the package cache:")
+            # Which numpy did the leftovers come from? These basenames exist only in
+            # numpy 2.x, so their presence in a 1.26.4 tree dates the overwrite without
+            # any guessing. Measured on an45 2026-09-12: _expired_attrs_2_0.py,
+            # _array_api_info.py, _configtool.py and lib/_type_check_impl.py all present
+            # beside a numpy reporting 1.26.4.
+            v2 = sorted({Path(rel).name for rel in strays} & {
+                "_expired_attrs_2_0.py", "_array_api_info.py", "_configtool.py",
+                "_type_check_impl.py", "_utils_impl.py", "_core"})
+            if v2:
+                print("  The leftovers are from **numpy 2.x** -- {} exist(s) in no "
+                      "1.x release.".format(", ".join(v2)))
+            if strays:
+                # **A REINSTALL CANNOT FIX THIS.** conda rewrites the files it owns and
+                # has no record of the rest, so `--force-reinstall` would restore the
+                # declared tree and leave every leftover in place, importable, exactly as
+                # before. The directory has to go first. Saying `--force-reinstall` alone
+                # here (as this probe did on 2026-09-12) sends the reader round the loop
+                # again with nothing changed.
+                print()
+                print("  **A REINSTALL ALONE WILL NOT FIX THIS.** conda only rewrites the")
+                print("  {} files it owns; the {} leftover(s) are not in its records and".format(
+                    len(declared), len(strays)))
+                print("  would survive --force-reinstall untouched. Remove the tree first.")
+                print()
+                print("  First, see whether pip recorded the overwrite (then it can undo it):")
+                print("      ls -d $CONDA_PREFIX/lib/python*/site-packages/numpy*")
+                print("  A `numpy-2.*.dist-info` there means:")
+                print("      python -m pip uninstall -y numpy     # removes what pip wrote")
+                print("  No dist-info means nothing tracks those files, so remove by hand:")
+                print("      rm -rf $CONDA_PREFIX/lib/python*/site-packages/numpy")
+                print("  Either way the declared files go too, so restore them afterwards:")
+            else:
+                print("  Repair it from the package cache:")
             print("      mamba install -n <env> --offline --force-reinstall numpy=={}".format(
                 stack.get("numpy") or "1.26.4"))
             print("  (drop --offline on a login node if the cache no longer has it)")
+            print("  Then re-run this probe: the tree must report no leftovers before")
+            print("  anything else in the stack is worth testing.")
 
     # Is numpy INTACT, not merely present? A version number says nothing about whether
     # the C extension underneath it loads, and an interrupted install (this site's proxy

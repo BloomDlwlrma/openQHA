@@ -271,20 +271,28 @@ dependencies:
   #     this pin violates, and moving numpy up would not be satisfying any requirement --
   #     it would be another guess. Keep the pin; it is not the fault.
   #
-  # What is left, given that torch's complaint is an AttributeError raised INSIDE numpy's
-  # own import (`module 'numpy._globals' has no attribute '_signature_descriptor'`, a name
-  # no released 1.26.4 file refers to):
+  # **THE FAULT IS NOT A VERSION AT ALL -- IT IS THE FILES.** Measured on an45 the same
+  # day, by comparing every path conda recorded against what is on disk:
   #
-  #   * the numpy tree on disk is not the tree conda installed -- a pip overwrite, or a
-  #     second numpy removed by file list, leaves the version string intact and the files
-  #     mixed. `scripts/tooling/s0_probe_openmm_cuda.py` now compares every file conda
-  #     recorded against what is there and names what is missing, rewritten or left over;
-  #   * or this pytorch 2.5.1.post303 -- a build string from no channel this file records
-  #     -- was compiled against numpy 2 headers without the backward-compatible runtime,
-  #     in which case its own `depends` is simply wrong about itself.
+  #     numpy tree     1404 file(s) declared by conda
+  #     UNDECLARED (left by something else): 366
+  #         numpy/_expired_attrs_2_0.py, numpy/_array_api_info.py, numpy/_configtool.py,
+  #         numpy/lib/_type_check_impl.py, 362 more
+  #     MISSING: none
   #
-  # The tree check decides between those two offline, with no install. **Run it before
-  # changing any version here.**
+  # Those basenames exist in **no numpy 1.x release**. A numpy 2 was installed over this
+  # prefix and conda's 1.26.4 was later put back: conda restored the 1404 files it owns
+  # and left 366 numpy-2 files layered on top, importable. `numpy.__version__` reads
+  # 1.26.4 because `__init__.py` is conda's, while the module that reaches for
+  # `numpy._globals._signature_descriptor` is one of the orphans -- which is why torch's
+  # failure looked like a version disagreement for three rounds and was never one.
+  #
+  # **`--force-reinstall` alone does not fix it**: conda rewrites only the files it owns
+  # and has no record of the other 366, so they survive it untouched. The package
+  # directory has to be removed first (`pip uninstall numpy` if a numpy-2 dist-info is
+  # there to track them, otherwise by hand), and the declared tree restored afterwards.
+  # `scripts/tooling/s0_probe_openmm_cuda.py` prints that sequence and must report
+  # `matches the installed package exactly` before anything else in the stack is tested.
   - numpy=1.26.4
   - scipy>=1.10
   - pyyaml>=6.0
