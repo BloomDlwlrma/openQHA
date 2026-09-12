@@ -103,8 +103,11 @@ if [ -n "$SLURM_JOB_ID" ]; then
     module purge 2>/dev/null || true
     openqha_load_conda_module || exit 1
     if [ "$KIND" = "gpu" ]; then
-        module load CUDA/12.3 || {
-            echo "openQHA: module load CUDA/12.3 FAILED -- this would run on the CPU" >&2
+        # 12.2, NOT 12.3: TianheXY-A's driver is 535.104.12 = CUDA 12.2, and OpenMM
+        # JITs PTX at run time, which minor version compatibility does not cover.
+        # See openqha/gpu_preflight.py for the measurement and the rule.
+        module load CUDA/12.2 || {
+            echo "openQHA: module load CUDA/12.2 FAILED -- this would run on the CPU" >&2
             exit 1; }
     fi
     # Inherited task-layout variables make a child process misread its allocation and try
@@ -140,7 +143,7 @@ fi
 if [ -n "$SLURM_JOB_ID" ] && [ -n "$S0_SCRATCH" ]; then
     # S0_KEEP_DIR: several chain_body copies in ONE job (examples/02d-2, one per card)
     # each need their own end-state directory, or the last to finish overwrites the
-    # others' MANIFEST.txt. Their scratch is already separate (S0_SCRATCH_OWNER carries
+    # others' MANIFEST.txt. Their scratch is already separate (S0_SCRATCH_TAG carries
     # the card), which is what keeps this trap's `rm -rf` from taking a sibling's
     # running trajectories with it.
     KEEP_DIR="${S0_KEEP_DIR:-$ROOT/logs/node_local/$SLURM_JOB_ID}"
@@ -173,15 +176,24 @@ if [ -n "$SLURM_JOB_ID" ] && [ -n "$S0_SCRATCH" ]; then
                  "everything that was there." >&2
         fi
         echo "kept      $(du -sh "$KEEP_DIR" 2>/dev/null | cut -f1) in $KEEP_DIR"
-        # `rm -rf` on a computed path gets a guard: only a path under a tmp base is ever
-        # removed, never something that resolved somewhere unexpected.
+        # `rm -rf` on a computed path gets a guard: only a path under a TMP base is ever
+        # removed. Under the 2026-09-12 ruling the base is `~/runs/openQHA`, which is not
+        # one -- so the run tree STAYS, by design, and this says so plainly instead of
+        # warning about it. `S0_SCRATCH_BASE=$TMPDIR` restores the remove.
         case "$S0_SCRATCH" in
             /tmp/*|"${TMPDIR:-/nonexistent}"/*)
                 rm -rf "$S0_SCRATCH" 2>/dev/null || true ;;
-            *) echo "NOT removing $S0_SCRATCH -- it is not under a tmp base" >&2 ;;
+            *) echo "kept      $S0_SCRATCH (not a tmp base -- the run tree stays there too)" ;;
         esac
     }
+    # EXIT covers a normal end AND any error exit. TERM and INT matter separately: Slurm
+    # sends SIGTERM before SIGKILL at the walltime, and without this the copy-back never
+    # ran for a job that hit its limit -- exactly the case where the end state is most
+    # worth having. `exit` inside the handler re-enters the EXIT trap, which is what
+    # makes the copy happen once and the job report the signal.
     trap keep_scratch EXIT
+    trap 'echo "openQHA: caught SIGTERM (walltime or scancel) -- carrying the scratch back" >&2; exit 143' TERM
+    trap 'echo "openQHA: caught SIGINT -- carrying the scratch back" >&2; exit 130' INT
 fi
 
 # The trace directory has to be somewhere that OUTLIVES the calcspace, and on a job that

@@ -1,7 +1,7 @@
 # openQHA -- ONE environment for BOTH Tianhe GPU clusters. CUDA 12.3.
 #
 #     module load anaconda3/2023.09
-#     module load CUDA/12.3
+#     module load CUDA/12.2
 #     export CONDA_OVERRIDE_CUDA=12.3      # <- NOT OPTIONAL ON A LOGIN NODE, see below
 #     conda env create -f environment-tianhe-gpu.yml
 #     conda activate openqha-gpu
@@ -115,21 +115,51 @@ channels:
   - nodefaults
 dependencies:
   # ---- match the module ---------------------------------------------------------------
-  # Same major.minor as `module load CUDA/12.3`, on both clusters. Change both together
-  # or neither.
+  # Same major.minor as `module load CUDA/12.2`, on both clusters, AND not above the
+  # driver's CUDA version. Change them together or neither.
   #
-  # Verified by dry run 2026-09-05 with CONDA_OVERRIDE_CUDA=12.3:
+  # Dry run 2026-09-05 with CONDA_OVERRIDE_CUDA=12.3 (kept: it is what was solved then,
+  # and the solve is not what was wrong):
   #     cuda-version 12.3   cuda-cudart 12.3.101   pytorch 2.5.1 cuda120_py311
+  # The 12.2 solve has NOT been re-measured; the torch build tag is expected to stay
+  # cuda120 for the reason immediately below.
   #
   # **The torch build tag reads `cuda120`, not `cuda123`, and that is correct.** CUDA 12
   # has minor-version compatibility: a binary built against 12.0 runs on any 12.x
   # runtime. conda-forge ships no cuda123 build; the pinned `cuda-version` is what
   # governs the runtime. Do not "fix" this by hunting for one.
   #
-  # Driver note: TianheXY-A reports driver 535.104.12, which is a CUDA 12.2 driver. Minor
-  # version compatibility covers a 12.3 runtime on it. Do not read a driver number as a
-  # CUDA ceiling -- and do not raise the pin above what `module avail` offers.
-  - cuda-version=12.3
+  # =====================================================================================
+  # DRIVER NOTE, CORRECTED 2026-09-12 -- THIS PIN WAS 12.3 AND IT BROKE EVERY TRAJECTORY
+  # =====================================================================================
+  # What stood here said: "TianheXY-A reports driver 535.104.12, which is a CUDA 12.2
+  # driver. Minor version compatibility covers a 12.3 runtime on it. Do not read a driver
+  # number as a CUDA ceiling."
+  #
+  # **Half right, and the missing half is the whole failure.** Minor version compatibility
+  # covers CUBINS: a kernel already compiled for sm_80 by a 12.3 toolkit loads on a 12.2
+  # driver. That is why PyTorch and MACE ran here perfectly well. It does NOT cover
+  # **PTX JIT** -- the driver's JIT compiler cannot read a PTX ISA newer than itself, and
+  # NVIDIA's own answer to that is "upgrade the driver", not a compatibility mode.
+  #
+  # OpenMM's CUDA platform compiles EVERY kernel at run time: nvrtc emits PTX, the driver
+  # JITs it. So OpenMM is precisely the case the exception names. Measured 2026-09-12,
+  # jobs 96843/96844/96845 on an53: all twelve branch B trajectories, three jobs, died
+  # identically at `openmm.Context(...)` --
+  #
+  #     openmm.OpenMMException: Error loading CUDA module:
+  #     CUDA_ERROR_UNSUPPORTED_PTX_VERSION (222)
+  #
+  # -- each after ~3 minutes of torch import and model tracing.
+  #
+  # So the driver IS a ceiling, for anything that JITs. 12.2 it is, matching
+  # `module load CUDA/12.2` (present on both clusters' module trees) and the driver.
+  # `openqha/gpu_preflight.py` now reads nvrtcVersion() and cuDriverGetVersion() and
+  # refuses before the load, so this cannot recur silently if the driver moves again.
+  #
+  # To repair an environment that already has 12.3:
+  #     mamba install -n openqha-gpu cuda-version=12.2
+  - cuda-version=12.2
 
   # ---- BLAS: NO PINS HERE, AND THAT IS DELIBERATE ---------------------------------------
   # Everywhere else in this repository the three OpenMP-OpenBLAS pins appear, because

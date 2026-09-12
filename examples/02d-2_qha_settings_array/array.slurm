@@ -29,8 +29,8 @@
 # SCRATCH IS PER ROW, and this is not optional. hpc/env/tianhe.sh keys node-local
 # scratch on SLURM_JOB_ID and chain_body.sh's EXIT trap copies it back and `rm -rf`s it.
 # G rows sharing one scratch means the FIRST row to finish deletes the other G-1 rows'
-# running trajectories. S0_SCRATCH_OWNER carries the card index, so each row's scratch is
-# $TMPDIR/<user>/card<k>/<jobid> and its end state goes to logs/node_local/<jobid>_card<k>.
+# running trajectories. S0_SCRATCH_TAG carries the card index, so each row's scratch is
+# ~/runs/<jobid>_card<k> and its end state goes to logs/node_local/<jobid>_card<k>.
 #
 # %A is the array's job id and %a this task's index (Slurm filename patterns). Each row
 # additionally writes its own log, named by its tag, so one file per setting.
@@ -57,7 +57,7 @@ for k in $(seq 0 $((G - 1))); do
     log="logs/02d2_${name}_${SLURM_ARRAY_JOB_ID:-x}_${TASK}.log"
     echo "  card $k  row $row  $name  -> $log"
     S0_CARD="$k" CUDA_VISIBLE_DEVICES="$k" \
-    S0_SCRATCH_OWNER="${USER}/card$k" \
+    S0_SCRATCH_TAG="card$k" \
     S0_KEEP_DIR="logs/node_local/${SLURM_JOB_ID}_card$k" \
         bash examples/chain_body.sh "$conf" > "$log" 2>&1 &
     pids+=($!); names+=("$name")

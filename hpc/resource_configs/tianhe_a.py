@@ -240,7 +240,13 @@ NODE_QUOTA = NODES_IN_PARTITION
 
 #: CUDA module (2026-09-07 module tree): 12.3 is the ceiling. `environment-tianhe-gpu.yml`
 #: pins the same. Change them together or neither.
-CUDA_VERSION = "12.3"
+#: **12.2, not 12.3, and the reason is PTX.** The driver here is 535.104.12,
+#: which supports CUDA 12.2. Minor version compatibility lets a 12.3-built
+#: CUBIN run on it -- which is why torch and MACE were fine -- but it does NOT
+#: cover PTX JIT, and OpenMM compiles every kernel at run time. 2026-09-12: all
+#: twelve branch B trajectories died with CUDA_ERROR_UNSUPPORTED_PTX_VERSION.
+#: `openqha/gpu_preflight.py` now measures both numbers and refuses first.
+CUDA_VERSION = "12.2"
 NCCL_MODULE = "nccl/2.19.3-cuda-12.3"     #: recorded, not loaded
 MPI_MODULE = None
 CUDNN_MODULE = "cudnn/8.9.6.50-cuda12"    #: recorded, not loaded

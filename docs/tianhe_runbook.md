@@ -651,9 +651,9 @@ them and drops them **silently** on one that does not. After copying, the entry 
 are compared and any shortfall is reported rather than left as a quietly shorter
 directory.
 
-`<owner>` is `S0_SOCKET_OWNER`, defaulting to your login name; `<SLURM_JOB_ID>` is
+`<owner>` is `S0_SOCKET_OWNER`, defaulting to your login name (used only under a shared `/tmp`); `<SLURM_JOB_ID>` is
 **Slurm's**, read from the environment and never invented — outside a job it falls back
-to `pid<N>`. Base directory: `S0_SOCKET_DIR`, else `TMPDIR`, else `/tmp`.
+to `pid<N>`. Base directory: `S0_SOCKET_DIR` **used verbatim** (since 2026-09-12 `hpc/env/tianhe.sh` points it at `$HOME/runs/<jobid>`, 74 bytes against `sun_path`'s 108), else `S0_SCRATCH/sockets`, else `TMPDIR`, else `/tmp`. If a socket cannot be bound there -- Lustre support for AF_UNIX is unmeasured -- it falls back to `$TMPDIR` and says so.
 
 They used to go under `runs_root/sockets/`, which is the **shared** filesystem. Two
 branch A jobs submitted back to back (7346431 on `cnode1948`, 7346432 on `cnode2001`)

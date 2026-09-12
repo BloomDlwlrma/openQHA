@@ -223,7 +223,18 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
         proc.stdout + "\n----- stderr -----\n" + proc.stderr, encoding="utf-8")
 
     if proc.returncode != 0:
-        summary["error"] = (proc.stderr or proc.stdout or "")[-2000:]
+        # **The LAST meaningful line, not the first 60 characters of the last 2000.**
+        # Until 2026-09-12 this kept the tail of stderr and the table below printed the
+        # START of that tail -- so a CUDA_ERROR_UNSUPPORTED_PTX_VERSION was reported to
+        # the job log as `ht_numel, "Invalid weight shape"`, a fragment of an unrelated
+        # e3nn TracerWarning. The exception itself never appeared anywhere but driver.log.
+        _blob = (proc.stderr or proc.stdout or "")
+        _lines = [l.strip() for l in _blob.splitlines() if l.strip()]
+        _real = [l for l in _lines
+                 if not l.startswith(("WARNING", "/", "  ", "warnings.warn"))
+                 and "Warning:" not in l]
+        summary["error_line"] = (_real[-1] if _real else (_lines[-1] if _lines else ""))
+        summary["error"] = _blob[-2000:]
         return summary
 
     # The driver's own record is the source of truth; only enough is lifted out of it to
@@ -503,6 +514,14 @@ def main():
                   report["legacy"], report["legacy_map"]))
     print("executor     {}".format(qha_label))
 
+    # One check on the driver, before 3 (or 280) tasks each pay the load time to hit the
+    # same wall. The driver runs in the allocation and sees the same cards the workers do.
+    if str(platform).upper() == "CUDA":
+        from openqha import gpu_preflight
+        _pf = gpu_preflight.describe()
+        print("gpu preflight  {}".format(_pf["reason"]))
+        gpu_preflight.check(platform)
+
     app = python_app(run_one_trajectory, executors=[qha_label])
 
     passthrough = {k: os.environ[k] for k in
@@ -532,7 +551,10 @@ def main():
         "complete"))
     for r in results:
         if r.get("error"):
-            print("{:<20} {}".format(r.get("species", "?"), str(r["error"])[:60]))
+            print("{:<20} {}".format(
+                r.get("species", "?"),
+                (r.get("error_line") or str(r["error"]).splitlines()[-1:] or [""])[0]
+                if r.get("error_line") else str(r["error"]).strip().splitlines()[-1][:100]))
             continue
         print("{:<20} {:>6} {:>6} {:>8} {:>9} {:>10.1f} {:>5}  {}".format(
             r["species"], r["basin"], r["seed_index"], r.get("n_frames", "-"),

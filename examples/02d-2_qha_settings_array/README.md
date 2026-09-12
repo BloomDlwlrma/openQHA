@@ -54,7 +54,7 @@ Each is enforced in `array.slurm`, and each was a real failure mode, not a preca
 |---|---|
 | `CUDA_VISIBLE_DEVICES=k` | OpenMM and torch in row k see card k only |
 | `S0_CARD=k` | tells `tianhe_a.py` to run parsl on one card and **not pin workers itself** — parsl counts cards with `nvidia-smi -L`, which ignores `CUDA_VISIBLE_DEVICES`, and its fallback would put every row's three workers on cards 0, 1, 2 |
-| `S0_SCRATCH_OWNER=<user>/card<k>`, `S0_KEEP_DIR=…_card<k>` | node-local scratch is keyed on the job id and `chain_body.sh`'s exit trap **`rm -rf`s it** — shared, the first row to finish would delete the other rows' running trajectories |
+| `S0_SCRATCH_TAG=card<k>`, `S0_KEEP_DIR=…_card<k>` | node-local scratch is keyed on the job id and `chain_body.sh`'s exit trap **`rm -rf`s it** — shared, the first row to finish would delete the other rows' running trajectories |
 
 Each row also gets its own parsl `run_dir` (`parsl_card<k>`), so G drivers starting at
 once do not race for `runinfo/NNN`.

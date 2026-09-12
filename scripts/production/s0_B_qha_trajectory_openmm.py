@@ -169,14 +169,33 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
     have = list(np.load(frames_path)) if frames_path.exists() else []
     n_target = int(round(prod_ps * 1000.0 / args.timestep_fs)) // args.sample_every
 
+    # **Before** the three minutes of torch import and model tracing: can this driver
+    # JIT the PTX nvrtc will emit? OpenMM compiles every kernel at run time, and CUDA
+    # minor version compatibility does not cover PTX -- see openqha/gpu_preflight.py.
+    # On 2026-09-12 all twelve trajectories of three jobs died at openmm.Context() with
+    # CUDA_ERROR_UNSUPPORTED_PTX_VERSION, each after paying that three minutes first.
+    from openqha import gpu_preflight
+    gpu_preflight.check(args.platform)
+
     system, force_record = openmm_mace.build_system(
         numbers, masses, model_path,
         example_positions_nm=positions_A / openmm_mace.NM_TO_A)
     integ, thermo_record = build_integrator(
         temperature_K, args.timestep_fs, args.collision_frequency,
         args.chain_length, args.num_mts, args.num_ys, system=system)
-    context = openmm.Context(system, integ,
-                             openmm.Platform.getPlatformByName(args.platform))
+    try:
+        context = openmm.Context(system, integ,
+                                 openmm.Platform.getPlatformByName(args.platform))
+    except Exception as exc:                                        # noqa: BLE001
+        # The preflight above should have caught this; if it did not, say what the
+        # numbers were rather than leaving a bare OpenMM error code in a driver.log.
+        if "PTX" in str(exc) or "CUDA_ERROR" in str(exc):
+            raise RuntimeError(
+                "{}\n  openqha/gpu_preflight.py read: {}\n"
+                "  (it did not refuse, so either the versions look compatible and the\n"
+                "   problem is elsewhere, or it could not read them on this node.)"
+                .format(exc, gpu_preflight.describe()))
+        raise
     context.setPositions((positions_A / openmm_mace.NM_TO_A) * unit.nanometer)
     context.setVelocitiesToTemperature(temperature_K * unit.kelvin, int(seed))
 

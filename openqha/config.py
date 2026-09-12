@@ -12,6 +12,7 @@ Path resolution order (first match wins):
 """
 import hashlib
 import os
+import sys
 from pathlib import Path
 
 from . import S0_ROOT
@@ -359,21 +360,34 @@ def socket_dir():
         /tmp/sherwin/7346431/sockets/s0_mace_pool_0.sock
         /tmp/sherwin/7346431/runs/...
 
-    Outside a job, or with no `S0_SCRATCH`, it builds the same shape itself from
-    `S0_SOCKET_DIR` else `TMPDIR` else `/tmp`, `S0_SOCKET_OWNER` else the login name, and
+    `S0_SOCKET_DIR`, when set, is used directly and beats `S0_SCRATCH` -- see the
+    comment in the body for why. Otherwise, outside a job or with no `S0_SCRATCH`, it
+    builds the same shape from `TMPDIR` else `/tmp`, `S0_SOCKET_OWNER` else the login name, and
     the Slurm job id else `pid<N>`. **A directory per job is what separates two jobs**, so
     the socket names inside it stay short -- which matters, because `sun_path` truncates.
 
     0700 on the owner and job levels keeps another user on the same shared node out.
     """
     import getpass
+    # **S0_SOCKET_DIR WINS OVER S0_SCRATCH**, so the operator can put the socket
+    # somewhere short and known when the scratch tree is neither. The paths this project
+    # actually produces are measured in hpc/env/tianhe.sh; the short one leaves 33 bytes
+    # of headroom against sun_path where the long one left zero -- and zero is what breaks
+    # as soon as a per-card suffix is added (examples/02d-2).
+    explicit = os.environ.get("S0_SOCKET_DIR")
     scratch = os.environ.get("S0_SCRATCH")
-    if scratch:
+    if explicit:
+        # **Used VERBATIM: nothing is appended.** The directory you name is the directory
+        # the socket goes in. `hpc/env/tianhe.sh` points it at the job's own scratch, so
+        # the path is $HOME/runs/<jobid>/s0_mace_pool_<pid>_0.sock -- 74 bytes measured for
+        # this project's account, against sun_path's 107, with the per-card variant at 80.
+        d = Path(explicit)
+        parents = (d,)
+    elif scratch:
         d = Path(scratch) / "sockets"
         parents = (Path(scratch), d)
     else:
-        base = Path(os.environ.get("S0_SOCKET_DIR")
-                    or os.environ.get("TMPDIR") or "/tmp")
+        base = Path(os.environ.get("TMPDIR") or "/tmp")
         owner = os.environ.get("S0_SOCKET_OWNER") or getpass.getuser()
         job = os.environ.get("SLURM_JOB_ID") or "pid{}".format(os.getpid())
         d = base / owner / job / "sockets"
@@ -384,7 +398,69 @@ def socket_dir():
             p.chmod(0o700)
         except OSError:
             pass                  # a shared TMPDIR we do not own; not worth failing over
-    return d
+    return _usable_or_fallback(d)
+
+
+#: Memo for `_usable_or_fallback`: the bind test costs a syscall and a file, and
+#: `socket_dir()` is called on every client connection.
+_BIND_OK = {}
+
+
+def _usable_or_fallback(d):
+    """`d` if a unix socket can actually be BOUND there, else a node-local directory.
+
+    Since 2026-09-12 the socket directory follows the scratch base, and that base is
+    `$HOME/runs` -- a Lustre filesystem on this cluster. **A parallel filesystem is not
+    guaranteed to support AF_UNIX**, and the failure mode is a `bind()` error deep inside
+    the MACE pool rather than anything that names the directory. This repository has never
+    run a socket anywhere but `/tmp`, so the property is UNMEASURED on Lustre: test it
+    once, for real, and say what happened.
+    """
+    key = str(d)
+    if key in _BIND_OK:
+        return _BIND_OK[key]
+    import socket as _socket
+    probe = d / ".bindtest{}".format(os.getpid())
+    try:
+        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        try:
+            s.bind(str(probe))
+        finally:
+            s.close()
+            try:
+                probe.unlink()
+            except OSError:
+                pass
+        _BIND_OK[key] = d
+        return d
+    except OSError as exc:
+        alt = (Path(os.environ.get("TMPDIR") or "/tmp")
+               / (os.environ.get("SLURM_JOB_ID") or "pid{}".format(os.getpid())))
+        alt.mkdir(parents=True, exist_ok=True)
+        try:
+            alt.chmod(0o700)
+        except OSError:
+            pass
+        # **Name the right cause.** "the path is too long" and "this filesystem has
+        # no AF_UNIX" are different problems with different fixes, and a message that
+        # blames the second for the first sends the reader somewhere useless.
+        if "too long" in str(exc).lower() or getattr(exc, "errno", None) == 36:
+            why = ("the path would be {} bytes and sun_path holds {}"
+                   .format(len(str(probe)), SUN_PATH_MAX))
+        else:
+            why = "that filesystem does not accept a bound unix socket ({})".format(exc)
+        sys.stderr.write(
+            "openQHA: cannot put a socket in {}:\n  {}.\n"
+            "  Using {} instead. Only the SOCKET moves -- runs and products stay\n"
+            "  where they were. S0_SOCKET_DIR chooses somewhere else.\n"
+            .format(d, why, alt))
+        _BIND_OK[key] = alt
+        return alt
+
+
+#: `sun_path` is 108 bytes including the terminator. A longer path is TRUNCATED by the
+#: kernel, so two processes can agree on a name and open different sockets.
+SUN_PATH_MAX = 107
 
 
 def socket_path(stem, index=None):
@@ -396,6 +472,13 @@ def socket_path(stem, index=None):
     """
     name = stem if index is None else "{}_{}".format(stem, index)
     p = socket_dir() / (name + ".sock")
+    if len(str(p)) > SUN_PATH_MAX:
+        raise ValueError(
+            "the socket path is {} bytes and sun_path holds {}:\n  {}\n"
+            "  The kernel would TRUNCATE it, and two processes would then agree on a\n"
+            "  name while opening different sockets. Set S0_SOCKET_DIR to something\n"
+            "  short and node-local, e.g. S0_SOCKET_DIR=$TMPDIR/$USER/$SLURM_JOB_ID."
+            .format(len(str(p)), SUN_PATH_MAX, p))
     if len(str(p)) > SOCKET_PATH_LIMIT:
         raise ValueError(
             "socket path is {} characters, over the {}-character limit that AF_UNIX "

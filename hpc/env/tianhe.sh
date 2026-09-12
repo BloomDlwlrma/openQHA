@@ -160,28 +160,75 @@ if [ "${OPENQHA_ROLE:-cpu}" = "cpu" ] && [ -z "$S0_CREST_BIN" ]; then
 fi
 
 # ---- scratch ----------------------------------------------------------------------------
-# The site's own convention, copied from the ORCA_SCR pattern the user supplied:
-# prefer $TMPDIR (node-local NVMe/SSD), fall back to /tmp, and NEVER write temporary
-# files on Lustre.
+# ONE tree per job: <base>/<owner>/<job id>/. Sockets, runs and CREST's working
+# directories all live under it, so the job has a single directory to carry back.
 #
-# The reason is measured, not stylistic: CREST writes many small files into parallel `_N`
-# subdirectories (one molecule's working directory is 2.6-15 MB across dozens of files on
-# this project's workstation). Doing that on a shared parallel filesystem is slow for the
-# job and slow for everyone else on the machine.
-# ONE node-local tree per job: <base>/<owner>/<job id>/. Sockets, runs and CREST's
-# working directories all live under it, so the job has a single directory to carry back
-# and a single directory to remove.
+#     $S0_SCRATCH/sockets/s0_mace_pool_<pid>_0.sock
+#     $S0_SCRATCH/runs/branchA/...
 #
-#     /tmp/sherwin/7346431/sockets/s0_mace_pool_0.sock
-#     /tmp/sherwin/7346431/runs/branchA/...
+# WHERE <base> IS, AND THE TRADE (user ruling 2026-09-12)
+# -------------------------------------------------------
+# **For the current tests the base is `$HOME/runs/openQHA`**, so every run is
+# `~/runs/openQHA/<JOBID>/...` and can be read from the login node WHILE IT RUNS. Set
+# `S0_SCRATCH_BASE=$TMPDIR` to get the node-local behaviour back.
 #
-# `S0_SCRATCH_OWNER` names the middle level and defaults to the login name; the job id is
-# **Slurm's**, read from the environment, never invented.
+# Both sides of the trade, stated rather than assumed:
+#
+#   node-local ($TMPDIR)        The original design, and the reason is measured: CREST
+#                               writes dozens of small files per molecule into parallel
+#                               `_N` subdirectories (2.6-15 MB across dozens of files),
+#                               and doing that on Lustre is slow for this job and for
+#                               everyone else on the machine. But it is INVISIBLE until
+#                               the job ends, and a hard kill (node failure, OOM) takes
+#                               it with no copy-back at all.
+#   home (~/runs/openQHA)       Readable during the run, and survives a hard kill. It is
+#                               Lustre, so the CREST metadata cost is real -- it matters
+#                               for branch A, far less for branch B, whose trajectories
+#                               are a few large files.
+#
+# **Home is quota'd** (100 GB, and it is meant for configuration -- docs/tianhe_runbook.md
+# section 6). A 500 ps branch B trajectory at SAMPLE_EVERY=2 is ~60 MB, so 02d-2's nine
+# rows x 3 seeds is ~1.6 GB: fine. A branch A campaign over thousands of molecules is
+# NOT, and should go back to $TMPDIR.
+#
+# **AS SHORT AS IT CAN BE, because `sun_path` holds 107 bytes** (user ruling 2026-09-12).
+# Measured for this project's real account, not estimated:
+#
+#     $HOME/runs/openQHA/<owner>/<jobid>/sockets/s0_mace_pool_<pid>_0.sock   107 bytes
+#     $HOME/runs/<jobid>/s0_mace_pool_<pid>_0.sock                            74 bytes
+#     $HOME/runs/<jobid>_card3/s0_mace_pool_<pid>_0.sock                      80 bytes
+#
+# The first FITS -- by one byte, with zero headroom. It is not the disaster an earlier
+# version of this comment claimed (it said 108 and "truncated"; that was wrong and the
+# measurement above is why). What it could not survive is the per-card suffix examples/
+# 02d-2 needs: 107 + "_card3" = 113, and THAT truncates silently, giving two rows the same
+# socket name. So the levels go, and nothing is lost with them -- `openQHA` duplicated
+# `runs`, and `<owner>` separated users on a SHARED /tmp, which `$HOME` is not.
+#
+# S0_SCRATCH_TAG is what still separates concurrent runs INSIDE one job: examples/02d-2
+# puts several drivers in one allocation and each sets `card<k>`, giving
+# `<base>/<jobid>_card0`, `_card1`, ... Without it they would share a tree and the first
+# to finish would `rm -rf` the others' running trajectories.
 export S0_SCRATCH_OWNER="${S0_SCRATCH_OWNER:-${S0_SOCKET_OWNER:-$USER}}"
 export S0_SOCKET_OWNER="${S0_SOCKET_OWNER:-$S0_SCRATCH_OWNER}"
-export S0_SCRATCH="${TMPDIR:-/tmp}/$S0_SCRATCH_OWNER/${SLURM_JOB_ID:-$$}"
+export S0_SCRATCH_BASE="${S0_SCRATCH_BASE:-$HOME/runs}"
+_s0_job="${SLURM_JOB_ID:-$$}${S0_SCRATCH_TAG:+_$S0_SCRATCH_TAG}"
+case "$S0_SCRATCH_BASE" in
+    # A shared tmp needs the owner level back: /tmp is everyone's, $HOME is not.
+    /tmp|/tmp/*|/var/tmp|/var/tmp/*)
+        export S0_SCRATCH="$S0_SCRATCH_BASE/$S0_SCRATCH_OWNER/$_s0_job" ;;
+    *)  export S0_SCRATCH="$S0_SCRATCH_BASE/$_s0_job" ;;
+esac
+unset _s0_job
 mkdir -p "$S0_SCRATCH"
 chmod 700 "$S0_SCRATCH" 2>/dev/null || true
+
+# The socket lives in the job's own directory, with no `sockets/` level -- 74 bytes, and
+# one directory to carry back. `openqha/config.py::socket_dir()` uses S0_SOCKET_DIR
+# VERBATIM (it appends nothing), refuses a path that would not fit in sun_path, and falls
+# back to $TMPDIR if this filesystem turns out not to accept a bound socket.
+export S0_SOCKET_DIR="${S0_SOCKET_DIR:-$S0_SCRATCH}"
+mkdir -p "$S0_SOCKET_DIR" 2>/dev/null || true
 
 # Everything this repository writes goes under one root. On a cluster that root must be
 # node-local for the work and shared for the results -- runs go to scratch, products are

@@ -57,7 +57,13 @@ GPUS_PER_JOB = 1
 #: 12.4 exists on THIS cluster and must still not be used: TianheXY-A has no 12.4, and
 #: one environment file serving both is what the shared pin buys.
 #:     module avail CUDA 2>&1 | grep -o "CUDA/12[.][0-9]*"
-CUDA_VERSION = "12.3"
+#: **12.2, not 12.3, and the reason is PTX.** The driver here is 535.104.12,
+#: which supports CUDA 12.2. Minor version compatibility lets a 12.3-built
+#: CUBIN run on it -- which is why torch and MACE were fine -- but it does NOT
+#: cover PTX JIT, and OpenMM compiles every kernel at run time. 2026-09-12: all
+#: twelve branch B trajectories died with CUDA_ERROR_UNSUPPORTED_PTX_VERSION.
+#: `openqha/gpu_preflight.py` now measures both numbers and refuses first.
+CUDA_VERSION = "12.2"
 
 #: Recorded, NOT loaded. These are the modules built against 12.4; they are what a DDP
 #: job would need, and openQHA runs none.
