@@ -188,8 +188,13 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
         temperature_K, args.timestep_fs, args.collision_frequency,
         args.chain_length, args.num_mts, args.num_ys, system=system)
     try:
+        # **The properties are not optional on CUDA.** Without them the platform runs
+        # at its default `single` while this module is float64, which measured 74.2
+        # ms/step against 39.2 for the matched pair on the same A800 -- 1.9x, for
+        # nothing. See openmm_mace.platform_properties_for().
         context = openmm.Context(system, integ,
-                                 openmm.Platform.getPlatformByName(args.platform))
+                                 openmm.Platform.getPlatformByName(args.platform),
+                                 openmm_mace.platform_properties_for(args.platform))
     except Exception as exc:                                        # noqa: BLE001
         # The preflight above should have caught this; if it did not, say what the
         # numbers were rather than leaving a bare OpenMM error code in a driver.log.

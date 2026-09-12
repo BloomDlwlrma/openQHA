@@ -459,13 +459,26 @@ bash hpc/slurm/submit_branchB_tianhe_a.sh a_debug temp
 ```
 
 **Read `seconds_per_ps_this_run` out of `meta.json` before sizing anything.** Branch B
-on a card is now MEASURED here, and it is not good news: **74.2 ms/step on an A800 80 GB**
-(an45, 2026-09-12, MACE-OFF23_medium, float64, 10 atoms, 200 steps, one trajectory alone
-on the card) = **74 s per ps at 1 fs**. The same probe on an ordinary CPU is ~50-60
-ms/step. The card is SLOWER per trajectory than a CPU core, which is what `D0-C-5`
-(3.5x slower on a T400) already said and what an 80 GB card does not change: a ten-atom
-molecule evaluated one structure at a time is latency-bound, and HBM2e does not shorten a
-kernel launch.
+on a card is now measured here (an45, 2026-09-12, MACE-OFF23_medium, 10 atoms, 200 steps,
+one trajectory at a time):
+
+| platform | MACE dtype | CUDA `Precision` | ms/step |
+|---|---|---|---|
+| CPU (112 threads) | float64 | n/a | 61.7 |
+| CPU (112 threads) | float32 | n/a | 34.9 |
+| CUDA A800 80 GB | float64 | `single` (the default — **mismatched**) | **74.2** |
+| CUDA A800 80 GB | float64 | `double` (matched) | **39.2** |
+| CUDA A800 80 GB | float32 | `single` (matched) | **25.9** |
+
+**Match the CUDA `Precision` property to the MACE dtype.** The mismatched row is 1.9x
+the matched one for an identical answer, and it is what OpenMM gives you when the
+properties are left out -- `openmm_mace.platform_properties_for()` exists so that cannot
+happen by accident. Correctly configured the card is 1.6x faster than the CPU in float64
+and 1.3x in float32, and those CPU rows use all 112 threads of the node, which no
+per-worker layout gets.
+
+An earlier revision of this file said the card was slower. That was the mismatched row
+read as though it were the card's speed; it has been withdrawn.
 
 Also check the `platform` field in every `meta.json`. **If it is not `CUDA`, the job ran
 on the CPU** and the timings mean something else entirely.
@@ -714,12 +727,19 @@ before `yhbatch` turns a wasted allocation into a one-line error.
 
 ### What Tianhe actually buys you here, and what it does not
 
-**It does not make one trajectory faster.** A ten-atom molecule on MACE-OFF23_medium is
-latency-bound, not throughput-bound. Measured on the hardware, not inferred: **74.2
-ms/step on an A800 80 GB** (an45, 2026-09-12) against ~50-60 ms/step on a CPU. The card
-loses, as it did on a T400 (`D0-C-5`, 3.5x slower) -- the 80 GB simply never mattered.
-Do not plan as though a bigger card will change it; what would change it is a batched
-force interface (`D0-54` criterion ii), which does not exist yet.
+**It makes one trajectory somewhat faster, and only if you configure it.** Measured on
+an45 2026-09-12: 39.2 ms/step in float64 with `Precision=double`, 25.9 in float32 with
+`Precision=single`, against 61.7 and 34.9 for the same probe on the node's CPU. That is
+1.6x and 1.3x -- real, but nothing like the order of magnitude a card suggests, because a
+ten-atom molecule evaluated one structure at a time is latency-bound. Leave the precision
+mismatched (float64 under the default `single`) and it is 74.2 ms/step, SLOWER than the
+CPU: that configuration is where this file's earlier "the card is slower" claim came
+from, now withdrawn.
+
+**What it still buys most is concurrency.** A production 02d run is 2 molecules x up to 4
+basins x 3 seeds = up to 24 independent trajectories, and a 1.3-1.6x per trajectory does
+not change that shape. What would change it is a batched force interface (`D0-54`
+criterion ii), which does not exist yet.
 
 **It buys concurrency.** A production 02d run is 2 molecules × up to 4 basins × 3 seeds =
 **up to 24 independent trajectories**, and they have no communication between them at all.
@@ -814,7 +834,8 @@ From five repeat runs on one molecule (**[measured 2026-09-05]**, see
 
 The only branch A cost figure this repository has is **285 s per species, 4 threads,
 uncontended, on a workstation** — not on Tianhe, and not under contention. Branch B on a
-GPU is now measured: **74.2 ms/step on an A800 80 GB** (an45, 2026-09-12), i.e. 74 s/ps,
-slower than the ~50-60 ms/step the same probe gives on a CPU. When you have real numbers,
+GPU is now measured (an45, 2026-09-12): **25.9 ms/step** float32, **39.2** float64 with
+`Precision=double`, against 34.9 and 61.7 on the node's CPU — and **74.2** if the
+platform precision is left mismatched. When you have real numbers,
 report wall clock, single-job time and slot extrapolation as three separate numbers, so
 nobody later divides one by another.

@@ -176,6 +176,43 @@ def torch_device_for_platform(platform, torch=None):
     return torch.device("cuda:0")
 
 
+def platform_properties_for(platform, dtype=None):
+    """The Context properties that match a MACE module of this dtype. Measured.
+
+    **OpenMM's CUDA `Precision` defaults to `single`, and a float64 module under it is
+    the slowest configuration there is.** On an A800 80 GB (an45, 2026-09-12,
+    MACE-OFF23_medium, 10 atoms, 200 steps), everything else held fixed:
+
+        platform  MACE dtype  Precision          ms/step
+        CUDA      float64     single (default)   74.2      <- what you get by accident
+        CUDA      float64     double             39.2      <- 1.9x faster, same answer
+        CUDA      float32     single             25.9
+        CPU       float64     n/a                61.7      (112 threads)
+        CPU       float32     n/a                34.9      (112 threads)
+
+    So the card is 1.6x FASTER than the whole node's CPU in float64 once the precisions
+    agree, and 1.3x faster in float32 -- the opposite of the conclusion drawn from the
+    mismatched row alone, which is the row this function exists to stop anyone reaching
+    by default.
+
+    The double/double row is also exact against float64 on the CPU: dE = 0.0 kJ/mol and
+    max|dF| = 2.3e-10 kJ/mol/nm (3.9e-14 relative), so nothing is traded for the speed.
+
+    Why the mismatch costs so much is NOT measured here. The plausible reading is that
+    openmm-torch must convert positions and forces every step when the platform's arrays
+    are float32 and the module wants float64. The test that would settle it is float32
+    with Precision=double -- a mismatch the other way, which should be slow for the same
+    reason. Until someone runs it, treat the mechanism as unverified and the timings as
+    what they are: measured.
+    """
+    if str(platform).upper() != "CUDA":
+        # CPU exposes only Threads and DeterministicForces; Reference exposes nothing.
+        return {}
+    import torch
+    dtype = dtype or torch.float64
+    return {"Precision": "single" if dtype == torch.float32 else "double"}
+
+
 def _device_constants(module):
     """Device constants in a traced graph: (hazards, all_devices).
 
@@ -303,6 +340,7 @@ def build_system(atomic_numbers, masses_amu, model_path, dtype=None, periodic=Fa
         example_positions_nm=example_positions_nm,
         device=torch_device_for_platform(platform, torch))
     record["openmm_platform"] = str(platform)
+    record["platform_properties"] = platform_properties_for(platform, dtype or torch.float64)
     system = openmm.System()
     for m in masses_amu:
         system.addParticle(float(m) * unit.amu)

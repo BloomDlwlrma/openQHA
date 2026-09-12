@@ -619,14 +619,27 @@ covariance per molecule: small, serial, float64 — a card buys nothing, and its
 metadata traffic on Lustre, so more nodes would buy contention rather than throughput. If it
 ever becomes the bottleneck, batch more molecules per task.
 
-**The GPU cost of branch B is now measured, and the card loses.** an45, 2026-09-12,
-MACE-OFF23_medium in float64 on 10 atoms, one trajectory alone on an A800 80 GB:
-**74.2 ms/step = 74 s/ps at 1 fs**, against ~50-60 ms/step for the same probe on a CPU.
-`D0-C-5` had the same verdict on a T400 (3.5x slower) and was discounted as "a 2 GB
-entry-level card cannot speak for 80 GB HBM2e" -- but the memory was never the limit. One
-structure at a time on ten atoms is latency-bound, and a bigger card does not shorten a
-kernel launch. Still read `seconds_per_ps_this_run` out of `meta.json` before sizing a
-campaign, and do not assume the card is faster because it is a card.
+**The GPU cost of branch B is now measured, and the answer depends entirely on one
+platform property.** an45, 2026-09-12, MACE-OFF23_medium on 10 atoms, one trajectory at a
+time on an A800 80 GB:
+
+| platform | MACE dtype | CUDA `Precision` | ms/step |
+|---|---|---|---|
+| CPU (112 threads) | float64 | n/a | 61.7 |
+| CPU (112 threads) | float32 | n/a | 34.9 |
+| CUDA A800 80 GB | float64 | `single` (the default — **mismatched**) | **74.2** |
+| CUDA A800 80 GB | float64 | `double` (matched) | **39.2** |
+| CUDA A800 80 GB | float32 | `single` (matched) | **25.9** |
+
+Match the CUDA `Precision` to the MACE dtype and the card wins by 1.6x (float64) or 1.3x
+(float32). Leave it at OpenMM's default `single` under a float64 module and it loses to
+the CPU -- that mismatched row is where the earlier claim in this file, "the card loses",
+came from, and it has been withdrawn. `openmm_mace.platform_properties_for()` now sets
+the matching property so the mismatch cannot be reached by leaving an argument out.
+
+`D0-C-5` (3.5x slower on a T400) is not contradicted by this: it is a different card and
+was never re-run. Still read `seconds_per_ps_this_run` out of `meta.json` before sizing a
+campaign.
 
 The CPU route is kept, not deprecated: `--route ase --resource tianhe_cpu` is the
 independent implementation pair that makes the OpenMM numbers checkable. Both write the

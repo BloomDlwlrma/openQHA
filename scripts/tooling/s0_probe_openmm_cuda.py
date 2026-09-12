@@ -89,11 +89,28 @@ def rule(title):
     print("=" * 92)
 
 
-def platform_properties(platform_name, precision):
-    """CUDA takes a Precision property; nothing else does. Measured, see main()."""
-    if precision is None or platform_name != "CUDA":
+#: Filled in as the sections run, so --quiet can print a line without re-deriving it.
+RESULT = {}
+
+
+class _SkipSection(Exception):
+    """Not an error: --no-accuracy leaves section 5b out of a throughput sweep."""
+
+
+def platform_properties(platform_name, precision, dtype_name="float64"):
+    """Context properties: an explicit --precision, else the one matching the dtype.
+
+    Defaulting to "whatever OpenMM does" was how 74.2 ms/step got measured and written
+    into four documents as "the A800 is slower than the CPU". It is not: that was
+    float64 under the platform's default `single`. Matched, the same card does 39.2.
+    """
+    if platform_name != "CUDA":
         return {}
-    return {"Precision": precision}
+    if precision is not None:
+        return {"Precision": precision}
+    import torch
+    from openqha.quasi_harmonic import openmm_mace as _om
+    return _om.platform_properties_for(platform_name, getattr(torch, dtype_name))
 
 
 def describe_context(ctx):
@@ -133,8 +150,18 @@ def main():
                     help="dtype MACE evaluates in (default float64)")
     ap.add_argument("--precision", default=None,
                     choices=["single", "mixed", "double"],
-                    help="OpenMM CUDA Precision property; default leaves OpenMM's own "
-                         "default, which is 'single'")
+                    help="OpenMM CUDA Precision property; default matches --dtype")
+    # A concurrency sweep runs this N times at once. N x 200 lines of TracerWarning is
+    # not a measurement, it is a haystack -- so --quiet swallows every section and
+    # prints one line of numbers. A FAILING quiet run prints everything it swallowed,
+    # because the whole point of the sections is to say where it broke.
+    ap.add_argument("--quiet", action="store_true",
+                    help="one line of results; full output only if something fails")
+    ap.add_argument("--tag", default="",
+                    help="string echoed in the --quiet line, to label a worker")
+    ap.add_argument("--no-accuracy", action="store_true",
+                    help="skip section 5b; it builds a second float64 CPU system, which "
+                         "doubles the cost and measures nothing about throughput")
     args = ap.parse_args()
     platform_name = args.platform.upper()
     fail = []
@@ -473,7 +500,8 @@ def main():
         integ = openmm.VerletIntegrator(0.001)
         ctx = openmm.Context(sysm, integ,
                              openmm.Platform.getPlatformByName(platform_name),
-                             platform_properties(platform_name, args.precision))
+                             platform_properties(platform_name, args.precision,
+                                                 args.dtype))
         print("  built in {:.2f} s   {}".format(time.time() - t0, describe_context(ctx)))
         del ctx
     except Exception as exc:                                            # noqa: BLE001
@@ -505,6 +533,7 @@ def main():
             NUMBERS, MASSES, model_path,
             example_positions_nm=np.array(POSITIONS_A) / openmm_mace.NM_TO_A,
             platform=platform_name, dtype=want_dtype)
+        RESULT["trace_s"] = time.time() - t0
         print("  traced and built in {:.1f} s   dtype {}   traced on {}".format(
             time.time() - t0, force_record.get("dtype"),
             force_record.get("trace_device")))
@@ -561,8 +590,12 @@ def main():
         return float(e), np.array(f)
 
     is_baseline = (platform_name == "CPU" and args.dtype == "float64")
-    props_here = platform_properties(platform_name, args.precision)
+    props_here = platform_properties(platform_name, args.precision, args.dtype)
+    if args.no_accuracy:
+        print("  skipped (--no-accuracy)")
     try:
+        if args.no_accuracy:
+            raise _SkipSection()
         if is_baseline:
             for label, geom in GEOMETRIES:
                 e_here, f_here = single_point(system, platform_name, props_here, geom)
@@ -580,6 +613,11 @@ def main():
                 e_ref, f_ref = single_point(base_system, "CPU", {}, geom)
                 d_f = np.abs(f_here - f_ref)
                 scale = max(np.abs(f_ref).max(), 1e-30)
+                if "displaced" in label:        # the non-degenerate one
+                    RESULT.update(maxF=float(np.abs(f_here).max()),
+                                  dE_ref=float(e_here - e_ref),
+                                  maxdF=float(d_f.max()),
+                                  rel_dF=float(d_f.max() / scale))
                 print("  {}".format(label))
                 print("      this build    E {:.6f} kJ/mol   max|F| {:.4f} kJ/mol/nm"
                       .format(e_here, np.abs(f_here).max()))
@@ -593,6 +631,8 @@ def main():
             print("                budget is 0.084 kJ/mol (0.02 kcal/mol). An absolute")
             print("                energy OFFSET cancels in every difference branch B")
             print("                takes -- the force error is what reaches a covariance.")
+    except _SkipSection:
+        pass
     except Exception as exc:                                            # noqa: BLE001
         print("  FAILED: {}: {}".format(type(exc).__name__, exc))
         detail(exc)
@@ -606,7 +646,8 @@ def main():
         integ = openmm.VerletIntegrator(0.001 * unit.picoseconds)
         ctx = openmm.Context(system, integ,
                              openmm.Platform.getPlatformByName(platform_name),
-                             platform_properties(platform_name, args.precision))
+                             platform_properties(platform_name, args.precision,
+                                                 args.dtype))
         print("  running on      {}   MACE dtype {}".format(
             describe_context(ctx), args.dtype))
         ctx.setPositions((np.array(POSITIONS_A) / openmm_mace.NM_TO_A) * unit.nanometer)
@@ -622,6 +663,9 @@ def main():
         st = ctx.getState(getEnergy=True, getPositions=True)
         e1 = st.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
         dt = time.time() - t0
+        RESULT.update(e0=float(e0), e1=float(e1), dE=float(e1 - e0),
+                      ms_per_step=1000.0 * dt / max(1, args.steps),
+                      steps=int(args.steps), wall_s=float(dt))
         print("  E({})      {:.6f} kJ/mol".format(args.steps, e1))
         print("  {} steps in {:.2f} s  =  {:.1f} ms/step  ->  {:.0f} s/ps at 1 fs".format(
             args.steps, dt, 1000.0 * dt / max(1, args.steps),
@@ -652,17 +696,63 @@ def report(fail):
     rule("verdict")
     if not fail:
         print("  branch B can run here. The ms/step above is the number to size a")
-        print("  campaign with. For comparison, all MACE-OFF23_medium, float64, 10 atoms:")
-        print("      A800 80 GB   74.2 ms/step   (an45, 2026-09-12, alone on the card)")
-        print("      CPU          ~50-60 ms/step (the same probe, --platform CPU)")
-        print("  The card is SLOWER per trajectory. One structure at a time on ten atoms")
-        print("  is latency-bound, so a GPU buys concurrency, never single-trajectory")
-        print("  speed -- size campaigns by how many trajectories fit, not by ms/step.")
+        print("  campaign with. Measured on an45, 2026-09-12, MACE-OFF23_medium,")
+        print("  10 atoms, 200 steps, one trajectory at a time:")
+        print("      CUDA  float32  Precision=single    25.9 ms/step")
+        print("      CPU   float32  (112 threads)       34.9")
+        print("      CUDA  float64  Precision=double    39.2")
+        print("      CPU   float64  (112 threads)       61.7")
+        print("      CUDA  float64  Precision=single    74.2  <- MISMATCHED, the default")
+        print("  **Match the platform precision to the MACE dtype.** The last row is")
+        print("  1.9x the fourth for the same answer, and it is what you get by leaving")
+        print("  the properties out. float32 costs 1e-06 relative force error; double")
+        print("  on CUDA reproduces float64 on the CPU to 3.9e-14.")
         return 0
     for f in fail:
         print("  FAILED  {}".format(f))
     return 1
 
 
+def quiet_main():
+    """Run every section with the output captured; print one line of numbers.
+
+    Anything that fails still prints everything -- a silent failure in a sweep is the
+    worst of both worlds, a missing row with no reason attached.
+    """
+    import contextlib
+    import io
+    import warnings
+
+    warnings.filterwarnings("ignore")
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = main()
+    except BaseException:                                               # noqa: BLE001
+        sys.stdout.write(buf.getvalue())
+        raise
+    if code != 0:
+        sys.stdout.write(buf.getvalue())
+        return code
+    tag = ""
+    for i, a in enumerate(sys.argv):
+        if a == "--tag" and i + 1 < len(sys.argv):
+            tag = sys.argv[i + 1]
+    r = RESULT
+    bits = ["{:>10s}".format(tag or "-")]
+    bits.append("{:>7.2f} ms/step".format(r.get("ms_per_step", float("nan"))))
+    bits.append("wall {:>6.2f}s".format(r.get("wall_s", float("nan"))))
+    bits.append("trace {:>5.1f}s".format(r.get("trace_s", float("nan"))))
+    bits.append("E0 {:.6f}".format(r.get("e0", float("nan"))))
+    bits.append("dE {:+.6f}".format(r.get("dE", float("nan"))))
+    if "maxF" in r:
+        bits.append("max|F| {:.4f}".format(r["maxF"]))
+        bits.append("dE_ref {:+.2e}".format(r.get("dE_ref", float("nan"))))
+        bits.append("max|dF| {:.2e} ({:.1e} rel)".format(
+            r.get("maxdF", float("nan")), r.get("rel_dF", float("nan"))))
+    print("  ".join(bits), flush=True)
+    return 0
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(quiet_main() if "--quiet" in sys.argv else main())
