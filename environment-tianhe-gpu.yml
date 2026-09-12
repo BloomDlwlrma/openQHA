@@ -289,10 +289,22 @@ dependencies:
   #
   # **`--force-reinstall` alone does not fix it**: conda rewrites only the files it owns
   # and has no record of the other 366, so they survive it untouched. The package
-  # directory has to be removed first (`pip uninstall numpy` if a numpy-2 dist-info is
-  # there to track them, otherwise by hand), and the declared tree restored afterwards.
-  # `scripts/tooling/s0_probe_openmm_cuda.py` prints that sequence and must report
-  # `matches the installed package exactly` before anything else in the stack is tested.
+  # directory has to be removed first, and the declared tree restored afterwards.
+  #
+  # **REPAIRED AND VERIFIED ON an45, 2026-09-12.** pip had recorded both installs, so it
+  # could undo them -- `site-packages` held BOTH `numpy-1.26.4.dist-info` and
+  # `numpy-2.4.6.dist-info`, and two runs of `pip uninstall -y numpy` removed one each,
+  # leaving no numpy at all. Then:
+  #
+  #     mamba install -n openqha-gpu --offline --force-reinstall numpy==1.26.4
+  #
+  # after which the probe reports `numpy tree  matches the installed package exactly`
+  # and `torch <-> numpy  OK (a round trip worked)`.
+  #
+  # So this pin is no longer unvalidated: **numpy 1.26.4 and pytorch 2.5.1.post303 have
+  # now been observed working together on the machine**, which the 2026-09-08 dry run
+  # never established. What was broken was never the version -- it was numpy 2.4.6
+  # installed over the top of it.
   - numpy=1.26.4
   - scipy>=1.10
   - pyyaml>=6.0

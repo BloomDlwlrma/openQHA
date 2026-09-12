@@ -95,7 +95,7 @@ def main():
     ap.add_argument("--platform", default="CUDA")
     ap.add_argument("--steps", type=int, default=10)
     args = ap.parse_args()
-    want = args.platform.upper()
+    platform_name = args.platform.upper()
     fail = []
 
     # ---- 1. versions ---------------------------------------------------------------
@@ -108,7 +108,7 @@ def main():
     print("  verdict               {}".format(d["reason"]))
     if d["nvrtc"] and d["driver_cuda"] and not d["ok"]:
         print()
-        if want == "CUDA":
+        if platform_name == "CUDA":
             print("  **STOP HERE.** OpenMM JITs every kernel from PTX, and this driver")
             print("  cannot read PTX from that toolkit. Sections 4-6 cannot pass. Fix:")
             print("      mamba install -n openqha-gpu cuda-version={}.{}".format(*d["driver_cuda"]))
@@ -118,7 +118,7 @@ def main():
             # being probed. Reported, not counted -- a control that fails for a reason
             # unrelated to what it controls is not a control.
             print("  (not a failure for --platform {}: nothing here JITs PTX. It would be"
-                  .format(want))
+                  .format(platform_name))
             print("   one for CUDA.)")
 
     # ---- 2. cards ------------------------------------------------------------------
@@ -196,11 +196,11 @@ def main():
             rec = _json.loads(meta.read_text(encoding="utf-8"))
         except Exception:                                               # noqa: BLE001
             continue
-        want = [d for d in (rec.get("depends") or []) if d.split()[0] == "numpy"]
-        if want:
-            numpy_needs.append((stem, rec.get("version", "?"), "; ".join(want)))
+        np_dep = [d for d in (rec.get("depends") or []) if d.split()[0] == "numpy"]
+        if np_dep:
+            numpy_needs.append((stem, rec.get("version", "?"), "; ".join(np_dep)))
             print("  {:12s} {:12s} requires  {}".format(stem, rec.get("version", "?"),
-                                                        "; ".join(want)))
+                                                        "; ".join(np_dep)))
     if not metas:
         print("  conda-meta            not readable (not a conda prefix?)")
 
@@ -276,8 +276,8 @@ def main():
         if resized:
             print("  **REWRITTEN (size differs from the installed package)**: {}".format(
                 len(resized)))
-            for rel, want, got in resized[:12]:
-                print("      {}  conda {} bytes, on disk {}".format(rel, want, got))
+            for rel, recorded, got in resized[:12]:
+                print("      {}  conda {} bytes, on disk {}".format(rel, recorded, got))
             if len(resized) > 12:
                 print("      ... and {} more".format(len(resized) - 12))
         if not (missing or strays or resized):
@@ -415,22 +415,22 @@ def main():
     names = [openmm.Platform.getPlatform(i).getName()
              for i in range(openmm.Platform.getNumPlatforms())]
     print("  platforms  {}".format(", ".join(names)))
-    if want not in [n.upper() for n in names]:
+    if platform_name not in [n.upper() for n in names]:
         print("  **{} IS NOT COMPILED INTO THIS OPENMM.** A cpu-only build was installed;"
-              .format(want))
+              .format(platform_name))
         print("  environment-tianhe-gpu.yml asks for a *cuda* build to make that a solver")
         print("  error rather than a silent CPU run.")
-        fail.append("no {} platform".format(want))
+        fail.append("no {} platform".format(platform_name))
         return report(fail)
 
     # ---- 4. the empty context: the PTX JIT, alone ----------------------------------
-    rule("4. a 1-particle context on {} -- this is the PTX JIT and nothing else".format(want))
+    rule("4. a 1-particle context on {} -- this is the PTX JIT and nothing else".format(platform_name))
     t0 = time.time()
     try:
         sysm = openmm.System()
         sysm.addParticle(1.0)
         integ = openmm.VerletIntegrator(0.001)
-        ctx = openmm.Context(sysm, integ, openmm.Platform.getPlatformByName(want))
+        ctx = openmm.Context(sysm, integ, openmm.Platform.getPlatformByName(platform_name))
         print("  built in {:.2f} s   platform {}".format(
             time.time() - t0, ctx.getPlatform().getName()))
         del ctx
@@ -442,7 +442,7 @@ def main():
             print()
             print("  This is the toolkit/driver mismatch, isolated: no torch, no MACE, no")
             print("  model file involved. Section 1's numbers are the whole diagnosis.")
-        fail.append("context on {}".format(want))
+        fail.append("context on {}".format(platform_name))
         return report(fail)
 
     # ---- 5. the real system --------------------------------------------------------
@@ -475,7 +475,7 @@ def main():
     t0 = time.time()
     try:
         integ = openmm.VerletIntegrator(0.001 * unit.picoseconds)
-        ctx = openmm.Context(system, integ, openmm.Platform.getPlatformByName(want))
+        ctx = openmm.Context(system, integ, openmm.Platform.getPlatformByName(platform_name))
         ctx.setPositions((np.array(POSITIONS_A) / openmm_mace.NM_TO_A) * unit.nanometer)
         # **Velocities, or this proves nothing.** From a minimum at rest the atoms do not
         # move in 10 fs and the energy is unchanged to every digit printed -- which reads
