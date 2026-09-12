@@ -23,7 +23,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$HERE"
 
 case "$PARTITION" in
-    ai)   WALLTIME="7-00:00:00"; PROD_PS="${PROD_PS:-200}"
+    ai)   WALLTIME="24:00:00"; PROD_PS="${PROD_PS:-200}"   # 24 h since 2026-09-12, see tianhe_a.py
           BUDGET=$(( 90 * 7 * 24 * 3600 / 100 )) ;;
     temp) WALLTIME="00:30:00";   PROD_PS="${PROD_PS:-2}"
           BUDGET=$(( 90 * 1800 / 100 )) ;;

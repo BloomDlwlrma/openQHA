@@ -34,7 +34,7 @@
 #SBATCH --nodes=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=12
-#SBATCH --time=7-00:00:00
+#SBATCH --time=24:00:00        # 2026-09-12, see tianhe_a.py WALLTIME
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
 # **ONE CARD, 12 CPUs -- the fine-grained environment's unit.** Submit from a shell that
@@ -61,7 +61,10 @@ EQUIL_PS="${EQUIL_PS:-50}"
 GPUS="${GPUS:-8}"
 # Stop and flush before the queue kills the job. 90% of the walltime, so the last chunk
 # is written and renamed rather than truncated.
-WALL_BUDGET_S="${WALL_BUDGET_S:-544320}"     # 0.90 x 7 days
+WALL_BUDGET_S="${WALL_BUDGET_S:-77760}"      # 0.90 x 24 h, matching --time above.
+                                             # Keep these two in step: the budget is
+                                             # what makes a task flush instead of
+                                             # being killed mid-rename.
 
 # ---- 1. site environment ---------------------------------------------------------------
 module purge 2>/dev/null || true

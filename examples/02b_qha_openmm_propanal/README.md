@@ -83,7 +83,7 @@ quietly run from the reference geometry.
 | resource config | `local` | `tianhe_a` | `tianhe_ai` |
 | route | ASE | OpenMM, CUDA | OpenMM, CUDA |
 | allocation | — | **one card**, 12 CPUs, 120 GB (fine-grained; `set-XY-I.sh` first) | **one card**, 14 CPUs |
-| walltime | — | 7 days | 3 days |
+| walltime | — | 24 h | 3 days |
 
 ### The job gets its settings by `source`, not `--export`
 

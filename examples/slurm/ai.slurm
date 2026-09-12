@@ -5,7 +5,10 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=12
-#SBATCH --time=7-00:00:00
+#SBATCH --time=24:00:00        # 2026-09-12: 24 h, not 7 days -- see
+#                              # hpc/resource_configs/tianhe_a.py WALLTIME. A 24 h
+#                              # job backfills into gaps a 7-day job is never
+#                              # offered, and 02d needs ~9.5 h.
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 # =======================================================================================

@@ -440,7 +440,7 @@ Branch B is split across two clusters, and the split is not arbitrary — the tw
 want opposite machines.
 
 ```
-trajectories   TianheXY-A `ai`      GPU, one trajectory per card share, 7 days
+trajectories   TianheXY-A `ai`      GPU, one trajectory per card share, 24 h
                (or TianheXY-AI `h100x` for a single molecule end to end)
 collection     TianheXY-C `deimos`  CPU, one molecule per core, 64 on ONE node
 ```

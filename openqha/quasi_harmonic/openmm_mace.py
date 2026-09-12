@@ -198,12 +198,20 @@ def platform_properties_for(platform, dtype=None):
     The double/double row is also exact against float64 on the CPU: dE = 0.0 kJ/mol and
     max|dF| = 2.3e-10 kJ/mol/nm (3.9e-14 relative), so nothing is traded for the speed.
 
-    Why the mismatch costs so much is NOT measured here. The plausible reading is that
-    openmm-torch must convert positions and forces every step when the platform's arrays
-    are float32 and the module wants float64. The test that would settle it is float32
-    with Precision=double -- a mismatch the other way, which should be slow for the same
-    reason. Until someone runs it, treat the mechanism as unverified and the timings as
-    what they are: measured.
+    **The mismatch is what costs, not the precision.** The reverse experiment was run
+    the same day and the penalty is symmetric:
+
+        MACE dtype  Precision  ms/step   matched?
+        float32     single      25.9     yes
+        float32     double      44.2     no   -- 1.7x
+        float64     double      39.2     yes
+        float64     single      74.2     no   -- 1.9x
+
+    Both mismatched rows are slow, so this is not "double is slow" or "float32 is fast":
+    it is the conversion between the platform's arrays and the module's dtype, paid
+    every step. (The symmetry is the evidence; nobody has read the openmm-torch kernel
+    to confirm the code path, so the mechanism remains an inference FROM a measurement
+    rather than a guess.)
     """
     if str(platform).upper() != "CUDA":
         # CPU exposes only Threads and DeterministicForces; Reference exposes nothing.

@@ -60,7 +60,7 @@ if they are missing and reuses them if they are not.
 bash examples/run_chain.sh <conf>            # here, now — no scheduler
 bash examples/run_chain.sh <conf> deimos     # TianheXY-CN, CPU, whole node (64 cores), 3 days
 bash examples/run_chain.sh <conf> debug      # TianheXY-CN, CPU, whole node,            30 min
-bash examples/run_chain.sh <conf> ai         # TianheXY-A,  GPU, per card (12 CPUs),    7 days
+bash examples/run_chain.sh <conf> ai         # TianheXY-A,  GPU, per card (12 CPUs),    24 h
 bash examples/run_chain.sh <conf> temp       # TianheXY-A,  same queue,                 30 min
 bash examples/run_chain.sh <conf> h100x      # TianheXY-AI, GPU, per card (14 CPUs),    3 days
 ```

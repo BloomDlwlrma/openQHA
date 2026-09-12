@@ -359,7 +359,7 @@ scheduler accepts the directives, and that Parsl can read its own status query.
 | cluster | smoke | production |
 |---|---|---|
 | TianheXY-C | `debug`, **00:30:00**, 1 node | `deimos`, **3-00:00:00**, 12 nodes |
-| TianheXY-A | `temp`, **00:30:00**, 1 node | `ai`, **7-00:00:00**, 5 nodes |
+| TianheXY-A | `temp`, **00:30:00**, 1 node | `ai`, **24:00:00**, 8 nodes |
 
 `xyfree`, `mars` and `e9` exist on the CPU cluster and are deliberately unused: one
 production queue means one set of costs to compare against. They are recorded in

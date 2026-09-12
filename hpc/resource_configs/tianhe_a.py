@@ -68,12 +68,46 @@ the pool is sized in cards, and the CPUs follow:
 
     role    workers per card    cores per worker      what a card runs
     qha     12                  1                     12 branch B trajectories
+                                                          **measured optimal**, see below
     train   1                   12                    one fine-tune
 
 A branch B trajectory is a serial chain of single-structure MACE calls on a 10-19 atom
 molecule; one cannot fill an 80 GB card, so twelve share it (the earlier layout was 7 per
 card from 56 cores / 8 cards; the policy now hands out 12 per card and it is the policy
 that is billed).
+
+**12 is now measured, not assumed.** an45, 2026-09-12, MACE-OFF23_medium on 10 atoms,
+float64 with Precision=double, one core per worker, 200 steps each
+(`scripts/tooling/s0_gpu_concurrency.py`):
+
+    N workers   median ms/step   steps/s, all workers
+     1           45.8              13.8
+     2           45.3              26.3
+     4           41.9              44.1
+     8           54.3              74.1
+    12           60.0              94.1     <- the layout above
+    16           98.7              90.5     <- past the knee: slower AND less throughput
+
+Throughput peaks at 12 and FALLS at 16 while per-worker latency nearly doubles, so the
+policy's 12 CPUs per card and the best point on this curve are the same number. That is
+luck, not design, but it does mean there is nothing to trade off.
+
+The same sweep on the CPUs alone, one core per worker, is the honest comparison -- both
+sides get 12 cores, one side also gets the card:
+
+    N workers   median ms/step   steps/s, all workers
+     1           98.9               8.1
+    12          186.3              50.4
+
+So **the card is worth 1.87x on top of the twelve CPUs it comes with** (94.1 vs 50.4).
+Real, and nothing like the order of magnitude a GPU suggests -- a ten-atom molecule
+evaluated one structure at a time is latency-bound, and the card is being fed by twelve
+serial streams.
+
+Note what this corrects: the single-worker CPU figure quoted elsewhere as 61.7 ms/step
+was the probe running with Threads=112, i.e. THE WHOLE NODE for one trajectory. At one
+core -- what a worker in this layout actually gets -- it is 98.9. Comparing a card
+against a whole node's CPU was never the question being asked.
 
 Acetone (`examples/02a`) is 1 basin x 3 seeds = 3 trajectories. That is **one card**,
 billed as one card, with 9 of its 12 CPUs idle -- and no cheaper request exists.
@@ -204,7 +238,15 @@ ENV_SCRIPT = "/APP/u22/ai_x86/toolshs/set-XY-I.sh"
 #: Production partition and walltime. `ai` = an[45-47,49-51,53,65], 8 nodes (measured
 #: 2026-09-11 evening; the PDF's 2024 screenshot showed an[44-53]). MaxTime=UNLIMITED.
 PARTITION = "ai"
-WALLTIME = "7-00:00:00"
+#: **24 h, not 7 days** (user ruling 2026-09-12: use the machine, do not sit on it).
+#: The campaign fits: 02d is EQUIL 50 + PROD 500 = 550 ps = 550k steps, and at the
+#: measured ~60 ms/step for 12 workers sharing a card that is ~9.2 h per trajectory with
+#: all 12 running at once -- so ~9.5 h wall, inside the 21.6 h task budget below. A
+#: shorter walltime also backfills: the scheduler can fit a 24 h job into gaps a 7-day
+#: job would never be offered.
+#: If a campaign ever needs longer, raise this rather than the budget -- they are tied
+#: together by _walltime_seconds() so they cannot drift apart again.
+WALLTIME = "24:00:00"
 
 #: Smoke test. **The fine-grained controller has ONE partition** (measured 2026-09-11:
 #: `source set-XY-I.sh && sinfo` lists only `ai`). `temp` (2 h, 1 node) exists on the
@@ -262,14 +304,55 @@ TRAIN_WORKERS_PER_GPU = 1                 # a fine-tune uses the card
 TRAIN_CORES_PER_WORKER = CPUS_PER_GPU
 
 #: Nested mode only: cards per parsl block, and how many blocks.
-GPUS_PER_BLOCK = 1
+#:
+#: **A WHOLE NODE PER BLOCK** (user ruling 2026-09-12: make full use of the machine).
+#: 8 cards x 12 workers = 96 workers = 96 CPUs = exactly one node, because the
+#: fine-grained policy hands out 12 CPUs with every card. Nothing is left idle and
+#: nothing is over-requested; the block IS the node.
+#:
+#: **The cost of this choice is queue time, and it is not small.** Measured 2026-09-11:
+#: all 64 cards in the partition were allocated while 248 of 672 CPUs sat idle -- cards
+#: are the scarce resource and a job queues on cards. Asking for 8 free cards ON ONE NODE
+#: is a much rarer event than asking for 1, so a full-node block can wait where eight
+#: single-card blocks would already be running. If a campaign is queueing rather than
+#: computing, drop this to 1 and let parsl scale out instead; the arithmetic below
+#: follows either way.
+#:
+#: **And 96 workers on one node is NOT the configuration that was measured.** The curve
+#: in SIZING (12 workers, peak throughput) had ONE card busy and 84 of the node's 96 CPUs
+#: idle. At 96 workers the node's 48 physical cores are two-way oversubscribed and every
+#: worker competes for memory bandwidth -- and there is already evidence that bites: on
+#: the CPU-only sweep, 12 workers (of 96 CPUs) slowed each other from 98.9 to 186.3
+#: ms/step. Before a long campaign runs this way, measure it:
+#:     python scripts/tooling/s0_gpu_concurrency.py --dtype float64 --precision double \
+#:         --threads 1 --steps 200 12 24 48 96      # inside an 8-card allocation
+GPUS_PER_BLOCK = GPUS_PER_NODE
 NODES_PER_BLOCK = 1
-#: MaxSubmit is 10 and in nested mode the driver's own job is one of them.
-MAX_BLOCKS = JOB_QUOTA - 1
+#: MaxSubmit is 10 and in nested mode the driver's own job is one of them -- but a block
+#: is now a whole node, and the partition has only NODES_IN_PARTITION of those, so asking
+#: for 9 would be asking for more cards than exist.
+MAX_BLOCKS = min(JOB_QUOTA - 1, NODES_IN_PARTITION)
+
+def _walltime_seconds(spec):
+    """Slurm walltime -> seconds. Accepts D-HH:MM:SS, HH:MM:SS, MM:SS.
+
+    Written because the budget below used to hard-code `7 * 24 * 3600` beside a WALLTIME
+    that could be edited independently: changing one silently left the other behind, and
+    the failure mode is a task that thinks it has six more days than the job does.
+    """
+    days, _, rest = str(spec).partition("-")
+    if not rest:
+        days, rest = 0, str(spec)
+    parts = [int(x) for x in rest.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    h, m, s = parts[-3:]
+    return int(days) * 86400 + h * 3600 + m * 60 + s
+
 
 #: Per-task budget at 90% of the walltime, so a branch B task stops and flushes its last
-#: chunk rather than being killed between a write and a rename.
-QHA_WALL_BUDGET_S = int(0.90 * 7 * 24 * 3600)
+#: chunk rather than being killed between a write and a rename. DERIVED from WALLTIME.
+QHA_WALL_BUDGET_S = int(0.90 * _walltime_seconds(WALLTIME))
 
 OPENMM_PLATFORM = "CUDA"
 USE_MPS = False

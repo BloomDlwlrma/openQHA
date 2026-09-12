@@ -5,7 +5,9 @@
 #     bash examples/run_chain.sh <conf>                 # run it here, now
 #     bash examples/run_chain.sh <conf> deimos          # TianheXY-CN,  CPU, 3 days
 #     bash examples/run_chain.sh <conf> debug           # TianheXY-CN,  CPU, 30 min
-#     bash examples/run_chain.sh <conf> ai              # TianheXY-A fine-grained, per card, 7 days
+#     bash examples/run_chain.sh <conf> ai              # TianheXY-A fine-grained, per card, 24 h
+#     bash examples/run_chain.sh <conf> ai --gpus 8     # ... or a whole node: 8 cards, 96 CPUs,
+#                                                       #     96 branch B trajectories at once
 #     bash examples/run_chain.sh <conf> temp            # same queue, 30 min (there is no `temp` there)
 #     bash examples/run_chain.sh <conf> h100x           # TianheXY-AI,  1 card, 3 days
 #
