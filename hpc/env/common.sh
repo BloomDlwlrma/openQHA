@@ -85,6 +85,23 @@ export OPENBLAS_MAIN_FREE=1
 # effect and CREST wrote its many small files onto Lustre, which is exactly what
 # tianhe.sh section "scratch" exists to prevent. Measured from a job banner 2026-09-09:
 # `runs root  /HOME/hku2021_fos4/.../runs/openQHA`.
+# ---- the per-user site directory is NOT part of this environment ------------------------
+# Python puts ~/.local/lib/pythonX.Y/site-packages on sys.path BEFORE the active
+# environment's own site-packages (PEP 370). Anything a stray `pip install --user` left
+# there therefore SHADOWS the version this environment was solved with, silently, in
+# every job.
+#
+# Measured 2026-09-12 on TianheXY-A: scipy 1.16.1 sat in ~/.local while the environment
+# held numpy 1.26.4. scipy 1.16 is built against numpy 2, and the result was
+# `RuntimeError: Numpy is not available` from torch and
+# `ImportError: numpy._core.multiarray failed to import` -- an error that names numpy,
+# whose cause was scipy, in a directory nobody had looked at.
+#
+# PYTHONNOUSERSITE=1 removes that directory from sys.path. It is set here rather than
+# fixed once by hand because ~/.local is outside this repository's control and one
+# `pip install --user` puts it back.
+export PYTHONNOUSERSITE=1
+
 if [ -z "$S0_RUNS_ROOT" ]; then
     export S0_RUNS_ROOT="$HOME/runs/openQHA"
     export S0_RUNS_ROOT_IS_DEFAULT=1

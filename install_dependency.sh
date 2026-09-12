@@ -710,14 +710,18 @@ conda activate "$PY_ENV"
 # 3. pip-only packages, MACE among them
 # -------------------------------------------------------------------------------------
 say "pip packages (mace-torch, pymsym, parsl)"
-python -m pip install --upgrade pip
-python -m pip install -r "$REQ"
+# `--no-user` on every pip call: without an activated environment pip falls back to
+# ~/.local, and a package there shadows the environment in every later job (PEP 370 puts
+# the user site first on sys.path). Measured 2026-09-12: a scipy in ~/.local, built
+# against numpy 2, broke torch's numpy support in an environment pinned to numpy 1.26.4.
+python -m pip install --no-user --upgrade pip
+python -m pip install --no-user -r "$REQ"
 
 # Named explicitly rather than left to the requirements file, because these three are
 # the ones with no conda-forge package and the ones whose absence is least obvious:
 # without mace-torch there is no potential at all.
-python -m pip install "mace-torch>=0.3.6" "pymsym>=0.3.5"
-[ "$REQ" = "requirements-minimal.txt" ] || python -m pip install "parsl>=2024.01"
+python -m pip install --no-user "mace-torch>=0.3.6" "pymsym>=0.3.5"
+[ "$REQ" = "requirements-minimal.txt" ] || python -m pip install --no-user "parsl>=2024.01"
 
 python - <<'PY'
 import mace, torch

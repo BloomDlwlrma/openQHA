@@ -141,17 +141,42 @@ def main():
     # to import` after 38 seconds of loading, which names neither package nor version.
     # Ask the cheap question first: are these two builds compatible at all.
     rule("2b. the stack -- versions, paths, and the numpy/torch ABI")
-    stack = {}
+    prefix = sys.prefix
+    print("  active prefix         {}".format(prefix))
+    stack, outside = {}, []
     for mod in ("numpy", "torch", "openmm", "openmmtorch", "e3nn", "mace", "scipy", "ase"):
         try:
             m = __import__(mod)
             stack[mod] = getattr(m, "__version__", "?")
-            print("  {:12s} {:24s} {}".format(mod, str(stack[mod]),
-                                              getattr(m, "__file__", "") or ""))
+            where = getattr(m, "__file__", "") or ""
+            # **Is it from THIS environment?** A package under ~/.local (the per-user
+            # site, PEP 370) is on sys.path AHEAD of the environment's site-packages, so
+            # it wins silently -- and it was installed against whatever numpy happened to
+            # be around at the time. Measured 2026-09-12: scipy 1.16.1 in ~/.local, built
+            # against numpy 2, against the environment's numpy 1.26.4.
+            mark = "" if where.startswith(prefix) else "   <== NOT FROM THIS ENVIRONMENT"
+            if mark:
+                outside.append((mod, where))
+            print("  {:12s} {:24s} {}{}".format(mod, str(stack[mod]), where, mark))
         except Exception as exc:                                        # noqa: BLE001
             stack[mod] = None
             print("  {:12s} {:24s} {}: {}".format(mod, "IMPORT FAILED",
                                                   type(exc).__name__, exc))
+    if outside:
+        print()
+        print("  **{} PACKAGE(S) COME FROM OUTSIDE THE ACTIVE ENVIRONMENT.**".format(
+            len(outside)))
+        print("  Python searches the per-user site (~/.local/lib/pythonX.Y/site-packages)")
+        print("  BEFORE an environment's own site-packages, so these shadow the versions")
+        print("  this environment was solved with, and they were built against whatever")
+        print("  was installed when someone ran `pip install --user`.")
+        print("  Prove it in one command, no install needed:")
+        print("      PYTHONNOUSERSITE=1 python {}".format(
+            "scripts/tooling/s0_probe_openmm_cuda.py"))
+        print("  If that passes, the fix is to remove them:")
+        for mod, where in outside:
+            print("      python -m pip uninstall -y {}       # {}".format(mod, where))
+        print("  hpc/env/common.sh sets PYTHONNOUSERSITE=1 for every job for this reason.")
     # Is numpy INTACT, not merely present? A version number says nothing about whether
     # the C extension underneath it loads, and an interrupted install (this site's proxy
     # times out often) leaves exactly that: the right version, a broken import.
@@ -193,6 +218,10 @@ def main():
         print("  round trip still failed, so the fault is a binary built against a")
         print("  different numpy, or an install left half-written. The traceback above")
         print("  names the module; that is the thing to reinstall.")
+        if outside:
+            print()
+            print("  **START WITH THE SHADOWED PACKAGE(S) LISTED ABOVE.** That is the")
+            print("  likeliest cause here and it costs one environment variable to test.")
         print("  Fix:  mamba install -n openqha-gpu numpy=1.26.4")
         print("        ON A LOGIN NODE -- a compute node has no outbound network, and")
         print("        mamba fails there with 'Failed to connect to <proxy> port 3138'.")
