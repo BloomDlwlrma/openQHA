@@ -141,9 +141,12 @@ def relax(atoms, model_path):
     """Minimise with the SAME force the dynamics will use, through OpenMM."""
     import openmm
     from openmm import unit
+    # The platform here and the platform passed to build_system MUST agree: the traced
+    # module carries its device as a constant. This one minimises on the CPU by design.
     system, force_record = openmm_mace.build_system(
         atoms.get_atomic_numbers(), atoms.get_masses(), model_path,
-        example_positions_nm=atoms.get_positions() / openmm_mace.NM_TO_A)
+        example_positions_nm=atoms.get_positions() / openmm_mace.NM_TO_A,
+        platform="CPU")
     integ = openmm.VerletIntegrator(1.0 * unit.femtosecond)
     context = openmm.Context(system, integ, openmm.Platform.getPlatformByName("CPU"))
     context.setPositions((atoms.get_positions() / openmm_mace.NM_TO_A) * unit.nanometer)
@@ -179,7 +182,8 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
 
     system, force_record = openmm_mace.build_system(
         numbers, masses, model_path,
-        example_positions_nm=positions_A / openmm_mace.NM_TO_A)
+        example_positions_nm=positions_A / openmm_mace.NM_TO_A,
+        platform=args.platform)
     integ, thermo_record = build_integrator(
         temperature_K, args.timestep_fs, args.collision_frequency,
         args.chain_length, args.num_mts, args.num_ys, system=system)

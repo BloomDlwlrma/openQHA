@@ -459,9 +459,16 @@ def main():
         print("  weights    {}".format(model_path))
         system, force_record = openmm_mace.build_system(
             NUMBERS, MASSES, model_path,
-            example_positions_nm=np.array(POSITIONS_A) / openmm_mace.NM_TO_A)
-        print("  traced and built in {:.1f} s   dtype {}".format(
-            time.time() - t0, force_record.get("dtype")))
+            example_positions_nm=np.array(POSITIONS_A) / openmm_mace.NM_TO_A,
+            platform=platform_name)
+        print("  traced and built in {:.1f} s   dtype {}   traced on {}".format(
+            time.time() - t0, force_record.get("dtype"),
+            force_record.get("trace_device")))
+        # Section 6 below used to be where a device mismatch surfaced, 61 s after the
+        # trace and with a TorchScript traceback that names no file of ours. Print what
+        # the graph carries, so the mismatch is visible here instead.
+        print("  device constants in the graph  {}".format(
+            ", ".join(force_record.get("device_constants") or []) or "(none)"))
     except Exception as exc:                                            # noqa: BLE001
         print("  FAILED after {:.1f} s".format(time.time() - t0))
         print("  {}: {}".format(type(exc).__name__, exc))

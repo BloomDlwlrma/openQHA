@@ -44,6 +44,8 @@ No periodic boundaries. `shifts` and `unit_shifts` are zero and `cell` is zero, 
 correct for an isolated molecule and wrong for anything else, so `build_system` refuses a
 periodic request rather than silently returning a number.
 """
+import os
+
 import numpy as np
 
 #: OpenMM works in nm and kJ/mol; MACE in angstrom and eV.
@@ -134,8 +136,69 @@ class _MaceForceModule:
         return MaceForce()
 
 
+def torch_device_for_platform(platform, torch=None):
+    """The torch device a module traced for this OpenMM platform must be built on.
+
+    **Tracing bakes devices in as literal constants.** MACE's AtomicEnergiesBlock does
+    atomic_energies.to(x.device); torch.jit.trace sees whatever device the example
+    tensor was on and writes that into the graph:
+
+        energies = torch.to(_1, torch.device("cpu"), 7)
+        return torch.matmul(x, energies)
+
+    Run that under OpenMM's CUDA platform, where positions arrive on cuda:0, and the
+    matmul gets one operand on each device. Measured on an45 2026-09-12, at the first
+    force evaluation, after a 61 s trace:
+
+        RuntimeError: Expected all tensors to be on the same device, but found at
+        least two devices, cuda:0 and cpu! (... argument mat2 in wrapper_CUDA_mm)
+
+    Nothing about the model or the versions was wrong -- the graph was built for one
+    device and run on another.
+
+    cuda:0 rather than a physical index: Slurm renumbers the allocated cards from 0
+    inside the step, and openqha sets CUDA_VISIBLE_DEVICES per worker, so device 0 is
+    always this process's own card.
+    """
+    if torch is None:
+        import torch
+    name = str(platform).upper()
+    if name != "CUDA":
+        # CPU and Reference hand the module CPU tensors, and OpenCL has no torch
+        # counterpart, so openmm-torch evaluates the module on the CPU there too.
+        return torch.device("cpu")
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "the OpenMM CUDA platform was requested, so the MACE module must be traced "
+            "on a CUDA device, but torch.cuda.is_available() is False. Tracing on the "
+            "CPU instead would succeed here and then fail at the first force evaluation "
+            "with 'Expected all tensors to be on the same device'.")
+    return torch.device("cuda:0")
+
+
+def _device_constants(module):
+    """Every device written into a traced graph, as a set of strings.
+
+    The failure this guards against is invisible until a force is evaluated -- a 61 s
+    trace and a Context later -- so read it out of the graph instead of waiting.
+    """
+    seen = set()
+    try:
+        mods = [module] + list(module.modules())
+    except Exception:                                             # noqa: BLE001
+        mods = [module]
+    for m in mods:
+        try:
+            code = str(m.code)
+        except Exception:                                         # noqa: BLE001
+            continue
+        for piece in code.split('torch.device("')[1:]:
+            seen.add(piece.split('"')[0])
+    return seen
+
+
 def build_module(model_path, atomic_numbers, dtype=None, script=True,
-                 example_positions_nm=None):
+                 example_positions_nm=None, device=None):
     """The TorchScript module OpenMM will evaluate. Returns (module, record).
 
     `script=True` TRACES rather than scripts, because e3nn is not scriptable. Tracing is
@@ -145,8 +208,12 @@ def build_module(model_path, atomic_numbers, dtype=None, script=True,
     """
     import torch
     dtype = dtype or torch.float64
+    device = torch.device(device) if device is not None else torch.device("cpu")
     model = _load_model(model_path, dtype)
     module = _MaceForceModule.build(model, atomic_numbers, dtype)
+    # Weights, the precomputed graph buffers and the example positions must all be on
+    # the target device BEFORE tracing -- see torch_device_for_platform().
+    module = module.to(device)
     n = len(atomic_numbers)
     record = dict(model_path=str(model_path), cutoff_A=float(model.r_max),
                   n_atoms=int(n),
@@ -154,20 +221,38 @@ def build_module(model_path, atomic_numbers, dtype=None, script=True,
                   neighbour_list="complete graph, precomputed and static (no binning, so "
                                  "no origin anchoring; pairs beyond r_max contribute "
                                  "exactly zero)",
-                  dtype=str(dtype), traced=bool(script))
+                  dtype=str(dtype), traced=bool(script), trace_device=str(device))
     if script:
         if example_positions_nm is None:
             raise ValueError("tracing needs example positions in nm")
-        example = torch.tensor(np.asarray(example_positions_nm), dtype=dtype)
-        with torch.no_grad():
-            pass
+        example = torch.tensor(np.asarray(example_positions_nm), dtype=dtype,
+                               device=device)
         module = torch.jit.trace(module, example, check_trace=False)
+        # Read back what the trace wrote, rather than trusting that moving the module
+        # was enough. A graph carrying a cpu constant cannot run on CUDA.
+        devices = _device_constants(module)
+        record["device_constants"] = sorted(devices)
+        wrong = {d for d in devices if not d.startswith(device.type)}
+        if wrong and os.environ.get("S0_ALLOW_DEVICE_CONSTANTS") != "1":
+            raise RuntimeError(
+                "the traced graph carries device constant(s) {} but it will be evaluated "
+                "on {}. torch.jit.trace writes .to(x.device) into the graph as a "
+                "literal, so this module would fail at the first force evaluation with "
+                "'Expected all tensors to be on the same device'. Trace on the device "
+                "OpenMM will use, by passing build_system(..., platform=...). Set "
+                "S0_ALLOW_DEVICE_CONSTANTS=1 to run anyway if you have reason to believe "
+                "those constants are harmless.".format(sorted(wrong), device))
     return module, record
 
 
 def build_system(atomic_numbers, masses_amu, model_path, dtype=None, periodic=False,
-                 example_positions_nm=None):
-    """An OpenMM `System` whose only force is MACE. Returns (system, record)."""
+                 example_positions_nm=None, platform="CPU"):
+    """An OpenMM `System` whose only force is MACE. Returns (system, record).
+
+    `platform` is the OpenMM platform the caller will put its Context on, and it is not
+    optional in practice: the traced module is device-specific. Passing the wrong one
+    fails at the first force evaluation, not at build time.
+    """
     import openmm
     import openmmtorch
     from openmm import unit
@@ -180,8 +265,12 @@ def build_system(atomic_numbers, masses_amu, model_path, dtype=None, periodic=Fa
 
     if example_positions_nm is None:
         raise ValueError("build_system needs example positions in nm, to trace with")
-    module, record = build_module(model_path, atomic_numbers, dtype=dtype,
-                                  example_positions_nm=example_positions_nm)
+    import torch
+    module, record = build_module(
+        model_path, atomic_numbers, dtype=dtype,
+        example_positions_nm=example_positions_nm,
+        device=torch_device_for_platform(platform, torch))
+    record["openmm_platform"] = str(platform)
     system = openmm.System()
     for m in masses_amu:
         system.addParticle(float(m) * unit.amu)
