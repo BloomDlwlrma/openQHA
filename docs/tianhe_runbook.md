@@ -458,10 +458,14 @@ python -u scripts/production/s0_E_branchB_parsl.py --species dsgdb9nsd_000018 \
 bash hpc/slurm/submit_branchB_tianhe_a.sh a_debug temp
 ```
 
-**Read `seconds_per_ps_this_run` out of `meta.json` before sizing anything.** Branch B on
-a card is UNMEASURED here: the only GPU figure this repository has is 3.5x *slower* than
-CPU, on a T400 (`D0-C-5`). That does not transfer to an 80 GB card, and nothing has
-replaced it.
+**Read `seconds_per_ps_this_run` out of `meta.json` before sizing anything.** Branch B
+on a card is now MEASURED here, and it is not good news: **74.2 ms/step on an A800 80 GB**
+(an45, 2026-09-12, MACE-OFF23_medium, float64, 10 atoms, 200 steps, one trajectory alone
+on the card) = **74 s per ps at 1 fs**. The same probe on an ordinary CPU is ~50-60
+ms/step. The card is SLOWER per trajectory than a CPU core, which is what `D0-C-5`
+(3.5x slower on a T400) already said and what an 80 GB card does not change: a ten-atom
+molecule evaluated one structure at a time is latency-bound, and HBM2e does not shorten a
+kernel launch.
 
 Also check the `platform` field in every `meta.json`. **If it is not `CUDA`, the job ran
 on the CPU** and the timings mean something else entirely.
@@ -711,9 +715,11 @@ before `yhbatch` turns a wasted allocation into a one-line error.
 ### What Tianhe actually buys you here, and what it does not
 
 **It does not make one trajectory faster.** A ten-atom molecule on MACE-OFF23_medium is
-latency-bound, not throughput-bound: the only GPU figure this repository has is 3.5×
-*slower* than CPU on a T400 (`D0-C-5`), which does not transfer to an 80 GB card and has
-**not been replaced by a measurement**. Do not plan as though it will.
+latency-bound, not throughput-bound. Measured on the hardware, not inferred: **74.2
+ms/step on an A800 80 GB** (an45, 2026-09-12) against ~50-60 ms/step on a CPU. The card
+loses, as it did on a T400 (`D0-C-5`, 3.5x slower) -- the 80 GB simply never mattered.
+Do not plan as though a bigger card will change it; what would change it is a batched
+force interface (`D0-54` criterion ii), which does not exist yet.
 
 **It buys concurrency.** A production 02d run is 2 molecules × up to 4 basins × 3 seeds =
 **up to 24 independent trajectories**, and they have no communication between them at all.
@@ -806,9 +812,9 @@ From five repeat runs on one molecule (**[measured 2026-09-05]**, see
 
 **Report the correction. Report a basin count as one draw, never as the answer.**
 
-The only cost figure this repository has is **285 s per species, 4 threads, uncontended,
-on a workstation** — not on Tianhe, and not under contention. Branch B on a GPU is
-**unmeasured** here; the only figure is D0-C-5, 3.5× *slower* than CPU on a T400, which
-does not transfer to an 80 GB card and has not been replaced. When you have real numbers,
+The only branch A cost figure this repository has is **285 s per species, 4 threads,
+uncontended, on a workstation** — not on Tianhe, and not under contention. Branch B on a
+GPU is now measured: **74.2 ms/step on an A800 80 GB** (an45, 2026-09-12), i.e. 74 s/ps,
+slower than the ~50-60 ms/step the same probe gives on a CPU. When you have real numbers,
 report wall clock, single-job time and slot extrapolation as three separate numbers, so
 nobody later divides one by another.

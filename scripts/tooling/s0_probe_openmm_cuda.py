@@ -89,11 +89,52 @@ def rule(title):
     print("=" * 92)
 
 
+def platform_properties(platform_name, precision):
+    """CUDA takes a Precision property; nothing else does. Measured, see main()."""
+    if precision is None or platform_name != "CUDA":
+        return {}
+    return {"Precision": precision}
+
+
+def describe_context(ctx):
+    """What precision did this Context actually end up with?"""
+    plat = ctx.getPlatform()
+    bits = [plat.getName()]
+    for name in plat.getPropertyNames():
+        if name in ("Precision", "Threads", "DeterministicForces"):
+            try:
+                bits.append("{}={}".format(name, plat.getPropertyValue(ctx, name)))
+            except Exception:                                           # noqa: BLE001
+                pass
+    return "  ".join(bits)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--platform", default="CUDA")
     ap.add_argument("--steps", type=int, default=10)
+    # **Two independent precisions, and they are often confused for one.**
+    #
+    #   --dtype     the dtype MACE itself evaluates in. This is the one that decides
+    #               how the energy and its gradient are computed, because the force
+    #               comes from TorchForce, not from an OpenMM kernel.
+    #   --precision the OpenMM CUDA platform's `Precision` property, which governs
+    #               OpenMM's own arrays and integration. **Its default is `single`,
+    #               not `mixed`** -- read off the installed build, 2026-09-12:
+    #                   CUDA properties: DeviceIndex, DeviceName, UseBlockingSync,
+    #                   Precision, UseCpuPme, CudaCompiler, TempDirectory,
+    #                   CudaHostCompiler, DisablePmeStream, DeterministicForces
+    #                   Precision = 'single'
+    #               The CPU platform has NO precision property at all (only Threads
+    #               and DeterministicForces), and Reference has none either, so
+    #               --precision is accepted and ignored off CUDA.
+    ap.add_argument("--dtype", default="float64", choices=["float32", "float64"],
+                    help="dtype MACE evaluates in (default float64)")
+    ap.add_argument("--precision", default=None,
+                    choices=["single", "mixed", "double"],
+                    help="OpenMM CUDA Precision property; default leaves OpenMM's own "
+                         "default, which is 'single'")
     args = ap.parse_args()
     platform_name = args.platform.upper()
     fail = []
@@ -430,9 +471,10 @@ def main():
         sysm = openmm.System()
         sysm.addParticle(1.0)
         integ = openmm.VerletIntegrator(0.001)
-        ctx = openmm.Context(sysm, integ, openmm.Platform.getPlatformByName(platform_name))
-        print("  built in {:.2f} s   platform {}".format(
-            time.time() - t0, ctx.getPlatform().getName()))
+        ctx = openmm.Context(sysm, integ,
+                             openmm.Platform.getPlatformByName(platform_name),
+                             platform_properties(platform_name, args.precision))
+        print("  built in {:.2f} s   {}".format(time.time() - t0, describe_context(ctx)))
         del ctx
     except Exception as exc:                                            # noqa: BLE001
         print("  FAILED after {:.2f} s".format(time.time() - t0))
@@ -457,10 +499,12 @@ def main():
         model_path = str(engine.model_path(name))
         print("  engine     {}".format(name))
         print("  weights    {}".format(model_path))
+        import torch as _torch
+        want_dtype = getattr(_torch, args.dtype)
         system, force_record = openmm_mace.build_system(
             NUMBERS, MASSES, model_path,
             example_positions_nm=np.array(POSITIONS_A) / openmm_mace.NM_TO_A,
-            platform=platform_name)
+            platform=platform_name, dtype=want_dtype)
         print("  traced and built in {:.1f} s   dtype {}   traced on {}".format(
             time.time() - t0, force_record.get("dtype"),
             force_record.get("trace_device")))
@@ -477,13 +521,94 @@ def main():
         fail.append("build_system")
         return report(fail)
 
+    # ---- 5b. what does this precision cost? ----------------------------------------
+    # A ms/step with no error beside it cannot settle anything: the question is never
+    # "is float32 faster", it is "is float32 close enough for what this number feeds".
+    # Branch B feeds a covariance matrix of positions, so the force matters more than
+    # the energy, and both are printed.
+    #
+    # The baseline is float64 on the CPU platform, which is the configuration every
+    # number in this repository was measured with. When that IS the configuration being
+    # probed, there is nothing to compare and the section says so.
+    rule("5b. E and F against float64 on the CPU, at the same geometry")
+    from openmm import unit as _unit
+
+    # **Two geometries, and the second is the one that means anything.** At the
+    # reference geometry the forces are ~0 by construction (it is essentially a
+    # minimum), so a relative force error there divides by nothing and reads as a huge
+    # percentage of a vanishing quantity. openqha/thermochem/hessian.py already carries
+    # this warning for the analytic-vs-finite-difference comparison; it applies here
+    # verbatim. The displaced geometry is a fixed pseudo-random 0.1 A kick -- the scale
+    # of thermal motion at 298 K -- where forces are hundreds of kJ/mol/nm and the
+    # comparison is against something.
+    rng = np.random.default_rng(20260912)
+    GEOMETRIES = [
+        ("at the reference geometry", np.array(POSITIONS_A)),
+        ("displaced 0.1 A (forces are real here)",
+         np.array(POSITIONS_A) + rng.normal(0.0, 0.1, (len(POSITIONS_A), 3))),
+    ]
+
+    def single_point(sys_obj, plat, props, positions_A):
+        integ = openmm.VerletIntegrator(0.001 * _unit.picoseconds)
+        ctx = openmm.Context(sys_obj, integ,
+                             openmm.Platform.getPlatformByName(plat), props)
+        ctx.setPositions((np.array(positions_A) / openmm_mace.NM_TO_A) * _unit.nanometer)
+        st = ctx.getState(getEnergy=True, getForces=True)
+        e = st.getPotentialEnergy().value_in_unit(_unit.kilojoule_per_mole)
+        f = st.getForces(asNumpy=True).value_in_unit(
+            _unit.kilojoule_per_mole / _unit.nanometer)
+        del ctx
+        return float(e), np.array(f)
+
+    is_baseline = (platform_name == "CPU" and args.dtype == "float64")
+    props_here = platform_properties(platform_name, args.precision)
+    try:
+        if is_baseline:
+            for label, geom in GEOMETRIES:
+                e_here, f_here = single_point(system, platform_name, props_here, geom)
+                print("  {:40s} E {:.6f}   max|F| {:.4f}".format(
+                    label, e_here, np.abs(f_here).max()))
+            print("  this IS the float64/CPU baseline, so there is nothing to compare it")
+            print("  against here. Run --dtype float32 or --platform CUDA for a delta.")
+        else:
+            base_system, _base_record = openmm_mace.build_system(
+                NUMBERS, MASSES, model_path,
+                example_positions_nm=np.array(POSITIONS_A) / openmm_mace.NM_TO_A,
+                platform="CPU", dtype=_torch.float64)
+            for label, geom in GEOMETRIES:
+                e_here, f_here = single_point(system, platform_name, props_here, geom)
+                e_ref, f_ref = single_point(base_system, "CPU", {}, geom)
+                d_f = np.abs(f_here - f_ref)
+                scale = max(np.abs(f_ref).max(), 1e-30)
+                print("  {}".format(label))
+                print("      this build    E {:.6f} kJ/mol   max|F| {:.4f} kJ/mol/nm"
+                      .format(e_here, np.abs(f_here).max()))
+                print("      float64/CPU   E {:.6f} kJ/mol   max|F| {:.4f} kJ/mol/nm"
+                      .format(e_ref, np.abs(f_ref).max()))
+                print("      difference    dE {:+.4e} kJ/mol   max|dF| {:.4e} kJ/mol/nm"
+                      "  ({:.2e} of max|F|)".format(
+                          e_here - e_ref, d_f.max(), d_f.max() / scale))
+            # Numbers to hold those against, rather than eyeballing a magnitude.
+            print("  for scale     k_B T = 2.479 kJ/mol at 298.15 K; branch B's T*S")
+            print("                budget is 0.084 kJ/mol (0.02 kcal/mol). An absolute")
+            print("                energy OFFSET cancels in every difference branch B")
+            print("                takes -- the force error is what reaches a covariance.")
+    except Exception as exc:                                            # noqa: BLE001
+        print("  FAILED: {}: {}".format(type(exc).__name__, exc))
+        detail(exc)
+        fail.append("precision comparison")
+
     # ---- 6. integrate --------------------------------------------------------------
     rule("6. {} steps, and an energy that must be finite".format(args.steps))
     from openmm import unit
     t0 = time.time()
     try:
         integ = openmm.VerletIntegrator(0.001 * unit.picoseconds)
-        ctx = openmm.Context(system, integ, openmm.Platform.getPlatformByName(platform_name))
+        ctx = openmm.Context(system, integ,
+                             openmm.Platform.getPlatformByName(platform_name),
+                             platform_properties(platform_name, args.precision))
+        print("  running on      {}   MACE dtype {}".format(
+            describe_context(ctx), args.dtype))
         ctx.setPositions((np.array(POSITIONS_A) / openmm_mace.NM_TO_A) * unit.nanometer)
         # **Velocities, or this proves nothing.** From a minimum at rest the atoms do not
         # move in 10 fs and the energy is unchanged to every digit printed -- which reads
@@ -526,9 +651,13 @@ def main():
 def report(fail):
     rule("verdict")
     if not fail:
-        print("  branch B can run here. The ms/step above is the number to size a campaign")
-        print("  with; on a T400 workstation it is ~69 ms/step (2026-09-12), and this")
-        print("  repository has no A800 measurement at all until you run this there.")
+        print("  branch B can run here. The ms/step above is the number to size a")
+        print("  campaign with. For comparison, all MACE-OFF23_medium, float64, 10 atoms:")
+        print("      A800 80 GB   74.2 ms/step   (an45, 2026-09-12, alone on the card)")
+        print("      CPU          ~50-60 ms/step (the same probe, --platform CPU)")
+        print("  The card is SLOWER per trajectory. One structure at a time on ten atoms")
+        print("  is latency-bound, so a GPU buys concurrency, never single-trajectory")
+        print("  speed -- size campaigns by how many trajectories fit, not by ms/step.")
         return 0
     for f in fail:
         print("  FAILED  {}".format(f))

@@ -619,12 +619,14 @@ covariance per molecule: small, serial, float64 — a card buys nothing, and its
 metadata traffic on Lustre, so more nodes would buy contention rather than throughput. If it
 ever becomes the bottleneck, batch more molecules per task.
 
-**The GPU cost of branch B is unmeasured.** The only GPU figure this repository has is
-D0-C-5: the same trajectory ran **3.5× slower** on the GPU than on the CPU. That was a
-T400 — a 2 GB entry-level card — against 80 GB HBM2e here, so it does not transfer; but
-nothing has replaced it either. Run the `temp` smoke test and read
-`seconds_per_ps_this_run` out of `meta.json` before sizing a campaign. Do not assume the
-card is faster because it is a card.
+**The GPU cost of branch B is now measured, and the card loses.** an45, 2026-09-12,
+MACE-OFF23_medium in float64 on 10 atoms, one trajectory alone on an A800 80 GB:
+**74.2 ms/step = 74 s/ps at 1 fs**, against ~50-60 ms/step for the same probe on a CPU.
+`D0-C-5` had the same verdict on a T400 (3.5x slower) and was discounted as "a 2 GB
+entry-level card cannot speak for 80 GB HBM2e" -- but the memory was never the limit. One
+structure at a time on ten atoms is latency-bound, and a bigger card does not shorten a
+kernel launch. Still read `seconds_per_ps_this_run` out of `meta.json` before sizing a
+campaign, and do not assume the card is faster because it is a card.
 
 The CPU route is kept, not deprecated: `--route ase --resource tianhe_cpu` is the
 independent implementation pair that makes the OpenMM numbers checkable. Both write the
