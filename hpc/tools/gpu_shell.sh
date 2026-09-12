@@ -54,9 +54,17 @@ echo "interactive  yhrun -N 1 -n 1 -p $PART --gpus=$GPUS --cpus-per-task=$CPUS -
 echo "  cards      $GPUS   ($CPUS CPUs, $(( GPUS * 120 )) GB -- the site's per-card policy)"
 echo "  NOT passed --mem (forbidden here)"
 echo
+echo "  NOTE: a compute node has NO outbound network, not even through the site proxy"
+echo "  (measured 2026-09-12: 'Failed to connect to 172.16.31.200 port 3138'). Anything"
+echo "  that installs packages must be done from THIS login node first, or with"
+echo "  'mamba install --offline' from the package cache."
+echo
 echo "  Once you are on the node, the smoke test is:"
 echo "      cd $ROOT"
-echo "      source ~/init_conda.sh 2>/dev/null || true"
+# `conda activate` needs the shell hook, and a compute node's shell has not run
+# `conda init`. Sourcing the hook directly is what works there; ~/init_conda.sh does the
+# same thing if it exists, but it also runs whatever else is in it.
+echo "      source \$(conda info --base)/etc/profile.d/conda.sh"
 echo "      conda activate openqha-gpu"
 echo "      module load CUDA/12.2"
 echo "      python scripts/tooling/s0_probe_openmm_cuda.py"

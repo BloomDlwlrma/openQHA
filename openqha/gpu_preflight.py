@@ -47,12 +47,23 @@ import subprocess
 _SKIP_ENV = "S0_SKIP_GPU_PREFLIGHT"
 
 
+#: Filled by `_nvrtc_version()`: the file `dlopen` actually resolved to.
+#: **Which one it is matters more than it looks.** `module load CUDA/12.3` puts that
+#: toolkit's lib directory ahead of the conda environment's on LD_LIBRARY_PATH, so the
+#: nvrtc in use can be the module's while the conda pin says something else. On
+#: 2026-09-12 the fix that mattered was changing the MODULE from 12.3 to 12.2; the conda
+#: `cuda-version` pin never got installed (the network was down) and the PTX error went
+#: away regardless. A version with no path is half a measurement.
+NVRTC_PATH = None
+
+
 def _nvrtc_version():
     """(major, minor) of the nvrtc this process would load, or None.
 
     The soname list is ordered newest-first only so that a machine carrying several is
     reported by the one a fresh `dlopen("libnvrtc.so")` would find first anyway.
     """
+    global NVRTC_PATH
     for name in ("libnvrtc.so", "libnvrtc.so.12", "libnvrtc.so.11"):
         try:
             lib = ctypes.CDLL(name)
@@ -62,10 +73,25 @@ def _nvrtc_version():
             major = ctypes.c_int()
             minor = ctypes.c_int()
             if lib.nvrtcVersion(ctypes.byref(major), ctypes.byref(minor)) == 0:
+                NVRTC_PATH = _loaded_path("nvrtc")
                 return (major.value, minor.value)
         except AttributeError:
             continue
     return None
+
+
+def _loaded_path(fragment):
+    """The mapped file whose name contains `fragment`, from /proc/self/maps, or None."""
+    try:
+        seen = []
+        with open("/proc/self/maps", "r") as fh:
+            for line in fh:
+                parts = line.rstrip("\n").split()
+                if len(parts) >= 6 and fragment in parts[-1] and parts[-1] not in seen:
+                    seen.append(parts[-1])
+        return seen[0] if seen else None
+    except OSError:
+        return None
 
 
 def _driver_cuda_version():
@@ -109,7 +135,7 @@ def describe():
         why = "libnvrtc not loadable here"
     elif not driver:
         why = "no CUDA driver readable here (a login node, usually)"
-    return dict(nvrtc=nvrtc, driver_cuda=driver, ok=ok, reason=why,
+    return dict(nvrtc=nvrtc, nvrtc_path=NVRTC_PATH, driver_cuda=driver, ok=ok, reason=why,
                 skipped=os.environ.get(_SKIP_ENV) == "1")
 
 

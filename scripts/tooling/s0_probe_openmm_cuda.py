@@ -18,6 +18,8 @@ cheap causes first, so a failure names itself:
 
     1  versions        nvrtc vs the driver -- the PTX rule, milliseconds, no GPU needed
     2  cards           what Slurm gave this process, and what nvidia-smi agrees to
+    2b stack           numpy/torch/openmm/mace: versions, paths, and whether numpy and
+                       torch can speak to each other at all
     3  platforms       does this OpenMM even have a CUDA platform compiled in
     4  empty context   a 1-particle System on that platform: THE PTX JIT, alone,
                        without torch, without MACE, without the model
@@ -66,6 +68,20 @@ POSITIONS_A = [
 ]
 
 
+def detail(exc):
+    """The traceback, not just the exception's `str`.
+
+    **An ImportError from a C extension says nothing useful without its stack.** On
+    2026-09-12 section 5 printed `ImportError: numpy._core.multiarray failed to import`
+    and that was the whole report: it names no package, and `numpy._core` is the NumPy 2
+    layout while the installed numpy was 1.26.4 -- so the message points at numpy and the
+    culprit is whatever was built against the wrong one. The frames name it.
+    """
+    import traceback
+    for line in traceback.format_exc().rstrip().splitlines():
+        print("    | " + line)
+
+
 def rule(title):
     print()
     print("=" * 92)
@@ -87,6 +103,7 @@ def main():
     from openqha import gpu_preflight
     d = gpu_preflight.describe()
     print("  nvrtc                 {}".format(d["nvrtc"] or "not loadable here"))
+    print("  nvrtc comes from      {}".format(d.get("nvrtc_path") or "(path unknown)"))
     print("  driver supports CUDA  {}".format(d["driver_cuda"] or "not readable here"))
     print("  verdict               {}".format(d["reason"]))
     if d["nvrtc"] and d["driver_cuda"] and not d["ok"]:
@@ -119,6 +136,71 @@ def main():
     except Exception as exc:                                            # noqa: BLE001
         print("  nvidia-smi             {}: {}".format(type(exc).__name__, exc))
 
+    # ---- 2b. the stack -------------------------------------------------------------
+    # Section 5 used to fail here with a bare `ImportError: numpy._core.multiarray failed
+    # to import` after 38 seconds of loading, which names neither package nor version.
+    # Ask the cheap question first: are these two builds compatible at all.
+    rule("2b. the stack -- versions, paths, and the numpy/torch ABI")
+    stack = {}
+    for mod in ("numpy", "torch", "openmm", "openmmtorch", "e3nn", "mace", "scipy", "ase"):
+        try:
+            m = __import__(mod)
+            stack[mod] = getattr(m, "__version__", "?")
+            print("  {:12s} {:24s} {}".format(mod, str(stack[mod]),
+                                              getattr(m, "__file__", "") or ""))
+        except Exception as exc:                                        # noqa: BLE001
+            stack[mod] = None
+            print("  {:12s} {:24s} {}: {}".format(mod, "IMPORT FAILED",
+                                                  type(exc).__name__, exc))
+    # Is numpy INTACT, not merely present? A version number says nothing about whether
+    # the C extension underneath it loads, and an interrupted install (this site's proxy
+    # times out often) leaves exactly that: the right version, a broken import.
+    try:
+        import numpy.core.multiarray as _ma
+        print("  numpy.core.multiarray OK   {}".format(getattr(_ma, "__file__", "?")))
+    except Exception as exc:                                            # noqa: BLE001
+        print("  numpy.core.multiarray **BROKEN**: {}: {}".format(type(exc).__name__, exc))
+        detail(exc)
+    try:
+        import glob as _glob
+        import numpy as _npx
+        sp = str(Path(_npx.__file__).resolve().parent.parent)
+        odd = sorted(n.split("/")[-1] for n in _glob.glob(sp + "/*umpy*")
+                     if n.split("/")[-1].startswith("~"))
+        print("  site-packages         {}".format(sp))
+        if odd:
+            print("  **LEFTOVERS FROM AN INTERRUPTED INSTALL**: {}".format(", ".join(odd)))
+            print("  A `~umpy` directory shadows the real package and produces exactly")
+            print("  this class of AttributeError. Remove it and reinstall numpy.")
+    except Exception:                                                   # noqa: BLE001
+        pass
+
+    # The one question that matters: can torch actually use numpy? torch prints its
+    # complaint as a UserWarning at import and then fails much later, so provoke it here.
+    try:
+        import numpy as _np
+        import torch as _t
+        _t.from_numpy(_np.zeros(3)).sum().item()
+        print("  torch <-> numpy       OK (a round trip worked)")
+    except Exception as exc:                                            # noqa: BLE001
+        print("  torch <-> numpy       **BROKEN**: {}: {}".format(type(exc).__name__, exc))
+        print()
+        detail(exc)
+        print()
+        print("  numpy and this torch build cannot share an array. Nothing below can pass,")
+        print("  and no GPU is involved. The version number alone does NOT settle this:")
+        print("  on 2026-09-12 numpy was 1.26.4 -- the version this file pins -- and the")
+        print("  round trip still failed, so the fault is a binary built against a")
+        print("  different numpy, or an install left half-written. The traceback above")
+        print("  names the module; that is the thing to reinstall.")
+        print("  Fix:  mamba install -n openqha-gpu numpy=1.26.4")
+        print("        ON A LOGIN NODE -- a compute node has no outbound network, and")
+        print("        mamba fails there with 'Failed to connect to <proxy> port 3138'.")
+        print("        Already cached?  mamba install -n openqha-gpu --offline numpy=1.26.4")
+        print("  Then re-run this probe before submitting anything.")
+        fail.append("numpy/torch ABI")
+        return report(fail)
+
     # ---- 3. platforms --------------------------------------------------------------
     rule("3. platforms this OpenMM was built with")
     import openmm
@@ -148,6 +230,7 @@ def main():
     except Exception as exc:                                            # noqa: BLE001
         print("  FAILED after {:.2f} s".format(time.time() - t0))
         print("  {}: {}".format(type(exc).__name__, exc))
+        detail(exc)
         if "PTX" in str(exc):
             print()
             print("  This is the toolkit/driver mismatch, isolated: no torch, no MACE, no")
@@ -175,6 +258,7 @@ def main():
     except Exception as exc:                                            # noqa: BLE001
         print("  FAILED after {:.1f} s".format(time.time() - t0))
         print("  {}: {}".format(type(exc).__name__, exc))
+        detail(exc)
         fail.append("build_system")
         return report(fail)
 
@@ -218,6 +302,7 @@ def main():
     except Exception as exc:                                            # noqa: BLE001
         print("  FAILED after {:.1f} s".format(time.time() - t0))
         print("  {}: {}".format(type(exc).__name__, exc))
+        detail(exc)
         fail.append("integration")
 
     return report(fail)

@@ -42,6 +42,7 @@ Every one of these cost a real failure to establish. None is optional.
 | # | Fact | What it costs to ignore |
 |---|---|---|
 | 1 | **A login node has no DNS.** Nothing resolves until `setproxy.sh` runs | 40 retry lines and a `CondaHTTPError` blaming a mirror that was never down |
+| 1b | **A COMPUTE node has no outbound network at all** — not even to the proxy (measured 2026-09-12 on an45) | `Failed to connect to 172.16.31.200 port 3138`, i.e. the proxy is *known* and unreachable. Compare row 1, where the proxy is unknown and the message is `Failed to resolve`. **Read which of the two it is**: one means run `setproxy.sh`, the other means you are on the wrong kind of node. Install from a login node, or `mamba install --offline` from the package cache |
 | 2 | **Channels go through the TUNA mirror**, configured in your `~/.condarc`. Do not rewrite it | — (it is already correct; changing it is the mistake) |
 | 3 | **Use `mamba`, not `conda`** | 1 h 37 min at 100% CPU and still going, versus 5 min 30 s |
 | 4 | **A login node has no GPU driver**, so `__cuda` is absent and every `*cuda*` build is unsatisfiable | `pytorch … is not installable because it requires __cuda` |

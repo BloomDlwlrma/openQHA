@@ -232,7 +232,30 @@ dependencies:
   # two must go through parquet/HDF5/xyz, never pickle.
 
   - python=3.11
-  - numpy>=1.24
+  # **PINNED, not a lower bound** (2026-09-12) -- but NOT for the reason first written
+  # here, and the correction matters more than the pin.
+  #
+  # What stood here said `mamba install cuda-version=12.2` had re-solved the environment
+  # and moved numpy to 2.x. **Measured on the machine the same day: numpy is 1.26.4**,
+  # installed from conda, in this environment's own site-packages -- and that install had
+  # failed outright (the site proxy was unreachable), so nothing moved at all. The claim
+  # was wrong; the pin is kept because a lower bound is still a promise this project
+  # cannot make (environment-tianhe.yml installed a broken numpy/pytorch pair from
+  # exactly such a bound on 2026-09-10).
+  #
+  # THE REAL FAILURE IS STILL OPEN. With numpy 1.26.4 present and intact:
+  #
+  #     Failed to initialize NumPy: module 'numpy._globals' has no attribute
+  #     '_signature_descriptor'                       <- at torch import
+  #     RuntimeError: Numpy is not available          <- torch.from_numpy()
+  #     ImportError: numpy._core.multiarray failed to import
+  #
+  # `numpy._core` is the NumPy **2** layout, so something in this environment was built
+  # against numpy 2 and is being run against 1.26.4. Which something is not yet known --
+  # the traceback that names it was being swallowed, and
+  # scripts/tooling/s0_probe_openmm_cuda.py now prints it. Do not treat this pin as the
+  # fix until that probe passes section 2b on the machine.
+  - numpy=1.26.4
   - scipy>=1.10
   - pyyaml>=6.0
   - pandas>=1.5
