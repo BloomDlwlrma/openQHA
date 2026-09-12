@@ -177,6 +177,118 @@ def main():
         for mod, where in outside:
             print("      python -m pip uninstall -y {}       # {}".format(mod, where))
         print("  hpc/env/common.sh sets PYTHONNOUSERSITE=1 for every job for this reason.")
+    # **WHAT NUMPY DOES THE INSTALLED TORCH ACTUALLY REQUIRE?** conda records every
+    # package's declared dependencies in <prefix>/conda-meta/<pkg>.json, offline, so this
+    # needs no network and no guessing. It is the question that should have been asked
+    # first on 2026-09-12: `environment-tianhe-gpu.yml` recorded numpy 1.26.4 beside
+    # pytorch 2.5.1 build 303 from a DRY RUN that was never executed, and the pairing was
+    # assumed to hold. If torch declares numpy >=2 and numpy is 1.x, the pin in that file
+    # is backwards and no amount of reinstalling numpy 1.26.4 will help.
+    metas = sorted((Path(prefix) / "conda-meta").glob("*.json")) \
+        if (Path(prefix) / "conda-meta").is_dir() else []
+    numpy_needs = []
+    for meta in metas:
+        stem = meta.name.rsplit("-", 2)[0]
+        if stem not in ("pytorch", "libtorch", "openmm-torch", "scipy", "mace-torch"):
+            continue
+        try:
+            import json as _json
+            rec = _json.loads(meta.read_text(encoding="utf-8"))
+        except Exception:                                               # noqa: BLE001
+            continue
+        want = [d for d in (rec.get("depends") or []) if d.split()[0] == "numpy"]
+        if want:
+            numpy_needs.append((stem, rec.get("version", "?"), "; ".join(want)))
+            print("  {:12s} {:12s} requires  {}".format(stem, rec.get("version", "?"),
+                                                        "; ".join(want)))
+    if not metas:
+        print("  conda-meta            not readable (not a conda prefix?)")
+
+    # **IS THE NUMPY ON DISK THE NUMPY CONDA INSTALLED?** Asked on 2026-09-12 only after
+    # the versions had been checked and agreed: pytorch 2.5.1 declares `numpy >=1.19,<3`
+    # and scipy 1.13.1 declares `numpy <2.3`, both satisfied by the installed 1.26.4 --
+    # so no version is wrong and the failure is still there. What torch reported was
+    #
+    #     module 'numpy._globals' has no attribute '_signature_descriptor'
+    #
+    # an AttributeError raised INSIDE numpy's own import. No released numpy 1.26.4 file
+    # refers to that name, so a file under numpy/ is not from 1.26.4 even though
+    # `numpy.__version__` says it is. That is what a pip overwrite, or a second numpy
+    # removed by file list, leaves behind: the right version string, a mixed tree.
+    #
+    # conda-meta/<pkg>.json records every file the package owns and its size, offline, so
+    # the tree can be compared against what conda installed without a network or a
+    # reinstall. Missing files mean something deleted them; a size mismatch means
+    # something rewrote them; an undeclared file under numpy/ is a leftover.
+    npy_meta = [m for m in metas if m.name.rsplit("-", 2)[0] in ("numpy", "numpy-base")]
+    if npy_meta:
+        import json as _json
+        declared, sizes = set(), {}
+        for meta in npy_meta:
+            try:
+                rec = _json.loads(meta.read_text(encoding="utf-8"))
+            except Exception:                                           # noqa: BLE001
+                continue
+            for rel in rec.get("files") or []:
+                declared.add(rel)
+            for ent in (rec.get("paths_data") or {}).get("paths") or []:
+                # Skip the files conda rewrites as it installs them: anything carrying a
+                # prefix placeholder (a shebang, a build path in __config__.py) is edited
+                # on the way in, so its size differs from the package record by design.
+                # Measured 2026-09-12 on a healthy environment: bin/f2py and
+                # numpy/__config__.py both flagged this way. Comparing them would make
+                # every environment look damaged, which is worse than not comparing.
+                if ent.get("_path") and ent.get("size_in_bytes") is not None                         and not ent.get("prefix_placeholder"):
+                    sizes[ent["_path"]] = ent["size_in_bytes"]
+        missing, resized = [], []
+        for rel in sorted(declared):
+            f = Path(prefix) / rel
+            if not f.exists():
+                missing.append(rel)
+            elif rel in sizes and f.is_file() and not rel.endswith(".pyc")                     and f.stat().st_size != sizes[rel]:
+                resized.append((rel, sizes[rel], f.stat().st_size))
+        # Anything under numpy/ that conda never installed.
+        try:
+            import numpy as _npt
+            pkg = Path(_npt.__file__).resolve().parent
+        except Exception:                                               # noqa: BLE001
+            pkg = None
+        strays = []
+        if pkg is not None and pkg.name == "numpy" and pkg.is_dir():
+            for f in pkg.rglob("*"):
+                if not f.is_file() or f.suffix in (".pyc",):
+                    continue
+                try:
+                    rel = str(f.relative_to(prefix)).replace("\\", "/")
+                except ValueError:
+                    continue
+                if rel not in declared:
+                    strays.append(rel)
+        print("  numpy tree            {} file(s) declared by conda".format(len(declared)))
+        for label, items in (("MISSING (deleted by something else)", missing),
+                             ("UNDECLARED (left by something else)", strays)):
+            if items:
+                print("  **{}**: {}".format(label, len(items)))
+                for rel in items[:12]:
+                    print("      {}".format(rel))
+                if len(items) > 12:
+                    print("      ... and {} more".format(len(items) - 12))
+        if resized:
+            print("  **REWRITTEN (size differs from the installed package)**: {}".format(
+                len(resized)))
+            for rel, want, got in resized[:12]:
+                print("      {}  conda {} bytes, on disk {}".format(rel, want, got))
+            if len(resized) > 12:
+                print("      ... and {} more".format(len(resized) - 12))
+        if not (missing or strays or resized):
+            print("  numpy tree            matches the installed package exactly")
+        else:
+            print("  The numpy in this environment is NOT the package conda installed.")
+            print("  Repair it without a network, from the package cache:")
+            print("      mamba install -n <env> --offline --force-reinstall numpy=={}".format(
+                stack.get("numpy") or "1.26.4"))
+            print("  (drop --offline on a login node if the cache no longer has it)")
+
     # Is numpy INTACT, not merely present? A version number says nothing about whether
     # the C extension underneath it loads, and an interrupted install (this site's proxy
     # times out often) leaves exactly that: the right version, a broken import.
@@ -185,6 +297,18 @@ def main():
         print("  numpy.core.multiarray OK   {}".format(getattr(_ma, "__file__", "?")))
     except Exception as exc:                                            # noqa: BLE001
         print("  numpy.core.multiarray **BROKEN**: {}: {}".format(type(exc).__name__, exc))
+        detail(exc)
+    # numpy 1.26 ships `numpy/_core/` only as a shim for unpickling numpy 2 arrays; the
+    # real module is `numpy.core`. torch's complaint names `numpy._core.multiarray`, so
+    # import it here: on a clean 1.26.4 this resolves through the shim, and when it does
+    # not, the traceback names the file that raises rather than torch's one-line summary.
+    try:
+        import importlib as _il
+        _c2 = _il.import_module("numpy._core.multiarray")
+        print("  numpy._core.multiarray OK  {}".format(getattr(_c2, "__file__", "?")))
+    except Exception as exc:                                            # noqa: BLE001
+        print("  numpy._core.multiarray **BROKEN**: {}: {}".format(
+            type(exc).__name__, exc))
         detail(exc)
     try:
         import glob as _glob
@@ -222,10 +346,30 @@ def main():
             print()
             print("  **START WITH THE SHADOWED PACKAGE(S) LISTED ABOVE.** That is the")
             print("  likeliest cause here and it costs one environment variable to test.")
-        print("  Fix:  mamba install -n openqha-gpu numpy=1.26.4")
-        print("        ON A LOGIN NODE -- a compute node has no outbound network, and")
-        print("        mamba fails there with 'Failed to connect to <proxy> port 3138'.")
-        print("        Already cached?  mamba install -n openqha-gpu --offline numpy=1.26.4")
+        # The declared requirement beats every inference about which numpy is "right".
+        import numpy as _npv
+        major = int(str(_npv.__version__).split(".")[0])
+        conflict = [(n, v, d) for (n, v, d) in numpy_needs
+                    if (">=2" in d.replace(" ", "") and major < 2)
+                    or ("<2" in d.replace(" ", "") and major >= 2)]
+        if conflict:
+            print()
+            print("  **THE INSTALLED PACKAGES ASK FOR A DIFFERENT NUMPY THAN IS HERE.**")
+            for n, v, d in conflict:
+                print("      {} {} requires numpy {}, and numpy is {}".format(
+                    n, v, d, _npv.__version__))
+            print("  That is a declared dependency, not an inference. Satisfy it -- on a")
+            print("  login node -- rather than reinstalling the numpy already present.")
+        print()
+        if conflict:
+            print("  Fix: satisfy the DECLARED requirement printed above -- that is a fact")
+            print("  about the installed package, not a guess about which numpy is right.")
+        else:
+            print("  No declared conflict was found, so the numpy version is NOT known to")
+            print("  be the fault. Do not reinstall numpy on a hunch; find what the")
+            print("  traceback names first.")
+        print("  Whatever the change, run it ON A LOGIN NODE -- a compute node has no")
+        print("  outbound network and mamba fails with 'Failed to connect to <proxy>'.")
         print("  Then re-run this probe before submitting anything.")
         fail.append("numpy/torch ABI")
         return report(fail)

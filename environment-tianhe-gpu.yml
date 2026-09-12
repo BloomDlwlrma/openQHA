@@ -251,10 +251,40 @@ dependencies:
   #     ImportError: numpy._core.multiarray failed to import
   #
   # `numpy._core` is the NumPy **2** layout, so something in this environment was built
-  # against numpy 2 and is being run against 1.26.4. Which something is not yet known --
-  # the traceback that names it was being swallowed, and
-  # scripts/tooling/s0_probe_openmm_cuda.py now prints it. Do not treat this pin as the
-  # fix until that probe passes section 2b on the machine.
+  # against numpy 2 and is being run against 1.26.4.
+  #
+  # Three things have been ruled out on the machine, in this order, on 2026-09-12:
+  #
+  #   * a scipy 1.16.1 in ~/.local shadowing the environment -- removed, and
+  #     PYTHONNOUSERSITE=1 proved it was not the cause: the round trip still fails with
+  #     every package coming from the environment;
+  #   * numpy being the wrong version -- it is 1.26.4, from conda, and
+  #     `numpy.core.multiarray` imports;
+  #   * **this pin being backwards** -- read straight out of <prefix>/conda-meta on an45:
+  #
+  #         pytorch       2.5.1    requires  numpy >=1.19,<3
+  #         scipy         1.13.1   requires  numpy <2.3; numpy >=1.19,<3
+  #         libtorch      2.5.1    requires  (nothing about numpy)
+  #         openmm-torch  1.5      requires  (nothing about numpy)
+  #
+  #     Every one of those is satisfied by 1.26.4, so NO package here declares a numpy
+  #     this pin violates, and moving numpy up would not be satisfying any requirement --
+  #     it would be another guess. Keep the pin; it is not the fault.
+  #
+  # What is left, given that torch's complaint is an AttributeError raised INSIDE numpy's
+  # own import (`module 'numpy._globals' has no attribute '_signature_descriptor'`, a name
+  # no released 1.26.4 file refers to):
+  #
+  #   * the numpy tree on disk is not the tree conda installed -- a pip overwrite, or a
+  #     second numpy removed by file list, leaves the version string intact and the files
+  #     mixed. `scripts/tooling/s0_probe_openmm_cuda.py` now compares every file conda
+  #     recorded against what is there and names what is missing, rewritten or left over;
+  #   * or this pytorch 2.5.1.post303 -- a build string from no channel this file records
+  #     -- was compiled against numpy 2 headers without the backward-compatible runtime,
+  #     in which case its own `depends` is simply wrong about itself.
+  #
+  # The tree check decides between those two offline, with no install. **Run it before
+  # changing any version here.**
   - numpy=1.26.4
   - scipy>=1.10
   - pyyaml>=6.0
