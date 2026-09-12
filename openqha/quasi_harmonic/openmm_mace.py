@@ -177,24 +177,48 @@ def torch_device_for_platform(platform, torch=None):
 
 
 def _device_constants(module):
-    """Every device written into a traced graph, as a set of strings.
+    """Device constants in a traced graph: (hazards, all_devices).
 
-    The failure this guards against is invisible until a force is evaluated -- a 61 s
-    trace and a Context later -- so read it out of the graph instead of waiting.
+    A hazard is a device constant inside an `aten::to` call, and ONLY that. The
+    distinction is not cosmetic -- measured 2026-09-12, both ways:
+
+      * TRACING freezes the device it saw. A module whose source says
+        `self.w.to(dtype=x.dtype, device=x.device)` traces to
+        `torch.to(w, torch.device("cpu"), 6)`. That is the MACE AtomicEnergiesBlock
+        line that killed a CUDA run at the first force evaluation.
+      * SCRIPTING keeps it dynamic: the same source scripts to
+        `torch.to(w, ops.prim.device(x), _0)`, with no constant at all.
+
+    So a `torch.device("cpu")` inside a scripted submodule was WRITTEN THAT WAY on
+    purpose. e3nn's generated tensor products carry
+    `torch.empty([], device=torch.device("cpu"))`, used only to broadcast shapes --
+    never to hold values -- and they read cpu on every machine, which is why MACE runs
+    on GPUs everywhere. A first version of this audit flagged those fourteen lines and
+    refused a build whose trace was correct; blocking a working run is a worse failure
+    than the one being guarded against, because it is silent about being wrong.
+
+    Factory calls (zeros/ones/empty/arange) are therefore reported but not fatal: traced
+    on CUDA they bake cuda, so a cpu one left over is deliberate source, not this bug.
     """
-    seen = set()
+    hazards, seen = [], set()
     try:
-        mods = [module] + list(module.modules())
+        mods = list(module.named_modules())
     except Exception:                                             # noqa: BLE001
-        mods = [module]
-    for m in mods:
+        mods = [("<top>", module)]
+    for name, m in mods:
         try:
             code = str(m.code)
         except Exception:                                         # noqa: BLE001
             continue
-        for piece in code.split('torch.device("')[1:]:
-            seen.add(piece.split('"')[0])
-    return seen
+        for line in code.splitlines():
+            if 'torch.device("' not in line:
+                continue
+            for piece in line.split('torch.device("')[1:]:
+                dev = piece.split('"')[0]
+                seen.add(dev)
+                if "torch.to(" in line:
+                    hazards.append((name or "<top>", dev, line.strip()))
+    return hazards, sorted(seen)
 
 
 def build_module(model_path, atomic_numbers, dtype=None, script=True,
@@ -230,18 +254,26 @@ def build_module(model_path, atomic_numbers, dtype=None, script=True,
         module = torch.jit.trace(module, example, check_trace=False)
         # Read back what the trace wrote, rather than trusting that moving the module
         # was enough. A graph carrying a cpu constant cannot run on CUDA.
-        devices = _device_constants(module)
-        record["device_constants"] = sorted(devices)
-        wrong = {d for d in devices if not d.startswith(device.type)}
+        hazards, devices = _device_constants(module)
+        record["device_constants"] = devices
+        wrong = [(n, d, line) for (n, d, line) in hazards
+                 if not d.startswith(device.type)]
+        record["device_mismatches"] = ["{} -> {}".format(n, d) for n, d, _ in wrong]
         if wrong and os.environ.get("S0_ALLOW_DEVICE_CONSTANTS") != "1":
             raise RuntimeError(
-                "the traced graph carries device constant(s) {} but it will be evaluated "
-                "on {}. torch.jit.trace writes .to(x.device) into the graph as a "
-                "literal, so this module would fail at the first force evaluation with "
-                "'Expected all tensors to be on the same device'. Trace on the device "
-                "OpenMM will use, by passing build_system(..., platform=...). Set "
-                "S0_ALLOW_DEVICE_CONSTANTS=1 to run anyway if you have reason to believe "
-                "those constants are harmless.".format(sorted(wrong), device))
+                "the traced graph moves tensors to a device that is not the one it will "
+                "run on ({}).\n{}\n"
+                "torch.jit.trace records the device it saw as a literal, so this module "
+                "would fail at the first force evaluation with 'Expected all tensors to "
+                "be on the same device'. Trace on the device OpenMM will use, by passing "
+                "build_system(..., platform=...). S0_ALLOW_DEVICE_CONSTANTS=1 overrides "
+                "this check.\n"
+                "(Device constants seen anywhere in the graph: {}. Constants outside a "
+                ".to() call are not counted: e3nn's scripted tensor products carry a cpu "
+                "torch.empty used only for shape arithmetic.)".format(
+                    device,
+                    "\n".join("    {}  {}".format(n, line) for n, _, line in wrong),
+                    ", ".join(devices)))
     return module, record
 
 

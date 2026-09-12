@@ -467,8 +467,9 @@ def main():
         # Section 6 below used to be where a device mismatch surfaced, 61 s after the
         # trace and with a TorchScript traceback that names no file of ours. Print what
         # the graph carries, so the mismatch is visible here instead.
-        print("  device constants in the graph  {}".format(
-            ", ".join(force_record.get("device_constants") or []) or "(none)"))
+        print("  device constants in the graph  {}   (.to() mismatches: {})".format(
+            ", ".join(force_record.get("device_constants") or []) or "(none)",
+            ", ".join(force_record.get("device_mismatches") or []) or "none"))
     except Exception as exc:                                            # noqa: BLE001
         print("  FAILED after {:.1f} s".format(time.time() - t0))
         print("  {}: {}".format(type(exc).__name__, exc))

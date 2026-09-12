@@ -87,8 +87,15 @@ def check_platform_mapping():
 
 
 def check_device_constants():
-    """B. the audit reads a real baked constant."""
-    print("\nB. a baked device constant is visible in the graph")
+    """B. the audit sees the hazard, and ONLY the hazard.
+
+    Both halves matter, and the second was learned the hard way: a first version
+    flagged every device constant anywhere in the graph, including the cpu
+    `torch.empty` that e3nn's scripted tensor products use for shape arithmetic, and
+    refused a MACE build on an A800 whose trace was correct. A guard that blocks
+    working runs is worse than no guard, because it is confident while being wrong.
+    """
+    print("\nB. the audit separates a baked .to() from shape-only scaffolding")
     import torch
 
     class Baked(torch.nn.Module):
@@ -99,16 +106,37 @@ def check_device_constants():
             self.register_buffer("w", torch.ones(3, dtype=torch.float64))
 
         def forward(self, x):
-            return (x * self.w.to(x.device, x.dtype)).sum()
+            return (x * self.w.to(dtype=x.dtype, device=x.device)).sum()
 
-    traced = torch.jit.trace(Baked(), torch.zeros(3, dtype=torch.float64),
-                             check_trace=False)
-    found = openmm_mace._device_constants(traced)
-    print("  constants found  {}".format(sorted(found) or "(none)"))
-    if "cpu" not in found:
-        FAIL.append("traced a module on the CPU and _device_constants did not see cpu; "
-                    "the audit in build_module would pass a graph that cannot run")
+    class ShapeOnly(torch.nn.Module):
+        """The shape of e3nn's generated code: a factory tensor, never a value."""
+
+        def forward(self, x):
+            pad = torch.zeros(3, dtype=x.dtype)
+            return (x + pad).sum()
+
+    ex = torch.zeros(3, dtype=torch.float64)
+
+    hazards, devices = openmm_mace._device_constants(
+        torch.jit.trace(Baked(), ex, check_trace=False))
+    print("  buffer .to(x.device)   hazards {}  devices {}".format(
+        len(hazards), devices))
+    if not any(d == "cpu" for _n, d, _l in hazards):
+        FAIL.append("a module traced on the CPU with .to(x.device) was not flagged; "
+                    "build_module would pass a graph that cannot run on a GPU")
         print("      FAIL  the audit cannot see the constant it exists to catch")
+
+    hazards2, devices2 = openmm_mace._device_constants(
+        torch.jit.trace(ShapeOnly(), ex, check_trace=False))
+    print("  factory tensor only    hazards {}  devices {}".format(
+        len(hazards2), devices2))
+    if hazards2:
+        FAIL.append("a factory tensor with no .to() was reported as a hazard; this is "
+                    "the false positive that refused a correct MACE build on an A800")
+        print("      FAIL  shape-only scaffolding flagged as a device mismatch")
+    if "cpu" not in devices2:
+        FAIL.append("the informational device list lost the factory constant; it is "
+                    "reported, just not fatal")
 
 
 def check_callers_pass_platform():
