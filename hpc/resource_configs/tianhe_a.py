@@ -326,12 +326,20 @@ TRAIN_CORES_PER_WORKER = CPUS_PER_GPU
 #: ms/step. Before a long campaign runs this way, measure it:
 #:     python scripts/tooling/s0_gpu_concurrency.py --dtype float64 --precision double \
 #:         --threads 1 --steps 200 12 24 48 96      # inside an 8-card allocation
-GPUS_PER_BLOCK = GPUS_PER_NODE
+#: **ONE CARD PER BLOCK for the first campaign** (user ruling 2026-09-12, after the
+#: full-node setting above was written and before anything ran with it). Both reasons
+#: from that comment stand and neither is hypothetical:
+#:   * cards are the scarce resource -- 2026-09-11, all 64 allocated while 248 of 672
+#:     CPUs idled -- so 8 free cards ON ONE NODE is a far rarer event than 1, and a
+#:     full-node block can queue while single-card blocks compute;
+#:   * 96 workers on a node has never been measured (open item 46).
+#: Setting this to GPUS_PER_NODE turns the blocks into whole nodes again; the arithmetic
+#: below follows either value, and nothing else needs changing.
+GPUS_PER_BLOCK = 1
 NODES_PER_BLOCK = 1
-#: MaxSubmit is 10 and in nested mode the driver's own job is one of them -- but a block
-#: is now a whole node, and the partition has only NODES_IN_PARTITION of those, so asking
-#: for 9 would be asking for more cards than exist.
-MAX_BLOCKS = min(JOB_QUOTA - 1, NODES_IN_PARTITION)
+#: MaxSubmit is 10 and in nested mode the driver's own job is one of them. Capped at the
+#: partition's node count too, which only binds when a block is a whole node.
+MAX_BLOCKS = min(JOB_QUOTA - 1, NODES_IN_PARTITION * GPUS_PER_NODE // GPUS_PER_BLOCK)
 
 def _walltime_seconds(spec):
     """Slurm walltime -> seconds. Accepts D-HH:MM:SS, HH:MM:SS, MM:SS.

@@ -219,6 +219,54 @@ echo "======================================================================"
 echo "openQHA   chain $CHAIN   species $SPECIES   tag $TAG"
 echo "  partition $PARTITION${SLURM_JOB_ID:+   job $SLURM_JOB_ID}   kind $KIND"
 echo "  resource  $RESOURCE   route $ROUTE   platform $PLATFORM"
+
+# ---------------------------------------------------------------------------------------
+# THE TASK BUDGET MUST MATCH THIS JOB, NOT THE SITE DEFAULT
+# ---------------------------------------------------------------------------------------
+# A branch B task stops itself at a budget and flushes, rather than being killed between a
+# write and a rename. The driver defaults that budget to the RESOURCE CONFIG's
+# QHA_WALL_BUDGET_S -- 90% of `tianhe_a.WALLTIME`, which is 24 h since 2026-09-12.
+#
+# That default is wrong for any job whose --time differs from the site default, and 02d-2
+# is exactly that: its array asks for a longer job precisely because a p1500 row needs
+# ~25.8 h. With the budget left at 21.6 h the task would stop at 21.6 h INSIDE a 3-day
+# job -- the longer walltime buying nothing, silently. (It was invisible until 2026-09-12
+# because the site default was 7 days and never bound.)
+#
+# So ask the queue. `squeue -h -j <id> -o %L` is the time this job has LEFT, which is the
+# only number that is true regardless of which .slurm, conf or array wrote --time. Fall
+# back to the conf's WALLTIME, then to the driver's own default.
+_wall_seconds() {           # D-HH:MM:SS | HH:MM:SS | MM:SS | SS  ->  seconds
+    local spec="$1" d=0 rest a b c
+    case "$spec" in *-*) d="${spec%%-*}"; rest="${spec#*-}" ;; *) rest="$spec" ;; esac
+    IFS=: read -r a b c <<<"$rest"
+    if [ -n "$c" ]; then :
+    elif [ -n "$b" ]; then c="$b"; b="$a"; a=0
+    else c="$a"; b=0; a=0; fi
+    echo $(( 10#${d:-0} * 86400 + 10#${a:-0} * 3600 + 10#${b:-0} * 60 + 10#${c:-0} ))
+}
+
+WALL_BUDGET_ARG=""
+_budget_src=""
+if [ -n "${SLURM_JOB_ID:-}" ] && command -v squeue >/dev/null 2>&1; then
+    _left="$(squeue -h -j "$SLURM_JOB_ID" -o "%L" 2>/dev/null | tr -d ' ')"
+    case "$_left" in
+        ""|UNLIMITED|NOT_SET|INVALID) ;;
+        *) _secs="$(_wall_seconds "$_left")"
+           [ "${_secs:-0}" -gt 0 ] && { WALL_BUDGET_ARG="--wall-budget-s $(( _secs * 9 / 10 ))"
+                                        _budget_src="squeue, time left $_left"; } ;;
+    esac
+fi
+if [ -z "$WALL_BUDGET_ARG" ] && [ -n "${WALLTIME:-}" ]; then
+    _secs="$(_wall_seconds "$WALLTIME")"
+    [ "${_secs:-0}" -gt 0 ] && { WALL_BUDGET_ARG="--wall-budget-s $(( _secs * 9 / 10 ))"
+                                _budget_src="conf WALLTIME=$WALLTIME"; }
+fi
+if [ -n "$WALL_BUDGET_ARG" ]; then
+    echo "  budget    ${WALL_BUDGET_ARG#--wall-budget-s } s  (90% of $_budget_src)"
+else
+    echo "  budget    from the resource config (no job walltime readable here)"
+fi
 echo "  seeds     $SEEDS   threads $THREADS   conf $CONF"
 echo "======================================================================"
 
@@ -361,7 +409,8 @@ qha)    # the conformational free energy: A -> B -> collect -> F_conf
         --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
         --route "$ROUTE" --basins auto --seeds "$SEEDS" \
         ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
-        ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"}
+        ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
+        $WALL_BUDGET_ARG
 
     echo
     echo "---- collect: quasi-harmonic analysis per molecule --------------------"
@@ -399,7 +448,8 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
         --route "$ROUTE" --basins auto --seeds "$SEEDS" \
         ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
         ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
-        ${SAMPLE_EVERY:+--sample-every "$SAMPLE_EVERY"}
+        ${SAMPLE_EVERY:+--sample-every "$SAMPLE_EVERY"} \
+        $WALL_BUDGET_ARG
 
     echo
     echo "---- 02d: G_total from omega and from nu, term by term ----------------"

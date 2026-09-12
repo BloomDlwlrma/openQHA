@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=12
-#SBATCH --time=3-00:00:00
+#SBATCH --time=36:00:00        # submit_array.sh passes --time; see array.conf
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 # =======================================================================================

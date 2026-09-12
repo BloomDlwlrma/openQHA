@@ -44,7 +44,7 @@ BASIN_TAG="${BASIN_TAG:?array.conf must set BASIN_TAG}"
 TAG_PREFIX="${TAG_PREFIX:-02d2}"
 SETTINGS="${SETTINGS:-$HERE/settings.tsv}"
 GPUS_PER_JOB="${GPUS_PER_JOB:-8}"
-WALLTIME="${WALLTIME:-3-00:00:00}"
+WALLTIME="${WALLTIME:-36:00:00}"     # see array.conf: p1500 needs ~25.8 h
 SUBMIT="${OPENQHA_SUBMIT:-yhbatch}"
 [ -f "$SETTINGS" ] || { echo "no settings file: $SETTINGS" >&2; exit 2; }
 
