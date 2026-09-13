@@ -431,10 +431,24 @@ def main():
     print("route        {}  ({}{})".format(
         route, ROUTES[route],
         ", platform " + platform if route == "openmm" else ""))
-    print("queue        {} partition={} walltime={} max_blocks={}".format(
-        "DEBUG (smoke test)" if args.debug else "production",
-        plan["submission"]["partition"], plan["submission"]["walltime"],
-        plan["submission"]["max_blocks"]))
+    # Say WHERE the workers will run. On an104 (2026-09-13) this line read
+    # "production partition=h100x walltime=16:00:00" while the driver sat inside an
+    # interactive allocation -- and that was literally true: the config submitted a new
+    # job and waited 42 minutes for it. A reader must be able to tell the two apart.
+    mode_now = described.get("mode_now") or (
+        "in_allocation" if os.environ.get("SLURM_JOB_ID") and os.environ.get("S0_PARSL_NESTED") != "1"
+        else "nested")
+    if mode_now == "in_allocation":
+        print("workers      IN THIS ALLOCATION (job {}): no block is submitted".format(
+            os.environ.get("SLURM_JOB_ID")))
+    else:
+        print("workers      SUBMITTED as blocks: {} partition={} walltime={} max_blocks={}".format(
+            "DEBUG (smoke test)" if args.debug else "production",
+            plan["submission"]["partition"], plan["submission"]["walltime"],
+            plan["submission"]["max_blocks"]))
+        if os.environ.get("SLURM_JOB_ID"):
+            print("             (inside job {} but S0_PARSL_NESTED=1: the blocks will QUEUE)".format(
+                os.environ.get("SLURM_JOB_ID")))
     print("tasks        {}  ({} species, basins from branch A, {} seeds)".format(
         len(tasks), len(species), args.seeds))
     for s in species:

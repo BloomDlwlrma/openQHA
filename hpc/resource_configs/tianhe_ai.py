@@ -206,7 +206,7 @@ def _worker_init(here, partition):
     threads = "export OMP_NUM_THREADS=1" if cpus is None else (
         "export OMP_NUM_THREADS=1   # never more than the package's %d CPUs" % cpus)
     return "; ".join([
-        "mkdir -p ${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs",
+        "mkdir -p ${S0_RUNS_ROOT:-$HOME/runs/openQHA}/logs",
         "module purge 2>/dev/null || true",
         "module load anaconda3/2023.09 2>/dev/null || true",
         # No unconditional CUDA module here any more (2026-09-13). Whether a site module
@@ -229,9 +229,30 @@ def _worker_init(here, partition):
     ])
 
 
+def in_allocation_now():
+    """True when the caller is already inside a Slurm job and has not asked to nest.
+
+    Same contract as tianhe_a.in_allocation_now(): `S0_PARSL_NESTED=1` forces block
+    submission from inside a job, for a campaign that wants parsl to grow.
+    """
+    return bool(os.environ.get("SLURM_JOB_ID")) and os.environ.get("S0_PARSL_NESTED") != "1"
+
+
+def _allocated_gpus():
+    """Cards this job was given, by what Slurm exported; 1 if it exported nothing."""
+    for var in ("SLURM_GPUS_ON_NODE", "SLURM_GPUS"):
+        v = os.environ.get(var)
+        if v and v.isdigit() and int(v) > 0:
+            return int(v)
+    v = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if v:
+        return len([x for x in v.split(",") if x.strip()])
+    return 1
+
+
 def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
            walltime=None, run_dir=None, worker_init=None, max_workers=None,
-           gpus=None, role="train", debug=False):
+           gpus=None, role="train", debug=False, in_allocation=None):
     """Parsl Config for the Tianhe GPU cluster, per card.
 
     `role` is `train` (one task per allocation, the whole card) or `qha` (branch B, one
@@ -264,37 +285,65 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         walltime = walltime or DEBUG_WALLTIME
         blocks = 1
 
+    # ------------------------------------------------------------------------------------
+    # WHERE THE WORKERS RUN. This function used to build a TianheSlurmProvider no matter
+    # where it was called from -- i.e. it always SUBMITTED A NEW JOB for the workers. Run
+    # inside an interactive allocation on an104 (2026-09-13), it queued block 0 onto the
+    # busy h100x partition and the driver then waited, silently, for workers that were
+    # sitting in PD, until the allocation's own time limit killed it 42 minutes later.
+    # tianhe_a.py had the in-allocation branch from the start; this file never got it.
+    #
+    # So: inside a job (and without S0_PARSL_NESTED=1), a LocalProvider on the job's own
+    # card(s) -- the same rule as the A side. A login-node driver, or a campaign that
+    # asks to nest, still submits blocks.
+    # ------------------------------------------------------------------------------------
+    nested = not (in_allocation_now() if in_allocation is None else in_allocation)
+    if nested:
+        provider = TianheSlurmProvider(
+            part,
+            account=account if account is not None else ACCOUNT,
+            nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
+            init_blocks=0, min_blocks=0,
+            max_blocks=min(int(max_blocks or blocks), NODE_QUOTA, JOB_QUOTA),
+            # `--gpus=N`: the spelling the manual requires. NOT parsl's `gpus_per_node`,
+            # which renders `--gpus-per-node=N`, a different Slurm option the manual
+            # never mentions.
+            scheduler_options="#SBATCH --gpus={}".format(gpus),
+            # BANNED here (manual 6.2.2) and parsl defaults it to True.
+            exclusive=False,
+            # mem_per_node deliberately never passed: specifying memory is also banned;
+            # the system sizes it from the GPU count.
+            launcher=SimpleLauncher(),
+            worker_init=worker_init or _worker_init(here, part),
+            walltime=parsl_walltime(walltime or WALLTIME),
+            cmd_timeout=60,
+        )
+        n_workers = int(max_workers or workers)
+    else:
+        from parsl.providers import LocalProvider
+        # The job's cards, and the per-card layout applied to them. Under S0_CARD (one
+        # chain_body per card, examples/02d-2) the card is already fenced by
+        # CUDA_VISIBLE_DEVICES and there is exactly one.
+        here_gpus = 1 if os.environ.get("S0_CARD") is not None else _allocated_gpus()
+        n_workers = int(max_workers or workers * here_gpus)
+        provider = LocalProvider(
+            init_blocks=1, min_blocks=1, max_blocks=1,
+            launcher=SimpleLauncher(),
+            worker_init=worker_init or _worker_init(here, part),
+        )
+
     cfg = Config(
         executors=[
             HighThroughputExecutor(
                 label=_labels.label(role),
-                max_workers_per_node=int(max_workers or workers),
+                max_workers_per_node=n_workers,
                 cores_per_worker=float(cores),
-                provider=TianheSlurmProvider(
-                    part,
-                    account=account if account is not None else ACCOUNT,
-                    nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
-                    init_blocks=0, min_blocks=0,
-                    max_blocks=min(int(max_blocks or blocks),
-                                   NODE_QUOTA, JOB_QUOTA),
-                    # `--gpus=N`: the spelling the manual requires. NOT parsl's
-                    # `gpus_per_node`, which renders `--gpus-per-node=N`, a different
-                    # Slurm option the manual never mentions.
-                    scheduler_options="#SBATCH --gpus={}".format(gpus),
-                    # BANNED here (manual 6.2.2) and parsl defaults it to True.
-                    exclusive=False,
-                    # mem_per_node deliberately never passed: specifying memory is also
-                    # banned; the system sizes it from the GPU count.
-                    launcher=SimpleLauncher(),
-                    worker_init=worker_init or _worker_init(here, part),
-                    walltime=parsl_walltime(walltime or WALLTIME),
-                    cmd_timeout=60,
-                ),
+                provider=provider,
             ),
         ],
         run_dir=run_dir or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
-                           os.path.expanduser("~/HDD_POOL/runs/openQHA")),
+                           os.path.expanduser("~/runs/openQHA")),
             "parsl"),
         retries=1,
         strategy="simple",
@@ -328,6 +377,12 @@ def describe():
         qha_wall_budget_s=QHA_WALL_BUDGET_S, qha_walltime=QHA_WALLTIME,
         gpu_pinning=("inherited from Slurm -- available_accelerators is deliberately NOT "
                      "passed on a per-card cluster; see config()"),
+        modes=dict(
+            in_allocation="default inside a Slurm job: LocalProvider on the job's own card(s) "
+                          "(added 2026-09-13 after a driver on an104 submitted a block and "
+                          "waited 42 min for it)",
+            nested="S0_PARSL_NESTED=1 or a login-node driver: TianheSlurmProvider, one job per block"),
+        mode_now="in_allocation" if in_allocation_now() else "nested",
         walltime=WALLTIME,
         exclusive=False, filesystem="XYAIFS00 (lustre, 1 TB, NO BACKUP)",
         modules=["anaconda3/2023.09", "CUDA/" + CUDA_VERSION],

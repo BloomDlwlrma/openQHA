@@ -497,7 +497,7 @@ def _worker_init(here):
     worker. Parsl assigns the card per worker; see the module docstring.
     """
     return "; ".join([
-        "mkdir -p ${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs",
+        "mkdir -p ${S0_RUNS_ROOT:-$HOME/runs/openQHA}/logs",
         "module purge 2>/dev/null || true",
         "module load anaconda3/2023.09 2>/dev/null || "
         "module load miniforge/24.7.1 2>/dev/null || true",
@@ -624,7 +624,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         # parsl's numbered runinfo/NNN directories in one run_dir.
         run_dir=run_dir or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
-                           os.path.expanduser("~/HDD_POOL/runs/openQHA")),
+                           os.path.expanduser("~/runs/openQHA")),
             "parsl" + ("_card{}".format(os.environ["S0_CARD"])
                        if os.environ.get("S0_CARD") is not None else "")),
         retries=1,
