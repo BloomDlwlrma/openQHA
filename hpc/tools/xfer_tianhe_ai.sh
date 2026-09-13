@@ -2,8 +2,11 @@
 # =======================================================================================
 # Move openQHA files between the two Tianhe storage systems.
 #
+#     bash hpc/tools/xfer_tianhe_ai.sh check                       # can I reach it?
+#     bash hpc/tools/xfer_tianhe_ai.sh push-repo                   # code + basins + weights
 #     bash hpc/tools/xfer_tianhe_ai.sh push data/basins/acetone data/potentials
-#     bash hpc/tools/xfer_tianhe_ai.sh pull data/trajectories/acetone
+#     bash hpc/tools/xfer_tianhe_ai.sh pull analysis/qha/02d_t30
+#     DRY_RUN=1 bash hpc/tools/xfer_tianhe_ai.sh push-repo         # show, do not copy
 #
 # WHY THIS EXISTS (site manual 3.2.2; storage tags read 2026-09-11)
 # ----------------------------------------------------------------
@@ -33,16 +36,37 @@
 #
 # Paths are RELATIVE TO THE REPOSITORY ROOT on both sides, so the tree stays congruent
 # and every script's relative path (data/basins/<tag>/...) resolves on both clusters.
+#
+# RSYNC FIRST, SCP AS THE FALLBACK -- and why (2026-09-13). The manual's `scp -r DIR
+# dest/` has cp's semantics: when dest/DIR already exists it copies INTO it, producing
+# dest/DIR/DIR. The AI side already holds an older copy of this repository from the
+# September runs, so a plain scp of `openqha` would have nested a second package inside
+# the first and Python would have imported whichever came first. rsync has no such mode,
+# sends only what changed (the weights are 100+ MB and never change), and takes an
+# exclude list, so `logs/`, `analysis/`, `__pycache__` and the frozen `_backup/` stay
+# where they are. When rsync is missing on either end, scp is used with `DIR/.` -- the
+# form that copies contents, not the directory -- which avoids the nesting too.
+#
+# `push-repo` is the curated list the h100x tests need and nothing else: code, confs,
+# the branch A basins, the weights, the environment files. Not analysis, not logs.
 # =======================================================================================
 # `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
 MODE="${1:-}"
 shift || true
-
-if [ "$MODE" != "push" ] && [ "$MODE" != "pull" ] || [ $# -eq 0 ]; then
-    echo "usage: bash hpc/tools/xfer_tianhe_ai.sh push|pull <path relative to repo> [...]" >&2
+case "$MODE" in
+    push|pull) [ $# -gt 0 ] || MODE="" ;;
+    push-repo|check) ;;
+    *) MODE="" ;;
+esac
+if [ -z "$MODE" ]; then
+    echo "usage: bash hpc/tools/xfer_tianhe_ai.sh check" >&2
+    echo "       bash hpc/tools/xfer_tianhe_ai.sh push-repo" >&2
+    echo "       bash hpc/tools/xfer_tianhe_ai.sh push|pull <path relative to repo> [...]" >&2
     echo "   push: XYFS02 (here) -> XYAIFS00      pull: XYAIFS00 -> XYFS02 (here)" >&2
+    echo "   DRY_RUN=1 shows what would move without moving it" >&2
     exit 2
 fi
 
@@ -59,29 +83,84 @@ if [ -z "${XYAI_ROOT:-}" ]; then
 fi
 
 [ -f "$KEY" ] || { echo "openQHA: no key at $KEY (set XYAI_KEY). Manual 3.2.2: upload the" >&2
-                   echo "  TianheXY-AI account's key here first." >&2; exit 2; }
+                   echo "  TianheXY-AI account's key here first, then chmod 400 it." >&2; exit 2; }
 perm="$(stat -c %a "$KEY" 2>/dev/null || stat -f %Lp "$KEY")"
 if [ "$perm" != "400" ]; then
     echo "openQHA: $KEY is mode $perm; ssh requires 400 (manual: chmod 400 accountB.id)." >&2
     exit 2
 fi
 
-echo "xfer      $MODE"
+SSH=(ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=20)
+
+echo "xfer      $MODE${DRY_RUN:+   (DRY RUN)}"
 echo "  here    $ROOT            (XYFS02: tianhexy-cn + tianhexy-a)"
 echo "  there   $ACCT@$HOST:$XYAI_ROOT   (XYAIFS00: tianhexy-ai)"
+
+# ---- can the other side be reached at all, and does it have rsync? ----------------------
+remote="$("${SSH[@]}" "$ACCT@$HOST" 'echo "host=$(hostname) rsync=$(command -v rsync || echo none) root_exists=$([ -d '"'"$XYAI_ROOT"'"' ] && echo yes || echo no)"' 2>&1)"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo "openQHA: cannot reach $ACCT@$HOST with $KEY (ssh exit $rc):" >&2
+    echo "  $remote" >&2
+    echo "  Check: is XYAI_ACCOUNT the TianheXY-AI account name? is this the key for THAT" >&2
+    echo "  account (the one you log into ln301 with)? does XYAIFS00 resolve from here?" >&2
+    exit 2
+fi
+echo "  remote  $remote"
+if [ "$MODE" = "check" ]; then
+    echo "reachable"
+    exit 0
+fi
+
+have_rsync=no
+command -v rsync >/dev/null 2>&1 && case "$remote" in *rsync=none*) ;; *) have_rsync=yes ;; esac
+echo "  method  $([ "$have_rsync" = yes ] && echo rsync || echo "scp (rsync missing on one side)")"
+
+# What never travels in EITHER direction: caches and sockets. What stays home on a PUSH:
+# results, logs, the frozen baseline, the notes -- a pull is usually FOR the results, so
+# `pull analysis/qha/<tag>` must not exclude `analysis` (a dry run caught exactly that).
+COMMON_EXCLUDES=(--exclude '__pycache__' --exclude '*.pyc' --exclude '*.sock')
+PUSH_EXCLUDES=("${COMMON_EXCLUDES[@]}" --exclude 'logs' --exclude 'analysis'
+               --exclude '_backup' --exclude '.mem' --exclude 'runs'
+               --exclude 'generated/manifest')
+
+if [ "$MODE" = "push-repo" ]; then
+    # Code, confs, tests, environment files, the branch A products and the weights.
+    set -- openqha scripts hpc examples configs tests patches \
+           data/basins data/potentials \
+           environment-tianhe-gpu.yml environment-tianhe.yml environment.yml \
+           install_dependency.sh check_dependency.py requirements.txt requirements-minimal.txt README.md
+    MODE=push
+fi
+
+fail=0
 for rel in "$@"; do
     rel="${rel%/}"
     parent="$(dirname "$rel")"
     if [ "$MODE" = "push" ]; then
         [ -e "$ROOT/$rel" ] || { echo "  skip    $rel (not here)" >&2; continue; }
         echo "  push    $rel"
-        # The parent must exist on the far side; scp does not create it.
-        ssh -i "$KEY" "$ACCT@$HOST" "mkdir -p '$XYAI_ROOT/$parent'"
-        scp -i "$KEY" -r "$ROOT/$rel" "$ACCT@$HOST:$XYAI_ROOT/$parent/"
+        [ -n "${DRY_RUN:-}" ] && [ "$have_rsync" != yes ] && continue
+        "${SSH[@]}" "$ACCT@$HOST" "mkdir -p '$XYAI_ROOT/$parent'" || { fail=1; continue; }
+        if [ "$have_rsync" = yes ]; then
+            rsync -az ${DRY_RUN:+-n -v} --info=stats1 "${PUSH_EXCLUDES[@]}" -e "${SSH[*]}" \
+                "$ROOT/$rel" "$ACCT@$HOST:$XYAI_ROOT/$parent/" || fail=1
+        elif [ -d "$ROOT/$rel" ]; then
+            "${SSH[@]}" "$ACCT@$HOST" "mkdir -p '$XYAI_ROOT/$rel'" || { fail=1; continue; }
+            scp -i "$KEY" -r "$ROOT/$rel/." "$ACCT@$HOST:$XYAI_ROOT/$rel/" || fail=1
+        else
+            scp -i "$KEY" "$ROOT/$rel" "$ACCT@$HOST:$XYAI_ROOT/$parent/" || fail=1
+        fi
     else
         echo "  pull    $rel"
+        [ -n "${DRY_RUN:-}" ] && [ "$have_rsync" != yes ] && continue
         mkdir -p "$ROOT/$parent"
-        scp -i "$KEY" -r "$ACCT@$HOST:$XYAI_ROOT/$rel" "$ROOT/$parent/"
+        if [ "$have_rsync" = yes ]; then
+            rsync -az ${DRY_RUN:+-n -v} --info=stats1 "${COMMON_EXCLUDES[@]}" -e "${SSH[*]}" \
+                "$ACCT@$HOST:$XYAI_ROOT/$rel" "$ROOT/$parent/" || fail=1
+        else
+            scp -i "$KEY" -r "$ACCT@$HOST:$XYAI_ROOT/$rel" "$ROOT/$parent/" || fail=1
+        fi
     fi
 done
-echo "done"
+[ "$fail" = 0 ] && echo "done" || { echo "done, WITH FAILURES above" >&2; exit 1; }

@@ -2,9 +2,15 @@
 # =======================================================================================
 # An interactive shell on a GPU card, for testing branch B by hand.
 #
-#     source /APP/u22/ai_x86/toolshs/set-XY-I.sh     # once per login shell
+#     source /APP/u22/ai_x86/toolshs/set-XY-I.sh     # once per login shell (TianheXY-A)
 #     bash hpc/tools/gpu_shell.sh                    # 1 card, 12 CPUs, 2 hours
 #     bash hpc/tools/gpu_shell.sh 2 04:00:00         # 2 cards, 4 hours
+#
+#     OPENQHA_GPU_PARTITION=h100x bash hpc/tools/gpu_shell.sh 1 02:00:00
+#                                                    # TianheXY-AI: no set-XY-I.sh there,
+#                                                    # one Slurm, standard gres, 14 CPUs
+#                                                    # per H100 (128 CPUs / 8 cards) as
+#                                                    # examples/slurm/h100x.slurm asks
 #
 # WHY `yhrun -p temp --gres=gpu:1` IS REFUSED (measured 2026-09-11/12)
 # --------------------------------------------------------------------
@@ -33,8 +39,15 @@ cd "$ROOT"
 
 GPUS="${1:-1}"
 WALLTIME="${2:-02:00:00}"
-CPUS=$(( GPUS * 12 ))
 PART="${OPENQHA_GPU_PARTITION:-ai}"
+# CPUs per card differ by cluster: 12 is TianheXY-A's fine-grained policy (1 card = 12
+# CPUs = 120 GB, billed as such); h100x on TianheXY-AI is 128 CPUs / 8 cards, and the
+# repo's h100x.slurm asks 14 (open item 41: 16 would be the full share).
+case "$PART" in
+    h100x) PER_CARD="${OPENQHA_CPUS_PER_GPU:-14}" ;;
+    *)     PER_CARD="${OPENQHA_CPUS_PER_GPU:-12}" ;;
+esac
+CPUS=$(( GPUS * PER_CARD ))
 
 if ! command -v yhrun >/dev/null 2>&1; then
     echo "openQHA: no yhrun on PATH. This script is for TianheXY-A's login node." >&2
@@ -43,16 +56,26 @@ fi
 if [ "${OPENQHA_SKIP_ENV_CHECK:-}" != "1" ]; then
     if ! sinfo -h -p "$PART" -o %G 2>/dev/null | grep -qi gpu; then
         echo "openQHA: partition '$PART' shows no gres in this shell, so a card cannot be" >&2
-        echo "  requested. You are in the DEFAULT Slurm environment. Run:" >&2
-        echo "      source /APP/u22/ai_x86/toolshs/set-XY-I.sh" >&2
-        echo "  then this script again. (OPENQHA_SKIP_ENV_CHECK=1 to override.)" >&2
+        echo "  requested." >&2
+        if [ "$PART" = "ai" ]; then
+            echo "  You are in TianheXY-A's DEFAULT Slurm environment. Run:" >&2
+            echo "      source /APP/u22/ai_x86/toolshs/set-XY-I.sh" >&2
+            echo "  then this script again." >&2
+        else
+            echo "  Is '$PART' a partition on THIS login node?  sinfo -o '%P %G %N' | head" >&2
+        fi
+        echo "  (OPENQHA_SKIP_ENV_CHECK=1 to override.)" >&2
         exit 2
     fi
 fi
 
 echo "interactive  yhrun -N 1 -n 1 -p $PART --gpus=$GPUS --cpus-per-task=$CPUS -t $WALLTIME --pty /bin/bash"
-echo "  cards      $GPUS   ($CPUS CPUs, $(( GPUS * 120 )) GB -- the site's per-card policy)"
-echo "  NOT passed --mem (forbidden here)"
+if [ "$PART" = "ai" ]; then
+    echo "  cards      $GPUS   ($CPUS CPUs, $(( GPUS * 120 )) GB -- the site's per-card policy)"
+    echo "  NOT passed --mem (forbidden here)"
+else
+    echo "  cards      $GPUS   ($CPUS CPUs at $PER_CARD per card)"
+fi
 echo
 echo "  NOTE: a compute node has NO outbound network, not even through the site proxy"
 echo "  (measured 2026-09-12: 'Failed to connect to 172.16.31.200 port 3138'). Anything"

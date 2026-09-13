@@ -75,7 +75,10 @@ case "${CONDA_PREFIX:-}" in
 esac
 
 # ---- run ------------------------------------------------------------------------------
-export OPENQHA_PARTITION="${OPENQHA_PARTITION:-ai}"
+# The partition decides the resource config (ai -> tianhe_a, h100x -> tianhe_ai). Inside
+# an allocation Slurm says which one this is; assuming `ai` on TianheXY-AI would pick
+# the wrong site policy.
+export OPENQHA_PARTITION="${OPENQHA_PARTITION:-${SLURM_JOB_PARTITION:-ai}}"
 export OPENQHA_KIND=gpu
 export PYTHONNOUSERSITE=1
 mkdir -p logs
@@ -83,7 +86,7 @@ LOG="logs/test30_${TAG}_${SLURM_JOB_ID}.log"
 
 echo "test30    $CONF"
 echo "  species $SPECIES   tag $TAG   basins from ${BASIN_TAG:-$TAG}"
-echo "  node    $(hostname)   job $SLURM_JOB_ID   card(s) $(nvidia-smi -L | wc -l)"
+echo "  node    $(hostname)   job $SLURM_JOB_ID   partition $OPENQHA_PARTITION   card(s) $(nvidia-smi -L | wc -l)"
 echo "  log     $LOG   (also on this terminal)"
 echo "  when done, this test's outputs are under analysis/qha/$TAG/ and can be deleted"
 echo
