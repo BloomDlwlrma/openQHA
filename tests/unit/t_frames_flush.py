@@ -20,6 +20,14 @@ by a NumPy that changed its mind about suffixes. Part B runs the shipped `flush_
 on a fresh directory, then on a resume, and checks: `frames.npy` exists, round-trips, no
 `.part` file of any spelling remains, and the stale `frames.npy.part.npy` a killed run of
 the old code leaves is not mistaken for anything.
+
+Part C (same day, next failure) is `already_complete`: re-running the chain over six
+finished trajectories made run_one() skip its production loop, leave the temperature
+None, and die formatting it -- after ~70 s per task of re-tracing and re-equilibrating
+something it would not touch. A finished (basin, seed) must be recognised from its own
+meta.json and frames.npy, before any model is loaded, and anything short of finished
+(partial frames, an older protocol wanting more frames, a missing or unreadable record)
+must NOT be.
 """
 import sys
 import tempfile
@@ -94,18 +102,58 @@ def part_b_shipped_form_works(tmp):
         FAIL.append("flush_frames touched the old-code leftover; that is run_one's job, on resume")
 
 
+def part_c_already_complete(tmp):
+    print("\nC. already_complete reads the record on disk, and only a finished one counts")
+    import json
+    from s0_B_qha_trajectory_openmm import already_complete
+
+    def make(name, n_frames, complete, write_meta=True, meta_text=None):
+        d = tmp / "c" / name
+        d.mkdir(parents=True)
+        np.save(d / "frames.npy", np.zeros((n_frames, 4, 3)))
+        if write_meta:
+            (d / "meta.json").write_text(
+                meta_text if meta_text is not None else json.dumps(
+                    dict(seed=7, production=dict(complete=complete, n_frames=n_frames,
+                                                 temperature_mean_K=298.0))),
+                encoding="utf-8")
+        return d
+
+    cases = [
+        ("finished, exact frames",   make("ok",      5, True),                5, True),
+        ("finished, extra frames",   make("more",    8, True),                5, True),
+        ("partial: too few frames",  make("short",   3, True),                5, False),
+        ("not marked complete",      make("running", 5, False),               5, False),
+        ("no meta.json",             make("nometa",  5, True, write_meta=False), 5, False),
+        ("meta.json unreadable",     make("broken",  5, True, meta_text="{not json"), 5, False),
+        ("older protocol, needs more", make("old",   5, True),               10, False),
+    ]
+    for label, d, n_target, want in cases:
+        got = already_complete(d, n_target) is not None
+        ok = got == want
+        print("   {}  {:28s} n_target {:>2} -> {}".format("ok  " if ok else "FAIL", label, n_target,
+                                                         "complete" if got else "not complete"))
+        if not ok:
+            FAIL.append("already_complete({}, {}) = {}, expected {}".format(label, n_target, got, want))
+    # and the record it returns is the file's own
+    meta = already_complete(tmp / "c" / "ok", 5)
+    if not (meta and meta["production"]["temperature_mean_K"] == 298.0 and meta["seed"] == 7):
+        FAIL.append("already_complete did not return the meta.json content")
+
+
 def main():
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         part_a_old_form_fails(tmp)
         part_b_shipped_form_works(tmp)
+        part_c_already_complete(tmp)
     print()
     if FAIL:
         print("{} problem(s):".format(len(FAIL)))
         for f in FAIL:
             print("  - " + f)
         return 1
-    print("frame flush is atomic and lands where the driver looks")
+    print("frame flush is atomic, and a finished trajectory is recognised from disk")
     return 0
 
 

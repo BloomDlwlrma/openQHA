@@ -189,6 +189,40 @@ def flush_frames(frames_path, frames):
     return frames_path
 
 
+def already_complete(outdir, n_target):
+    """The trajectory's own record, if this (basin, seed) is finished; else None.
+
+    Finished means: meta.json is there, its production block says complete, and
+    frames.npy holds at least n_target frames. Anything less -- a partial run, a killed
+    job, an older protocol with fewer frames -- is None and the driver resumes it.
+
+    Why this exists (an113, 2026-09-13). The chain re-ran a task whose six trajectories
+    were already complete. run_one() loaded the frames, saw nothing left to generate,
+    skipped the production loop -- and so never measured a temperature; the summary
+    line then formatted None with `{:7.2f}` and every task exited 1. Before reaching that
+    line each one had spent ~70 s re-tracing the model, re-relaxing and re-equilibrating
+    a trajectory it was about to do nothing with. The resume path had never executed.
+    """
+    outdir = Path(outdir)
+    meta_p, frames_p = outdir / "meta.json", outdir / "frames.npy"
+    if not (meta_p.exists() and frames_p.exists()):
+        return None
+    try:
+        meta = json.loads(meta_p.read_text(encoding="utf-8"))
+        n = int(np.load(frames_p, mmap_mode="r").shape[0])
+    except Exception:                                                 # noqa: BLE001
+        return None
+    prod = meta.get("production") or {}
+    if prod.get("complete") and n >= int(n_target):
+        return meta
+    return None
+
+
+def _fmt(x, spec):
+    """Format a number, or '-' for a None the record legitimately carries."""
+    return format(x, spec) if x is not None else "-"
+
+
 def run_one(species, positions_A, numbers, masses, model_path, outdir, temperature_K,
             seed, equil_ps, prod_ps, args):
     import openmm
@@ -389,6 +423,50 @@ def main():
     print("species     {}   {} atoms".format(args.species, len(atoms)))
     print("engine      {}".format(engine.engine_name()))
 
+    # ---- what is already done? decided before any trace, relax or equilibration -------
+    # config.runs_dir honours S0_RUNS_ROOT, which on a cluster points at node-local
+    # scratch. The previous default wrote straight into $HOME -- on Tianhe that is the
+    # 100 GB quota'd home on Lustre, which is the one place the site manual asks you not
+    # to put job output.
+    outroot = (Path(args.outroot) if args.outroot
+               else Path(config.runs_dir("qha", cfg)) / args.tag / args.species)
+    basins = ([(args.basin, frames_in[args.basin])] if args.basin is not None
+              else list(enumerate(frames_in)))
+    seed_indices = ([args.seed_index] if args.seed_index is not None
+                    else list(range(args.seeds)))
+    n_target = int(round(args.prod_ps * 1000.0 / args.timestep_fs)) // args.sample_every
+
+    def _outdir(b, k):
+        return outroot / "basin{:02d}".format(b) / "seed{:02d}".format(k)
+
+    def _summary_from(meta, b, k):
+        prod = meta.get("production") or {}
+        return dict(basin=int(b), seed_index=int(k), seed=int(meta.get("seed", -1)),
+                    n_frames=int(prod.get("n_frames") or 0),
+                    complete=prod.get("complete"),
+                    stopped_on_wall_budget=prod.get("stopped_on_wall_budget"),
+                    wall_seconds=prod.get("wall_seconds"),
+                    temperature_mean_K=prod.get("temperature_mean_K"),
+                    com_drift_A=prod.get("centre_of_mass_drift_A"))
+
+    done = {(b, k): already_complete(_outdir(b, k), n_target)
+            for b, _g in basins for k in seed_indices}
+    done = {bk: m for bk, m in done.items() if m is not None}
+    if done:
+        print("resume      {} of {} trajectories already complete under {}".format(
+            len(done), len(basins) * len(seed_indices), outroot))
+    if len(done) == len(basins) * len(seed_indices) and not args.verify_only:
+        # Nothing to compute: report what is on disk and stop, without loading a model.
+        summary = [_summary_from(m, b, k) for (b, k), m in sorted(done.items())]
+        for s in summary:
+            print("  basin {:>2} seed {:>2}  {:>5} frames  complete={}  (from meta.json)"
+                  .format(s["basin"], s["seed_index"], s["n_frames"], s["complete"]))
+        (outroot / "summary.json").write_text(json.dumps(summary, indent=2),
+                                              encoding="utf-8")
+        print()
+        print("nothing to run; {} complete trajectories under {}".format(len(summary), outroot))
+        return 0
+
     check = openmm_mace.verify_against_ase(atoms, model_path)
     print("force check dE = {:.3e} eV   max|dF| = {:.3e} eV/A   traced vs eager "
           "{:.3e}   agrees = {}".format(
@@ -415,27 +493,23 @@ def main():
         "   (CUDA: one trajectory per card -- see hpc/resource_configs/tianhe_a.py)"
         if args.platform.upper() == "CUDA" else ""))
 
-    # config.runs_dir honours S0_RUNS_ROOT, which on a cluster points at node-local
-    # scratch. The previous default wrote straight into $HOME -- on Tianhe that is the
-    # 100 GB quota'd home on Lustre, which is the one place the site manual asks you not
-    # to put job output.
-    outroot = (Path(args.outroot) if args.outroot
-               else Path(config.runs_dir("qha", cfg)) / args.tag / args.species)
     print("geometry    {}".format(geometry_source))
     print("output      {}".format(outroot))
     print()
 
-    basins = ([(args.basin, frames_in[args.basin])] if args.basin is not None
-              else list(enumerate(frames_in)))
-    seed_indices = ([args.seed_index] if args.seed_index is not None
-                    else list(range(args.seeds)))
-
     summary = []
     for b, geom in basins:
+        pending = [k for k in seed_indices if (b, k) not in done]
+        for k in seed_indices:
+            if (b, k) in done:
+                summary.append(_summary_from(done[(b, k)], b, k))
+                print("  basin {:>2} seed {:>2}  already complete, kept as is".format(b, k))
+        if not pending:
+            continue                      # every seed of this basin is done: no relax
         relaxed_A, relax_record = relax(geom, model_path)
         print("basin {:>2}    relaxed, dropped {:.4f} kcal/mol".format(
             b, relax_record["energy_drop_kcal"]))
-        for k in seed_indices:
+        for k in pending:
             # The seed is a pure function of (basin, seed index, seed0), exactly as in
             # the ASE route, so a task fanned out by the execution layer and the same
             # task run by hand produce the same trajectory. Nothing about placement may
@@ -492,10 +566,12 @@ def main():
                                 wall_seconds=prod["wall_seconds"],
                                 temperature_mean_K=prod["temperature_mean_K"],
                                 com_drift_A=prod["centre_of_mass_drift_A"]))
-            print("  basin {:>2} seed {:>2}  {:>5} frames  complete={}  {:8.1f} s  "
-                  "T = {:7.2f} K  COM drift {:8.2f} A".format(
-                      b, k, len(frames), prod["complete"], prod["wall_seconds"],
-                      prod["temperature_mean_K"], prod["centre_of_mass_drift_A"]))
+            print("  basin {:>2} seed {:>2}  {:>5} frames  complete={}  {:>8} s  "
+                  "T = {:>7} K  COM drift {:>8} A".format(
+                      b, k, len(frames), prod["complete"],
+                      _fmt(prod.get("wall_seconds"), "8.1f"),
+                      _fmt(prod.get("temperature_mean_K"), "7.2f"),
+                      _fmt(prod.get("centre_of_mass_drift_A"), "8.2f")))
 
     (outroot / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8")
