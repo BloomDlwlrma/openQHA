@@ -345,7 +345,10 @@ def json_to_log(json_path, log_path=None, title=None):
 # ======================================================================================
 # parquet
 # ======================================================================================
-INSTALL_PARQUET = "mamba install -n openqha-gpu --freeze-installed pyarrow=18.1.0"
+#: What worked on ln301, 2026-09-13. `mamba install --freeze-installed pyarrow=18.1.0`
+#: was refused by the solver (aws-crt-cpp / libarrow-acero against the frozen set); the
+#: pip wheel (25.0.1) installed in seconds and left numpy alone (probe: tree matches).
+INSTALL_PARQUET = "pip install pyarrow      # on a login node; the conda solve was refused 2026-09-13"
 
 
 def parquet_engine():

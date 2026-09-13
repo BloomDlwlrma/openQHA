@@ -314,8 +314,13 @@ dependencies:
   # This file has always listed it, and the 2026-09-08 solve above records 18.1.0, so
   # the environment there was not built from this file as it stands, or a later
   # transaction removed it (`conda list -n openqha-gpu --revisions` shows which). The
-  # chain now refuses at its first line rather than its last. Repair, on a login node:
-  #     mamba install -n openqha-gpu --freeze-installed pyarrow=18.1.0
+  # chain now refuses at its first line rather than its last. Repaired the same day on
+  # ln301: `mamba install --freeze-installed pyarrow=18.1.0` was REFUSED by the solver
+  # (aws-crt-cpp and libarrow-acero against the frozen set), and
+  #     pip install pyarrow
+  # put the 25.0.1 wheel in, leaving numpy alone (probe: tree matches; check_dependency
+  # ok). So on TianheXY-AI pyarrow is in the pip layer, not the conda one -- the one
+  # package here that is, and a `mamba` transaction will not know about it.
   - pyarrow>=10.0
   - h5py>=3.8            # branch C datasets
   - ase>=3.22

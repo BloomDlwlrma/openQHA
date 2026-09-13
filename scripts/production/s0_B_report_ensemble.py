@@ -11,7 +11,21 @@ WHAT IT PUTS TOGETHER
     F_conf = -kT ln sum_i exp(-dG_i / kT)
 
     dE_el,i   branch A, from the basin store
-    T*S_i     branch B, from each basin's trajectories (mean over seeds)
+    T*S_i     branch B, from collect's per-trajectory table (mean over seeds)
+
+WHERE T*S IS READ FROM, AND WHY NOT THE FRAMES
+----------------------------------------------
+`s0_B_qha_analyse.py` (the collect step) writes `analysis/qha/<tag>/<species>__trajectories
+.parquet`, one row per (basin, seed) with the entropy it judged against the criteria.
+This step reads THAT. Until 2026-09-13 it re-ran `qha.analyse` on the raw frames -- a
+second analysis that could differ from the judged one (temperature, settings) and that
+skipped, without a word, any trajectory shorter than 3N frames. The first chain to reach
+this step (an113, six 5-frame test trajectories) got "entropy? MISSING" for every basin
+ten seconds after collect had printed their entropies. A basin with no row in that table
+is reported as missing; nothing is recomputed to fill it.
+
+The `--atoms heavy` set is the one exception: collect produces only the all-atom analysis,
+so the heavy-atom entropy is computed here, from the frames, and says so.
 
 WHY THIS IS A SEPARATE STEP AND NOT PART OF THE ANALYSIS
 --------------------------------------------------------
@@ -29,6 +43,7 @@ looking for.
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -72,48 +87,128 @@ def basin_electronic(rec):
     return out
 
 
-def entropy_per_basin(species, tag, cfg, atoms_set="all"):
-    """Mean T*S over the seeds of each basin, plus what the trajectories did.
+def collect_stem(species, tag, analysis_root=None):
+    """Where s0_B_qha_analyse.py put this molecule's tables (its own default --out)."""
+    return Path(analysis_root or (ROOT / "analysis")) / "qha" / tag / species
 
-    A basin with no trajectory returns None rather than 0. `ensemble` refuses to treat
-    the two the same, because "we did not run it" and "its entropy is zero" are different
-    statements and only one of them is ever true.
+
+def collect_tables(species, tag, analysis_root=None):
+    """(trajectories, criteria) as lists of row dicts, from collect's parquet tables.
+
+    Refuses when the trajectories table is absent: this step sums what collect judged
+    and has nothing to sum before collect has run. The criteria table is optional in
+    the reading (older products have none) and its absence is recorded, not ignored.
     """
+    import pandas as pd
+    stem = collect_stem(species, tag, analysis_root)
+    traj = stem.parent / (stem.name + "__trajectories.parquet")
+    if not traj.is_file():
+        raise SystemExit(
+            "s0_B_report_ensemble: no collect product for {} under tag {!r}:\n    {}\n"
+            "  This step sums the entropies collect judged; it does not analyse frames. "
+            "Run collect first:\n"
+            "    python scripts/production/s0_B_qha_analyse.py --species {} --tag {}"
+            .format(species, tag, traj, species, tag))
+    rows = pd.read_parquet(traj).to_dict("records")
+    crit_path = stem.parent / (stem.name + "__criteria.parquet")
+    criteria = (pd.read_parquet(crit_path).to_dict("records")
+                if crit_path.is_file() else None)
+    return rows, criteria
+
+
+def crossings_per_basin(species, tag, cfg):
+    """Basin residence from the frames -- the one thing collect's table does not carry."""
     root = Path(config.runs_dir("qha", cfg)) / tag / species
-    per_basin = {}
+    out = {}
     for basin_dir in sorted(root.glob("basin*")):
         try:
             b = int(basin_dir.name.replace("basin", ""))
         except ValueError:
             continue
-        vals, res_all, frames_seen = [], [], 0
+        res_all = []
         for seed_dir in sorted(basin_dir.glob("seed*")):
-            f = seed_dir / "frames.npy"
-            m = seed_dir / "meta.json"
+            f, m = seed_dir / "frames.npy", seed_dir / "meta.json"
+            if not (f.exists() and m.exists()):
+                continue
+            meta = json.loads(m.read_text(encoding="utf-8"))
+            res_all.append(br.basin_residence(np.load(f), meta["symbols"]))
+        out[b] = dict(
+            distinct_crossings=int(sum(r["distinct_basin_crossings"] for r in res_all)),
+            symmetry_crossings=int(sum(r["symmetry_equivalent_crossings"] for r in res_all)),
+            n_seeds_with_frames=len(res_all))
+    return out, root
+
+
+def entropy_per_basin(species, tag, cfg, atoms_set="all", analysis_root=None):
+    """Mean T*S over the seeds of each basin, plus what the trajectories did.
+
+    `all`: from collect's trajectories table -- the judged numbers, nothing recomputed.
+    `heavy`: computed here from the frames (collect has no heavy-atom product); a
+    trajectory below 3N frames is skipped AND SAID, because a silent skip is how every
+    basin of the first run to reach this step came out "MISSING".
+
+    A basin with no trajectory returns None rather than 0. `ensemble` refuses to treat
+    the two the same, because "we did not run it" and "its entropy is zero" are different
+    statements and only one of them is ever true.
+    """
+    xing, root = crossings_per_basin(species, tag, cfg)
+    per_basin = {}
+    if atoms_set == "all":
+        rows, _ = collect_tables(species, tag, analysis_root)
+        by_basin = {}
+        for r in rows:
+            by_basin.setdefault(int(r["basin"]), []).append(r)
+        for b in sorted(set(by_basin) | set(xing)):
+            vals = [float(r["TS_QH_kcal"]) for r in by_basin.get(b, [])]
+            if not vals:
+                per_basin[b] = None
+                continue
+            per_basin[b] = dict(
+                TS_kcal=float(np.mean(vals)), spread_kcal=float(np.std(vals)),
+                n_seeds=len(vals),
+                n_frames=int(max(r["n_frames"] for r in by_basin[b])),
+                source="collect table",
+                **{k: v for k, v in (xing.get(b) or {}).items()
+                   if k in ("distinct_crossings", "symmetry_crossings")})
+        return per_basin, root
+
+    for basin_dir in sorted(root.glob("basin*")):
+        try:
+            b = int(basin_dir.name.replace("basin", ""))
+        except ValueError:
+            continue
+        vals, frames_seen = [], 0
+        for seed_dir in sorted(basin_dir.glob("seed*")):
+            f, m = seed_dir / "frames.npy", seed_dir / "meta.json"
             if not (f.exists() and m.exists()):
                 continue
             meta = json.loads(m.read_text(encoding="utf-8"))
             frames = np.load(f)
             syms = meta["symbols"]
             masses = np.asarray(meta["masses_amu"], dtype=float)
-            mask = (br.heavy_atom_mask(syms) if atoms_set == "heavy"
-                    else np.ones(len(syms), bool))
             if len(frames) < 3 * len(syms):
-                continue                       # below 3N the covariance cannot be formed
+                print("  heavy: {} has {} frames for {} coordinates; the covariance "
+                      "cannot be formed, trajectory skipped".format(
+                          seed_dir.relative_to(root), len(frames), 3 * len(syms)))
+                continue
+            mask = br.heavy_atom_mask(syms)
             rec = qha.analyse(frames[:, mask, :], masses[mask])
             vals.append(rec["entropy"]["TS_QH_kcal"])
-            res_all.append(br.basin_residence(frames, syms))
             frames_seen = len(frames)
-        if vals:
-            per_basin[b] = dict(
-                TS_kcal=float(np.mean(vals)), spread_kcal=float(np.std(vals)),
-                n_seeds=len(vals), n_frames=frames_seen,
-                distinct_crossings=int(sum(r["distinct_basin_crossings"] for r in res_all)),
-                symmetry_crossings=int(sum(r["symmetry_equivalent_crossings"]
-                                           for r in res_all)))
-        else:
-            per_basin[b] = None
+        per_basin[b] = (dict(
+            TS_kcal=float(np.mean(vals)), spread_kcal=float(np.std(vals)),
+            n_seeds=len(vals), n_frames=frames_seen, source="recomputed here (heavy)",
+            **{k: v for k, v in (xing.get(b) or {}).items()
+               if k in ("distinct_crossings", "symmetry_crossings")})
+            if vals else None)
     return per_basin, root
+
+
+def criteria_verdict(criteria):
+    """(passed, total) from collect's criteria table; (None, None) if it wrote none."""
+    if not criteria:
+        return None, None
+    return sum(1 for c in criteria if bool(c.get("passed"))), len(criteria)
 
 
 def main():
@@ -152,8 +247,19 @@ def main():
     print("{} basin(s) from branch A".format(len(e_rel)))
     print("=" * 88)
 
+    # collect's verdict rides along. A sum over trajectories that failed their gates is
+    # written (the file is the record of what was summed) and then refused at exit,
+    # the way collect refuses -- except under OPENQHA_SMOKE=1, where the test chain has
+    # already said every number under this tag is plumbing.
+    _, criteria = collect_tables(args.species, args.tag)
+    n_pass, n_crit = criteria_verdict(criteria)
+    print("collect   {} of {} criteria passed  (analysis/qha/{}/{}__criteria.parquet)".format(
+        n_pass, n_crit, args.tag, args.species) if n_crit
+        else "collect   wrote no criteria table for this molecule")
+
     report = dict(species=args.species, tag=args.tag, basin_tag=basin_tag,
-                  temperature_K=temperature, n_basins_branch_a=len(e_rel), results={})
+                  temperature_K=temperature, n_basins_branch_a=len(e_rel),
+                  collect_criteria=dict(passed=n_pass, total=n_crit), results={})
     for atoms_set in sets:
         per_basin, root = entropy_per_basin(args.species, args.tag, cfg, atoms_set)
         basins = []
@@ -194,10 +300,22 @@ def main():
     print("written {}".format(out))
 
     # A missing basin means the sum is over fewer terms than the molecule has, and the
-    # answer is biased toward whatever was run. That is a failure, not a note.
+    # answer is biased toward whatever was run. That is a failure, not a note -- in a
+    # smoke run too, where a basin without a row means the plumbing lost it.
     for atoms_set, rec in report["results"].items():
         if rec.get("n_electronic_only"):
             return 1
+    if n_crit and n_pass != n_crit:
+        if os.environ.get("OPENQHA_SMOKE") == "1":
+            print()
+            print("**SMOKE RUN (OPENQHA_SMOKE=1): collect passed {} of {} criteria; F_conf "
+                  "above is a test of the plumbing, not a result.**".format(n_pass, n_crit))
+            return 0
+        print()
+        print("F_conf above sums entropies that FAILED {} of {} of collect's criteria; "
+              "it is written as the record of what was summed and refused as an answer."
+              .format(n_crit - n_pass, n_crit))
+        return 1
     return 0
 
 

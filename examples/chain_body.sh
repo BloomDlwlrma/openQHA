@@ -233,7 +233,7 @@ source hpc/env/require.sh
 openqha_require_modules pandas pyarrow || {
     echo "  Every chain's collect/report step writes parquet and fails at its LAST line" >&2
     echo "  without them -- after the trajectories (an113, 2026-09-13). On a login node:" >&2
-    echo "      mamba install -n ${CONDA_DEFAULT_ENV:-openqha-gpu} --freeze-installed pyarrow=18.1.0" >&2
+    echo "      pip install pyarrow     # the conda solve was refused on ln301, 2026-09-13" >&2
     echo "  then confirm numpy was left alone:" >&2
     echo "      python scripts/tooling/s0_probe_openmm_cuda.py --quiet --no-accuracy --steps 10" >&2
     exit 2
