@@ -103,13 +103,37 @@ QHA_CORES_PER_WORKER = 1
 #: one). This role exists so a single molecule can be run end to end on h100x, which is
 #: what examples/02a_qha_openmm_acetone does.
 OPENMM_PLATFORM = "CUDA"
-#: Branch B needs a longer allocation than training does. The published protocol is
-#: 520 + 1500 ps, which at the only cost this repository has measured (96.1 s/ps on
-#: ONE CPU THREAD) is ~54 h per trajectory -- so a 16 h walltime would guarantee
-#: every task stopped on its budget. The site allows 7 days; 3 is the same number
-#: examples/02a_qha_openmm_acetone submits with.
-QHA_WALLTIME = "3-00:00:00"
-QHA_WALL_BUDGET_S = int(0.90 * 3 * 24 * 3600)
+def _walltime_seconds(spec):
+    """Slurm walltime -> seconds. D-HH:MM:SS, HH:MM:SS, MM:SS."""
+    days, _, rest = str(spec).partition("-")
+    if not rest:
+        days, rest = 0, str(spec)
+    parts = [int(x) for x in rest.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    h, m, s = parts[-3:]
+    return int(days) * 86400 + h * 3600 + m * 60 + s
+
+
+def parsl_walltime(spec):
+    """The same walltime in the ONLY form parsl accepts: HH:MM:SS, hours unbounded.
+
+    Slurm takes `3-00:00:00`; parsl's providers split on ':' and int() every field, so
+    that string dies as `invalid literal for int() with base 10: '3-00'` -- at block
+    start, after the whole plan has printed, six times over (an104, 2026-09-13; the
+    first time this config's qha role ever started a block). `72:00:00` means the same
+    thing to both.
+    """
+    total = _walltime_seconds(spec)
+    return "{:02d}:{:02d}:{:02d}".format(total // 3600, (total % 3600) // 60, total % 60)
+
+
+#: **24 h** (user ruling 2026-09-12: use the machine, do not sit on it), in parsl's form.
+#: The old value was `3-00:00:00`, argued from a CPU cost of 96 s/ps that no longer
+#: applies: on a card, 12 workers sharing it run ~60 ms/step, so 02d's 550 ps is ~9.5 h
+#: and fits with margin. The site allows 7 days; nothing here needs it.
+QHA_WALLTIME = "24:00:00"
+QHA_WALL_BUDGET_S = int(0.90 * _walltime_seconds(QHA_WALLTIME))
 
 NODES_PER_BLOCK = 1
 
@@ -263,7 +287,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                     # banned; the system sizes it from the GPU count.
                     launcher=SimpleLauncher(),
                     worker_init=worker_init or _worker_init(here, part),
-                    walltime=walltime or WALLTIME,
+                    walltime=parsl_walltime(walltime or WALLTIME),
                     cmd_timeout=60,
                 ),
             ),

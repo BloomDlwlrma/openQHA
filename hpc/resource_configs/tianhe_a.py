@@ -362,6 +362,13 @@ def _walltime_seconds(spec):
 #: chunk rather than being killed between a write and a rename. DERIVED from WALLTIME.
 QHA_WALL_BUDGET_S = int(0.90 * _walltime_seconds(WALLTIME))
 
+
+def parsl_walltime(spec):
+    """HH:MM:SS with unbounded hours -- the only form parsl's providers parse. Slurm's
+    `D-HH:MM:SS` dies there as `invalid literal for int(): '3-00'` (tianhe_ai, 2026-09-13)."""
+    total = _walltime_seconds(spec)
+    return "{:02d}:{:02d}:{:02d}".format(total // 3600, (total % 3600) // 60, total % 60)
+
 OPENMM_PLATFORM = "CUDA"
 USE_MPS = False
 
@@ -571,7 +578,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
             exclusive=False,
             launcher=SimpleLauncher(),
             worker_init=worker_init or _worker_init(here),
-            walltime=walltime or WALLTIME,
+            walltime=parsl_walltime(walltime or WALLTIME),
             cmd_timeout=60,
         )
     else:

@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=14
 #SBATCH --gpus=1
-#SBATCH --time=3-00:00:00
+#SBATCH --time=24:00:00        # 2026-09-13: 24 h, see tianhe_ai.py QHA_WALLTIME
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 # =======================================================================================
