@@ -25,7 +25,7 @@
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
 
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 TAG="${TAG:-prod}"
 CONCURRENT="${CONCURRENT:-64}"

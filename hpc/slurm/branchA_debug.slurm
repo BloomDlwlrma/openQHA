@@ -28,7 +28,7 @@
 #   HPC skill). The submit directory always exists. The production script writes its
 #   logs under HDD_POOL because there you have already made the directory by hand.
 
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 # NOT `set -u`: the conda GROMACS activation hook fails under it and the environment is
 # then half-built while the script carries on. Measured 2026-09-03.
 

@@ -49,7 +49,7 @@
 # for want of exclusivity, this is the line to add back.
 # NO memory request: the system sizes it from the GPU count and specifying it is banned.
 
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 SPECIES="${SPECIES:?SPECIES not set (one QM9 id, e.g. dsgdb9nsd_000018)}"
 TAG="${TAG:-prod}"

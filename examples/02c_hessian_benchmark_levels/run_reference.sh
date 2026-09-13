@@ -3,7 +3,7 @@
 #
 # Detached with `setsid nohup ... -u`: a plain `&` from an interactive WSL shell dies
 # with the shell and leaves a zero-byte log, which has happened here before.
-set -euo pipefail
+# `set -euo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PY="${OPENQHA_PYTHON:-$HOME/anaconda3/envs/openqha/bin/python}"
 NPROCS="${NPROCS:-4}"

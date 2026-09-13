@@ -89,7 +89,7 @@
 # parameterised, and a wrong one baked in here is a rejected submission on some other
 # cluster (S0-G-62).
 
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 ROLE="${ROLE:-gpu}"
 OFFLINE="${OFFLINE:-}"

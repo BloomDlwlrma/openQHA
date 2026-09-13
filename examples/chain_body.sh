@@ -19,7 +19,7 @@
 # PARTITION and KIND come from the `.slurm` that launched this (they are properties of
 # the job, not of the science), and fall back to the conf when run locally.
 # =======================================================================================
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 # NOT `set -u`: the conda GROMACS activation hook fails under it and leaves the
 # environment half-built while the script carries on. Measured 2026-09-03.
 
@@ -28,7 +28,27 @@ if [ -n "$SLURM_SUBMIT_DIR" ]; then
 else
     ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
-cd "$ROOT"
+cd "$ROOT" || { echo "openQHA: cannot cd to $ROOT" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------------------
+# `set -e` was removed project-wide on 2026-09-13 (user ruling, after an optional lookup
+# ended a job silently). The other half of that ruling is this: a step whose PRODUCT the
+# next step consumes must still stop the chain when it fails -- explicitly, by name, with
+# its exit code -- or `collect` runs on a half-written store and the job ends "successfully".
+# Everything that is not such a step (a diagnostic, a lookup, a copy-back) is allowed to
+# fail and is written to say so.
+must() {
+    "$@"
+    local rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo >&2
+        echo "openQHA: step failed with exit $rc:" >&2
+        echo "    $*" | cut -c1-200 >&2
+        echo "  Its product is what the next step reads, so the chain stops here." >&2
+        echo "  (scratch is still copied back by the EXIT trap; see logs/node_local/)" >&2
+        exit "$rc"
+    fi
+}
 
 CONF="${1:-}"
 [ -n "$CONF" ] || { echo "usage: bash examples/chain_body.sh <conf>" >&2; exit 2; }
@@ -236,36 +256,57 @@ echo "  resource  $RESOURCE   route $ROUTE   platform $PLATFORM"
 # So ask the queue. `squeue -h -j <id> -o %L` is the time this job has LEFT, which is the
 # only number that is true regardless of which .slurm, conf or array wrote --time. Fall
 # back to the conf's WALLTIME, then to the driver's own default.
-_wall_seconds() {           # D-HH:MM:SS | HH:MM:SS | MM:SS | SS  ->  seconds
+#
+# **NOTHING IN THIS BLOCK MAY BE ABLE TO END THE JOB.** This file used to run under
+# `set -eo pipefail` (removed project-wide 2026-09-13; the fallbacks below are kept
+# because they also make the log say WHY it fell back), and the first version of the
+# block did not respect that: when
+# `squeue` exited non-zero (a compute node whose squeue talks to the other controller,
+# say), pipefail marked the pipeline failed, the assignment failed, and errexit ended the
+# job on this line -- with stderr already sent to /dev/null. Measured 2026-09-13 with a
+# squeue stub that exits 1: the script died before printing anything about it. That is a
+# job that ends in seconds with a header and no explanation, over a number whose worst
+# case is "use the default". Every command below therefore carries its own fallback.
+_wall_seconds() {           # D-HH:MM:SS | HH:MM:SS | MM:SS | SS  ->  seconds, or 0
     local spec="$1" d=0 rest a b c
     case "$spec" in *-*) d="${spec%%-*}"; rest="${spec#*-}" ;; *) rest="$spec" ;; esac
-    IFS=: read -r a b c <<<"$rest"
+    IFS=: read -r a b c <<<"$rest" || true
     if [ -n "$c" ]; then :
     elif [ -n "$b" ]; then c="$b"; b="$a"; a=0
     else c="$a"; b=0; a=0; fi
+    # A non-numeric field is an arithmetic error, which errexit would treat as fatal.
+    case "${d}${a}${b}${c}" in *[!0-9]*) echo 0; return 0 ;; esac
     echo $(( 10#${d:-0} * 86400 + 10#${a:-0} * 3600 + 10#${b:-0} * 60 + 10#${c:-0} ))
 }
 
 WALL_BUDGET_ARG=""
 _budget_src=""
+_budget_note=""
 if [ -n "${SLURM_JOB_ID:-}" ] && command -v squeue >/dev/null 2>&1; then
-    _left="$(squeue -h -j "$SLURM_JOB_ID" -o "%L" 2>/dev/null | tr -d ' ')"
+    _left="$(squeue -h -j "$SLURM_JOB_ID" -o "%L" 2>/dev/null | tr -d ' ' || true)"
     case "$_left" in
-        ""|UNLIMITED|NOT_SET|INVALID) ;;
-        *) _secs="$(_wall_seconds "$_left")"
-           [ "${_secs:-0}" -gt 0 ] && { WALL_BUDGET_ARG="--wall-budget-s $(( _secs * 9 / 10 ))"
-                                        _budget_src="squeue, time left $_left"; } ;;
+        "")                           _budget_note="squeue gave nothing for job $SLURM_JOB_ID" ;;
+        UNLIMITED|NOT_SET|INVALID)    _budget_note="squeue time left is $_left" ;;
+        *) _secs="$(_wall_seconds "$_left" 2>/dev/null || echo 0)"
+           if [ "${_secs:-0}" -gt 0 ]; then
+               WALL_BUDGET_ARG="--wall-budget-s $(( _secs * 9 / 10 ))"
+               _budget_src="squeue, time left $_left"
+           else
+               _budget_note="could not parse squeue time left '$_left'"
+           fi ;;
     esac
 fi
 if [ -z "$WALL_BUDGET_ARG" ] && [ -n "${WALLTIME:-}" ]; then
-    _secs="$(_wall_seconds "$WALLTIME")"
-    [ "${_secs:-0}" -gt 0 ] && { WALL_BUDGET_ARG="--wall-budget-s $(( _secs * 9 / 10 ))"
-                                _budget_src="conf WALLTIME=$WALLTIME"; }
+    _secs="$(_wall_seconds "$WALLTIME" 2>/dev/null || echo 0)"
+    if [ "${_secs:-0}" -gt 0 ]; then
+        WALL_BUDGET_ARG="--wall-budget-s $(( _secs * 9 / 10 ))"
+        _budget_src="conf WALLTIME=$WALLTIME"
+    fi
 fi
 if [ -n "$WALL_BUDGET_ARG" ]; then
-    echo "  budget    ${WALL_BUDGET_ARG#--wall-budget-s } s  (90% of $_budget_src)"
+    echo "  budget    ${WALL_BUDGET_ARG#--wall-budget-s } s  (90% of $_budget_src)${_budget_note:+  [$_budget_note]}"
 else
-    echo "  budget    from the resource config (no job walltime readable here)"
+    echo "  budget    from the resource config${_budget_note:+  [$_budget_note]}"
 fi
 echo "  seeds     $SEEDS   threads $THREADS   conf $CONF"
 echo "======================================================================"
@@ -279,7 +320,11 @@ echo "======================================================================"
 # cannot even run. `openqha-gpu` has NO crest and NO xtb.
 #
 # Keyed by (SPECIES, TAG): the two confs of an example share a TAG for this reason.
-BASINS_PRESENT=$(python - "$SPECIES" "$TAG" <<'PY'
+# Basins are READ from BASIN_TAG (default: TAG) and everything this run makes is WRITTEN
+# under TAG. The identity chain always worked this way; the qha chain does too since
+# 2026-09-13, so a 30-minute test can reuse production basins without touching the
+# production trajectory store -- which the driver would otherwise resume from.
+BASINS_PRESENT=$(python - "$SPECIES" "${BASIN_TAG:-$TAG}" <<'PY'
 import sys
 sys.path.insert(0, ".")
 try:
@@ -366,7 +411,7 @@ if [ "$CHAIN" = "conformers" ]; then
      chain's product IS branch A)"
     # shellcheck disable=SC2086  -- BRANCH_A_ARGS is a deliberate word list, empty unless
     # the conf turned a diagnostic on
-    python -u scripts/production/s0_A_pipeline.py \
+    must python -u scripts/production/s0_A_pipeline.py \
         --species "$SPECIES" --tag "$TAG" --threads "$THREADS" \
         --hessian-mode analytic $BRANCH_A_ARGS
 elif [ "$BASINS_PRESENT" = "yes" ]; then
@@ -384,7 +429,7 @@ else
     echo "     (no record for tag '$TAG' yet, and this is a CPU run, so making it here)"
     # shellcheck disable=SC2086  -- BRANCH_A_ARGS is a deliberate word list, empty unless
     # the conf turned a diagnostic on
-    python -u scripts/production/s0_A_pipeline.py \
+    must python -u scripts/production/s0_A_pipeline.py \
         --species "$SPECIES" --tag "$TAG" --threads "$THREADS" \
         --hessian-mode analytic $BRANCH_A_ARGS
 fi
@@ -405,8 +450,9 @@ qha)    # the conformational free energy: A -> B -> collect -> F_conf
     echo "---- branch B: one trajectory per (basin, seed) -----------------------"
     # --basins auto: the count comes from branch A's own record, so the number of basins
     # and the geometries they start from cannot disagree.
-    python -u scripts/production/s0_E_branchB_parsl.py \
-        --species "$SPECIES" --tag "$TAG" --resource "$RESOURCE" \
+    must python -u scripts/production/s0_E_branchB_parsl.py \
+        --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}" \
+        --resource "$RESOURCE" \
         --route "$ROUTE" --basins auto --seeds "$SEEDS" \
         ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
         ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
@@ -414,12 +460,13 @@ qha)    # the conformational free energy: A -> B -> collect -> F_conf
 
     echo
     echo "---- collect: quasi-harmonic analysis per molecule --------------------"
-    python -u scripts/production/s0_E_branchB_collect_parsl.py \
+    must python -u scripts/production/s0_E_branchB_collect_parsl.py \
         --species "$SPECIES" --tag "$TAG" --resource "${COLLECT_RESOURCE:-$RESOURCE}"
 
     echo
     echo "---- the answer: F_conf over the ensemble -----------------------------"
-    python -u scripts/production/s0_B_report_ensemble.py --species "$SPECIES" --tag "$TAG"
+    must python -u scripts/production/s0_B_report_ensemble.py \
+        --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}"
     ;;
 
 levels) # 02c: MACE vs GFN2-xTB vs RI-MP2, energies and forces through to G - E_el
@@ -427,7 +474,7 @@ levels) # 02c: MACE vs GFN2-xTB vs RI-MP2, energies and forces through to G - E_
     # structure at 4 processes, one ORCA job per basin, in sequence.
     echo
     echo "---- 02c: three levels on every basin ---------------------------------"
-    python -u examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
+    must python -u examples/02c_hessian_benchmark_levels/s0_level_benchmark.py \
         --species "$SPECIES" --tag "$TAG" \
         --levels "${LEVELS:-mace,gfn2,rimp2}" --nprocs "${ORCA_NPROCS:-$THREADS}" \
         ${ORCA_MAXCORE:+--maxcore "$ORCA_MAXCORE"}
@@ -442,7 +489,7 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
     # trajectories under a different TAG. examples/02d-2 runs many settings off ONE branch
     # A product; each row is its own TAG and they all read BASIN_TAG. Default: TAG.
     echo "---- branch B: dense trajectories, ${PROD_PS:-protocol} ps ------------"
-    python -u scripts/production/s0_E_branchB_parsl.py \
+    must python -u scripts/production/s0_E_branchB_parsl.py \
         --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}" \
         --resource "$RESOURCE" \
         --route "$ROUTE" --basins auto --seeds "$SEEDS" \
@@ -455,7 +502,7 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
     echo "---- 02d: G_total from omega and from nu, term by term ----------------"
     # --tag reads the basins (BASIN_TAG); --traj-tag reads this run's trajectories; --out
     # files the report under this run's tag, so two settings never overwrite each other.
-    python -u examples/02d_qha_frequency_identity/s0_frequency_identity.py \
+    must python -u examples/02d_qha_frequency_identity/s0_frequency_identity.py \
         --species "$SPECIES" --tag "${BASIN_TAG:-$TAG}" --stage all --traj-tag "$TAG" \
         --out "analysis/qha/$TAG/${SPECIES}_02d_frequency_identity.json" \
         ${NU_CUT:+--nu-cut "$NU_CUT"}

@@ -16,6 +16,25 @@ each with its own `EQUIL_PS PROD_PS SAMPLE_EVERY SEEDS NU_CUT` — the settings 
 The default grid is length × sampling interval, 3 × 3 = 9 rows, with the protocol's own
 row (`p500_s2`) first.
 
+## A 30-minute test: two tiny rows
+
+`array_t30.conf` + `settings_t30.tsv` are the array with two 1 + 5 ps rows, tags
+`02d2t30_<NAME>`, basins from `02d_prod`. Two ways to run it, and they test different
+things:
+
+```bash
+source /APP/u22/ai_x86/toolshs/set-XY-I.sh
+# the array path itself (arithmetic, per-card launch), from the login node:
+bash examples/02d-2_qha_settings_array/submit_array.sh --plan examples/02d-2_qha_settings_array/array_t30.conf
+bash examples/02d-2_qha_settings_array/submit_array.sh        examples/02d-2_qha_settings_array/array_t30.conf
+# one row by hand where you can watch it (--plan has already written generated/<NAME>.conf):
+bash hpc/tools/gpu_shell.sh 1 02:00:00
+conda activate openqha-gpu
+bash hpc/tools/test30.sh examples/02d-2_qha_settings_array/generated/t5_s2.conf
+```
+
+Delete `analysis/qha/02d2t30_*/` afterwards.
+
 ## What one row is
 
 **One card.** A row's branch B is 1 basin × 3 seeds = 3 trajectories; on this partition a

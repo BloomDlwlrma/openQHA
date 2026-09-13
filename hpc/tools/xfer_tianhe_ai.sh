@@ -34,7 +34,7 @@
 # Paths are RELATIVE TO THE REPOSITORY ROOT on both sides, so the tree stays congruent
 # and every script's relative path (data/basins/<tag>/...) resolves on both clusters.
 # =======================================================================================
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MODE="${1:-}"

@@ -45,6 +45,24 @@ against RI-MP2 is **0.4** (02c). Where that comes from, term by term, is stage 3
 
 ---
 
+## A 30-minute test, on the compute node, in the foreground
+
+Before a 9-hour submission, run the same chain for 1 + 5 ps where you can watch it:
+
+```bash
+source /APP/u22/ai_x86/toolshs/set-XY-I.sh
+bash hpc/tools/gpu_shell.sh 1 02:00:00        # a card; two hours covers a few attempts
+conda activate openqha-gpu
+bash hpc/tools/test30.sh examples/02d_qha_frequency_identity/test30.conf
+```
+
+`examples/02d_qha_frequency_identity/test30.conf` writes under **`02d_t30`** and reads branch A from `02d_prod` -- never under the
+production tag, because the trajectory driver *resumes* from whatever frames it finds
+there. `hpc/tools/test30.sh` refuses a conf whose TAG already has basins for that reason.
+Expect 10-15 min, most of it the CPU-side minimisation per basin; delete
+`analysis/qha/02d_t30/` afterwards. Its numbers are not science (5 ps is not an entropy),
+they are proof that every step ran and wrote where it should.
+
 ## Stage 1 — the harmonic limit, where the answer is known
 
 A synthetic trajectory sampled analytically from the molecule's own MACE Hessian. The

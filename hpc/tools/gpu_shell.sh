@@ -26,7 +26,7 @@
 # The working form is `-p ai` from the fine-grained environment, which is what this
 # script runs -- after checking that you are actually in it.
 # =======================================================================================
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"

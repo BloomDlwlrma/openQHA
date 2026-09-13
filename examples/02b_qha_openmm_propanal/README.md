@@ -75,6 +75,24 @@ quietly run from the reference geometry.
 
 ---
 
+## A 30-minute test, on the compute node, in the foreground
+
+Before a 9-hour submission, run the same chain for 1 + 5 ps where you can watch it:
+
+```bash
+source /APP/u22/ai_x86/toolshs/set-XY-I.sh
+bash hpc/tools/gpu_shell.sh 1 02:00:00        # a card; two hours covers a few attempts
+conda activate openqha-gpu
+bash hpc/tools/test30.sh examples/02b_qha_openmm_propanal/test30.conf
+```
+
+`examples/02b_qha_openmm_propanal/test30.conf` writes under **`propanal_t30`** and reads branch A from `propanal` -- never under the
+production tag, because the trajectory driver *resumes* from whatever frames it finds
+there. `hpc/tools/test30.sh` refuses a conf whose TAG already has basins for that reason.
+Expect 10-15 min, most of it the CPU-side minimisation per basin; delete
+`analysis/qha/propanal_t30/` afterwards. Its numbers are not science (5 ps is not an entropy),
+they are proof that every step ran and wrote where it should.
+
 ## Modes
 
 | | `MODE=local` | `MODE=hpc PARTITION=ai` | `MODE=hpc PARTITION=h100x` |

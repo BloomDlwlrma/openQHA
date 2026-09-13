@@ -140,7 +140,7 @@
 # NOTE: no `set -u`. The conda GROMACS activation hook fails under it
 # ("GMXRC: line 10: shell: unbound variable") and the environment is then only half
 # built while the script carries on. Measured 2026-09-03.
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 MODE="local"
 PY_ENV="${OPENQHA_ENV:-openqha}"

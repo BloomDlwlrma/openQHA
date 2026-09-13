@@ -132,7 +132,7 @@ def main():
 #
 # The two species must use **the same ORCA version, the same keyword line and the same thresholds**,
 # or the DLPNO truncation error does not cancel between the two ends of the reaction.
-set -u
+# `set -u` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 ORCA_BIN="${ORCA_BIN:?set ORCA_BIN to the absolute orca binary path (deimos: ORCA 5.0.4)}"
 
 for var in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM)'); do unset "$var"; done

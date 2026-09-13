@@ -19,8 +19,10 @@
 #
 # and the job then runs with a half-built environment instead of stopping. This is
 # not hypothetical: it is what made a `gmx --version` check print an empty string
-# earlier the same day and look like a missing install. `set -e` and `set -o
-# pipefail` are fine and are set by the caller.
+# earlier the same day and look like a missing install. (`set -e` and `set -o pipefail`
+# used to be set by every caller; removed project-wide 2026-09-13 -- see
+# .mem/notes/notes_2026-09-13_no-errexit-anywhere.md -- so callers now check the steps
+# that matter explicitly instead of inheriting an exit on any non-zero status.)
 
 # --------------------------------------------------------------------------------------
 # 1. Site requirements (Tianhe). Harmless elsewhere.

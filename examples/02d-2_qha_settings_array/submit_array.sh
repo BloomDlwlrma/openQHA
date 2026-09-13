@@ -22,7 +22,7 @@
 # something you can diff -- the same rule as every other conf here. generated/manifest
 # lists them in row order and is the only thing the job reads to find its work.
 # =======================================================================================
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"

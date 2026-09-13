@@ -13,7 +13,7 @@
 # The quota is 10 running jobs and 5 NODES, and the node quota binds first. Past it the
 # scheduler simply refuses and the campaign looks stalled rather than capped, so this
 # refuses instead.
-set -eo pipefail
+# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
 TAG="${1:-prod}"
 PARTITION="${2:-ai}"

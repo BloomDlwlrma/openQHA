@@ -121,20 +121,27 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", required=True)
     ap.add_argument("--tag", default="prod")
+    # A short test run must not write into the production tag -- the trajectory driver
+    # RESUMES from whatever frames it finds, so 5 ps of test frames would become the
+    # first 5 ps of production. So a test writes under its own --tag and reads branch A
+    # from --basin-tag, exactly as the 02d identity chain already does.
+    ap.add_argument("--basin-tag", default=None,
+                    help="tag whose branch A basins to sum over (default: --tag)")
     ap.add_argument("--atoms", default="all", choices=("all", "heavy", "both"))
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
     cfg = config.load()
     temperature = config.temperature(cfg)
-    rec_a = basin_store.read(args.species, tag=args.tag)
+    basin_tag = args.basin_tag or args.tag
+    rec_a = basin_store.read(args.species, tag=basin_tag)
     if rec_a is None:
         raise SystemExit(
-            basin_store.missing_message(args.species, args.tag)
+            basin_store.missing_message(args.species, basin_tag)
             + "\n  The ensemble is a sum over the basins branch A found; without it there "
             "is nothing to sum.\n"
             "  python scripts/production/s0_A_pipeline.py --species {} --tag {}"
-            .format(args.species, args.tag))
+            .format(args.species, basin_tag))
 
     e_rel = basin_electronic(rec_a)
     sets = ("all", "heavy") if args.atoms == "both" else (args.atoms,)
@@ -145,8 +152,8 @@ def main():
     print("{} basin(s) from branch A".format(len(e_rel)))
     print("=" * 88)
 
-    report = dict(species=args.species, tag=args.tag, temperature_K=temperature,
-                  n_basins_branch_a=len(e_rel), results={})
+    report = dict(species=args.species, tag=args.tag, basin_tag=basin_tag,
+                  temperature_K=temperature, n_basins_branch_a=len(e_rel), results={})
     for atoms_set in sets:
         per_basin, root = entropy_per_basin(args.species, args.tag, cfg, atoms_set)
         basins = []
