@@ -142,6 +142,15 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
+    # The LAST thing this driver does is report.write_parquet. Refuse now if it could
+    # not: with no engine, the run on an113 (2026-09-13) judged every criterion and then
+    # threw the lot away on its final line. Non-zero exit with no [PASS]/[FAIL] line, so
+    # collect shows it as CRASHED with this sentence, not as a verdict.
+    try:
+        report.parquet_engine()
+    except ImportError as exc:
+        raise SystemExit("s0_B_qha_analyse: {}".format(exc))
+
     cfg = config.load()
     temperature = args.temperature or config.temperature(cfg)
     spec = config.species(args.species, cfg)      # raises if sigma or g is undeclared

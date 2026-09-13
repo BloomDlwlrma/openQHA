@@ -42,7 +42,23 @@ import labels as _labels  # noqa: E402
 # SETTINGS
 # =========================================================================================
 ACCOUNT = None
-PARTITION = "h100x"            #: hx | h100x | a100x | a800x | v100x
+#: hx | h100x | a100x | a800x | v100x. Inside a job the partition is the JOB's: the
+#: driver on an113 (a100x, 12 CPUs) recorded "partition h100x" and sized 14 collect
+#: workers on 12 CPUs because this said h100x (2026-09-13). OPENQHA_PARTITION is what
+#: chain_body exports; SLURM_JOB_PARTITION is what Slurm sets; a value that is not one of
+#: this cluster's partitions (say `ai`, from TianheXY-A) is ignored.
+PARTITION_DEFAULT = "h100x"
+
+
+def _partition_from_environment():
+    for var in ("OPENQHA_PARTITION", "SLURM_JOB_PARTITION"):
+        value = os.environ.get(var, "").strip()
+        if value in PACKAGE:
+            return value
+    return PARTITION_DEFAULT
+
+
+PARTITION = None    # set below, once PACKAGE exists
 GPUS_PER_JOB = 1
 
 #: CUDA. 12.3 because that is the version BOTH GPU clusters have -- TianheXY-A has no
@@ -85,6 +101,7 @@ PACKAGE = {
     "a800x": dict(cpus=None, mem_gb=None),
     "v100x": dict(cpus=None, mem_gb=None),
 }
+PARTITION = _partition_from_environment()
 
 #: Training is one task per allocation: the task uses the whole card and all the CPUs in
 #: the package. This is ALF's "one QM job per allocation" pattern applied to training.
@@ -374,9 +391,11 @@ def describe():
         max_trainings_in_flight=MAX_BLOCKS * WORKERS_PER_NODE,
         debug_walltime=DEBUG_WALLTIME,
         debug_partition=PARTITION,
-        roles=["train", "qha"],
+        partition_source=("OPENQHA_PARTITION / SLURM_JOB_PARTITION when set to one of "
+                          "this cluster's partitions, else {}".format(PARTITION_DEFAULT)),
+        roles=["train", "qha", "collect"],
         layouts={r: dict(zip(("workers_per_node", "cores_per_worker"),
-                             layout(r, PARTITION))) for r in ("train", "qha")},
+                             layout(r, PARTITION))) for r in ("train", "qha", "collect")},
         qha_workers_per_allocation=qha_workers_for(PARTITION),
         max_trajectories_in_flight=MAX_BLOCKS * qha_workers_for(PARTITION),
         openmm_platform=OPENMM_PLATFORM,

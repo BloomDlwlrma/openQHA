@@ -345,6 +345,32 @@ def json_to_log(json_path, log_path=None, title=None):
 # ======================================================================================
 # parquet
 # ======================================================================================
+INSTALL_PARQUET = "mamba install -n openqha-gpu --freeze-installed pyarrow=18.1.0"
+
+
+def parquet_engine():
+    """(engine name, version) pandas will write parquet with, or ImportError.
+
+    Call it at the START of any driver whose last act is `write_parquet`. On an113
+    (2026-09-13) the first branch B analysis on a card ran to completion -- every
+    criterion judged, 10 s of work -- and then died on its final line because the
+    `openqha-gpu` environment there had no pyarrow, although environment-tianhe-gpu.yml
+    lists it. The check costs a millisecond here and the whole step at the other end.
+    """
+    import importlib
+    import sys
+    for name in ("pyarrow", "fastparquet"):
+        try:
+            mod = importlib.import_module(name)
+        except ImportError:
+            continue
+        return name, getattr(mod, "__version__", "?")
+    raise ImportError(
+        "no parquet engine (pyarrow or fastparquet) in {}. This driver's product is a "
+        "set of parquet tables; nothing it computed would be written. On a login node:"
+        "\n    {}".format(sys.prefix, INSTALL_PARQUET))
+
+
 def write_parquet(tables, stem):
     """`tables` is {table name: list of row dicts}. Each table is written to one
     `<stem>__<table name>.parquet`.

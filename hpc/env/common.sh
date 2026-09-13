@@ -117,6 +117,11 @@ mkdir -p "$S0_RUNS_ROOT"
 # checkpoints. Set here so a job never fails on it halfway through a queue.
 export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
+# openqha_require_modules (python modules a LATER step needs) is in require.sh: it has
+# no side effects, so examples/chain_body.sh can source it off-cluster too, where the
+# thread and runs-root settings above must NOT apply.
+source "$(dirname "${BASH_SOURCE[0]}")/require.sh"
+
 openqha_require() {
     # Fail loudly and immediately if a required executable is missing, rather than
     # letting the queue discover it one task at a time.

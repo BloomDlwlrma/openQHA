@@ -225,6 +225,20 @@ if [ -n "$SLURM_JOB_ID" ]; then
     fi
 fi
 
+# Every chain ends in a step that writes parquet tables (collect, report, the 02c
+# benchmark, branch A's census). Those imports happen LAST, after the hours of compute
+# they summarise, so the environment is asked for them FIRST. require.sh has no side
+# effects (common.sh does: threads, runs root), so it is sourced here on every site.
+source hpc/env/require.sh
+openqha_require_modules pandas pyarrow || {
+    echo "  Every chain's collect/report step writes parquet and fails at its LAST line" >&2
+    echo "  without them -- after the trajectories (an113, 2026-09-13). On a login node:" >&2
+    echo "      mamba install -n ${CONDA_DEFAULT_ENV:-openqha-gpu} --freeze-installed pyarrow=18.1.0" >&2
+    echo "  then confirm numpy was left alone:" >&2
+    echo "      python scripts/tooling/s0_probe_openmm_cuda.py --quiet --no-accuracy --steps 10" >&2
+    exit 2
+}
+
 # ---------------------------------------------------------------------------------------
 # NODE-LOCAL SCRATCH: run there, carry the end state back, then remove it.
 # ---------------------------------------------------------------------------------------

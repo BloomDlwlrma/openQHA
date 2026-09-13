@@ -309,6 +309,13 @@ dependencies:
   - scipy>=1.10
   - pyyaml>=6.0
   - pandas>=1.5
+  # 2026-09-13, an113: the openqha-gpu environment on /XYAIFS00 had NO pyarrow, and the
+  # first complete branch B analysis on a card died on its last line writing its tables.
+  # This file has always listed it, and the 2026-09-08 solve above records 18.1.0, so
+  # the environment there was not built from this file as it stands, or a later
+  # transaction removed it (`conda list -n openqha-gpu --revisions` shows which). The
+  # chain now refuses at its first line rather than its last. Repair, on a login node:
+  #     mamba install -n openqha-gpu --freeze-installed pyarrow=18.1.0
   - pyarrow>=10.0
   - h5py>=3.8            # branch C datasets
   - ase>=3.22

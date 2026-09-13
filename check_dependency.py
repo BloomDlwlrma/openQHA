@@ -37,8 +37,12 @@ PYTHON_DEPS = [
     ("torch", "2.0", "the potential", "no energies or forces"),
     ("mace", "0.3.6", "the potential", "no energies or forces"),
     ("pymsym", None, "branch A", "point-group labels only; sigma still works"),
-    ("pandas", "1.5", "reporting", "no summary tables"),
-    ("pyarrow", "10.0", "reporting", "no parquet products"),
+    # Every chain's last step writes parquet. Listed as optional until 2026-09-13,
+    # when an113's openqha-gpu turned out to have no pyarrow and the first complete
+    # branch B analysis on a card died on its final line. `import openqha` survives
+    # without them; no chain does.
+    ("pandas", "1.5", "every chain's last step", "no product tables; collect/report exit non-zero"),
+    ("pyarrow", "10.0", "every chain's last step", "no parquet engine; collect/report exit non-zero"),
     ("parsl", None, "branch E", "no fan-out; one molecule at a time still works"),
     ("matplotlib", "3.5", "tutorials", "no plots"),
     ("h5py", "3.8", "branch C", "no Hessian dataset export"),
@@ -60,7 +64,7 @@ PYTHON_DEPS = [
      "differed from us by 2.41 kcal/mol on a real trajectory"),
 ]
 
-OPTIONAL_MODULES = {"pymsym", "pandas", "pyarrow", "parsl", "matplotlib", "h5py",
+OPTIONAL_MODULES = {"pymsym", "parsl", "matplotlib", "h5py",
                     "openmm", "openmmtorch", "openmmtools", "mdtraj", "MDAnalysis"}
 
 #: (executable, env var that overrides, required_for, what breaks)
