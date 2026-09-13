@@ -277,7 +277,10 @@ def main():
     rec_a = basin_store.read(args.species, tag=args.tag)
     if rec_a is None:
         raise SystemExit(basin_store.missing_message(args.species, args.tag))
-    lines = Path(rec_a["basin_store"]["xyz"]).read_text(encoding="utf-8").splitlines()
+    # Located by the store, not by the absolute path inside the record (see
+    # basin_store.xyz_for: the record crosses clusters, the path in it does not).
+    lines = basin_store.xyz_for(args.species, rec_a, tag=args.tag).read_text(
+        encoding="utf-8").splitlines()
     geoms, i = [], 0
     while i < len(lines) and lines[i].strip():
         n = int(lines[i].split()[0])

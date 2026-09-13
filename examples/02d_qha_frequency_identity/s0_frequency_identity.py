@@ -87,7 +87,10 @@ def basin_geometries(species, tag):
             basin_store.missing_message(species, tag)
             + "\n  This example starts from the basins branch A found; to make them:\n"
             "  bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos")
-    lines = Path(rec["basin_store"]["xyz"]).read_text(encoding="utf-8").splitlines()
+    # Located by the store, not by the absolute path inside the record: the record was
+    # written on the CPU cluster and read here on the GPU one (an113, 2026-09-13).
+    lines = basin_store.xyz_for(species, rec, tag=tag).read_text(
+        encoding="utf-8").splitlines()
     out, i = [], 0
     while i < len(lines) and lines[i].strip():
         n = int(lines[i].split()[0])

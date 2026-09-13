@@ -119,6 +119,31 @@ def write(qm9_index, record, xyz_text, cfg=None, tag=None, **kw):
     return j, x
 
 
+def xyz_for(qm9_index, rec=None, cfg=None, tag=None, **kw):
+    """The basin geometries file, located by the STORE, not by the record.
+
+    Branch A writes `record["basin_store"]["xyz"]` as an absolute path on the machine
+    that ran it. The store is copied between clusters (branch A on TianheXY-CN, /XYFS02;
+    branch B on TianheXY-AI, /XYAIFS00) and that string comes along unchanged: the first
+    02d chain on a card (an113, 2026-09-13) opened '/XYFS02/.../dsgdb9nsd_000018.basins
+    .xyz' on a filesystem that has no /XYFS02. The xyz is the sibling of the json that
+    `read()` just found, so it is derived the same way. The recorded path is reported
+    when the two differ and the sibling is absent, so a real gap in the copy is named.
+    """
+    _j, x = paths_for(qm9_index, cfg, tag, **kw)
+    if x.exists():
+        return x
+    recorded = ((rec or {}).get("basin_store") or {}).get("xyz")
+    raise FileNotFoundError(
+        "basin store has the record for {} (tag {!r}) but not its geometries:\n"
+        "    {}\n{}  The .basins.xyz is written beside the .basins.json; copy the whole "
+        "data/basins/{}/ tree.".format(
+            qm9_index, tag, x,
+            "  (branch A recorded {} -- a path on the machine that ran it)\n"
+            .format(recorded) if recorded and str(recorded) != str(x) else "",
+            tag or "<tag>"))
+
+
 def read(qm9_index, cfg=None, tag=None, **kw):
     """The basin record for one molecule, or None if it has not been computed."""
     j, _x = paths_for(qm9_index, cfg, tag, **kw)
