@@ -2,5 +2,5 @@
 # split (T=2 tasks x G=1 card with GPUS_PER_JOB=1), and each row is 1 + 5 ps.
 # Same columns as settings.tsv: NAME EQUIL PROD SAMPLE SEEDS NU_CUT.
 # The tag becomes 02d2t30_<NAME>; nothing here can collide with a production row.
-t5_s2   1   5   2   3   25,50,100,150
-t5_s1   1   5   1   3   25,50,100,150
+t5_s2   1   5   2   1   25,50,100,150
+t5_s1   1   5   1   1   25,50,100,150

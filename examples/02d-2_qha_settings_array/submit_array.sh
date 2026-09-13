@@ -3,8 +3,9 @@
 # 02d-2 SUBMIT. Reads settings.tsv, writes one conf per row, does the array arithmetic,
 # submits ONE job array whose every task holds G cards and runs G rows at once.
 #
-#     source /APP/u22/ai_x86/toolshs/set-XY-I.sh
+#     source /APP/u22/ai_x86/toolshs/set-XY-I.sh            # TianheXY-A only
 #     bash examples/02d-2_qha_settings_array/submit_array.sh [--plan] [array.conf]
+#     # TianheXY-AI: same line; the cluster is recognised from sinfo (a100x / h100x).
 #
 # THE ARITHMETIC (Slurm job arrays: slurm.schedmd.com/job_array.html)
 #     N     rows in settings.tsv
@@ -90,10 +91,26 @@ EOF
 done < "$SETTINGS"
 [ "$N" -gt 0 ] || { echo "no rows in $SETTINGS" >&2; exit 2; }
 
+# ---- which GPU cluster, and what one card brings ------------------------------------------
+# Decided by what sinfo shows, not by a variable. Until 2026-09-13 this file knew only
+# TianheXY-A (`ai`) and, on an113 (TianheXY-AI, a100x), told the operator to source
+# set-XY-I.sh -- a file that cluster does not have. OPENQHA_GPU_PARTITION overrides.
+SITE_PARTITION="${OPENQHA_GPU_PARTITION:-}"
+if [ -z "$SITE_PARTITION" ] && command -v sinfo >/dev/null 2>&1; then
+    for p in ai a100x h100x; do
+        if sinfo -h -p "$p" -o %G 2>/dev/null | grep -qi gpu; then SITE_PARTITION="$p"; break; fi
+    done
+fi
+case "$SITE_PARTITION" in
+    ai|a100x) CPUS_PER_CARD=12 ;;
+    h100x)    CPUS_PER_CARD=14 ;;
+    *)        CPUS_PER_CARD=12 ;;      # unknown: planned with 12, refused below unless --plan
+esac
+
 # ---- the arithmetic -----------------------------------------------------------------------
 T=$(( (N + GPUS_PER_JOB - 1) / GPUS_PER_JOB ))     # array tasks
 G=$(( (N + T - 1) / T ))                            # cards per task, balanced
-CPUS=$(( 12 * G ))
+CPUS=$(( CPUS_PER_CARD * G ))
 LAST=$(( N - (T - 1) * G ))                         # rows in the last task
 JOB_NAME="openqha_${SPECIES}_${TAG_PREFIX}_array"
 
@@ -101,7 +118,8 @@ echo "02d-2 plan"
 echo "  species    $SPECIES     basins from  $BASIN_TAG"
 echo "  rows       $N   ($SETTINGS)"
 echo "  array      $T task(s), --array=0-$((T - 1))"
-echo "  per task   --gpus=$G --cpus-per-task=$CPUS   (1 card = 12 CPUs = 120 GB)"
+echo "  cluster    ${SITE_PARTITION:-UNKNOWN (no GPU partition visible to sinfo)}   1 card = $CPUS_PER_CARD CPUs"
+echo "  per task   --gpus=$G --cpus-per-task=$CPUS"
 if [ "$LAST" -lt "$G" ]; then
     echo "  last task  $LAST row(s) on $G cards: $((G - LAST)) card(s) idle for its duration"
 fi
@@ -114,20 +132,26 @@ while read -r c; do
     i=$((i + 1))
 done < "$MANIFEST"
 
-# ---- the environment check: same effect-based test as run_chain.sh ----------------------
-if [ "${OPENQHA_SKIP_ENV_CHECK:-}" != "1" ] && command -v sinfo >/dev/null 2>&1; then
-    if ! sinfo -h -p ai -o %G 2>/dev/null | grep -qi gpu; then
-        echo "openQHA: this shell is in TianheXY-A's DEFAULT Slurm environment; a card" >&2
-        echo "  request there is refused. First:  source /APP/u22/ai_x86/toolshs/set-XY-I.sh" >&2
-        exit 2
-    fi
-fi
-
 CMD=("$SUBMIT" --job-name="$JOB_NAME" --array="0-$((T - 1))" \
+     --partition="${SITE_PARTITION:-ai}" \
      --nodes=1 --ntasks=1 --gpus="$G" --cpus-per-task="$CPUS" --time="$WALLTIME" \
      "$HERE/array.slurm" "$MANIFEST" "$G")
 echo
 echo "submit    ${CMD[*]}"
 echo "  logs      logs/${JOB_NAME}_<arrayjob>_<task>.{out,err}  and  logs/${TAG_PREFIX}_<NAME>_<arrayjob>_<task>.log"
-[ "$PLAN" = "1" ] && { echo "  (--plan: not submitted)"; exit 0; }
+# --plan ends here, BEFORE any check of the shell: the confs are written and the plan is
+# printed whatever machine this is (a compute node, a laptop). The generated confs are
+# what hpc/tools/test30.sh runs.
+[ "$PLAN" = "1" ] && { echo "  (--plan: not submitted; test one row with  bash hpc/tools/test30.sh $GEN/<NAME>.conf)"; exit 0; }
+
+# ---- the environment check, for a real submission only ------------------------------------
+if [ "${OPENQHA_SKIP_ENV_CHECK:-}" != "1" ] && [ -z "$SITE_PARTITION" ]; then
+    echo "openQHA: no GPU partition is visible to sinfo (tried ai, a100x, h100x), so a card" >&2
+    echo "  request here would be refused. On TianheXY-A this means the DEFAULT Slurm" >&2
+    echo "  environment; enter the fine-grained one first:" >&2
+    echo "      source /APP/u22/ai_x86/toolshs/set-XY-I.sh" >&2
+    echo "  On TianheXY-AI, name the partition: OPENQHA_GPU_PARTITION=a100x" >&2
+    echo "  (OPENQHA_SKIP_ENV_CHECK=1 to override.)" >&2
+    exit 2
+fi
 exec "${CMD[@]}"

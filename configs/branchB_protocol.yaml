@@ -159,6 +159,13 @@ branch_b:
   # stretches). It is that the atoms it drops are exactly the ones a freely rotating
   # methyl sweeps around a circle -- the dominant source of non-Gaussian variance in
   # these molecules. See section 2.
+  # One trajectory per (molecule, basin) -- user ruling 2026-09-13, after the campaign
+  # arithmetic in docs/branchB_seeds_and_length.md (3 seeds = 1.1 M card-hours for QM9).
+  # The velocity seed is drawn at run time and recorded in meta.json (seed0 = 0, the
+  # convention OpenMM itself uses for randomNumberSeed=0). Criterion 5 (blank control)
+  # is then "not applicable", not a failure; 2+ seeds still produce it.
+  trajectories_per_basin: 1
+  velocity_seed: "drawn at run time, recorded (seed0=0)"
   analysis_atoms: "all"            # all | heavy
   analysis_atoms_scan: ["all", "heavy"]
 

@@ -293,10 +293,13 @@ def main():
                     help="how many basins per species to run. 'auto' (the default) takes "
                          "the count from branch A's own record, so the number and the "
                          "geometries cannot disagree. An integer caps it.")
-    ap.add_argument("--seeds", type=int, default=3,
-                    help="independent trajectories per basin. 3 is the minimum that "
-                         "gives a blank control, which is acceptance criterion 5")
-    ap.add_argument("--seed0", type=int, default=20260903)
+    ap.add_argument("--seeds", type=int, default=1,
+                    help="trajectories per basin. ONE is the production setting (ruling "
+                         "2026-09-13); 2 or more gives the blank control of criterion 5")
+    ap.add_argument("--seed0", type=int, default=0,
+                    help="0 (default): each trajectory draws its velocity seed at run time "
+                         "and records it (OpenMM's randomNumberSeed=0 convention); "
+                         "non-zero: seed0 + 1000*basin + seed_index")
     # The published protocol, from configs/branchB_protocol.yaml -- the same file both
     # trajectory drivers read. Hard-coding 200/50 here would have quietly overridden it
     # for every Parsl run, which is the whole class of bug this file exists to avoid.

@@ -58,7 +58,7 @@ source "$CONF"
 
 SPECIES="${SPECIES:?the conf must set SPECIES}"
 TAG="${TAG:-chain}"
-SEEDS="${SEEDS:-3}"
+SEEDS="${SEEDS:-1}"          # one trajectory per (molecule, basin): ruling 2026-09-13
 THREADS="${THREADS:-4}"
 CHAIN="${CHAIN:-qha}"
 

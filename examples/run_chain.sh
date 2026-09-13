@@ -9,7 +9,10 @@
 #     bash examples/run_chain.sh <conf> ai --gpus 8     # ... or a whole node: 8 cards, 96 CPUs,
 #                                                       #     96 branch B trajectories at once
 #     bash examples/run_chain.sh <conf> temp            # same queue, 30 min (there is no `temp` there)
-#     bash examples/run_chain.sh <conf> h100x           # TianheXY-AI,  1 card, 3 days
+#     bash examples/run_chain.sh <conf> h100x           # TianheXY-AI,  1 H100 card + 14 CPUs, 24 h
+#     bash examples/run_chain.sh <conf> a100x           # TianheXY-AI,  1 A100 card + 12 CPUs, 24 h
+#                                                       #   (2026-09-13: the first complete chains
+#                                                       #   on a Tianhe card ran here, an113)
 #
 # WHY THIS IS TWO FILES AND NOT ONE (user ruling 2026-09-09)
 # ----------------------------------------------------------
@@ -72,8 +75,8 @@ fi
 # ---------------------------------------------------------------------------------------
 case "$PARTITION" in
     deimos|debug) SUBMIT="sbatch";  KIND="cpu" ;;
-    ai|temp|h100x) SUBMIT="yhbatch"; KIND="gpu" ;;
-    *) echo "partition must be deimos, debug, ai, temp, h100x or local -- got '$PARTITION'" >&2
+    ai|temp|h100x|a100x) SUBMIT="yhbatch"; KIND="gpu" ;;
+    *) echo "partition must be deimos, debug, ai, temp, h100x, a100x or local -- got '$PARTITION'" >&2
        exit 2 ;;
 esac
 SUBMIT="${OPENQHA_SUBMIT:-$SUBMIT}"
@@ -187,7 +190,7 @@ fi
 if [ -z "${JOB_NAME:-}" ]; then
     case "$CHAIN" in
         identity)
-            JOB_NAME="openqha_${SPECIES}_identity_e${EQUIL_PS:-proto}_p${PROD_PS:-proto}_s${SAMPLE_EVERY:-proto}_x${SEEDS:-3}_nu${NU_CUT:-default}" ;;
+            JOB_NAME="openqha_${SPECIES}_identity_e${EQUIL_PS:-proto}_p${PROD_PS:-proto}_s${SAMPLE_EVERY:-proto}_x${SEEDS:-1}_nu${NU_CUT:-default}" ;;
         *)
             JOB_NAME="openqha_${SPECIES}_${CHAIN}_${TAG}" ;;
     esac

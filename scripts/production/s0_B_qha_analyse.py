@@ -201,8 +201,8 @@ def main():
             standard_error_kcal=(float(ts.std(ddof=1) / np.sqrt(len(ts)))
                                  if len(ts) > 1 else None),
             values_kcal=[float(x) for x in ts],
-            note=("a single seed cannot produce a noise floor; run --seeds 3"
-                  if len(ts) < 2 else None)))
+            note=("one seed per basin (ruling 2026-09-13): no noise floor is measured "
+                  "here; --seeds 2 or more would give one" if len(ts) < 2 else None)))
 
     # ---- the assembly, per basin, on the seed-averaged spectrum ----------------------
     assembly = []
@@ -298,6 +298,10 @@ def main():
     identity_ok = all(t["analysis"]["identity_check"] is not None for t in per_traj)
     assembly_ok = all(a["consistency"]["all_identical"] for a in assembly)
     noise_floor = max((b["TS_QH_rms_about_mean_kcal"] for b in blank), default=0.0)
+    # One trajectory per basin is the production setting (ruling 2026-09-13). Criterion
+    # 5 then has nothing to measure and says so; it must not read as a failure, or every
+    # production molecule would stop at collect by construction.
+    single_seed = bool(blank) and all(b["n_seeds"] == 1 for b in blank)
     modes_grew = any(t["mode_batches"]["mode_count_grew"] for t in per_traj)
     gmx_worst = None
     for c in cross:
@@ -339,11 +343,14 @@ def main():
          bool(rigid_ok and rigid_ratio > 1e6)),
         ("5  the blank control (same potential, same basin, different seed) gives a "
          "noise floor smaller than the 1.0 kcal/mol target accuracy",
-         "{:.4f} kcal/mol RMS between seeds, longest trajectory {:.2f} ps{}".format(
-             noise_floor, longest_ps,
-             "  -- SMOKE LENGTH: the noise floor of a production trajectory is a "
-             "different number" if smoke else ""),
-         bool(noise_floor < 1.0 and any(b["n_seeds"] > 1 for b in blank) and not smoke)),
+         ("NOT APPLICABLE: one seed per basin (ruling 2026-09-13), no noise floor "
+          "measured here; see docs/branchB_seeds_and_length.md" if single_seed else
+          "{:.4f} kcal/mol RMS between seeds, longest trajectory {:.2f} ps{}".format(
+              noise_floor, longest_ps,
+              "  -- SMOKE LENGTH: the noise floor of a production trajectory is a "
+              "different number" if smoke else "")),
+         bool(single_seed
+              or (noise_floor < 1.0 and any(b["n_seeds"] > 1 for b in blank) and not smoke))),
         ("6  S_QH <= S_Schlitter for every trajectory (analytic, so a failure is an "
          "implementation error)",
          "all {} trajectories".format(len(per_traj)) if bound_ok else "violated",

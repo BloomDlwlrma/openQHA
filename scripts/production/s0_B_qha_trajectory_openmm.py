@@ -16,7 +16,9 @@ The two run in different environments and neither can import the other's stack:
 One (basin, seed) at a time, which is what the execution layer fans out
 ------------------------------------------------------------------------
     --basins <qid>.basins.xyz   the basin list branch A wrote
-    --basin K --seed-index S    ONE task; the seed is seed0 + 1000*K + S
+    --basin K --seed-index S    ONE task; the velocity seed is DRAWN at run time and
+                                recorded in meta.json (seed0=0, the default since the
+                                2026-09-13 ruling), or seed0 + 1000*K + S if seed0 != 0
     --wall-budget-s N           stop and flush before the queue kills the job
     --platform CUDA             one trajectory per card (TianheXY-A, ruling 2026-09-07)
 
@@ -27,7 +29,7 @@ Run this one as:
 
     /home/ubuntu/anaconda3/envs/qm9fe/bin/python \\
         scripts/production/s0_B_qha_trajectory_openmm.py --species dsgdb9nsd_000018 \\
-        --tag omm01 --seeds 3 --prod-ps 25
+        --tag omm01 --prod-ps 25             # one trajectory per basin (ruling 2026-09-13)
 
 Note the second line of that table. In `qm9fe`, `import mace` resolves to the develop tree
 whose neighbour list is NOT translation invariant. This driver does not care, and not by
@@ -223,6 +225,47 @@ def _fmt(x, spec):
     return format(x, spec) if x is not None else "-"
 
 
+def choose_seed(seed0, basin, seed_index):
+    """(seed, how it was chosen) for one trajectory.
+
+    seed0 == 0 (the default, ruling 2026-09-13): a fresh 31-bit seed from the OS entropy
+    source, the way OpenMM itself treats randomNumberSeed=0 -- but returned, so that the
+    caller records it. seed0 != 0: the pure function seed0 + 1000*basin + seed_index, so
+    a task fanned out by the execution layer and the same task run by hand coincide.
+    """
+    if int(seed0) == 0:
+        import secrets
+        return (secrets.randbits(31) or 1), "drawn at run time (seed0=0; recorded here)"
+    return int(seed0) + 1000 * int(basin) + int(seed_index), "seed0 + 1000*basin + seed_index"
+
+
+def _read_meta(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def segments_record(prev_meta, seed, prod_record):
+    """Which frames of frames.npy came from which velocity draw.
+
+    A resume (frames on disk but fewer than the target) re-equilibrates from the relaxed
+    geometry with a new draw and appends; the file then holds two independently started
+    segments. With a fixed seed the second segment even re-traced the first's opening
+    steps. This list is the record of that; a trajectory run in one go has one entry.
+    """
+    segs = []
+    if prev_meta:
+        segs = list(prev_meta.get("segments") or [])
+        if not segs and "seed" in prev_meta:
+            segs = [dict(seed=int(prev_meta["seed"]), frames_from=0,
+                         frames_to=int((prev_meta.get("production") or {}).get("n_frames", 0)))]
+    segs.append(dict(seed=int(seed),
+                     frames_from=int(prod_record.get("n_frames_already_on_disk", 0)),
+                     frames_to=int(prod_record.get("n_frames", 0))))
+    return segs
+
+
 def run_one(species, positions_A, numbers, masses, model_path, outdir, temperature_K,
             seed, equil_ps, prod_ps, args):
     import openmm
@@ -374,8 +417,15 @@ def main():
                          "make one (basin, seed) addressable by the execution layer.")
     ap.add_argument("--seed-index", type=int, default=None,
                     help="run only this seed index")
-    ap.add_argument("--seeds", type=int, default=3)
-    ap.add_argument("--seed0", type=int, default=20260903)
+    # ONE trajectory per (molecule, basin) -- user ruling 2026-09-13, after the campaign
+    # arithmetic in docs/branchB_seeds_and_length.md. --seeds 2+ is still accepted (the
+    # blank control, criterion 5, needs it) but is no longer the default anywhere.
+    ap.add_argument("--seeds", type=int, default=1)
+    # 0 = draw a fresh seed per trajectory at run time and RECORD it -- OpenMM's own
+    # convention for randomNumberSeed=0 ("a unique seed is chosen when a Context is
+    # created"), except that the number chosen is written to meta.json so the run stays
+    # re-derivable. Non-zero = the old pure function seed0 + 1000*basin + seed_index.
+    ap.add_argument("--seed0", type=int, default=0)
     ap.add_argument("--wall-budget-s", type=float, default=0.0,
                     help="stop production and flush after this many seconds. Set it "
                          "below the queue walltime so a task stops itself instead of "
@@ -510,13 +560,12 @@ def main():
         print("basin {:>2}    relaxed, dropped {:.4f} kcal/mol".format(
             b, relax_record["energy_drop_kcal"]))
         for k in pending:
-            # The seed is a pure function of (basin, seed index, seed0), exactly as in
-            # the ASE route, so a task fanned out by the execution layer and the same
-            # task run by hand produce the same trajectory. Nothing about placement may
-            # enter it. For basin 0 this is the same number the old `seed0 + k` gave, so
-            # no existing trajectory changes.
-            seed = args.seed0 + 1000 * b + k
+            seed, seed_formula = choose_seed(args.seed0, b, k)
             outdir = outroot / "basin{:02d}".format(b) / "seed{:02d}".format(k)
+            # A partial trajectory being resumed restarts from the relaxed geometry with
+            # THIS run's velocities and appends; its record must say which frames came
+            # from which draw, or the trajectory reads as one segment when it is two.
+            prev_meta = _read_meta(outdir / "meta.json")
             frames, equil, prod, force_record, thermo = run_one(
                 args.species, relaxed_A, geom.get_atomic_numbers(), geom.get_masses(),
                 model_path, outdir, temperature, seed, args.equil_ps, args.prod_ps,
@@ -537,7 +586,8 @@ def main():
                 source="openQHA.branchB.openmm_nose_hoover",
                 # ---- everything else --------------------------------------------------
                 qm9_index=args.species, basin_index=int(b), seed=int(seed),
-                seed_formula="seed0 + 1000*basin + seed_index",
+                seed_formula=seed_formula,
+                segments=segments_record(prev_meta, seed, prod),
                 geometry_source=geometry_source,
                 symbols=list(geom.get_chemical_symbols()),
                 masses_amu=[float(x) for x in geom.get_masses()],

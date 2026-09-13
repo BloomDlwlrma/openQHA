@@ -543,7 +543,8 @@ bash examples/run_chain.sh examples/02d_qha_frequency_identity/chain.conf
 
 # submit it
 bash examples/run_chain.sh <conf> ai   # TianheXY-A,  8 cards, 7 d
-bash examples/run_chain.sh <conf> h100x   # TianheXY-AI, 1 card,  3 d
+bash examples/run_chain.sh <conf> h100x   # TianheXY-AI, 1 H100 card + 14 CPUs, 24 h
+bash examples/run_chain.sh <conf> a100x   # TianheXY-AI, 1 A100 card + 12 CPUs, 24 h  (an113, first complete chains 2026-09-13)
 bash examples/run_chain.sh <conf> deimos   # TianheXY-C,  CPU,     3 d
 bash examples/run_chain.sh <conf> temp   # GPU short queue, 30 min
 bash examples/run_chain.sh <conf> debug   # CPU short queue, 30 min

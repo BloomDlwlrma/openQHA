@@ -9,7 +9,8 @@
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 # =======================================================================================
-# 02d-2 ARRAY TASK. TianheXY-A fine-grained environment. One task = G cards = G rows of
+# 02d-2 ARRAY TASK. TianheXY-A fine-grained environment, or TianheXY-AI (a100x/h100x;
+# submit_array.sh passes --partition). One task = G cards = G rows of
 # settings.tsv running at once, one per card. Submitted ONLY by submit_array.sh, which
 # passes --array, --gpus=G and --cpus-per-task=12G on the command line (they override the
 # one-card defaults above) and hands this script the manifest and G as arguments.
@@ -45,7 +46,9 @@ N="$(grep -c . "$MANIFEST")"
 echo "02d-2 task $TASK of array ${SLURM_ARRAY_JOB_ID:-?}: $G card(s), rows $((TASK * G))..$((TASK * G + G - 1)) of $N"
 nvidia-smi -L 2>/dev/null | sed 's/^/  /' || echo "  (nvidia-smi not available)"
 
-export OPENQHA_PARTITION=ai
+# The partition is whatever this job was submitted to (submit_array.sh passes it); it
+# selects the resource config in chain_body (ai -> tianhe_a, a100x/h100x -> tianhe_ai).
+export OPENQHA_PARTITION="${SLURM_JOB_PARTITION:-ai}"
 export OPENQHA_KIND=gpu
 pids=(); names=()
 for k in $(seq 0 $((G - 1))); do
