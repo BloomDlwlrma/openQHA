@@ -130,9 +130,6 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None):
     summary = dict(species=species, command=" ".join(cmd),
                    returncode=proc.returncode,
                    seconds=_time.time() - started)
-    if proc.returncode != 0:
-        summary["error"] = (proc.stderr or proc.stdout or "")[-2000:]
-        return summary
 
     # Lift only enough out of the driver's own product to build the table. The parquet
     # tables it wrote stay the source of truth.
@@ -146,6 +143,17 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None):
         if line.startswith("[PASS]") or line.startswith("[FAIL]"):
             criteria.append(dict(passed=line.startswith("[PASS]"),
                                  text=line[7:].strip()))
+
+    # s0_B_qha_analyse.py exits 1 when a criterion FAILS and it printed the verdicts;
+    # it exits with a traceback when it could not analyse at all. Until 2026-09-13 both
+    # were `error` here: the verdicts were dropped, the marker never written, and the
+    # table showed the first 60 characters of a traceback. A verdict is a result.
+    if proc.returncode != 0 and not criteria:
+        blob = (proc.stderr or proc.stdout or "")
+        lines = [l for l in blob.strip().splitlines() if l.strip()]
+        summary["error"] = blob[-2000:]
+        summary["error_line"] = lines[-1] if lines else "(no output)"
+        return summary
     summary.update(n_trajectories=n_traj,
                    n_criteria=len(criteria),
                    n_criteria_passed=sum(1 for c in criteria if c["passed"]),
@@ -368,7 +376,10 @@ def main():
         "species", "trajs", "seconds", "criteria", "status"))
     for r in results:
         if r.get("error"):
-            print("{:<20} {}".format(r.get("species", "?"), str(r["error"])[:60]))
+            print("{:<20} CRASHED  {}".format(
+                r.get("species", "?"), (r.get("error_line") or str(r["error"]).strip()
+                                        .splitlines()[-1:] or ["?"])[0][:120]
+                if not r.get("error_line") else r["error_line"][:120]))
             continue
         print("{:<20} {:>7} {:>10.1f} {:>10}  {}".format(
             r["species"], r.get("n_trajectories", "-"), r["seconds"],
@@ -392,7 +403,23 @@ def main():
     print()
     print("{}/{} molecules passed every criterion".format(len(ok), len(results)))
     print("written {}".format(out))
-    return 0 if len(ok) == len(results) else 1
+    if len(ok) == len(results):
+        return 0
+    # OPENQHA_SMOKE=1 (set by hpc/tools/test30.sh, never by a production path): a
+    # short test exists to prove every step runs and writes where it should, and a
+    # 1+5 ps trajectory fails criteria 1, 5 and 9 BY CONSTRUCTION. With the override,
+    # a molecule whose analysis RAN (verdicts recorded) does not stop the chain; one
+    # that crashed still does. Said loudly, so the report downstream is never mistaken
+    # for a number.
+    ran = [r for r in results if not r.get("error")]
+    if os.environ.get("OPENQHA_SMOKE") == "1" and len(ran) == len(results):
+        print()
+        print("**SMOKE RUN (OPENQHA_SMOKE=1): {} of {} molecules FAILED criteria, and the "
+              "chain continues anyway.**".format(len(results) - len(ok), len(results)))
+        print("  Every downstream number under tag {!r} is a test of the plumbing, not a "
+              "result.".format(args.tag))
+        return 0
+    return 1
 
 
 if __name__ == "__main__":

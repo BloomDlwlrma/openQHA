@@ -81,6 +81,10 @@ esac
 export OPENQHA_PARTITION="${OPENQHA_PARTITION:-${SLURM_JOB_PARTITION:-ai}}"
 export OPENQHA_KIND=gpu
 export PYTHONNOUSERSITE=1
+# A 1+5 ps run fails criteria 1, 5 and 9 by construction; this lets `collect` pass a
+# molecule whose analysis RAN so the chain reaches `report`. Nothing in production sets
+# it, and collect prints a banner whenever it takes effect.
+export OPENQHA_SMOKE=1
 mkdir -p logs
 LOG="logs/test30_${TAG}_${SLURM_JOB_ID}.log"
 
@@ -89,6 +93,7 @@ echo "  species $SPECIES   tag $TAG   basins from ${BASIN_TAG:-$TAG}"
 echo "  node    $(hostname)   job $SLURM_JOB_ID   partition $OPENQHA_PARTITION   card(s) $(nvidia-smi -L | wc -l)"
 echo "  log     $LOG   (also on this terminal)"
 echo "  when done, this test's outputs are under analysis/qha/$TAG/ and can be deleted"
+echo "  OPENQHA_SMOKE=1: failed criteria do not stop the chain here (they would in production)"
 echo
 
 bash examples/chain_body.sh "$CONF" 2>&1 | tee "$LOG"

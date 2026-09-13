@@ -36,22 +36,40 @@ QRRHO_NU0_CM = 100.0
 
 
 # ------------------------------------------------------------------ vibrational
+#: Above this, exp(x) overflows a double (math.expm1 raises at x ~ 709.78) and the
+#: mode is frozen to every digit anyway: x/expm1(x) and log1p(-exp(-x)) are both below
+#: 1e-300. Measured 2026-09-13 on an113: a covariance from 30 frames for 30 coordinates
+#: has eigenvalues that are positive only by rounding, nu of order 1e15 cm^-1, and the
+#: entropy sum raised OverflowError instead of reporting a rank-deficient spectrum.
+X_FROZEN = 700.0
+
+
+def _x(nu_cm, temperature_K):
+    return HC_KCAL * nu_cm / (KB_KCAL * temperature_K)
+
+
 def a_mode_kcal(nu_cm, temperature_K=T_REF):
     """Helmholtz free energy of one quantum harmonic oscillator, zero-point energy
     included, with the zero taken at the bottom of the well."""
     kt = KB_KCAL * temperature_K
-    x = HC_KCAL * nu_cm / kt
+    x = _x(nu_cm, temperature_K)
+    if x > X_FROZEN:
+        return kt * 0.5 * x                 # log1p(-exp(-x)) is -0.0 to double precision
     return kt * (0.5 * x + math.log1p(-math.exp(-x)))
 
 
 def e_mode_kcal(nu_cm, temperature_K=T_REF):
     kt = KB_KCAL * temperature_K
-    x = HC_KCAL * nu_cm / kt
+    x = _x(nu_cm, temperature_K)
+    if x > X_FROZEN:
+        return kt * 0.5 * x                 # x/expm1(x) is 0.0 to double precision
     return kt * (0.5 * x + x / math.expm1(x))
 
 
 def s_mode_kcal_per_K(nu_cm, temperature_K=T_REF):
-    x = HC_KCAL * nu_cm / (KB_KCAL * temperature_K)
+    x = _x(nu_cm, temperature_K)
+    if x > X_FROZEN:
+        return 0.0                          # a frozen mode carries no entropy
     return KB_KCAL * (x / math.expm1(x) - math.log1p(-math.exp(-x)))
 
 

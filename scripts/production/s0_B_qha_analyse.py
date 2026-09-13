@@ -347,9 +347,16 @@ def main():
          "sigma = {} ({})".format(spec["symmetry_number"], spec.get("symmetry_reason")),
          True),
         ("9  the number of non-zero eigenvalues equals 3N-6",
-         "{} of {} expected".format(
+         "{} of {} expected{}".format(
              per_traj[0]["analysis"]["spectrum"]["n_nonzero_eigenvalues"],
-             per_traj[0]["analysis"]["spectrum"]["expected_vibrational_modes"]),
+             per_traj[0]["analysis"]["spectrum"]["expected_vibrational_modes"],
+             # A covariance from T frames has at most T-1 non-zero eigenvalues, so a
+             # smoke-length trajectory CANNOT pass this; say that it could not, rather
+             # than letting it read like a defect (an113, 2026-09-13: 5 frames, 24 wanted).
+             "  -- SMOKE LENGTH: {} frames cannot span {} modes; rank is not measurable here"
+             .format(per_traj[0]["analysis"]["rank_check"]["n_frames"],
+                     per_traj[0]["analysis"]["spectrum"]["expected_vibrational_modes"])
+             if smoke and not rank_ok else ""),
          rank_ok),
         ("10 the per-batch convergence separates unsettled values from missing modes: "
          "the mode COUNT must not still be growing",
