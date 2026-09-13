@@ -10,15 +10,18 @@
 #SBATCH --error=logs/%x_%A_%a.err
 # =======================================================================================
 # 02d-2 ARRAY TASK. TianheXY-A fine-grained environment, or TianheXY-AI (a100x/h100x;
-# submit_array.sh passes --partition). One task = G cards = G rows of
-# settings.tsv running at once, one per card. Submitted ONLY by submit_array.sh, which
-# passes --array, --gpus=G and --cpus-per-task=12G on the command line (they override the
-# one-card defaults above) and hands this script the manifest and G as arguments.
+# submit_array.sh passes --partition). One task = G cards x R rows per card =
+# G*R rows of settings.tsv running at once. Submitted ONLY by submit_array.sh, which
+# passes --array, --partition, --gpus=G and --cpus-per-task on the command line (they
+# override the one-card defaults above) and hands this script the manifest, G and R.
 #
 #     $1  manifest: one generated conf per line, in row order
 #     $2  G: cards in this task
+#     $3  R: rows per card (default 1; since 2026-09-13 a 12-CPU card takes twelve
+#            single-trajectory rows -- ruling S0-B-59, one trajectory per basin)
 #
-# The rows this task owns are  row = SLURM_ARRAY_TASK_ID * G + k,  k = 0..G-1.
+# The rows this task owns are  row = (SLURM_ARRAY_TASK_ID * G + k) * R + j,
+# k = 0..G-1 the card, j = 0..R-1 the slot on it.
 #
 # ONE CARD PER ROW, ENFORCED TWICE. `CUDA_VISIBLE_DEVICES=k` is what OpenMM and torch
 # see; `S0_CARD=k` tells hpc/resource_configs/tianhe_a.py to run parsl in-allocation on
@@ -38,12 +41,13 @@
 # =======================================================================================
 MANIFEST="${1:?manifest path}"
 G="${2:?cards per task}"
+R="${3:-1}"
 cd "${SLURM_SUBMIT_DIR:-.}"
 [ -f "$MANIFEST" ] || { echo "no manifest: $MANIFEST" >&2; exit 2; }
 
 TASK="${SLURM_ARRAY_TASK_ID:-0}"
 N="$(grep -c . "$MANIFEST")"
-echo "02d-2 task $TASK of array ${SLURM_ARRAY_JOB_ID:-?}: $G card(s), rows $((TASK * G))..$((TASK * G + G - 1)) of $N"
+echo "02d-2 task $TASK of array ${SLURM_ARRAY_JOB_ID:-?}: $G card(s) x $R row(s), rows $((TASK * G * R))..$((TASK * G * R + G * R - 1)) of $N"
 nvidia-smi -L 2>/dev/null | sed 's/^/  /' || echo "  (nvidia-smi not available)"
 
 # The partition is whatever this job was submitted to (submit_array.sh passes it); it
@@ -52,18 +56,22 @@ export OPENQHA_PARTITION="${SLURM_JOB_PARTITION:-ai}"
 export OPENQHA_KIND=gpu
 pids=(); names=()
 for k in $(seq 0 $((G - 1))); do
-    row=$(( TASK * G + k ))
+  for j in $(seq 0 $((R - 1))); do
+    row=$(( (TASK * G + k) * R + j ))
     [ "$row" -lt "$N" ] || break
     conf="$(sed -n "$((row + 1))p" "$MANIFEST")"
     [ -f "$conf" ] || { echo "row $row: missing conf $conf" >&2; continue; }
     name="$(basename "$conf" .conf)"
     log="logs/02d2_${name}_${SLURM_ARRAY_JOB_ID:-x}_${TASK}.log"
-    echo "  card $k  row $row  $name  -> $log"
+    echo "  card $k slot $j  row $row  $name  -> $log"
+    # Scratch and the parsl run_dir under it are keyed by S0_SCRATCH_TAG (hpc/env/
+    # tianhe.sh), so R drivers on one card do not share a tree or a runinfo/.
     S0_CARD="$k" CUDA_VISIBLE_DEVICES="$k" \
-    S0_SCRATCH_TAG="card$k" \
-    S0_KEEP_DIR="logs/node_local/${SLURM_JOB_ID}_card$k" \
+    S0_SCRATCH_TAG="card${k}_row${j}" \
+    S0_KEEP_DIR="logs/node_local/${SLURM_JOB_ID}_card${k}_row${j}" \
         bash examples/chain_body.sh "$conf" > "$log" 2>&1 &
     pids+=($!); names+=("$name")
+  done
 done
 
 rc=0
