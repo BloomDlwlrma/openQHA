@@ -494,8 +494,17 @@ def _worker_init(here):
         "module purge 2>/dev/null || true",
         "module load anaconda3/2023.09 2>/dev/null || "
         "module load miniforge/24.7.1 2>/dev/null || true",
-        "module load CUDA/{0} || echo 'openQHA: module load CUDA/{0} FAILED -- tasks in "
-        "this block will not see a card' >&2".format(CUDA_VERSION),
+        # No unconditional CUDA module here any more (2026-09-13). Whether a site module
+        # is needed at all is a MEASUREMENT -- the environment's nvrtc against the driver
+        # -- and examples/chain_body.sh makes it (openqha_cuda_fit) before the driver
+        # starts, exporting OPENQHA_CUDA_MODULE_CHOSEN when, and only when, a module was
+        # required and fit. Workers load exactly that. On an104 the old line ran in a
+        # shell with no `module` command and printed "FAILED -- tasks will not see a
+        # card" while the tasks saw the card fine; on the same cluster the CUDA/12.4
+        # module puts lib64/stubs on LD_LIBRARY_PATH, which is CUDA error 34 for every
+        # task. CUDA_VERSION stays as the recorded ceiling for the environment file.
+        'if [ -n "${OPENQHA_CUDA_MODULE_CHOSEN:-}" ]; then module load "$OPENQHA_CUDA_MODULE_CHOSEN" 2>/dev/null || echo "openQHA: module load $OPENQHA_CUDA_MODULE_CHOSEN failed in this block; using the environment\'s own toolkit" >&2; fi',
+        'case ":${LD_LIBRARY_PATH:-}:" in *stubs*) export LD_LIBRARY_PATH="$(printf \'%s\' "$LD_LIBRARY_PATH" | tr : \'\\n\' | grep -v stubs | paste -sd: -)";; esac',
         "for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM)_'); do "
         "unset $v; done",
         "source {0}/env/common.sh".format(here),

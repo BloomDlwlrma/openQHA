@@ -90,7 +90,14 @@ PARTITION="${OPENQHA_PARTITION:-${PARTITION:-local}}"
 KIND="${OPENQHA_KIND:-cpu}"
 
 if [ "$KIND" = "gpu" ]; then
-    RESOURCE="${RESOURCE:-$([ "$PARTITION" = "h100x" ] && echo tianhe_ai || echo tianhe_a)}"
+    # TianheXY-AI has several GPU partitions and hands out what it has: `h100x` gave an
+    # A100-SXM4-80GB on an104 (2026-09-13), and the allocation reported itself as `a100x`.
+    # Any of them is that cluster's resource config; only `ai` is TianheXY-A.
+    case "$PARTITION" in
+        h100x|a100x|a800x|v100x|hx) _res_default=tianhe_ai ;;
+        *)                          _res_default=tianhe_a ;;
+    esac
+    RESOURCE="${RESOURCE:-$_res_default}"
     ROUTE="${ROUTE:-openmm}"; PLATFORM="CUDA"
 elif [ -n "$SLURM_JOB_ID" ]; then
     RESOURCE="${RESOURCE:-tianhe_cpu}"; ROUTE="${ROUTE:-ase}"; PLATFORM="CPU"
@@ -119,17 +126,88 @@ openqha_load_conda_module() {
     return 1
 }
 
+# ---------------------------------------------------------------------------------------
+# THE CUDA TOOLKIT: measured, not assumed (2026-09-13)
+# ---------------------------------------------------------------------------------------
+# This used to `module load CUDA/12.2` for every GPU job, before the environment was even
+# activated. Two clusters, two ways that was wrong:
+#
+#   * TianheXY-A (an45): the environment's nvrtc was 12.3, the driver 12.2; the module's
+#     12.2 nvrtc, placed ahead on LD_LIBRARY_PATH, was the fix. There it was NEEDED.
+#   * TianheXY-AI (an104): the environment's nvrtc is now 12.4 and so is the driver --
+#     nothing to fix -- and the site's CUDA/12.4 module puts its lib64/stubs/ on
+#     LD_LIBRARY_PATH, so loading it hands every CUDA program the link-time STUB:
+#     "You are running using the stub version of nvrtc", then CUDA error 34
+#     (CUDA_ERROR_STUB_LIBRARY) at openmm.Context(). There it was HARMFUL.
+#
+# So the decision is made after activation, from what openqha/gpu_preflight.py measures
+# in this process: if the environment's toolkit already fits the driver, load nothing; if
+# it is too new, try site modules in order and keep the first one that fits; and after
+# any load, strip stubs/ directories from LD_LIBRARY_PATH before judging, because a stub
+# is never an answer. None of this ends the job by itself -- `must` and the driver's own
+# preflight do that -- except the one case with no way forward: a toolkit too new for
+# the driver and no module that fits.
+openqha_strip_stubs() {
+    case ":${LD_LIBRARY_PATH:-}:" in
+        *stubs*)
+            export LD_LIBRARY_PATH="$(printf '%s' "${LD_LIBRARY_PATH}" | tr : '\n' | grep -v stubs | paste -sd: -)"
+            echo "cuda      removed a stubs/ directory from LD_LIBRARY_PATH" ;;
+    esac
+}
+openqha_cuda_verdict() {          # line 1: ok | stub | newer | unknown;  line 2: details
+    python - <<'PY' 2>/dev/null || printf 'unknown\n(gpu_preflight not importable)\n'
+import sys
+sys.path.insert(0, ".")
+from openqha import gpu_preflight as g
+d = g.describe()
+if d.get("stub_loaded") or (d.get("ld_stubs") and not d["nvrtc"]):
+    print("stub")
+elif d["nvrtc"] and d["driver_cuda"]:
+    print("ok" if d["ok"] else "newer")
+else:
+    print("unknown")
+print("nvrtc {} from {}  driver {}".format(
+    ".".join(map(str, d["nvrtc"])) if d["nvrtc"] else "?", d.get("nvrtc_path") or "?",
+    ".".join(map(str, d["driver_cuda"])) if d["driver_cuda"] else "?"))
+PY
+}
+openqha_cuda_fit() {
+    local out v info drv m
+    openqha_strip_stubs
+    out="$(openqha_cuda_verdict)"; v="${out%%$'\n'*}"; info="${out#*$'\n'}"
+    echo "cuda      $info"
+    case "$v" in
+        ok)      echo "cuda      the environment's toolkit fits the driver; no site module loaded"
+                 unset OPENQHA_CUDA_MODULE_CHOSEN          # workers must load none either
+                 return 0 ;;
+        unknown) echo "cuda      nvrtc or driver not readable here; the driver's preflight decides"
+                 return 0 ;;
+    esac
+    drv="$(printf '%s' "$info" | sed -nE 's/.*driver ([0-9]+\.[0-9]+).*/\1/p')"
+    for m in "${OPENQHA_CUDA_MODULE:-}" ${drv:+CUDA/$drv} CUDA/12.2; do
+        [ -n "$m" ] || continue
+        module load "$m" >/dev/null 2>&1 || continue
+        openqha_strip_stubs
+        out="$(openqha_cuda_verdict)"; v="${out%%$'\n'*}"; info="${out#*$'\n'}"
+        if [ "$v" = ok ]; then
+            echo "module    $m"
+            echo "cuda      $info"
+            # Parsl worker blocks start in a fresh shell; they load this and nothing else.
+            export OPENQHA_CUDA_MODULE_CHOSEN="$m"
+            return 0
+        fi
+        echo "cuda      $m loaded but $v ($info); unloading"
+        module unload "$m" >/dev/null 2>&1
+    done
+    echo "openQHA: this driver cannot JIT the environment's CUDA toolkit ($info), and no" >&2
+    echo "  site module fixed that. On a LOGIN node (compute nodes have no network):" >&2
+    echo "      mamba install -n openqha-gpu cuda-version=${drv:-<driver version>}" >&2
+    return 1
+}
+
 if [ -n "$SLURM_JOB_ID" ]; then
     module purge 2>/dev/null || true
     openqha_load_conda_module || exit 1
-    if [ "$KIND" = "gpu" ]; then
-        # 12.2, NOT 12.3: TianheXY-A's driver is 535.104.12 = CUDA 12.2, and OpenMM
-        # JITs PTX at run time, which minor version compatibility does not cover.
-        # See openqha/gpu_preflight.py for the measurement and the rule.
-        module load CUDA/12.2 || {
-            echo "openQHA: module load CUDA/12.2 FAILED -- this would run on the CPU" >&2
-            exit 1; }
-    fi
     # Inherited task-layout variables make a child process misread its allocation and try
     # to relaunch itself through the scheduler (rule 7). CREST forks its own workers.
     for v in $(env | awk -F= '{print $1}' \
@@ -142,6 +220,9 @@ if [ -n "$SLURM_JOB_ID" ]; then
     source hpc/env/common.sh
     source hpc/env/tianhe.sh
     openqha_report_env
+    if [ "$KIND" = "gpu" ]; then
+        openqha_cuda_fit || exit 1      # the one environment fault with no way forward
+    fi
 fi
 
 # ---------------------------------------------------------------------------------------

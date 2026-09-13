@@ -172,14 +172,48 @@ def main():
     d = gpu_preflight.describe()
     print("  nvrtc                 {}".format(d["nvrtc"] or "not loadable here"))
     print("  nvrtc comes from      {}".format(d.get("nvrtc_path") or "(path unknown)"))
+    print("  libcuda comes from    {}".format(d.get("libcuda_path") or "(not mapped)"))
     print("  driver supports CUDA  {}".format(d["driver_cuda"] or "not readable here"))
+    if d.get("ld_stubs"):
+        print("  LD_LIBRARY_PATH has   {}".format("  ".join(d["ld_stubs"])))
     print("  verdict               {}".format(d["reason"]))
+    if d.get("stub_loaded") or (d.get("ld_stubs") and not d["nvrtc"]):
+        print()
+        print("  **STOP HERE.** A `stubs/` directory is on the library search path, so the")
+        print("  libcuda / libnvrtc this process gets are NVIDIA's link-time stubs: every")
+        print("  entry point returns an error, nvrtc prints 'You are running using the stub")
+        print("  version of nvrtc', and openmm.Context() dies with CUDA error 34")
+        print("  (CUDA_ERROR_STUB_LIBRARY). No version comparison means anything until the")
+        print("  stub is gone. Find who put it there and take it off the path:")
+        print("      module list;  module show CUDA/<ver> | grep -n stubs")
+        print("      echo $LD_LIBRARY_PATH | tr : '\\n' | grep -n stubs")
+        print("      export LD_LIBRARY_PATH=$(echo $LD_LIBRARY_PATH | tr : '\\n' | grep -v stubs | paste -sd:)")
+        print("  then re-run this probe. (On an104 2026-09-13 the stub arrived with a CUDA")
+        print("  module; the environment's own nvrtc was too NEW for the driver, which is")
+        print("  a different fault with a different fix -- a module no newer than 12.4.)")
+        fail.append("CUDA stub library on the load path")
     if d["nvrtc"] and d["driver_cuda"] and not d["ok"]:
         print()
         if platform_name == "CUDA":
             print("  **STOP HERE.** OpenMM JITs every kernel from PTX, and this driver")
-            print("  cannot read PTX from that toolkit. Sections 4-6 cannot pass. Fix:")
-            print("      mamba install -n openqha-gpu cuda-version={}.{}".format(*d["driver_cuda"]))
+            print("  cannot read PTX from that toolkit. Sections 4-6 cannot pass.")
+            print()
+            # The nvrtc that gets loaded is whichever libnvrtc.so is first on
+            # LD_LIBRARY_PATH. A site CUDA module puts ITS lib dir ahead of conda's, so
+            # loading a module no newer than the driver fixes this with no install and
+            # no network -- which is what an45 needed (module CUDA/12.2 over a conda
+            # 12.3) and what a compute node, with no route out, can actually do.
+            # examples/chain_body.sh already loads CUDA/12.2 for every job; this probe
+            # run did not, which is why it sees the environment's own toolkit.
+            drv = "{}.{}".format(*d["driver_cuda"])
+            print("  Fix, in order:")
+            print("    1. a site CUDA module no newer than the driver, then re-run:")
+            print("         module avail CUDA          # what is there")
+            print("         module load CUDA/{}       # or the highest <= {}".format(drv, drv))
+            print("       (needs nothing installed; examples/chain_body.sh does this itself)")
+            print("    2. only if no such module exists, pin the environment's toolkit,")
+            print("       ON A LOGIN NODE -- a compute node has no outbound network:")
+            print("         mamba install -n openqha-gpu cuda-version={}".format(drv))
             fail.append("nvrtc newer than the driver")
         else:
             # The CPU platform compiles nothing, so this mismatch cannot affect the run
@@ -289,6 +323,21 @@ def main():
     # reinstall. Missing files mean something deleted them; a size mismatch means
     # something rewrote them; an undeclared file under numpy/ is a leftover.
     npy_meta = [m for m in metas if m.name.rsplit("-", 2)[0] in ("numpy", "numpy-base")]
+    if metas and not npy_meta:
+        # Measured an104 2026-09-13: numpy 2.4.6 present, `numpy tree` lines absent, and
+        # the absence went unremarked -- the check had simply nothing to compare against.
+        # No conda record means conda did not put this numpy here: pip did, over whatever
+        # the solver had chosen, and every conda package that declares a numpy bound was
+        # solved against a numpy that is no longer there.
+        print("  numpy tree            **NO CONDA RECORD FOR numpy** -- it was not installed")
+        print("                        by conda/mamba, so pip put it here, over the solved")
+        print("                        environment. What is on disk:")
+        print("                          ls -d $CONDA_PREFIX/lib/python*/site-packages/numpy*")
+        print("                          python -m pip show numpy | head -3")
+        print("                        Two dist-infos there = the same overwrite an45 had:")
+        print("                        pip uninstall until none is left, then")
+        print("                          mamba install -n <env> --offline numpy=1.26.4")
+        print("                        (login node without --offline if the cache lacks it)")
     if npy_meta:
         import json as _json
         declared, sizes = set(), {}
@@ -426,6 +475,44 @@ def main():
     except Exception:                                                   # noqa: BLE001
         pass
 
+    # A declared bound that the installed numpy violates is a finding on its own. On
+    # an104 (2026-09-13) torch's round trip WORKED with numpy 2.4.6 while scipy 1.13.1
+    # declared `numpy <2.3` and warned at import -- and this probe said nothing, because
+    # the check below used to live inside the round-trip failure branch only.
+    try:
+        import numpy as _npc
+        _ver = str(_npc.__version__)
+        _maj = int(_ver.split(".")[0])
+        _min = int(_ver.split(".")[1]) if "." in _ver else 0
+
+        def _violates(dep):
+            # numpy <2.3 / numpy >=2 / numpy <2 / numpy >=1.19,<3 -- the forms conda-meta uses.
+            # conda-meta gives one bound per string ("numpy >=1.19,<3"); this probe joins
+            # a package's several strings with "; ". Split on both, or the second string
+            # rides along inside the first clause and int() raises -- which the try
+            # around this block would then swallow, silently. Caught by a test.
+            flat = dep.replace("numpy", "").replace(" ", "").replace(";", ",")
+            for clause in flat.split(","):
+                if clause.startswith("<") and not clause.startswith("<="):
+                    hi = clause[1:].split(".")
+                    if (_maj, _min) >= (int(hi[0]), int(hi[1]) if len(hi) > 1 else 0):
+                        return True
+                if clause.startswith(">=") and _maj < int(clause[2:].split(".")[0]):
+                    return True
+            return False
+
+        _bad = [(n, v, d) for (n, v, d) in numpy_needs if _violates(d)]
+        if _bad:
+            print()
+            print("  **numpy {} VIOLATES A DECLARED BOUND:**".format(_ver))
+            for n, v, d in _bad:
+                print("      {} {} requires  {}".format(n, v, d))
+            print("  The package was built and solved against a numpy in that range; outside")
+            print("  it the import may warn (scipy does) or misbehave without warning. This")
+            print("  is a finding whether or not the torch round trip below succeeds.")
+    except Exception:                                                   # noqa: BLE001
+        pass
+
     # The one question that matters: can torch actually use numpy? torch prints its
     # complaint as a UserWarning at import and then fails much later, so provoke it here.
     try:
@@ -512,6 +599,11 @@ def main():
             print()
             print("  This is the toolkit/driver mismatch, isolated: no torch, no MACE, no")
             print("  model file involved. Section 1's numbers are the whole diagnosis.")
+        elif "CUDA error (34)" in str(exc) or "STUB" in str(exc).upper():
+            print()
+            print("  CUDA error 34 is CUDA_ERROR_STUB_LIBRARY: the libcuda.so this process")
+            print("  loaded is the link-time stub, not the driver. Section 1 shows where it")
+            print("  came from and which LD_LIBRARY_PATH entry to remove.")
         fail.append("context on {}".format(platform_name))
         return report(fail)
 

@@ -162,6 +162,33 @@ def relax(atoms, model_path):
         energy_drop_kcal=float((e0 - e1) / 4.184), force_field=force_record)
 
 
+def flush_frames(frames_path, frames):
+    """Write `frames` to `frames_path` atomically: temp file first, then rename.
+
+    A job killed mid-write must leave the previous complete file, not a truncated array
+    that reads as corrupt. So the write goes to a sibling and is renamed into place.
+
+    **The sibling must end in `.npy`.** `np.save(path, arr)` appends `.npy` to any name
+    that does not already carry it, so the first version of this --
+
+        tmp = frames_path.with_suffix(frames_path.suffix + ".part")    # frames.npy.part
+        np.save(tmp, arr)                                              # -> frames.npy.part.npy
+        tmp.replace(frames_path)                                       # FileNotFoundError
+
+    -- failed on the FIRST flush of every trajectory, once any trajectory reached a flush
+    at all (an104, 2026-09-13: six of six, `frames.npy.part.npy` left beside each). No GPU
+    trajectory had got that far before; the code had never executed. Writing through an
+    open file handle sidesteps the suffix rule entirely, and the name is `.part.npy` so a
+    leftover from a killed job is still recognisable as a partial.
+    """
+    frames_path = Path(frames_path)
+    tmp = frames_path.with_name(frames_path.stem + ".part.npy")
+    with open(tmp, "wb") as fh:
+        np.save(fh, np.asarray(frames))
+    tmp.replace(frames_path)
+    return frames_path
+
+
 def run_one(species, positions_A, numbers, masses, model_path, outdir, temperature_K,
             seed, equil_ps, prod_ps, args):
     import openmm
@@ -169,6 +196,10 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
 
     outdir.mkdir(parents=True, exist_ok=True)
     frames_path = outdir / "frames.npy"
+    # Leftovers of the suffix bug described in flush_frames(): never a resumable file.
+    stale = outdir / "frames.npy.part.npy"
+    if stale.exists():
+        stale.unlink()
     have = list(np.load(frames_path)) if frames_path.exists() else []
     n_target = int(round(prod_ps * 1000.0 / args.timestep_fs)) // args.sample_every
 
@@ -259,11 +290,7 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
             if com0 is None:
                 com0 = com
             com_drift.append(float(np.linalg.norm(com - com0)))
-        # Written to a temporary name and renamed, so a job killed mid-write leaves the
-        # previous complete file rather than a truncated array that reads as corrupt.
-        tmp = frames_path.with_suffix(frames_path.suffix + ".part")
-        np.save(tmp, np.array(have))
-        tmp.replace(frames_path)
+        flush_frames(frames_path, have)     # atomic; see the function for the history
         if budget and (time.time() - t0) > budget:
             stopped_on_budget = True
             break

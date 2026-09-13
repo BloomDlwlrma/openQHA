@@ -551,10 +551,16 @@ def main():
         "complete"))
     for r in results:
         if r.get("error"):
-            print("{:<20} {}".format(
-                r.get("species", "?"),
-                (r.get("error_line") or str(r["error"]).splitlines()[-1:] or [""])[0]
-                if r.get("error_line") else str(r["error"]).strip().splitlines()[-1][:100]))
+            # The first version did `(error_line or ...)[0]` -- on a STRING, so the table
+            # showed the first CHARACTER of the diagnosis ("F" for FileNotFoundError) and
+            # the reader had to open the JSON. Measured an104 2026-09-13, six rows of "F".
+            line = (r.get("error_line") or "").strip()
+            if not line:
+                tail = [l for l in str(r["error"]).strip().splitlines() if l.strip()]
+                line = tail[-1] if tail else "(no error text captured)"
+            print("{:<20} {:>6} {:>6}  FAILED  {}".format(
+                r.get("species", "?"), r.get("basin", "?"), r.get("seed_index", "?"),
+                line[:160]))
             continue
         print("{:<20} {:>6} {:>6} {:>8} {:>9} {:>10.1f} {:>5}  {}".format(
             r["species"], r["basin"], r["seed_index"], r.get("n_frames", "-"),

@@ -69,12 +69,20 @@ WALL_BUDGET_S="${WALL_BUDGET_S:-77760}"      # 0.90 x 24 h, matching --time abov
 # ---- 1. site environment ---------------------------------------------------------------
 module purge 2>/dev/null || true
 module load anaconda3/2023.09 2>/dev/null || module load miniforge/24.7.1 2>/dev/null || true
-# CUDA 12.3 -- the version BOTH GPU clusters have, which is why one environment file
-# serves both. No MPI: eight independent single-card tasks exchange nothing.
-module load CUDA/12.3 || {
-    echo "openQHA: module load CUDA/12.3 FAILED -- these tasks will not see a card" >&2
+# 12.2, not 12.3: TianheXY-A's driver is 535.104.12 = CUDA 12.2, and OpenMM JITs PTX,
+# which minor version compatibility does not cover (2026-09-12: every trajectory died
+# with CUDA_ERROR_UNSUPPORTED_PTX_VERSION under 12.3). This file is the older direct
+# submit path FOR TIANHEXY-A ONLY; examples/chain_body.sh now decides the module from a
+# measurement (openqha_cuda_fit) and is what every example uses. Do not run this file on
+# TianheXY-AI: its CUDA modules put lib64/stubs on LD_LIBRARY_PATH (CUDA error 34).
+module load CUDA/12.2 || {
+    echo "openQHA: module load CUDA/12.2 FAILED -- these tasks will not see a card" >&2
     exit 1
 }
+case ":${LD_LIBRARY_PATH:-}:" in *stubs*)
+    export LD_LIBRARY_PATH="$(printf '%s' "$LD_LIBRARY_PATH" | tr : '\n' | grep -v stubs | paste -sd: -)"
+    echo "cuda      removed a stubs/ directory from LD_LIBRARY_PATH" ;;
+esac
 for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
     unset "$v"
 done

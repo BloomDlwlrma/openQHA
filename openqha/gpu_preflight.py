@@ -77,6 +77,9 @@ def _nvrtc_version():
                 return (major.value, minor.value)
         except AttributeError:
             continue
+    # Loaded but the call failed (a stub returns an error and prints "You are running
+    # using the stub version of nvrtc"): still say WHICH file it was.
+    NVRTC_PATH = _loaded_path("nvrtc")
     return None
 
 
@@ -94,17 +97,44 @@ def _loaded_path(fragment):
         return None
 
 
+#: The libcuda this process mapped, once _driver_cuda_version() has tried to load one.
+LIBCUDA_PATH = None
+
+
+def _stubs_on_ld_path():
+    """LD_LIBRARY_PATH entries that are a CUDA `stubs` directory.
+
+    A toolkit's lib64/stubs/ (and conda's targets/x86_64-linux/lib/stubs/) hold link-time
+    STUBS of libcuda.so and libnvrtc.so: every entry point returns an error, so a program
+    can be linked without a driver present. They are never meant to be on the runtime
+    search path. Some site CUDA modules export them anyway, for the linker's sake, and
+    then every CUDA program on that node fails at initialisation -- with CUDA error 34,
+    CUDA_ERROR_STUB_LIBRARY, which is the driver API saying exactly this. Measured on
+    an104 (TianheXY-AI) 2026-09-13: the probe passed sections 1-4 with the environment's
+    own nvrtc (too new, but real), and after a module load the same sections reported
+    "stub version of nvrtc" and error 34.
+    """
+    return [d for d in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep)
+            if d and ("/stubs" in d or d.endswith("stubs"))]
+
+
 def _driver_cuda_version():
     """(major, minor) of the CUDA version the DRIVER supports, or None.
 
     `cuDriverGetVersion` returns 1000*major + 10*minor and needs no context, no card and
     no initialisation beyond the library load -- so it works on a login node too.
     """
-    for name in ("libcuda.so", "libcuda.so.1"):
+    global LIBCUDA_PATH
+    for name in ("libcuda.so.1", "libcuda.so"):
+        # .so.1 first: the real driver library installs that soname; the stub is the
+        # bare libcuda.so. Asking for .so.1 first finds the driver even with a stubs
+        # directory earlier on the path -- but the process that matters (OpenMM) does
+        # not get that choice, so the stub is still reported below.
         try:
             lib = ctypes.CDLL(name)
         except OSError:
             continue
+        LIBCUDA_PATH = LIBCUDA_PATH or _loaded_path("libcuda.so")
         try:
             v = ctypes.c_int()
             if lib.cuDriverGetVersion(ctypes.byref(v)) == 0 and v.value:
@@ -127,7 +157,13 @@ def describe():
     nvrtc = _nvrtc_version()
     driver = _driver_cuda_version()
     ok, why = True, "not checked"
-    if nvrtc and driver:
+    stubs = _stubs_on_ld_path()
+    stub_loaded = any("/stubs/" in (p or "") for p in (NVRTC_PATH, LIBCUDA_PATH))
+    if stub_loaded or (stubs and not nvrtc):
+        # This outranks the version comparison: a stub has no version worth comparing.
+        ok = False
+        why = "a CUDA STUB library is on the load path -- every CUDA call will fail"
+    elif nvrtc and driver:
         ok = nvrtc <= driver
         why = "nvrtc {}.{} {} driver {}.{}".format(
             nvrtc[0], nvrtc[1], "<=" if ok else ">", driver[0], driver[1])
@@ -135,8 +171,9 @@ def describe():
         why = "libnvrtc not loadable here"
     elif not driver:
         why = "no CUDA driver readable here (a login node, usually)"
-    return dict(nvrtc=nvrtc, nvrtc_path=NVRTC_PATH, driver_cuda=driver, ok=ok, reason=why,
-                skipped=os.environ.get(_SKIP_ENV) == "1")
+    return dict(nvrtc=nvrtc, nvrtc_path=NVRTC_PATH, libcuda_path=LIBCUDA_PATH,
+                driver_cuda=driver, ld_stubs=stubs, stub_loaded=stub_loaded,
+                ok=ok, reason=why, skipped=os.environ.get(_SKIP_ENV) == "1")
 
 
 def check(platform="CUDA"):
@@ -150,6 +187,29 @@ def check(platform="CUDA"):
     if d["ok"]:
         return d
     nv, dr = d["nvrtc"], d["driver_cuda"]
+    if d.get("stub_loaded") or (d.get("ld_stubs") and not nv):
+        raise RuntimeError(
+            "a CUDA STUB library is on this process's load path, so every CUDA call will\n"
+            "  fail (CUDA error 34, CUDA_ERROR_STUB_LIBRARY).\n"
+            "  libcuda loaded from     {}\n"
+            "  libnvrtc loaded from    {}\n"
+            "  stubs on LD_LIBRARY_PATH:\n      {}\n"
+            "\n"
+            "  A toolkit's lib64/stubs/ exists so a program can be LINKED without a driver;\n"
+            "  it must never be on the runtime search path. A site CUDA module that exports\n"
+            "  it does this to every CUDA program on the node. Fix: remove that entry --\n"
+            "      module show CUDA/<ver>           # which module set it\n"
+            "      module unload CUDA/<ver>         # or load one that does not\n"
+            "      export LD_LIBRARY_PATH=$(echo $LD_LIBRARY_PATH | tr : '\\n' | grep -v stubs | paste -sd:)\n"
+            "  {}=1 skips this check.".format(
+                d.get("libcuda_path") or "(not mapped)", d.get("nvrtc_path") or "(not mapped)",
+                "\n      ".join(d.get("ld_stubs") or ["(none -- the stub came from a default path)"]),
+                _SKIP_ENV))
+    if nv is None or dr is None:
+        raise RuntimeError(
+            "cannot establish that this driver can run OpenMM's CUDA kernels: "
+            "nvrtc {} / driver CUDA {} ({}). {}=1 skips this check.".format(
+                nv, dr, d["reason"], _SKIP_ENV))
     raise RuntimeError(
         "this driver cannot run OpenMM's CUDA kernels.\n"
         "  nvrtc in this environment   {}.{}   <- emits PTX at this ISA version\n"

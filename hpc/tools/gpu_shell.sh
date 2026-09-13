@@ -89,8 +89,10 @@ echo "      cd $ROOT"
 # same thing if it exists, but it also runs whatever else is in it.
 echo "      source \$(conda info --base)/etc/profile.d/conda.sh"
 echo "      conda activate openqha-gpu"
-echo "      module load CUDA/12.2"
-echo "      python scripts/tooling/s0_probe_openmm_cuda.py"
+echo "      PYTHONNOUSERSITE=1 python scripts/tooling/s0_probe_openmm_cuda.py"
+echo "  Load a CUDA module ONLY if section 1 says the environment's nvrtc is newer than"
+echo "  the driver -- and check afterwards that it did not put a stubs/ directory on"
+echo "  LD_LIBRARY_PATH (TianheXY-AI's CUDA/12.4 does; that is CUDA error 34)."
 echo
 exec yhrun -N 1 -n 1 -p "$PART" --gpus="$GPUS" --cpus-per-task="$CPUS" \
      -t "$WALLTIME" --pty /bin/bash
