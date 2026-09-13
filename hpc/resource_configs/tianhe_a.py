@@ -387,6 +387,12 @@ LAST_PLACEMENT = {}
 _LAYOUT = {
     "qha": (QHA_WORKERS_PER_GPU, QHA_CORES_PER_WORKER),
     "train": (TRAIN_WORKERS_PER_GPU, TRAIN_CORES_PER_WORKER),
+    # The qha chain's THIRD step (s0_E_branchB_collect_parsl.py -> s0_B_qha_analyse.py,
+    # one molecule per core, no card) runs in the same allocation right after the
+    # trajectories. Until 2026-09-13 neither GPU config had this role, so the first chain
+    # that ever got past branch B on a card died here with
+    # "role 'collect' does not run on ...". The CPUs are the card's own 12; the card idles.
+    "collect": (CPUS_PER_GPU, 1),
 }
 
 

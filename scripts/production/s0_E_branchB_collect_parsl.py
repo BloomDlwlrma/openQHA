@@ -283,9 +283,19 @@ def main():
         described.get("layouts", {}).get("collect", {}).get("workers_per_node")
         or described.get("qha_workers_per_node"),
         described.get("layouts", {}).get("collect", {}).get("max_blocks", 1)))
-    print("queue        {} partition={} walltime={}".format(
-        "DEBUG (smoke test)" if args.debug else "production",
-        plan["submission"]["partition"], plan["submission"]["walltime"]))
+    # Same distinction the trajectory driver draws (2026-09-13): inside a job the
+    # workers are local and nothing is submitted; say so, or a reader cannot tell this
+    # from a driver that is about to queue a block and wait for it.
+    mode_now = described.get("mode_now") or (
+        "in_allocation" if os.environ.get("SLURM_JOB_ID") and os.environ.get("S0_PARSL_NESTED") != "1"
+        else "nested")
+    if mode_now == "in_allocation":
+        print("workers      IN THIS ALLOCATION (job {}): no block is submitted".format(
+            os.environ.get("SLURM_JOB_ID")))
+    else:
+        print("workers      SUBMITTED as blocks: {} partition={} walltime={}".format(
+            "DEBUG (smoke test)" if args.debug else "production",
+            plan["submission"]["partition"], plan["submission"]["walltime"]))
     print("molecules    {} of {} candidates ({})".format(
         len(species), len(candidates), source))
     print("resume       {} already collected, {} still waiting on trajectories".format(

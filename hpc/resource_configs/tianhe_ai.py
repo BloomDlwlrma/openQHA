@@ -177,10 +177,16 @@ def layout(role, partition):
         return WORKERS_PER_NODE, float(cpus or 1)
     if role == "qha":
         return qha_workers_for(partition), float(QHA_CORES_PER_WORKER)
+    if role == "collect":
+        # The qha chain's third step: s0_B_qha_analyse.py, one molecule per core, no
+        # card. It runs in the same allocation as the trajectories it reads, on the CPUs
+        # the card brought (14 on h100x/a100x). First reached on an113, 2026-09-13, and
+        # refused here -- the role simply did not exist on either GPU config.
+        return int(cpus_for(partition) or 1), 1.0
     raise KeyError(
-        "role {!r} does not run on TianheXY-AI. This cluster serves train and qha.\\n"
-        "Branch A (CREST) is CPU work -- see hpc/resource_configs/tianhe_cpu.py.".format(
-            role))
+        "role {!r} does not run on TianheXY-AI. This cluster serves train, qha and "
+        "collect.\nBranch A (CREST) is CPU work -- see hpc/resource_configs/tianhe_cpu.py."
+        .format(role))
 
 
 def _worker_init(here, partition):
