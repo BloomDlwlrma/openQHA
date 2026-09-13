@@ -157,7 +157,7 @@ def entropy_per_basin(species, tag, cfg, atoms_set="all", analysis_root=None):
         rows, _ = collect_tables(species, tag, analysis_root)
         by_basin = {}
         for r in rows:
-            by_basin.setdefault(int(r["basin"]), []).append(r)
+            by_basin.setdefault(basin_index(r["basin"]), []).append(r)
         for b in sorted(set(by_basin) | set(xing)):
             vals = [float(r["TS_QH_kcal"]) for r in by_basin.get(b, [])]
             if not vals:
@@ -202,6 +202,16 @@ def entropy_per_basin(species, tag, cfg, atoms_set="all", analysis_root=None):
                if k in ("distinct_crossings", "symmetry_crossings")})
             if vals else None)
     return per_basin, root
+
+
+def basin_index(label):
+    """0 from 'basin00' -- collect's tables carry the trajectory DIRECTORY names
+    (`basin00`, `seed00`, from s0_B_qha_analyse.discover), not integers. The first
+    read of that table (an113, 2026-09-13) did int('basin00'). An int is accepted too."""
+    text = str(label).strip()
+    if text.startswith("basin"):
+        text = text[len("basin"):]
+    return int(text)
 
 
 def criteria_verdict(criteria):

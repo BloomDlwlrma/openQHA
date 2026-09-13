@@ -18,9 +18,10 @@ the rows collect judged, and carries collect's criteria verdict into its exit co
 
 What is asserted
 ----------------
-  A. Given a trajectories table (2 basins x 3 seeds), the per-basin T*S is the mean over
-     seeds of the table's TS_QH_kcal, with n_seeds and the source recorded; a basin with
-     no row is None (MISSING), not zero and not recomputed.
+  A. Given a trajectories table (2 basins x 3 seeds, labelled 'basin00'/'seed00' the
+     way collect labels them), the per-basin T*S is the mean over seeds of the table's
+     TS_QH_kcal, with n_seeds and the source recorded; a basin with no row is None
+     (MISSING), not zero and not recomputed.
   B. With no table at all it refuses, naming the collect command.
   C. criteria_verdict counts the criteria table: 5 of 10; (None, None) without one.
 """
@@ -79,7 +80,10 @@ def main():
             if not ok:
                 FAIL.append("the refusal does not name the collect command")
 
-        rows = [dict(species=SPECIES, basin=b, seed=s, n_frames=3000,
+        # The labels are collect's: directory names, not integers. The first fixture
+        # here used 0/1 and passed while the real table ('basin00') raised ValueError.
+        rows = [dict(species=SPECIES, basin="basin{:02d}".format(b),
+                     seed="seed{:02d}".format(s), n_frames=3000,
                      TS_QH_kcal=ts, TS_Schlitter_kcal=ts + 0.1)
                 for b, s, ts in [(0, 0, 10.0), (0, 1, 10.2), (0, 2, 10.4),
                                  (1, 0, 12.0), (1, 1, 12.0), (1, 2, 12.0)]]
