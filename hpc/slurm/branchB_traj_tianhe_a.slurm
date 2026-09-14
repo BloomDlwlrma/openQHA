@@ -91,7 +91,7 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 OPENQHA_ENV="${OPENQHA_ENV:-openqha-gpu}"
 export OPENQHA_ENV
 source hpc/env/common.sh
-source hpc/env/tianhe.sh
+source hpc/env/tianhe.sh || { echo "openQHA: hpc/env/tianhe.sh refused (root unresolved); stopping." >&2; exit 1; }
 openqha_report_env
 
 # ---- 2. refuse early ---------------------------------------------------------------------

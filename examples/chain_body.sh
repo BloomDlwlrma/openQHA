@@ -45,7 +45,6 @@ must() {
         echo "openQHA: step failed with exit $rc:" >&2
         echo "    $*" | cut -c1-200 >&2
         echo "  Its product is what the next step reads, so the chain stops here." >&2
-        echo "  (scratch is still copied back by the EXIT trap; see logs/node_local/)" >&2
         exit "$rc"
     fi
 }
@@ -218,7 +217,7 @@ if [ -n "$SLURM_JOB_ID" ]; then
     # OpenMM, MKL). hpc/env/tianhe.sh does the mapping; OPENQHA_ENV overrides both.
     export OPENQHA_ROLE="${OPENQHA_ROLE:-$KIND}"
     source hpc/env/common.sh
-    source hpc/env/tianhe.sh
+    source hpc/env/tianhe.sh || { echo "openQHA: hpc/env/tianhe.sh refused (root unresolved); stopping." >&2; exit 1; }
     openqha_report_env
     if [ "$KIND" = "gpu" ]; then
         openqha_cuda_fit || exit 1      # the one environment fault with no way forward
@@ -240,89 +239,25 @@ openqha_require_modules pandas pyarrow || {
 }
 
 # ---------------------------------------------------------------------------------------
-# NODE-LOCAL SCRATCH: run there, carry the end state back, then remove it.
+# NO COPY-BACK (ADR 0002, 2026-09-14). The molecule tree is written once, on the shared
+# filesystem, at $S0_RUNS_ROOT (hpc/env/root.sh derives it from the partition). Until
+# 2026-09-14 this block installed an EXIT/TERM/INT trap that copied the whole per-job
+# scratch into logs/node_local/<jobid>/ with a MANIFEST.txt; the scratch existed for
+# sockets, which now live node-local in $S0_SCRATCH and are not worth carrying.
 # ---------------------------------------------------------------------------------------
-# `hpc/env/tianhe.sh` puts the whole job under `<TMPDIR or /tmp>/<owner>/<job id>/` --
-# sockets, runs, CREST's working directories, all of it. Two reasons, both measured:
-#
-#   * CREST writes many small files into parallel `_N` subdirectories, and doing that on
-#     Lustre is slow for this job and for everyone else on the machine;
-#   * two branch A jobs on two compute nodes both opened the same
-#     `runs_root/sockets/s0_mace_pool_0.sock` on the SHARED filesystem (2026-09-09), and
-#     whichever bound second unlinked the first one's socket.
-#
-# The obligation that comes with node-local storage: **anything written there is gone
-# when the job ends unless the job carries it back**. So the whole tree is copied to
-# `logs/node_local/<jobid>/` first -- `cp -a`, which recreates socket nodes too, so the
-# end state is what you see -- and only then removed.
-if [ -n "$SLURM_JOB_ID" ] && [ -n "$S0_SCRATCH" ]; then
-    # S0_KEEP_DIR: several chain_body copies in ONE job (examples/02d-2, one per card)
-    # each need their own end-state directory, or the last to finish overwrites the
-    # others' MANIFEST.txt. Their scratch is already separate (S0_SCRATCH_TAG carries
-    # the card), which is what keeps this trap's `rm -rf` from taking a sibling's
-    # running trajectories with it.
-    KEEP_DIR="${S0_KEEP_DIR:-$ROOT/logs/node_local/$SLURM_JOB_ID}"
-    echo "scratch   $S0_SCRATCH"
-    echo "          -> end state kept at logs/node_local/$SLURM_JOB_ID/"
-    keep_scratch() {
-        local rc=$? src dst
-        mkdir -p "$KEEP_DIR" 2>/dev/null || true
-
-        # THE MANIFEST IS WRITTEN FIRST, and it is the part that always works.
-        # `cp -a` carries socket nodes on a filesystem that supports them and drops them
-        # SILENTLY on one that does not (measured: a DrvFs destination takes the logs and
-        # not the `.sock`). So the listing of what was there is recorded before any copy
-        # is attempted, and the copy is then checked against it.
-        { echo "# end state of $S0_SCRATCH"
-          echo "# job $SLURM_JOB_ID on $(hostname), exit $rc, $(date -Is)"
-          echo
-          ls -laR "$S0_SCRATCH" 2>/dev/null
-        } > "$KEEP_DIR/MANIFEST.txt" 2>/dev/null || true
-
-        # `cp -a .` copies the CONTENTS, dotfiles included, preserving modes and times.
-        ( cd "$S0_SCRATCH" && cp -a . "$KEEP_DIR/" ) 2>>"$KEEP_DIR/MANIFEST.txt" || true
-
-        # Say what did not make it, rather than leaving a quietly shorter directory.
-        src=$(cd "$S0_SCRATCH" && find . -mindepth 1 | wc -l)
-        dst=$(cd "$KEEP_DIR" && find . -mindepth 1 ! -name MANIFEST.txt | wc -l)
-        if [ "$dst" -lt "$src" ]; then
-            echo "kept      $dst of $src entries -- $((src - dst)) could not be" \
-                 "recreated on this filesystem (sockets, usually). MANIFEST.txt lists" \
-                 "everything that was there." >&2
-        fi
-        echo "kept      $(du -sh "$KEEP_DIR" 2>/dev/null | cut -f1) in $KEEP_DIR"
-        # `rm -rf` on a computed path gets a guard: only a path under a TMP base is ever
-        # removed. Under the 2026-09-12 ruling the base is `~/runs/openQHA`, which is not
-        # one -- so the run tree STAYS, by design, and this says so plainly instead of
-        # warning about it. `S0_SCRATCH_BASE=$TMPDIR` restores the remove.
-        case "$S0_SCRATCH" in
-            /tmp/*|"${TMPDIR:-/nonexistent}"/*)
-                rm -rf "$S0_SCRATCH" 2>/dev/null || true ;;
-            *) echo "kept      $S0_SCRATCH (not a tmp base -- the run tree stays there too)" ;;
-        esac
-    }
-    # EXIT covers a normal end AND any error exit. TERM and INT matter separately: Slurm
-    # sends SIGTERM before SIGKILL at the walltime, and without this the copy-back never
-    # ran for a job that hit its limit -- exactly the case where the end state is most
-    # worth having. `exit` inside the handler re-enters the EXIT trap, which is what
-    # makes the copy happen once and the job report the signal.
-    trap keep_scratch EXIT
-    trap 'echo "openQHA: caught SIGTERM (walltime or scancel) -- carrying the scratch back" >&2; exit 143' TERM
-    trap 'echo "openQHA: caught SIGINT -- carrying the scratch back" >&2; exit 130' INT
+if [ -n "$SLURM_JOB_ID" ]; then
+    echo "scratch   ${S0_SCRATCH:-unset}   (node-local: sockets; nothing is copied back)"
 fi
 
-# The trace directory has to be somewhere that OUTLIVES the calcspace, and on a job that
-# means inside the node-local tree that gets carried back -- not in the calcspace, and not
-# on Lustre. Set after the environment files have run, because that is what defines
-# S0_SCRATCH.
+# The trace directory has to be somewhere that OUTLIVES the calcspace -- not in the
+# calcspace CREST removes, and not in the node-local scratch nothing carries back any
+# more. It is a diagnostic log, so it goes beside the job logs.
 if [ -n "${MACE_TRACE:-}" ]; then
-    # A value containing a slash is taken as the directory itself. That is for a run whose
-    # work is on the shared filesystem (examples/02a.../branchA-fs.conf): there the trace
-    # should be written where it already survives, rather than node-local and dependent on
-    # the end-of-job copy-back. Anything else (conventionally `1`) goes node-local.
+    # A value containing a slash is taken as the directory itself. Anything else
+    # (conventionally `1`) goes under logs/trace/, one directory per job or process.
     case "$MACE_TRACE" in
         */*) S0_MACE_TRACE="$MACE_TRACE" ;;
-        *)   S0_MACE_TRACE="${S0_SCRATCH:-$ROOT/logs}/trace" ;;
+        *)   S0_MACE_TRACE="$ROOT/logs/trace/${SLURM_JOB_ID:-pid$$}" ;;
     esac
     mkdir -p "$S0_MACE_TRACE"
     export S0_MACE_TRACE

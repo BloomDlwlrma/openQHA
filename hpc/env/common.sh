@@ -108,9 +108,8 @@ if [ -z "$S0_RUNS_ROOT" ]; then
     export S0_RUNS_ROOT="$HOME/runs/openQHA"
     export S0_RUNS_ROOT_IS_DEFAULT=1
 fi
-# On Tianhe this default is replaced by $S0_SCRATCH/runs (hpc/env/tianhe.sh), which since
-# the 2026-09-12 ruling is $HOME/runs/openQHA/<owner>/<JOBID>/runs -- the same root, one
-# directory per job.
+# On Tianhe this default is replaced by hpc/env/root.sh (sourced from tianhe.sh): the
+# shared-filesystem root derived from the partition and the account, ADR 0002.
 mkdir -p "$S0_RUNS_ROOT"
 
 # torch >= 2.6 defaults to weights_only=True, which refuses the MACE-OFF

@@ -159,91 +159,54 @@ if [ "${OPENQHA_ROLE:-cpu}" = "cpu" ] && [ -z "$S0_CREST_BIN" ]; then
     echo "  no crest by design. OPENQHA_ROLE=cpu, or bash install_dependency.sh --tianhe" >&2
 fi
 
-# ---- scratch ----------------------------------------------------------------------------
-# ONE tree per job: <base>/<owner>/<job id>/. Sockets, runs and CREST's working
-# directories all live under it, so the job has a single directory to carry back.
+# ---- node-local scratch, and the root of the molecule tree -----------------------------
+# Two different places, on purpose (ADR 0002, user ruling 2026-09-14):
 #
-#     $S0_SCRATCH/sockets/s0_mace_pool_<pid>_0.sock
-#     $S0_SCRATCH/runs/branchA/...
+#   S0_SCRATCH     node-local, per job: <TMPDIR or /tmp>/<user>/<job id>. Holds the MACE
+#                  server sockets (Lustre does not hold a bound socket) and, from ticket
+#                  06 on, CREST's working directory while CREST runs (dozens of small
+#                  files, measured slow on Lustre). Gone with the node; nothing that
+#                  matters stays here.
+#   S0_RUNS_ROOT   the shared filesystem, derived from the partition and the account by
+#                  hpc/env/root.sh:  <prefix>/HDD_POOL/<acct>/<user>/sherwin/runs. The
+#                  molecule tree (openqha/store/layout.py) is written there ONCE and
+#                  stays. There is no copy-back and no keep directory any more.
 #
-# WHERE <base> IS, AND THE TRADE (user ruling 2026-09-12)
-# -------------------------------------------------------
-# **For the current tests the base is `$HOME/runs/openQHA`**, so every run is
-# `~/runs/openQHA/<JOBID>/...` and can be read from the login node WHILE IT RUNS. Set
-# `S0_SCRATCH_BASE=$TMPDIR` to get the node-local behaviour back.
-#
-# Both sides of the trade, stated rather than assumed:
-#
-#   node-local ($TMPDIR)        The original design, and the reason is measured: CREST
-#                               writes dozens of small files per molecule into parallel
-#                               `_N` subdirectories (2.6-15 MB across dozens of files),
-#                               and doing that on Lustre is slow for this job and for
-#                               everyone else on the machine. But it is INVISIBLE until
-#                               the job ends, and a hard kill (node failure, OOM) takes
-#                               it with no copy-back at all.
-#   home (~/runs/openQHA)       Readable during the run, and survives a hard kill. It is
-#                               Lustre, so the CREST metadata cost is real -- it matters
-#                               for branch A, far less for branch B, whose trajectories
-#                               are a few large files.
-#
-# **Home is quota'd** (100 GB, and it is meant for configuration -- docs/tianhe_runbook.md
-# section 6). A 500 ps branch B trajectory at SAMPLE_EVERY=2 is ~60 MB, so 02d-2's nine
-# rows x 3 seeds is ~1.6 GB: fine. A branch A campaign over thousands of molecules is
-# NOT, and should go back to $TMPDIR.
-#
-# **AS SHORT AS IT CAN BE, because `sun_path` holds 107 bytes** (user ruling 2026-09-12).
-# Measured for this project's real account, not estimated:
-#
-#     $HOME/runs/openQHA/<owner>/<jobid>/sockets/s0_mace_pool_<pid>_0.sock   107 bytes
-#     $HOME/runs/<jobid>/s0_mace_pool_<pid>_0.sock                            74 bytes
-#     $HOME/runs/<jobid>_card3/s0_mace_pool_<pid>_0.sock                      80 bytes
-#
-# The first FITS -- by one byte, with zero headroom. It is not the disaster an earlier
-# version of this comment claimed (it said 108 and "truncated"; that was wrong and the
-# measurement above is why). What it could not survive is the per-card suffix examples/
-# 02d-2 needs: 107 + "_card3" = 113, and THAT truncates silently, giving two rows the same
-# socket name. So the levels go, and nothing is lost with them -- `openQHA` duplicated
-# `runs`, and `<owner>` separated users on a SHARED /tmp, which `$HOME` is not.
-#
-# S0_SCRATCH_TAG is what still separates concurrent runs INSIDE one job: examples/02d-2
-# puts several drivers in one allocation and each sets `card<k>`, giving
-# `<base>/<jobid>_card0`, `_card1`, ... Without it they would share a tree and the first
-# to finish would `rm -rf` the others' running trajectories.
-export S0_SCRATCH_OWNER="${S0_SCRATCH_OWNER:-${S0_SOCKET_OWNER:-$USER}}"
-export S0_SOCKET_OWNER="${S0_SOCKET_OWNER:-$S0_SCRATCH_OWNER}"
-export S0_SCRATCH_BASE="${S0_SCRATCH_BASE:-$HOME/runs}"
-_s0_job="${SLURM_JOB_ID:-$$}${S0_SCRATCH_TAG:+_$S0_SCRATCH_TAG}"
-case "$S0_SCRATCH_BASE" in
-    # A shared tmp needs the owner level back: /tmp is everyone's, $HOME is not.
-    /tmp|/tmp/*|/var/tmp|/var/tmp/*)
-        export S0_SCRATCH="$S0_SCRATCH_BASE/$S0_SCRATCH_OWNER/$_s0_job" ;;
-    *)  export S0_SCRATCH="$S0_SCRATCH_BASE/$_s0_job" ;;
-esac
-unset _s0_job
+# HISTORY, kept because it explains what is no longer here. Until 2026-09-14 the whole
+# job -- sockets, runs, CREST -- lived under one per-job scratch ($HOME/runs/<jobid> since
+# the 2026-09-12 ruling; $TMPDIR before that), the runs root was $S0_SCRATCH/runs, and
+# examples/chain_body.sh copied the whole scratch into logs/node_local/<jobid>/ at exit.
+# Because $HOME/runs is not a tmp base the original was kept as well, so every
+# trajectory existed twice. S0_SCRATCH_TAG separated the drivers examples/02d-2 runs in
+# one allocation; the socket name carries the pid and the parsl run directory carries
+# the pid now, so nothing needs the tag.
+export S0_SCRATCH="${TMPDIR:-/tmp}/${USER:-$(id -un)}/${SLURM_JOB_ID:-pid$$}"
 mkdir -p "$S0_SCRATCH"
 chmod 700 "$S0_SCRATCH" 2>/dev/null || true
 
-# The socket lives in the job's own directory, with no `sockets/` level -- 74 bytes, and
-# one directory to carry back. `openqha/config.py::socket_dir()` uses S0_SOCKET_DIR
-# VERBATIM (it appends nothing), refuses a path that would not fit in sun_path, and falls
-# back to $TMPDIR if this filesystem turns out not to accept a bound socket.
+# `openqha/config.py::socket_dir()` uses S0_SOCKET_DIR VERBATIM (it appends nothing),
+# refuses a path that would not fit in sun_path, and falls back to $TMPDIR if this
+# filesystem turns out not to accept a bound socket.
 export S0_SOCKET_DIR="${S0_SOCKET_DIR:-$S0_SCRATCH}"
-mkdir -p "$S0_SOCKET_DIR" 2>/dev/null || true
 
-# Everything this repository writes goes under one root. On a cluster that root must be
-# node-local for the work and shared for the results -- runs go to scratch, products are
-# written back into the repository by the pipeline itself.
-#
-# **Overriding a DEFAULT, not the operator.** `common.sh` sets S0_RUNS_ROOT to
-# $HOME/runs/openQHA and marks it with S0_RUNS_ROOT_IS_DEFAULT. Until 2026-09-09 this
-# line read `${S0_RUNS_ROOT:-...}`, which saw that default already set and kept it -- so
-# the node-local scratch below was written, documented, and never once used. An explicit
-# S0_RUNS_ROOT exported by the operator still wins, which is the point of the marker.
-if [ -n "$S0_RUNS_ROOT_IS_DEFAULT" ] || [ -z "$S0_RUNS_ROOT" ]; then
-    export S0_RUNS_ROOT="$S0_SCRATCH/runs"
-    unset S0_RUNS_ROOT_IS_DEFAULT
-fi
+# The root. An explicit S0_RUNS_ROOT exported by the operator wins (root.sh checks the
+# S0_RUNS_ROOT_IS_DEFAULT marker common.sh sets on its own default); otherwise it is
+# derived, and a node where it cannot be derived is refused here, before any step runs,
+# rather than writing into a home directory nobody chose.
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/root.sh"
+openqha_resolve_root || {
+    echo "openQHA: the root of the molecule tree could not be resolved (see above)." >&2
+    # `return` when sourced by a job script or a login shell (the caller decides; the job
+    # scripts all `|| exit 1`), `exit` only when someone executes this file directly.
+    return 1 2>/dev/null || exit 1
+}
 mkdir -p "$S0_RUNS_ROOT"
+
+# parsl's run directory (its own logs; a record, whose final home is step 2 of the
+# 2026-09-14 layout change). Per process, so several drivers in one allocation never
+# share a runinfo/. Beside the Slurm .out/.err, which is where job logs live meanwhile.
+export S0_PARSL_RUN_DIR="${S0_PARSL_RUN_DIR:-$OPENQHA_ROOT/logs/parsl/${SLURM_JOB_ID:-nojob}.$$}"
 
 # ---- proxy ------------------------------------------------------------------------------
 # Outbound traffic goes through a proxy. conda and pip HANG rather than fail without it,

@@ -240,7 +240,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                 ),
             ),
         ],
-        run_dir=run_dir or os.path.join(
+        run_dir=run_dir or os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
                            os.path.expanduser("~/HDD_POOL/runs/openQHA")),
             "parsl"),

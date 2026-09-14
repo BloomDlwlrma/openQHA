@@ -107,7 +107,7 @@ def config(partition="cpu", account=None, nodes_per_block=1, max_blocks=8,
                 ),
             ),
         ],
-        run_dir=run_dir or os.path.join(
+        run_dir=run_dir or os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
             os.environ.get("S0_RUNS_ROOT", os.path.expanduser("~/runs/openQHA")),
             "parsl"),
         # Unlike local.py: a cluster job can die for reasons that are not the

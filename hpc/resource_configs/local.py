@@ -158,7 +158,7 @@ def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
                                        worker_init=_openmm_worker_init()),
             ),
         ],
-        run_dir=run_dir or os.path.join(
+        run_dir=run_dir or os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
                            os.path.expanduser("~/runs/openQHA")), "parsl"),
         # A retry silently hides a reproducible failure. Branch A failures are

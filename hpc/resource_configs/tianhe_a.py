@@ -626,9 +626,10 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                 provider=provider,
             ),
         ],
-        # Per card under S0_CARD: G drivers starting at once would otherwise race for
-        # parsl's numbered runinfo/NNN directories in one run_dir.
-        run_dir=run_dir or os.path.join(
+        # S0_PARSL_RUN_DIR (hpc/env/tianhe.sh, per process since 2026-09-14) first; the
+        # per-card suffix below is the older answer to the same race, G drivers starting
+        # at once for parsl's numbered runinfo/NNN directories in one run_dir.
+        run_dir=run_dir or os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
                            os.path.expanduser("~/runs/openQHA")),
             "parsl" + ("_card{}".format(os.environ["S0_CARD"])

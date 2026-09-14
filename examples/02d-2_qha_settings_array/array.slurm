@@ -64,11 +64,11 @@ for k in $(seq 0 $((G - 1))); do
     name="$(basename "$conf" .conf)"
     log="logs/02d2_${name}_${SLURM_ARRAY_JOB_ID:-x}_${TASK}.log"
     echo "  card $k slot $j  row $row  $name  -> $log"
-    # Scratch and the parsl run_dir under it are keyed by S0_SCRATCH_TAG (hpc/env/
-    # tianhe.sh), so R drivers on one card do not share a tree or a runinfo/.
+    # R drivers on one card share the node-local scratch (sockets carry the pid) and
+    # each gets its own parsl run directory (hpc/env/tianhe.sh keys it by pid); the
+    # molecule tree is one per (tag, molecule) on the shared filesystem. Since
+    # 2026-09-14 nothing here is keyed by card or row.
     S0_CARD="$k" CUDA_VISIBLE_DEVICES="$k" \
-    S0_SCRATCH_TAG="card${k}_row${j}" \
-    S0_KEEP_DIR="logs/node_local/${SLURM_JOB_ID}_card${k}_row${j}" \
         bash examples/chain_body.sh "$conf" > "$log" 2>&1 &
     pids+=($!); names+=("$name")
   done
