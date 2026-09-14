@@ -248,8 +248,12 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
 # ======================================================================================
 # Steps 3-6 -- the repo's own criteria
 # ======================================================================================
-def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=None):
-    """Tighten, dedup, Hessian-screen, and label. Returns (record, basins, mol)."""
+def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=None,
+               molecule_dir=None):
+    """Tighten, dedup, Hessian-screen, and label. Returns (record, basins, mol).
+
+    `molecule_dir`: where MACE's engine files go (`mace/confNN`, `mace/basinNN`; ADR 0001).
+    """
     pkg1, pkg2 = cfg["package1"], cfg["package2"]
     fmax = float(pkg2["fmax_hessian_eV_A"])
     thr = float(pkg1["dedup_rmsd_A"])
@@ -286,7 +290,8 @@ def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=Non
         species=None,                       # sigma is done per basin below, not here
         comments=comments,
         hessian_mode=args.hessian_mode,
-        ethr_kcal=ethr, bthr_rel=bthr)
+        ethr_kcal=ethr, bthr_rel=bthr,
+        molecule_dir=molecule_dir)
 
     rec["n_frames_from_crest"] = n_from_crest
     rec["n_reference_geometries_pooled"] = n_reference_added
@@ -677,9 +682,13 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
 
     # Step 3 pools an INDEPENDENT starting geometry. Only a shipped species has one.
     reference_xyz = config.qm9_xyz(qid, cfg) if qid else None
+    # THE MOLECULE DIRECTORY (ADR 0001, 2026-09-14): one per (tag, molecule) under the
+    # root, one folder per engine inside it, this repository's records in _records/.
+    from openqha.store import layout
+    molecule = layout.molecule_dir(config.runs_root(cfg), args.tag, qid or name)
     census, basins, mol = basin_list(
         qid or name, gate_rec["smiles"], frames, comments, calc, cfg, args,
-        reference_xyz=reference_xyz)
+        reference_xyz=reference_xyz, molecule_dir=molecule)
     if reference_xyz is None:
         census["reference_geometry_note"] = (
             "No deposited geometry exists for a SMILES-specified molecule, so step 3 "
@@ -722,33 +731,28 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
     record["criteria"] = check_criteria(record, cfg["crest"].get("shake_fallback"))
     record["all_criteria_passed"] = all(c["passed"] for c in record["criteria"])
 
-    # ---- where the products go ------------------------------------------------------
-    # A molecule with a QM9 index also goes into the SHARDED basin store, because a
-    # full campaign is 133 885 of them and one directory each is unusable on every
-    # filesystem this project touches -- see openqha/basin_store.py.
-    #
-    # A molecule identified only by SMILES has no index to shard on, so it keeps the
-    # flat per-label directory. That is not an inconsistency to tidy away: an ad-hoc
-    # molecule is a handful of runs, and giving it a made-up index would put a fiction
-    # into the path.
-    outdir = S0_ROOT / "analysis" / "branchA" / args.tag / name
+    # ---- where the record goes (ADR 0001, 2026-09-14) --------------------------------
+    # The engine files are already in place: mace/confNN and mace/basinNN under the
+    # molecule directory, written by the census. This record -- everything this
+    # repository has to say about the run -- goes to _records/ beside them, with the
+    # basin geometries as one multi-frame xyz for a reader who wants them in one file.
+    # Until 2026-09-14 the same record went to analysis/branchA/<tag>/<name>/ AND, byte
+    # for byte, into the sharded store data/basins/<tag>/<range>/<chunk>/; branch B now
+    # reads the basins from mace/basinNN/basin.extxyz and the store is retired.
+    outdir = layout.records_dir(molecule)
     outdir.mkdir(parents=True, exist_ok=True)
     xyz_text = _basins_xyz_text(basins, labelled, name, record)
+    record["molecule_dir"] = str(molecule)
+    record["mace"] = dict(
+        folder=str(molecule / "mace"),
+        basins=[str(layout.mace_basin_dir(molecule, i) / "basin.extxyz")
+                for i in range(len(basins))],
+        hessians=[str(layout.mace_basin_dir(molecule, i) / "hessian.npy")
+                  for i in range(len(basins))])
+    record["output_dir"] = str(outdir)
     (outdir / "basins.json").write_text(
         json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     (outdir / "basins.xyz").write_text(xyz_text, encoding="utf-8")
-    record["output_dir"] = str(outdir)
-
-    if qid:
-        # The location goes into the record BEFORE the record is written, so the file
-        # on disk says where it is. A stored result that cannot state its own place in
-        # the store is one you can only locate by knowing the sharding rule already.
-        from openqha import basin_store
-        j, x = basin_store.paths_for(qid, cfg, tag=args.tag)
-        record["basin_store"] = dict(json=str(j), xyz=str(x),
-                                     shard="/".join(basin_store.shard(qid)),
-                                     tag=args.tag)
-        basin_store.write(qid, record, xyz_text, cfg, tag=args.tag)
     return record
 
 

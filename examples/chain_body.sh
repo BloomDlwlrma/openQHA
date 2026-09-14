@@ -483,7 +483,7 @@ qha)    # the conformational free energy: A -> B -> collect -> F_conf
     must python -u scripts/production/s0_E_branchB_parsl.py \
         --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}" \
         --resource "$RESOURCE" \
-        --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+        --route "$ROUTE" --basins auto --seeds "$SEEDS" ${SETTING:+--setting "$SETTING"} \
         ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
         ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
         $WALL_BUDGET_ARG
@@ -522,7 +522,7 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
     must python -u scripts/production/s0_E_branchB_parsl.py \
         --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}" \
         --resource "$RESOURCE" \
-        --route "$ROUTE" --basins auto --seeds "$SEEDS" \
+        --route "$ROUTE" --basins auto --seeds "$SEEDS" ${SETTING:+--setting "$SETTING"} \
         ${MAX_WORKERS:+--max-workers "$MAX_WORKERS"} ${BLOCK_GPUS:+--gpus "$BLOCK_GPUS"} \
         ${PROD_PS:+--prod-ps "$PROD_PS"} ${EQUIL_PS:+--equil-ps "$EQUIL_PS"} \
         ${SAMPLE_EVERY:+--sample-every "$SAMPLE_EVERY"} \

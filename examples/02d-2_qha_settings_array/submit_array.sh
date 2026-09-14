@@ -107,6 +107,7 @@ CHAIN=identity
 SPECIES=$SPECIES
 TAG=$tag
 BASIN_TAG=$BASIN_TAG
+SETTING=$name          # openmm/<setting>/ in the molecule directory (ADR 0001)
 EQUIL_PS=$equil
 PROD_PS=$prod
 SAMPLE_EVERY=$sample

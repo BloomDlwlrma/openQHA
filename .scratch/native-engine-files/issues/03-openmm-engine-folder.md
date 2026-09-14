@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 (Layout module).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-14
 
-- [ ] Topology built from the atomic numbers: one chain, one residue `MOL`, elements only; `start.pdb` is the post-relax structure
-- [ ] `traj.dcd` frame count equals `state.csv` row count after every flush
-- [ ] Second invocation over a finished basin does nothing; over a partial one it resumes from `state.xml` (checkpoint when it loads) and appends only new frames
-- [ ] No seed level: one folder per basin; the setting is `default` for the qha and identity chains and the row name for the 02d-2 array
-- [ ] The driver's records (`meta.json`, `summary.json`, `frames.npy`) land in `_records/` and nothing but the seven files is in the engine folder
-- [ ] Test point 3: a few hundred CPU steps on a shipped molecule; exactly the seven files; frames = rows; resume appends; no `.npy` or record in the folder
+- [x] Topology built from the atomic numbers: one chain, one residue `MOL`, elements only; `start.pdb` is the post-relax structure
+- [x] `traj.dcd` frame count equals `state.csv` row count after every flush
+- [x] Second invocation over a finished basin does nothing; over a partial one it resumes from `state.xml` (checkpoint when it loads) and appends only new frames
+- [x] No seed level: one folder per basin; the setting is `default` for the qha and identity chains and the row name for the 02d-2 array
+- [x] The driver's records (`meta.json`, `summary.json`, `frames.npy`) land in `_records/` and nothing but the seven files is in the engine folder
+- [x] Test point 3: a few hundred CPU steps on a shipped molecule; exactly the seven files; frames = rows; resume appends; no `.npy` or record in the folder

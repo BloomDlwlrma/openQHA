@@ -183,9 +183,21 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
                        max_opt_steps=2000, progress=None,
                        hessian_mode=HESSIAN_MODE_DEFAULT,
                        ethr_kcal=conformers.CREGEN_ETHR_KCAL,
-                       bthr_rel=conformers.CREGEN_BTHR_REL):
+                       bthr_rel=conformers.CREGEN_BTHR_REL,
+                       molecule_dir=None):
     """From a pile of geometries, produce a basin list **measured with the same ruler as
     the ETKDG route**.
+
+    `molecule_dir` (ADR 0001, 2026-09-14): when given, MACE's engine files go under its
+    `mace/` folder and nothing else is written there --
+
+        mace/confNN/   opt.traj  opt.log  conf.extxyz     every tightened conformer
+        mace/basinNN/  basin.extxyz  hessian.npy          every surviving basin
+
+    `conf.extxyz` carries energy and forces as ASE writes them; `basin.extxyz` names the
+    conformer it came from (`conformer`, `crest_comment` in its header); `hessian.npy` is
+    the raw analytic Hessian (3N x 3N, eV/A^2, float64), neither mass-weighted nor
+    projected, so the projection can be redone from the matrix.
 
     The steps, each leaving a number that can be checked:
 
@@ -209,11 +221,22 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
     """
     mol, cids, order_info = frames_into_mol(smiles, frames)
 
+    from ..store import layout
+
     energies, fmaxes, converged, steps, graph_changed = [], [], [], [], []
     for j, cid in enumerate(cids):
         atoms = conformers._mol_to_atoms(mol, cid)
         a0 = conformers.connectivity(atoms.numbers, atoms.positions)
-        e, fm, ok, ns = conformers.optimise(atoms, calc, fmax=fmax, steps=max_opt_steps)
+        traj = log = None
+        if molecule_dir is not None:
+            d = layout.mace_conformer_dir(molecule_dir, j)
+            d.mkdir(parents=True, exist_ok=True)
+            traj, log = str(d / "opt.traj"), str(d / "opt.log")
+        e, fm, ok, ns = conformers.optimise(atoms, calc, fmax=fmax, steps=max_opt_steps,
+                                            logfile=log, trajectory=traj)
+        if molecule_dir is not None:
+            _write_extxyz(layout.mace_conformer_dir(molecule_dir, j) / "conf.extxyz", atoms,
+                          conformer=j, crest_comment=(comments[j] if comments else ""))
         a1 = conformers.connectivity(atoms.numbers, atoms.positions)
         conformers._set_conf(mol, cid, atoms.positions)
         energies.append(e); fmaxes.append(fm); converged.append(ok); steps.append(ns)
@@ -233,11 +256,13 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
 
     # ---- Hessian: once per basin, to decide whether it really is a minimum ----------
     hess = {}
+    raw_h = {}
     saddles = []
     if do_hessian:
         for j, cid in enumerate(list(kept)):
             atoms = conformers._mol_to_atoms(mol, cid)
             h, asym = hessian.hessian(atoms, calc, mode=hessian_mode)
+            raw_h[int(cid)] = np.asarray(h, dtype=float)
             hr = hessian.project_and_diagonalise(h, atoms.get_masses(),
                                                  atoms.get_positions())
             nu = np.asarray(hr["frequencies_cm_inv"], dtype=float)
@@ -261,6 +286,24 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
     if not kept:
         raise RuntimeError("no basin survives the tightening and the imaginary-frequency "
                            "filter -- refusing to report an empty basin list")
+
+    if molecule_dir is not None:
+        # Basin i is kept[i]: the survivors in ascending energy, saddles removed. The
+        # folder index is the basin index every later step (branch B, 02c, 02d) uses.
+        for i, cid in enumerate(kept):
+            d = layout.mace_basin_dir(molecule_dir, i)
+            d.mkdir(parents=True, exist_ok=True)
+            j = cids.index(cid)
+            atoms = conformers._mol_to_atoms(mol, cid)
+            atoms.calc = calc
+            _write_extxyz(d / "basin.extxyz", atoms, conformer=j,
+                          crest_comment=(comments[j] if comments else ""),
+                          basin=i, energy_eV=float(e[j]))
+            if int(cid) in raw_h:
+                tmp = d / "hessian.part.npy"
+                with open(tmp, "wb") as fh:
+                    np.save(fh, raw_h[int(cid)])
+                tmp.replace(d / "hessian.npy")
 
     e_kept = np.asarray([e[cids.index(c)] for c in kept])
     rel = (e_kept - e_kept.min()) * conformers.EV_TO_KCAL
@@ -350,6 +393,25 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
 
     basins = [conformers._mol_to_atoms(mol, c) for c in kept]
     return rec, basins, mol
+
+
+def _write_extxyz(path, atoms, **info):
+    """One extxyz frame with energy and forces (ASE's own writer) and `info` in its header.
+
+    `atoms.calc` must be the calculator that relaxed it, so the energy and forces ASE
+    writes are the ones at this geometry; both are evaluated here if the calculator has
+    not already done so at exactly these positions.
+    """
+    from ase.io import write
+    a = atoms.copy()
+    a.calc = atoms.calc
+    a.get_potential_energy()
+    a.get_forces()
+    a.info.update({k: (str(v) if isinstance(v, str) else v) for k, v in info.items()})
+    path = Path(path)
+    tmp = path.with_name(path.name + ".part")
+    write(str(tmp), a, format="extxyz")
+    tmp.replace(path)
 
 
 def _crest_relative_kcal(comments):

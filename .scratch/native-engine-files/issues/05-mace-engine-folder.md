@@ -4,10 +4,10 @@
 
 **Blocked by:** 01 (Layout module).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-14
 
-- [ ] The ASE optimiser is given a trajectory file and a log file per conformer; `conf.extxyz` carries energy and forces as ASE writes them
-- [ ] `basin.extxyz` comment names the conformer index it came from and CREST's comment line for that frame
-- [ ] `hessian.npy` is the raw analytic Hessian, 3N x 3N, eV/Å², float64, neither mass-weighted nor projected
-- [ ] `basins.json` and `basins.xyz` go to `_records/`; the store write is gone
-- [ ] Test point 4: the census on a prepared ensemble leaves three files per conformer and two per basin; the extxyz names its conformer; the Hessian is 3N x 3N and symmetric
+- [x] The ASE optimiser is given a trajectory file and a log file per conformer; `conf.extxyz` carries energy and forces as ASE writes them
+- [x] `basin.extxyz` comment names the conformer index it came from and CREST's comment line for that frame
+- [x] `hessian.npy` is the raw analytic Hessian, 3N x 3N, eV/Å², float64, neither mass-weighted nor projected
+- [x] `basins.json` and `basins.xyz` go to `_records/`; the store write is gone
+- [x] Test point 4: the census on a prepared ensemble leaves three files per conformer and two per basin; the extxyz names its conformer; the Hessian is 3N x 3N and symmetric

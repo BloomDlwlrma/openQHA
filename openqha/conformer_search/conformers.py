@@ -257,12 +257,17 @@ def connectivity(numbers, positions, scale=1.3):
     return a
 
 
-def optimise(atoms, calc, fmax=FMAX_CENSUS_EV_A, steps=MAX_OPT_STEPS, logfile=None):
+def optimise(atoms, calc, fmax=FMAX_CENSUS_EV_A, steps=MAX_OPT_STEPS, logfile=None,
+             trajectory=None):
     """Relax one conformer to a minimum on the potential surface. Returns
-    (energy in eV, maximum force in eV/A, converged, number of steps)."""
+    (energy in eV, maximum force in eV/A, converged, number of steps).
+
+    `logfile` and `trajectory` are handed to the optimiser as they are: ASE's own
+    `opt.log` and `opt.traj`, the engine files of a MACE relaxation (ADR 0001).
+    """
     from ase.optimize import LBFGS
     atoms.calc = calc
-    opt = LBFGS(atoms, logfile=logfile)
+    opt = LBFGS(atoms, logfile=logfile, trajectory=trajectory)
     opt.run(fmax=float(fmax), steps=int(steps))
     f = atoms.get_forces()
     fmax_final = float(np.abs(f).max())

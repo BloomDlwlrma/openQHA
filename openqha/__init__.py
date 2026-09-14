@@ -14,13 +14,13 @@ before anyone has had to find anything in it.
         conformer_search/   CREST iMTD-GC, deduplication, basins
             crest, conformers, crest_census, refine_analysis, filters, symmetry
         quasi_harmonic/     trajectories, covariance, spectra, entropy
-            qha, openmm_mace, vdos, torsion_cv, perturb, mdtraj_io, gmx_io
+            qha, openmm_mace, openmm_files, vdos, torsion_cv, perturb, mdtraj_io, gmx_io
         potentials/         the potential and what carries it  (ALF: ml_interfaces)
             engine, mace_patch, mace_server
         thermochem/         thermochemistry shared by both
             hessian, thermo, critical
         store/              where results live and how to find them again
-            basin_store, artifacts, record, report, worklist
+            layout, basin_store, artifacts, record, report, worklist
         data/               locating input structures
             curated_qm9, qm9_uncharacterized
         qm_interfaces/      reference-level quantum chemistry  (ALF's own name)

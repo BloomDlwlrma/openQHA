@@ -80,6 +80,7 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 
 from openqha import config, engine, openmm_mace, qha  # noqa: E402
+from openqha.store import layout  # noqa: E402
 
 # The production protocol, from configs/branchB_protocol.yaml -- the SAME file the ASE
 # route reads. These module constants are the fallback and are kept equal to it; `main()`
@@ -191,7 +192,7 @@ def flush_frames(frames_path, frames):
     return frames_path
 
 
-def already_complete(outdir, n_target):
+def already_complete(outdir, n_target, engine_dir=None):
     """The trajectory's own record, if this (basin, seed) is finished; else None.
 
     Finished means: meta.json is there, its production block says complete, and
@@ -207,11 +208,19 @@ def already_complete(outdir, n_target):
     """
     outdir = Path(outdir)
     meta_p, frames_p = outdir / "meta.json", outdir / "frames.npy"
-    if not (meta_p.exists() and frames_p.exists()):
+    if not meta_p.exists():
         return None
     try:
         meta = json.loads(meta_p.read_text(encoding="utf-8"))
-        n = int(np.load(frames_p, mmap_mode="r").shape[0])
+        if engine_dir is not None:
+            # Since 2026-09-14 the trajectory IS traj.dcd (ADR 0001); the float64 copy in
+            # the record is not what decides whether a basin is finished.
+            from openqha.quasi_harmonic import openmm_files
+            n = openmm_files.dcd_frame_count(Path(engine_dir) / "traj.dcd")
+        elif frames_p.exists():
+            n = int(np.load(frames_p, mmap_mode="r").shape[0])
+        else:
+            return None
     except Exception:                                                 # noqa: BLE001
         return None
     prod = meta.get("production") or {}
@@ -266,19 +275,47 @@ def segments_record(prev_meta, seed, prod_record):
     return segs
 
 
-def run_one(species, positions_A, numbers, masses, model_path, outdir, temperature_K,
-            seed, equil_ps, prod_ps, args):
+def run_one(species, positions_A, numbers, masses, model_path, engine_dir, records_dir,
+            temperature_K, seed, equil_ps, prod_ps, args, prev_meta=None):
+    """One trajectory. Engine files to `engine_dir`, this driver's record beside them
+    in `records_dir` (ADR 0001).
+
+    A partial trajectory -- state files present, fewer frames than the target -- is
+    RESUMED from its state: same velocities, same thermostat variables, no second
+    equilibration and no second velocity draw. Until 2026-09-14 a resume restarted
+    from the relaxed geometry with a new draw and appended, which is what the
+    `segments` record was for; it is kept, and now shows one seed.
+    """
     import openmm
     from openmm import unit
+    from openqha.quasi_harmonic import openmm_files
 
-    outdir.mkdir(parents=True, exist_ok=True)
-    frames_path = outdir / "frames.npy"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    frames_path = records_dir / "frames.npy"
     # Leftovers of the suffix bug described in flush_frames(): never a resumable file.
-    stale = outdir / "frames.npy.part.npy"
+    stale = records_dir / "frames.npy.part.npy"
     if stale.exists():
         stale.unlink()
-    have = list(np.load(frames_path)) if frames_path.exists() else []
     n_target = int(round(prod_ps * 1000.0 / args.timestep_fs)) // args.sample_every
+    topology = openmm_files.topology_for(numbers)
+    folder = openmm_files.EngineFolder(
+        engine_dir, topology, frame_spacing_ps=args.sample_every * args.timestep_fs / 1000.0)
+    n_on_disk = folder.frames_on_disk()
+    resume = bool(n_on_disk > 0 and folder.has_state())
+    prev_prod = (prev_meta or {}).get("production") or {}
+    equilibrated = bool(folder.has_state()
+                        and (n_on_disk > 0 or (records_dir / "equilibrated.json").exists()))
+    # The float64 frames in the record must agree with the DCD; a record shorter than the
+    # DCD (a kill between the two writes) is rebuilt from what the DCD holds.
+    have = list(np.load(frames_path)) if (resume and frames_path.exists()) else []
+    if resume and len(have) != n_on_disk:
+        have = have[:n_on_disk] if len(have) > n_on_disk else have
+        if len(have) < n_on_disk:
+            import mdtraj as md
+            t = md.load(str(folder.paths["traj.dcd"]), top=str(folder.paths["start.pdb"]))
+            have = list(t.xyz.astype(np.float64) * openmm_mace.NM_TO_A)[:n_on_disk]
+    if not resume:
+        n_on_disk = 0
 
     # **Before** the three minutes of torch import and model tracing: can this driver
     # JIT the PTX nvrtc will emit? OpenMM compiles every kernel at run time, and CUDA
@@ -313,34 +350,54 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
                 "   problem is elsewhere, or it could not read them on this node.)"
                 .format(exc, gpu_preflight.describe()))
         raise
-    context.setPositions((positions_A / openmm_mace.NM_TO_A) * unit.nanometer)
-    context.setVelocitiesToTemperature(temperature_K * unit.kelvin, int(seed))
-
     kb_kj = 0.008314462618153241            # kJ/(mol K)
     n_dof = 3 * len(masses)
 
+    resumed_from = None
+    if equilibrated:
+        # Same System, same integrator class and parameters as the run that wrote the
+        # state; positions, velocities and the thermostat's own variables come back
+        # from the file, so the trajectory continues rather than restarts.
+        resumed_from = folder.load_state(context)
+    if resumed_from is None:
+        equilibrated = False
+        context.setPositions((positions_A / openmm_mace.NM_TO_A) * unit.nanometer)
+        context.setVelocitiesToTemperature(temperature_K * unit.kelvin, int(seed))
+        # The start of THIS trajectory, in OpenMM's own files, before a single step.
+        folder.write_start(positions_A, system, integ)
+
     # ---- equilibration, with the relaxation measured rather than assumed ------------
     t0 = time.time()
-    n_equil = int(round(equil_ps * 1000.0 / args.timestep_fs))
-    trace = []
-    step = max(1, n_equil // 20)
-    done = 0
-    while done < n_equil:
-        integ.step(min(step, n_equil - done))
-        done += min(step, n_equil - done)
-        st = context.getState(getEnergy=True)
-        trace.append((float(st.getPotentialEnergy().value_in_unit(
-                          unit.kilojoule_per_mole)),
-                      float(2.0 * st.getKineticEnergy().value_in_unit(
-                          unit.kilojoule_per_mole) / (n_dof * kb_kj))))
-    half = len(trace) // 2 or 1
-    equil_record = dict(
-        ps=float(equil_ps), wall_seconds=float(time.time() - t0),
-        potential_first_half_kJ=float(np.mean([t[0] for t in trace[:half]])),
-        potential_second_half_kJ=float(np.mean([t[0] for t in trace[half:]])),
-        temperature_second_half_K=float(np.mean([t[1] for t in trace[half:]])),
-        drift_kJ=float(np.mean([t[0] for t in trace[half:]])
-                       - np.mean([t[0] for t in trace[:half]])))
+    if equilibrated:
+        equil_record = dict((prev_meta or {}).get("equilibration")
+                            or _read_meta(records_dir / "equilibrated.json") or {})
+        equil_record["skipped_on_resume"] = True
+    else:
+        n_equil = int(round(equil_ps * 1000.0 / args.timestep_fs))
+        trace = []
+        step = max(1, n_equil // 20)
+        done = 0
+        while done < n_equil:
+            integ.step(min(step, n_equil - done))
+            done += min(step, n_equil - done)
+            st = context.getState(getEnergy=True)
+            trace.append((float(st.getPotentialEnergy().value_in_unit(
+                              unit.kilojoule_per_mole)),
+                          float(2.0 * st.getKineticEnergy().value_in_unit(
+                              unit.kilojoule_per_mole) / (n_dof * kb_kj))))
+        half = len(trace) // 2 or 1
+        equil_record = dict(
+            ps=float(equil_ps), wall_seconds=float(time.time() - t0),
+            potential_first_half_kJ=float(np.mean([t[0] for t in trace[:half]])),
+            potential_second_half_kJ=float(np.mean([t[0] for t in trace[half:]])),
+            temperature_second_half_K=float(np.mean([t[1] for t in trace[half:]])),
+            drift_kJ=float(np.mean([t[0] for t in trace[half:]])
+                           - np.mean([t[0] for t in trace[:half]])))
+        # The equilibrated state is worth a flush of its own: at 520 ps it is hours of
+        # work, and a job killed during production would otherwise redo it.
+        folder.flush_state(context)
+        (records_dir / "equilibrated.json").write_text(
+            json.dumps(equil_record, indent=2), encoding="utf-8")
 
     # ---- production, flushed in chunks so a killed run is resumable -----------------
     t0 = time.time()
@@ -353,24 +410,36 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
     # a job killed at its walltime loses everything it computed, and a short job is
     # exactly where that gets discovered too late to matter.
     chunk = max(1, min(CHUNK_FRAMES, (n_target - len(have)) // 4 or 1))
-    while len(have) < n_target:
-        want = min(chunk, n_target - len(have))
-        for _ in range(want):
-            integ.step(args.sample_every)
-            st = context.getState(getPositions=True, getEnergy=True)
-            p = st.getPositions(asNumpy=True).value_in_unit(
-                unit.nanometer) * openmm_mace.NM_TO_A
-            have.append(p)
-            temps.append(2.0 * st.getKineticEnergy().value_in_unit(
-                unit.kilojoule_per_mole) / (n_dof * kb_kj))
-            com = (np.asarray(masses)[:, None] * p).sum(0) / np.sum(masses)
-            if com0 is None:
-                com0 = com
-            com_drift.append(float(np.linalg.norm(com - com0)))
-        flush_frames(frames_path, have)     # atomic; see the function for the history
-        if budget and (time.time() - t0) > budget:
-            stopped_on_budget = True
-            break
+    folder.open_frames(append=bool(n_start > 0))
+    try:
+        while len(have) < n_target:
+            want = min(chunk, n_target - len(have))
+            for _ in range(want):
+                integ.step(args.sample_every)
+                st = context.getState(getPositions=True, getEnergy=True)
+                p = st.getPositions(asNumpy=True).value_in_unit(
+                    unit.nanometer) * openmm_mace.NM_TO_A
+                pe = st.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+                ke = st.getKineticEnergy().value_in_unit(unit.kilojoule_per_mole)
+                temp = 2.0 * ke / (n_dof * kb_kj)
+                have.append(p)
+                temps.append(temp)
+                folder.write_frame(p, st.getStepCount(),
+                                   st.getTime().value_in_unit(unit.picosecond), pe, ke, temp)
+                com = (np.asarray(masses)[:, None] * p).sum(0) / np.sum(masses)
+                if com0 is None:
+                    com0 = com
+                com_drift.append(float(np.linalg.norm(com - com0)))
+            # The engine files first (they are the trajectory), the state second (it is
+            # what a resume continues from), the record last.
+            folder.flush_frames()
+            folder.flush_state(context)
+            flush_frames(frames_path, have)     # atomic; see the function for the history
+            if budget and (time.time() - t0) > budget:
+                stopped_on_budget = True
+                break
+    finally:
+        folder.close_frames()
     wall = time.time() - t0
     generated = int(len(have) - n_start)
 
@@ -383,6 +452,8 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
         stopped_on_wall_budget=bool(stopped_on_budget),
         resumed=bool(n_start > 0), n_frames_already_on_disk=int(n_start),
         n_frames_generated_this_run=generated,
+        resumed_from=resumed_from,
+        engine_files=dict(folder=str(engine_dir), frames_in_dcd=folder.frames_on_disk()),
         # THE SAME KEY NAMES THE ASE ROUTE USES. The two drivers are an implementation
         # pair only if the same reader can read both; `seconds_per_ps` and
         # `temperature_error_K` were names nothing downstream looked for.
@@ -391,10 +462,11 @@ def run_one(species, positions_A, numbers, masses, model_path, outdir, temperatu
             if generated else None),
         seconds_per_frame_this_run=(float(wall / generated) if generated else None),
         seconds_per_ps=float(wall / max(1e-9, prod_ps)),
-        temperature_mean_K=float(np.mean(temps)) if temps else None,
+        temperature_mean_K=float(np.mean(temps)) if temps else prev_prod.get("temperature_mean_K"),
         temperature_deviation_K=(float(np.mean(temps) - temperature_K)
-                                 if temps else None),
-        temperature_error_K=(float(np.mean(temps) - temperature_K) if temps else None),
+                                 if temps else prev_prod.get("temperature_deviation_K")),
+        temperature_error_K=(float(np.mean(temps) - temperature_K)
+                             if temps else prev_prod.get("temperature_error_K")),
         centre_of_mass_drift_A=float(np.max(com_drift)) if com_drift else 0.0)
     return np.array(have), equil_record, prod_record, force_record, thermo_record
 
@@ -447,7 +519,15 @@ def main():
     ap.add_argument("--num-mts", type=int, default=NUM_MTS)
     ap.add_argument("--num-ys", type=int, default=NUM_YOSHIDA_SUZUKI)
     ap.add_argument("--platform", default="CPU")
-    ap.add_argument("--outroot", default=None)
+    # WHERE (ADR 0001, 2026-09-14): engine files under
+    #   <root>/<tag>/<range>/<chunk>/<qid>/openmm/<setting>/basinNN/
+    # and this driver's record under <...>/<qid>/_records/openmm/<setting>/basinNN/.
+    # The setting is `default` for the chains and the row name for examples/02d-2.
+    ap.add_argument("--setting", default="default",
+                    help="the trajectory setting this run belongs to (openmm/<setting>/)")
+    ap.add_argument("--molecule-dir", default=None,
+                    help="override the molecule directory (default: from S0_RUNS_ROOT, "
+                         "--tag and --species through openqha.store.layout)")
     ap.add_argument("--verify-only", action="store_true",
                     help="check the OpenMM force against the ASE calculator and stop")
     args = ap.parse_args()
@@ -478,16 +558,21 @@ def main():
     # scratch. The previous default wrote straight into $HOME -- on Tianhe that is the
     # 100 GB quota'd home on Lustre, which is the one place the site manual asks you not
     # to put job output.
-    outroot = (Path(args.outroot) if args.outroot
-               else Path(config.runs_dir("qha", cfg)) / args.tag / args.species)
+    molecule = (Path(args.molecule_dir) if args.molecule_dir
+                else layout.molecule_dir(config.runs_root(cfg), args.tag, args.species))
+    records_root = layout.records_dir(molecule) / "openmm" / args.setting
+    outroot = records_root                     # where summary.json and the records go
     basins = ([(args.basin, frames_in[args.basin])] if args.basin is not None
               else list(enumerate(frames_in)))
     seed_indices = ([args.seed_index] if args.seed_index is not None
                     else list(range(args.seeds)))
     n_target = int(round(args.prod_ps * 1000.0 / args.timestep_fs)) // args.sample_every
 
-    def _outdir(b, k):
-        return outroot / "basin{:02d}".format(b) / "seed{:02d}".format(k)
+    def _engine_dir(b):
+        return layout.openmm_dir(molecule, args.setting, b)
+
+    def _records_dir(b):
+        return records_root / "basin{:02d}".format(b)
 
     def _summary_from(meta, b, k):
         prod = meta.get("production") or {}
@@ -499,7 +584,7 @@ def main():
                     temperature_mean_K=prod.get("temperature_mean_K"),
                     com_drift_A=prod.get("centre_of_mass_drift_A"))
 
-    done = {(b, k): already_complete(_outdir(b, k), n_target)
+    done = {(b, k): already_complete(_records_dir(b), n_target, engine_dir=_engine_dir(b))
             for b, _g in basins for k in seed_indices}
     done = {bk: m for bk, m in done.items() if m is not None}
     if done:
@@ -511,6 +596,7 @@ def main():
         for s in summary:
             print("  basin {:>2} seed {:>2}  {:>5} frames  complete={}  (from meta.json)"
                   .format(s["basin"], s["seed_index"], s["n_frames"], s["complete"]))
+        outroot.mkdir(parents=True, exist_ok=True)
         (outroot / "summary.json").write_text(json.dumps(summary, indent=2),
                                               encoding="utf-8")
         print()
@@ -544,7 +630,9 @@ def main():
         if args.platform.upper() == "CUDA" else ""))
 
     print("geometry    {}".format(geometry_source))
-    print("output      {}".format(outroot))
+    print("molecule    {}".format(molecule))
+    print("engine      openmm/{}/basinNN/   (OpenMM's own files; records in _records/)"
+          .format(args.setting))
     print()
 
     summary = []
@@ -560,16 +648,20 @@ def main():
         print("basin {:>2}    relaxed, dropped {:.4f} kcal/mol".format(
             b, relax_record["energy_drop_kcal"]))
         for k in pending:
-            seed, seed_formula = choose_seed(args.seed0, b, k)
-            outdir = outroot / "basin{:02d}".format(b) / "seed{:02d}".format(k)
-            # A partial trajectory being resumed restarts from the relaxed geometry with
-            # THIS run's velocities and appends; its record must say which frames came
-            # from which draw, or the trajectory reads as one segment when it is two.
+            outdir = _records_dir(b)
+            engine_dir = _engine_dir(b)
+            # A partial trajectory is resumed from its state (same velocities, same
+            # thermostat variables), so it keeps the seed it was started with; a fresh
+            # one draws. `segments` records every run over the trajectory either way.
             prev_meta = _read_meta(outdir / "meta.json")
+            if prev_meta and "seed" in prev_meta and engine_dir.exists():
+                seed, seed_formula = int(prev_meta["seed"]), "kept on resume (from the record)"
+            else:
+                seed, seed_formula = choose_seed(args.seed0, b, k)
             frames, equil, prod, force_record, thermo = run_one(
                 args.species, relaxed_A, geom.get_atomic_numbers(), geom.get_masses(),
-                model_path, outdir, temperature, seed, args.equil_ps, args.prod_ps,
-                args)
+                model_path, engine_dir, outdir, temperature, seed, args.equil_ps,
+                args.prod_ps, args, prev_meta=prev_meta)
 
             meta = dict(
                 # ---- the identity assertion's inputs ----------------------------------
@@ -586,6 +678,7 @@ def main():
                 source="openQHA.branchB.openmm_nose_hoover",
                 # ---- everything else --------------------------------------------------
                 qm9_index=args.species, basin_index=int(b), seed=int(seed),
+                setting=args.setting, engine_folder=str(engine_dir),
                 seed_formula=seed_formula,
                 segments=segments_record(prev_meta, seed, prod),
                 geometry_source=geometry_source,
@@ -626,7 +719,8 @@ def main():
     (outroot / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8")
     print()
-    print("written to {}".format(outroot))
+    print("engine files under {}".format(molecule / "openmm" / args.setting))
+    print("records under      {}".format(outroot))
     print("analyse with: python scripts/production/s0_B_qha_analyse.py --species {} "
           "--tag {}".format(args.species, args.tag))
     return 0

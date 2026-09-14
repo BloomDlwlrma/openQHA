@@ -79,6 +79,8 @@ def main():
         print("  acetone                                                  FAIL (no error)")
     except ValueError as exc:
         print("  acetone -> ValueError: {}".format(str(exc)[:60]))
+    check("molecule_dir for a label-only molecule", layout.molecule_dir(R, "t", "acetone"),
+          R / "t/_label/acetone")
 
     print("\n{}".format("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL)))
     return 0 if not FAIL else 1

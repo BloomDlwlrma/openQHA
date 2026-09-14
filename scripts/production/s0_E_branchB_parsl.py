@@ -142,7 +142,7 @@ def _accepted_kwargs(fn):
 # ======================================================================================
 def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_ps,
                        equil_ps, wall_budget_s, route="ase", platform=None,
-                       basins_file=None, env=None, sample_every=None):
+                       basins_file=None, env=None, sample_every=None, setting="default"):
     """One (basin, seed) trajectory, as a SUBPROCESS of the branch B driver.
 
     A subprocess rather than an import, for the same three reasons branch A uses one:
@@ -193,6 +193,9 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
            "--basin", str(basin), "--seed-index", str(seed_index),
            "--seed0", str(seed0),
            "--prod-ps", str(prod_ps), "--equil-ps", str(equil_ps)]
+    if route == "openmm":
+        # openmm/<setting>/basinNN/ under the molecule directory (ADR 0001, 2026-09-14).
+        cmd += ["--setting", str(setting)]
     # The sampling interval is a science setting and normally comes from
     # `configs/branchB_protocol.yaml`. It is overridable here because the two products
     # of a trajectory want opposite intervals: the entropy wants 1.0 ps to filter
@@ -240,8 +243,15 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
     # The driver's own record is the source of truth; only enough is lifted out of it to
     # build the summary table.
     runs_root = _Path(e.get("S0_RUNS_ROOT", _os.path.expanduser("~/runs/openQHA")))
-    meta_path = (runs_root / "qha" / tag / species / "basin{:02d}".format(basin)
-                 / "seed{:02d}".format(seed_index) / "meta.json")
+    if route == "openmm":
+        # Since 2026-09-14 (ADR 0001): <molecule>/_records/openmm/<setting>/basinNN/meta.json.
+        _sys.path.insert(0, str(repo_root))
+        from openqha.store import layout as _layout
+        meta_path = (_layout.records_dir(_layout.molecule_dir(runs_root, tag, species))
+                     / "openmm" / str(setting) / "basin{:02d}".format(basin) / "meta.json")
+    else:
+        meta_path = (runs_root / "qha" / tag / species / "basin{:02d}".format(basin)
+                     / "seed{:02d}".format(seed_index) / "meta.json")
     if meta_path.exists():
         meta = _json.loads(meta_path.read_text(encoding="utf-8"))
         prod = meta.get("production", {})
@@ -293,6 +303,9 @@ def main():
                     help="how many basins per species to run. 'auto' (the default) takes "
                          "the count from branch A's own record, so the number and the "
                          "geometries cannot disagree. An integer caps it.")
+    ap.add_argument("--setting", default="default",
+                    help="the trajectory setting (openmm/<setting>/ in the molecule "
+                         "directory); `default` for the chains, the row name for 02d-2")
     ap.add_argument("--seeds", type=int, default=1,
                     help="trajectories per basin. ONE is the production setting (ruling "
                          "2026-09-13); 2 or more gives the blank control of criterion 5")
@@ -550,7 +563,7 @@ def main():
     futures = [app(s, b, k, args.seed0, str(ROOT), args.tag, args.prod_ps, args.equil_ps,
                    budget, route=route, platform=platform,
                    basins_file=basins_for[s][0], env=passthrough,
-                   sample_every=args.sample_every)
+                   sample_every=args.sample_every, setting=args.setting)
                for s, b, k in tasks]
     results = []
     for f in futures:

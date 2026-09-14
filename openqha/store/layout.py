@@ -63,8 +63,16 @@ def shard(qid, chunk=CHUNK, rng=RANGE):
 
 
 def molecule_dir(root, tag, qid):
-    """`<root>/<tag>/<range>/<chunk>/<qid>`. `root` may be any path-like."""
-    r, c = shard(qid)
+    """`<root>/<tag>/<range>/<chunk>/<qid>`. `root` may be any path-like.
+
+    A molecule identified only by a label (a SMILES run, `s0_A_pipeline.py --smiles`)
+    has no index to shard on and goes to `<root>/<tag>/_label/<label>`: an ad-hoc
+    molecule is a handful of runs, and a made-up index would put a fiction into the path.
+    """
+    try:
+        r, c = shard(qid)
+    except ValueError:
+        return Path(root) / str(tag) / "_label" / str(qid)
     return Path(root) / str(tag) / r / c / str(qid)
 
 
