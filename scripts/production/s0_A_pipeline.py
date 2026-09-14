@@ -187,6 +187,36 @@ def seed_geometry_from_smiles(smiles, calc, dest, seed=20260903, fmax=1e-3):
 # ======================================================================================
 # Step 2 -- CREST
 # ======================================================================================
+def crest_scratch_dir(name):
+    """Where CREST RUNS: node-local, never the shared filesystem (ADR 0002, Q20).
+
+    `$S0_SCRATCH/openqha_crest/<name>/` -- hpc/env/tianhe.sh sets S0_SCRATCH to
+    /tmp/<user>/<jobid>; off-cluster the system temp directory, per process. CREST
+    writes dozens of small files per molecule into parallel `_N` subdirectories, and
+    doing that on Lustre was measured slow for the job and for everyone else on the
+    machine (docs/tianhe_runbook.md section 6). The finished directory is copied once
+    into the molecule directory by `move_crest_dir`.
+    """
+    import tempfile
+    base = os.environ.get("S0_SCRATCH") or os.path.join(
+        tempfile.gettempdir(), "openqha_{}".format(os.getpid()))
+    return Path(base) / "openqha_crest" / str(name)
+
+
+def move_crest_dir(scratch, final):
+    """Copy a finished CREST directory into the molecule directory, once, then remove
+    the node-local copy. A destination that already exists (a failed earlier run) is
+    overwritten file by file, never left half old and half new."""
+    import shutil
+    scratch, final = Path(scratch), Path(final)
+    if not scratch.is_dir():
+        return False
+    final.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(scratch, final, dirs_exist_ok=True)
+    shutil.rmtree(scratch, ignore_errors=True)
+    return True
+
+
 def run_crest(qid, workdir, cfg, args, start_xyz=None):
     """CREST iMTD-GC under the published protocol, with the pointwise fallback.
 
@@ -194,6 +224,11 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
     deposited QM9 geometry; for a SMILES-specified molecule the caller has already
     built one (see `seed_geometry_from_smiles`). Either way it is a STARTING point,
     not a conformer -- CREST's metadynamics produces the conformers.
+
+    `workdir` is the FINAL directory, `<molecule>/crest/` (ADR 0001). CREST itself runs
+    in `crest_scratch_dir(name)` and the finished directory is moved here once, the
+    SHAKE fallback's into `crest_shake<N>/` beside it (ticket 06, 2026-09-14). A CREST
+    that fails is moved too, so its crest.out is where a reader looks.
     """
     c = cfg["crest"]
     workdir = Path(workdir)
@@ -227,21 +262,40 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
                 "Delete it or pass --force-crest.".format(workdir, why))
 
     fb = c.get("shake_fallback") or {}
+    fallback_to = int(fb.get("to", 1))
+    scratch = crest_scratch_dir(workdir.name if qid is None else qid)
+    scratch_shake = Path("{}_shake{}".format(scratch, fallback_to))
+    final_shake = Path("{}_shake{}".format(workdir, fallback_to))
+    if scratch.exists():
+        import shutil
+        shutil.rmtree(scratch, ignore_errors=True)       # a dead job's leftovers
     started = time.time()
-    rec = crest.run_with_shake_fallback(
-        workdir, xyz,
-        shake=int(c["shake"]),
-        fallback_to=int(fb.get("to", 1)),
-        enabled=bool(fb.get("enabled", True)),
-        runtype=c["runtype"], threads=int(args.threads), optlev=c["optlev"],
-        refine=c["refine"], backend=c["backend"],
-        engine_client=S0_ROOT / c["engine_client"],
-        workhorse=c["workhorse"], tstep_fs=float(c["tstep_fs"]),
-        calcspace=getattr(args, "keep_calcspace", None),
-        timeout_s=int(args.timeout_s))
+    try:
+        rec = crest.run_with_shake_fallback(
+            scratch, xyz,
+            shake=int(c["shake"]),
+            fallback_to=fallback_to,
+            enabled=bool(fb.get("enabled", True)),
+            runtype=c["runtype"], threads=int(args.threads), optlev=c["optlev"],
+            refine=c["refine"], backend=c["backend"],
+            engine_client=S0_ROOT / c["engine_client"],
+            workhorse=c["workhorse"], tstep_fs=float(c["tstep_fs"]),
+            calcspace=getattr(args, "keep_calcspace", None),
+            timeout_s=int(args.timeout_s))
+    finally:
+        # Moved whatever CREST left -- a failure's crest.out included -- and the
+        # fallback's directory when there is one. Once; then the node-local copy goes.
+        move_crest_dir(scratch, workdir)
+        move_crest_dir(scratch_shake, final_shake)
     rec["wall_seconds"] = time.time() - started
     rec["reused_scratch"] = False
     rec["wall_is_valid_cost"] = True
+    # The record names the FINAL places, and says where the run actually happened.
+    rec["ran_in"] = str(scratch_shake if rec.get("used_shake_fallback") else scratch)
+    rec["workdir"] = str(final_shake if rec.get("used_shake_fallback") else workdir)
+    if rec.get("first_attempt"):
+        rec["first_attempt"]["workdir"] = str(workdir)
+        rec["first_attempt"]["ran_in"] = str(scratch)
     return rec
 
 
@@ -600,8 +654,12 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
                     note="molecule rejected by the filters; nothing downstream ran")
 
     name = label or qid
-    runs = config.runs_dir("branchA", cfg) / args.tag
-    workdir = Path(args.reuse) if args.reuse else runs / name
+    # THE MOLECULE DIRECTORY (ADR 0001, 2026-09-14): one per (tag, molecule) under the
+    # root, one folder per engine inside it, this repository's records in _records/.
+    # CREST's finished directory is <molecule>/crest/ (it RUNS node-local; see run_crest).
+    from openqha.store import layout
+    molecule = layout.molecule_dir(config.runs_root(cfg), args.tag, qid or name)
+    workdir = Path(args.reuse) if args.reuse else layout.crest_dir(molecule)
 
     seed_rec = None
     start_xyz = None
@@ -682,10 +740,6 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
 
     # Step 3 pools an INDEPENDENT starting geometry. Only a shipped species has one.
     reference_xyz = config.qm9_xyz(qid, cfg) if qid else None
-    # THE MOLECULE DIRECTORY (ADR 0001, 2026-09-14): one per (tag, molecule) under the
-    # root, one folder per engine inside it, this repository's records in _records/.
-    from openqha.store import layout
-    molecule = layout.molecule_dir(config.runs_root(cfg), args.tag, qid or name)
     census, basins, mol = basin_list(
         qid or name, gate_rec["smiles"], frames, comments, calc, cfg, args,
         reference_xyz=reference_xyz, molecule_dir=molecule)

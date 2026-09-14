@@ -4,10 +4,10 @@
 
 **Blocked by:** 05 (MACE engine folder).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-14
 
-- [ ] `crest/` holds CREST's files verbatim plus `input.toml`, `<qid>.xyz` and `crest.out`
-- [ ] `crest_shake1/` exists beside it only when the fallback ran; the first attempt is never overwritten
-- [ ] The node-local directory is gone after the move; a failed CREST still leaves its `crest.out` in `crest/`
-- [ ] Reusing an existing `crest/` under matching settings skips CREST as before
-- [ ] Test point 5 with a stand-in crest binary writing the known file set
+- [x] `crest/` holds CREST's files verbatim plus `input.toml`, `<qid>.xyz` and `crest.out`
+- [x] `crest_shake1/` exists beside it only when the fallback ran; the first attempt is never overwritten
+- [x] The node-local directory is gone after the move; a failed CREST still leaves its `crest.out` in `crest/`
+- [x] Reusing an existing `crest/` under matching settings skips CREST as before
+- [x] Test point 5 with a stand-in crest binary writing the known file set
