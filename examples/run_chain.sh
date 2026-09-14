@@ -137,9 +137,12 @@ if [ "$KIND" = "gpu" ]; then
     esac
 fi
 
-# Does step 1 exist? A filesystem question: branch A's product is
-# <root>/<tag>/<range>/<chunk>/<species>/mace/basin00/basin.extxyz (ADR 0001), found by
-# hpc/env/root.sh (no python, no imports; the root is derived from the partition).
+# Does step 1 exist? Branch A's product is
+# <root>/<tag>/<range>/<chunk>/<species>/mace/basin00/basin.extxyz (ADR 0001), FOUND by
+# hpc/env/root.sh with `find` rather than composed here, so the shard rule is spelled in
+# one place (openqha/store/layout.py). A login node can `conda activate openqha` and run
+# python just as well; the shell form was accepted by the user on 2026-09-14 as part of
+# the work, not required by the node.
 if [ "$CHAIN" != "conformers" ] && [ "$CHAIN" != "conformers_pair" ] && [ "$KIND" = "gpu" ]; then
     # shellcheck disable=SC1091
     source hpc/env/root.sh

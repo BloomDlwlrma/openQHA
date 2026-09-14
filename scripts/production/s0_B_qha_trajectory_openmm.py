@@ -570,9 +570,13 @@ def main():
     # scratch. The previous default wrote straight into $HOME -- on Tianhe that is the
     # 100 GB quota'd home on Lustre, which is the one place the site manual asks you not
     # to put job output.
+    # The molecule directory is the BASIN TAG's (the branch A product's); a run under
+    # another --tag is a different SETTING inside it, not a second molecule directory
+    # (ruling Q8, 2026-09-14: one search, one set of basins, many samplings).
     molecule = (Path(args.molecule_dir) if args.molecule_dir
-                else layout.molecule_dir(config.runs_root(cfg), args.tag, args.species))
-    records_root = layout.records_dir(molecule) / "openmm" / args.setting
+                else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
+                                         args.species))
+    records_root = layout.openmm_records_dir(molecule, args.setting)
     outroot = records_root                     # where summary.json and the records go
     basins = ([(args.basin, frames_in[args.basin])] if args.basin is not None
               else list(enumerate(frames_in)))

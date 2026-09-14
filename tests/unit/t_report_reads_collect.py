@@ -66,12 +66,14 @@ def main():
     cfg = config.load()
 
     with tempfile.TemporaryDirectory() as tmp:
-        stem = drv.collect_stem(SPECIES, TAG, analysis_root=tmp)
+        # Since 2026-09-14 (ADR 0001) the tables sit in the molecule directory:
+        # <root>/<tag>/<range>/<chunk>/<species>/_records/openmm/default/collect__*.parquet
+        stem = drv.collect_stem(SPECIES, TAG, root=tmp)
         stem.parent.mkdir(parents=True)
 
         print("B. no collect product -> refusal that names the collect command")
         try:
-            drv.collect_tables(SPECIES, TAG, analysis_root=tmp)
+            drv.collect_tables(SPECIES, TAG, root=tmp)
             FAIL.append("collect_tables returned with no table present")
             print("   FAIL  returned")
         except SystemExit as exc:
@@ -95,7 +97,7 @@ def main():
             stem.parent / (stem.name + "__criteria.parquet"), index=False)
 
         print("\nA. per-basin T*S is the mean over the table's seeds")
-        per_basin, _ = drv.entropy_per_basin(SPECIES, TAG, cfg, "all", analysis_root=tmp)
+        per_basin, _ = drv.entropy_per_basin(SPECIES, TAG, cfg, "all", root=tmp)
         want = {0: 10.2, 1: 12.0}
         for b, ts in want.items():
             got = per_basin.get(b)
@@ -112,7 +114,7 @@ def main():
             "ok  " if per_basin.get(2) is None else "FAIL", per_basin.get(2)))
 
         print("\nC. collect's verdict is counted, not recomputed")
-        _, criteria = drv.collect_tables(SPECIES, TAG, analysis_root=tmp)
+        _, criteria = drv.collect_tables(SPECIES, TAG, root=tmp)
         n_pass, n_crit = drv.criteria_verdict(criteria)
         ok = (n_pass, n_crit) == (5, 10) and drv.criteria_verdict(None) == (None, None)
         print("   {}  {} of {} passed; none -> {}".format(

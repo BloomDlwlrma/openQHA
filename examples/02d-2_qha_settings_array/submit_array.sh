@@ -59,8 +59,10 @@ SUBMIT="${OPENQHA_SUBMIT:-yhbatch}"
 
 # ---- the basins must exist, once, before N jobs go looking for them --------------------
 # Branch A's product is <root>/<BASIN_TAG>/<range>/<chunk>/<SPECIES>/mace/basinNN/
-# basin.extxyz (ADR 0001); hpc/env/root.sh finds it and counts the basins, on the login
-# node, with no python. The root is derived from the partition this array will run on.
+# basin.extxyz (ADR 0001); hpc/env/root.sh FINDS it and counts the basins (a `find`,
+# so the shard rule stays spelled only in openqha/store/layout.py). A login node can
+# activate the environment and run python; the shell form was accepted by the user on
+# 2026-09-14 as part of the work. The root is derived from the partition.
 # shellcheck disable=SC1091
 source "$ROOT/hpc/env/root.sh"
 OPENQHA_PARTITION="${OPENQHA_GPU_PARTITION:-}" openqha_resolve_root || exit 2

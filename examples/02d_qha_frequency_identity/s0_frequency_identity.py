@@ -182,14 +182,21 @@ def stage_harmonic(symbols, positions, calc, temperature_K, frame_counts, seed):
 def stage_real(traj_dir, symbols, positions, omega, v_om, masses, temperature_K,
                fractions=(0.2, 0.4, 0.6, 0.8, 1.0)):
     """Stage 2. Prefixes of ONE trajectory: only the length changes."""
-    meta = json.loads((traj_dir / "meta.json").read_text(encoding="utf-8"))
+    from openqha.quasi_harmonic import trajectory_reader
+    from openqha.store import layout as _layout
+    tr = trajectory_reader.read_trajectory(
+        traj_dir, records_dir=_layout.records_dir(traj_dir.parents[2])
+        / "openmm" / traj_dir.parent.name / traj_dir.name)
+    meta = tr["meta"]
+    if meta is None:
+        raise SystemExit("no record beside {}: the identity assertion needs it".format(traj_dir))
     if list(meta["symbols"]) != list(symbols):
         raise ValueError(
             "the trajectory's atom order {} is not branch A's {}. Refusing to reorder: "
             "a silent reordering scrambles the mass weighting and every mode with it."
             .format(meta["symbols"], list(symbols)))
     qha.assert_trajectory_identity(meta)
-    frames = np.load(traj_dir / "frames.npy")
+    frames = tr["positions_A"]
     dt_ps = float(meta.get("frame_spacing_fs", float("nan"))) / 1000.0
     rows = []
     for f in fractions:
@@ -269,8 +276,10 @@ def main():
                     help="branch A tag to read the basins from; = branchA.conf's TAG")
     ap.add_argument("--stage", default="harmonic",
                     choices=("harmonic", "real", "all"))
-    ap.add_argument("--traj-tag", default=None,
-                    help="branch B run tag under $S0_RUNS_ROOT/qha (stage real)")
+    ap.add_argument("--setting", default="default",
+                    help="which openmm/<setting>/ of the molecule directory holds the "
+                         "trajectories (stage real). Until 2026-09-14 this was --traj-tag.")
+    ap.add_argument("--traj-tag", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--basin", type=int, default=None,
                     help="one basin only; default every basin branch A found")
     ap.add_argument("--nu-cut", default="25,50,100,150",
@@ -323,11 +332,10 @@ def main():
         print_rows(hrows, "frames")
 
         if args.stage in ("real", "all"):
-            if not args.traj_tag:
-                raise SystemExit("--stage real needs --traj-tag")
-            d = (Path(config.runs_dir("qha", cfg)) / args.traj_tag / args.species
-                 / "basin{:02d}".format(b) / "seed00")
-            if not (d / "frames.npy").exists():
+            from openqha.store import basins as _basins, layout as _layout
+            d = _layout.openmm_dir(_basins.molecule_for(args.species, args.tag, cfg),
+                                   args.setting, b)
+            if not (d / "traj.dcd").exists():
                 print("  no trajectory at {} -- stage 2 skipped for this basin"
                       .format(d))
                 entry["real"] = dict(skipped=str(d))
@@ -342,8 +350,9 @@ def main():
                 xs = [r["residence"]["symmetry_equivalent_crossings"] for _, r in rrows]
                 print("  basin crossings at full length: {} distinct, {} "
                       "symmetry-equivalent".format(xd[-1], xs[-1]))
+                from openqha.quasi_harmonic import trajectory_reader as _tr
                 nu_full, v_nu_full, mean_full, _ = qha_modes(
-                    np.load(d / "frames.npy"), masses, positions)
+                    _tr.read_trajectory(d)["positions_A"], masses, positions)
 
                 # ---- STAGE 3: the substitution itself. No pairing anywhere in it.
                 e_el = float(basin_rec["energy_eV"]) * EV_TO_KCAL
@@ -387,9 +396,10 @@ def main():
         report["basins"][str(b)] = entry
 
     report["wall_seconds"] = time.time() - t0
+    from openqha.store import basins as _basins, layout as _layout
     out = Path(args.out) if args.out else (
-        ROOT / "analysis" / "qha" / args.tag /
-        "{}_02d_frequency_identity.json".format(args.species))
+        _layout.openmm_records_dir(_basins.molecule_for(args.species, args.tag, cfg),
+                                   args.setting) / "02d_frequency_identity.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print()

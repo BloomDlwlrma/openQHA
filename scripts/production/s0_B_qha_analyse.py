@@ -68,33 +68,51 @@ GMX_BUDGET_KCAL = 0.05
 SMOKE_LENGTH_PS = 20.0
 
 
-def discover(root):
-    """Every (basin, seed) trajectory under one species directory, in a stable order."""
-    out = []
-    for basin_dir in sorted(Path(root).glob("basin*")):
-        for seed_dir in sorted(basin_dir.glob("seed*")):
-            frames = seed_dir / "frames.npy"
-            meta = seed_dir / "meta.json"
-            if frames.exists() and meta.exists():
-                out.append((basin_dir.name, seed_dir.name, seed_dir))
-    return out
+def discover(molecule, setting):
+    """Every trajectory of one setting: (basin label, seed label, engine_dir, records_dir).
+
+    The labels are directory names, as before (`basin00`, and `seed00` for the one
+    trajectory per basin the 2026-09-13 ruling allows), because collect's tables and the
+    ensemble report key on them. The trajectory itself is `traj.dcd` (ADR 0001).
+    """
+    from openqha.quasi_harmonic import trajectory_reader
+    return [("basin{:02d}".format(b), "seed00", eng, rec)
+            for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting)]
 
 
-def analyse_one(path, temperature_K, fractions, n_batches, limit_frames=None):
-    """One trajectory: the identity assertion first, then the whole chain."""
-    meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
-    frames = np.load(path / "frames.npy")
+def analyse_one(engine_dir, records_dir, temperature_K, fractions, n_batches,
+                limit_frames=None):
+    """One trajectory: the identity assertion first, then the whole chain.
+
+    Frames come from the engine folder (traj.dcd + start.pdb); the record beside them
+    carries what the identity assertion needs (thermostat, timestep, hydrogen mass, the
+    masses the driver integrated with). A trajectory without its record is refused: the
+    assertion cannot be made from a DCD alone.
+    """
+    from openqha.quasi_harmonic import trajectory_reader
+    tr = trajectory_reader.read_trajectory(engine_dir, records_dir=records_dir)
+    meta = tr["meta"]
+    if meta is None:
+        raise SystemExit(
+            "no meta.json in {}: the trajectory in {} has no record, and the identity "
+            "assertion (thermostat, timestep, hydrogen mass) cannot be made from the DCD "
+            "alone".format(records_dir, engine_dir))
+    frames = tr["positions_A"]
     if limit_frames:
         frames = frames[:int(limit_frames)]
-    masses = np.asarray(meta["masses_amu"], dtype=float)
+    masses = np.asarray(meta.get("masses_amu") or tr["masses_amu"], dtype=float)
 
     rec = qha.analyse(frames, masses, temperature_K, meta=meta)
     sat = qha.saturation_curve(frames, masses, temperature_K, fractions=fractions)
     batches = qha.mode_batch_convergence(frames, masses, temperature_K,
                                          n_batches=n_batches,
                                          fractions=tuple(f for f in fractions if f >= 0.25))
-    return dict(path=str(path), meta=meta, frames=frames, masses=masses,
-                analysis=rec, saturation=sat, mode_batches=batches)
+    # `path` is the RECORDS folder: what else this step writes about the trajectory
+    # (the GROMACS cross-check's working files) goes beside the record, never into the
+    # engine folder.
+    return dict(path=str(records_dir), engine_dir=str(engine_dir), meta=meta,
+                frames=frames, masses=masses, analysis=rec, saturation=sat,
+                mode_batches=batches)
 
 
 def assembly_consistency(masses, positions, eigenvalues, symmetry_number, degeneracy,
@@ -129,7 +147,12 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", required=True)
     ap.add_argument("--tag", default="prod")
-    ap.add_argument("--root", default=None, help="override the trajectory root")
+    ap.add_argument("--basin-tag", default=None,
+                    help="the tag the molecule directory is under (branch A's; default --tag)")
+    ap.add_argument("--setting", default="default",
+                    help="which openmm/<setting>/ to analyse")
+    ap.add_argument("--molecule-dir", default=None,
+                    help="override the molecule directory (default: from S0_RUNS_ROOT)")
     ap.add_argument("--temperature", type=float, default=None)
     ap.add_argument("--fractions", default="0.05,0.1,0.25,0.5,1.0")
     ap.add_argument("--batches", type=int, default=5)
@@ -156,12 +179,16 @@ def main():
     spec = config.species(args.species, cfg)      # raises if sigma or g is undeclared
     fractions = tuple(float(x) for x in args.fractions.split(","))
 
-    root = Path(args.root) if args.root else \
-        Path(config.runs_dir("qha", cfg)) / args.tag / args.species
-    found = discover(root)
+    from openqha.store import layout
+    molecule = (Path(args.molecule_dir) if args.molecule_dir
+                else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
+                                         args.species))
+    root = molecule / "openmm" / args.setting
+    found = discover(molecule, args.setting)
     if not found:
-        raise SystemExit("no trajectories under {}\nRun scripts/production/s0_B_qha_trajectory.py "
-                         "first.".format(root))
+        raise SystemExit("no trajectories under {} (no basinNN/traj.dcd)\n"
+                         "Run scripts/production/s0_B_qha_trajectory_openmm.py first."
+                         .format(root))
 
     print("=" * 92)
     print("Branch B -- quasi-harmonic analysis   {}  ({})".format(
@@ -173,8 +200,9 @@ def main():
     print()
 
     per_traj, by_basin = [], {}
-    for basin, seed, path in found:
-        one = analyse_one(path, temperature, fractions, args.batches, args.limit_frames)
+    for basin, seed, engine_dir, records_dir in found:
+        one = analyse_one(engine_dir, records_dir, temperature, fractions, args.batches,
+                          args.limit_frames)
         ent = one["analysis"]["entropy"]
         spec_rec = one["analysis"]["spectrum"]
         print("{:<9} {:<8} {:>7} frames   T*S_QH = {:9.4f}   T*S_Schl = {:9.4f}   "
@@ -385,8 +413,9 @@ def main():
     ]
 
     # ---- product ---------------------------------------------------------------------
+    # collect.log and collect__<table>.parquet beside the driver's records (ADR 0001).
     out_stem = Path(args.out) if args.out else (
-        _repo_root() / "analysis" / "qha" / args.tag / args.species)
+        layout.openmm_records_dir(molecule, args.setting) / "collect")
     r = report.Report(
         "openQHA branch B -- quasi-harmonic analysis",
         subtitle="{}  ({})   tag {}".format(args.species, spec.get("name"), args.tag))

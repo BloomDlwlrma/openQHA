@@ -72,6 +72,11 @@ openqha_resolve_root() {
 # lives in openqha/store/layout.py and nothing else spells it. Prints the directory, or
 # nothing when branch A has not written `mace/basin00/basin.extxyz` there. Needs
 # S0_RUNS_ROOT (openqha_resolve_root, or an explicit export).
+#
+# Not a login-node necessity: a login node can `conda activate openqha` and ask
+# openqha.store.basins the same question. These two functions exist because the submit
+# scripts are shell, and were accepted by the user on 2026-09-14 as part of the work
+# (they were not asked for; see .scratch/native-engine-files/spec.md).
 openqha_find_molecule() {
     local tag="$1" qid="$2" hit
     [ -n "$S0_RUNS_ROOT" ] || return 1

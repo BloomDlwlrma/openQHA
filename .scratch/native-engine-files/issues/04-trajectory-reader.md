@@ -4,9 +4,9 @@
 
 **Blocked by:** 03 (OpenMM engine folder).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-14
 
-- [ ] Positions from the DCD equal the positions the driver had in memory to float32 tolerance
-- [ ] A folder without `traj.dcd` (or without `start.pdb`) is refused with the folder named in the error
-- [ ] Collect, ensemble report and 02d run unchanged in their numbers on a trajectory written by ticket 03
-- [ ] Test point 6
+- [x] Positions from the DCD equal the positions the driver had in memory to float32 tolerance
+- [x] A folder without `traj.dcd` (or without `start.pdb`) is refused with the folder named in the error
+- [x] Collect, ensemble report and 02d run unchanged in their numbers on a trajectory written by ticket 03
+- [x] Test point 6

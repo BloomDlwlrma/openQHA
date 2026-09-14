@@ -105,3 +105,9 @@ def orca_dir(molecule, basin):
 
 def records_dir(molecule):
     return Path(molecule) / RECORDS
+
+
+def openmm_records_dir(molecule, setting):
+    """`_records/openmm/<setting>/`: the driver's records per basin, and collect's,
+    the ensemble report's and 02d's records for that setting."""
+    return Path(molecule) / RECORDS / "openmm" / str(setting)

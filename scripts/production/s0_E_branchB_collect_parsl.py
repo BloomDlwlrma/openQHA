@@ -76,12 +76,14 @@ from openqha import config  # noqa: E402
 #: What has to exist for a molecule to count as collected. Stated, printed and stored --
 #: if the scanner and the worker disagree about what "done" means, molecules are skipped
 #: for ever and never recovered. Same rule as openqha/worklist.py states for branch A.
-COMPLETION = "analysis/qha/<tag>/collect/<species>.json exists and records n_trajectories"
+COMPLETION = "<molecule>/_records/openmm/<setting>/collect.json exists and records n_trajectories"
 
 
-def result_path(repo_root, tag, species):
-    return (Path(repo_root) / "analysis" / "qha" / tag / "collect"
-            / (species + ".json"))
+def result_path(repo_root, tag, species, basin_tag=None, setting="default"):
+    """The completion marker: <molecule>/_records/openmm/<setting>/collect.json (ADR 0001)."""
+    from openqha.store import basins, layout
+    return layout.openmm_records_dir(
+        basins.molecule_for(species, basin_tag or tag), setting) / "collect.json"
 
 
 def _accepted_kwargs(fn):
@@ -93,7 +95,8 @@ def _accepted_kwargs(fn):
 # ======================================================================================
 # The task. It runs in a worker process, so it must be self-contained.
 # ======================================================================================
-def collect_one(species, repo_root, tag, extra_args=(), env=None):
+def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None,
+                setting="default"):
     """One molecule's quasi-harmonic analysis, as a SUBPROCESS of the analysis driver.
 
     A subprocess rather than an import, for the three reasons branch A uses one: a crash
@@ -118,13 +121,17 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None):
 
     cmd = [_sys.executable, "-u",
            str(repo_root / "scripts" / "production" / "s0_B_qha_analyse.py"),
-           "--species", species, "--tag", tag] + list(extra_args)
+           "--species", species, "--tag", tag,
+           "--basin-tag", str(basin_tag or tag), "--setting", str(setting)] + list(extra_args)
     proc = _sp.run(cmd, cwd=str(repo_root), env=e, text=True,
                    stdout=_sp.PIPE, stderr=_sp.PIPE)
 
-    out = (repo_root / "analysis" / "qha" / tag / "collect")
+    # This driver's own log and marker beside collect's tables (ADR 0001).
+    _sys.path.insert(0, str(repo_root))
+    from openqha.store import basins as _basins, layout as _layout
+    out = _layout.openmm_records_dir(_basins.molecule_for(species, basin_tag or tag), setting)
     out.mkdir(parents=True, exist_ok=True)
-    (out / (species + ".log")).write_text(
+    (out / "collect.driver.log").write_text(
         proc.stdout + "\n----- stderr -----\n" + proc.stderr, encoding="utf-8")
 
     summary = dict(species=species, command=" ".join(cmd),
@@ -164,7 +171,7 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None):
     # THE COMPLETION MARKER, written last and by rename. A task killed between the
     # analysis and this write leaves no marker, so the molecule is redone -- which is the
     # safe direction. A marker written first would mark unfinished work as done.
-    marker = out / (species + ".json")
+    marker = out / "collect.json"
     tmp = marker.with_suffix(".json.part")
     tmp.write_text(_json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(marker)
@@ -186,7 +193,7 @@ def species_list(args, cfg):
     raise SystemExit("give --species or --edges")
 
 
-def remaining(species, tag, cfg, no_resume=False):
+def remaining(species, tag, cfg, no_resume=False, basin_tag=None, setting="default"):
     """Which molecules still need collecting, and an account of how that was decided.
 
     Scan then execute, the pattern taken from this project's own
@@ -198,16 +205,17 @@ def remaining(species, tag, cfg, no_resume=False):
         return list(species), dict(completion_criterion="not consulted (--no-resume)",
                                    n_candidates=len(species),
                                    n_remaining=len(species))
+    from openqha.store import basins as _basins
+    from openqha.quasi_harmonic import trajectory_reader as _tr
     todo, done, no_traj = [], [], []
-    traj_root = Path(config.runs_dir("qha", cfg)) / tag
     for qid in species:
-        if result_path(ROOT, tag, qid).exists():
+        if result_path(ROOT, tag, qid, basin_tag, setting).exists():
             done.append(qid)
             continue
         # A molecule with no trajectories is not "remaining"; it is upstream work that
         # has not happened. Counting it as remaining makes the collection pass look
         # behind when it is actually waiting.
-        if not (traj_root / qid).is_dir():
+        if not _tr.trajectory_dirs(_basins.molecule_for(qid, basin_tag or tag, cfg), setting):
             no_traj.append(qid)
             continue
         todo.append(qid)
@@ -230,6 +238,10 @@ def main():
     ap.add_argument("--resource", default="local",
                     help="hpc/resource_configs/<name>.py (default: local -- step 0)")
     ap.add_argument("--tag", default="prod")
+    ap.add_argument("--basin-tag", default=None,
+                    help="the tag the molecule directory is under (default: --tag)")
+    ap.add_argument("--setting", default="default",
+                    help="which openmm/<setting>/ to collect")
     ap.add_argument("--no-resume", action="store_true",
                     help="do NOT subtract molecules that already have a result")
     ap.add_argument("--no-gmx", action="store_true", default=True,
