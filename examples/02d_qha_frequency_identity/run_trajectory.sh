@@ -20,8 +20,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PY="${OPENQHA_PYTHON:-$HOME/anaconda3/envs/openqha/bin/python}"
 
 SPECIES="${SPECIES:-dsgdb9nsd_000018}"
-BASINS="${BASINS:-}"                       # branch A .basins.xyz; required
-TRAJ_TAG="${TRAJ_TAG:-ex02d}"              # output tag under $S0_RUNS_ROOT/qha
+BASINS="${BASINS:-auto}"                   # `auto`: branch A's mace/basinNN/basin.extxyz under BASIN_TAG
+BASIN_TAG="${BASIN_TAG:-02d_prod}"         # the tag branch A's product is under (the molecule directory)
+TRAJ_TAG="${TRAJ_TAG:-ex02d}"              # the setting name: openmm/basinNN/*_<TRAJ_TAG>.* (since 2026-09-14)
 PROD_PS="${PROD_PS:-25}"
 EQUIL_PS="${EQUIL_PS:-10}"
 SAMPLE_EVERY="${SAMPLE_EVERY:-2}"          # steps; the timestep is 1 fs
@@ -29,9 +30,8 @@ SEEDS="${SEEDS:-1}"
 LOG="${LOG:-$HOME/runs/openQHA/02d_${SPECIES}_${TRAJ_TAG}.log}"
 
 if [[ -z "$BASINS" ]]; then
-    echo "BASINS must name branch A's <species>.basins.xyz." >&2
-    echo "  BASINS=data/basins/prod/1_16000/1_4000/dsgdb9nsd_000018.basins.xyz \\" >&2
-    echo "  SPECIES=dsgdb9nsd_000018 bash $0" >&2
+    echo "BASINS must be 'auto' (branch A's basins under BASIN_TAG) or a multi-frame xyz." >&2
+    echo "  BASIN_TAG=02d_prod SPECIES=dsgdb9nsd_000018 bash $0" >&2
     exit 2
 fi
 mkdir -p "$(dirname "$LOG")"
@@ -41,7 +41,8 @@ cd "$ROOT"
 # separately is what lets branch A's tag and branch B's tag differ, which they do here:
 # propanal's basins live under `multibasin` and this run is `ex02d`.
 "$PY" scripts/production/s0_B_qha_trajectory.py \
-    --species "$SPECIES" --basins "$BASINS" --tag "$TRAJ_TAG" --seeds "$SEEDS" \
+    --species "$SPECIES" --basins "$BASINS" --basin-tag "$BASIN_TAG" --tag "$BASIN_TAG" \
+    --setting "$TRAJ_TAG" --seeds "$SEEDS" \
     --equil-ps "$EQUIL_PS" --prod-ps "$PROD_PS" --sample-every "$SAMPLE_EVERY" \
     >> "$LOG" 2>&1
 

@@ -85,7 +85,9 @@ production                             protocol.production_ps, frame every
       |                                protocol.sampling_interval_ps
       |                                flushed every chunk_frames, .part-then-rename
       v
-frames.npy + meta.json                 $S0_RUNS_ROOT/qha/<tag>/<X>/basinKK/seedSS/
+openmm/basinKK/ traj.dcd + state.csv   <molecule>/openmm/basinKK/  (since 2026-09-14;
++ start.pdb, system/integrator.xml,    the record meta.json under _records/openmm/<setting>/;
+  state.xml, state.chk                 before: frames.npy + meta.json under $S0_RUNS_ROOT/qha/)
       |
       v  qha.assert_trajectory_identity(meta)      REFUSES a biased or constrained run,
       |                                            a coupling looser than 20 fs, a chain
@@ -228,20 +230,22 @@ indices — an F_conf that looked multi-basin and was not.
 
 ## 7. Where the answer lands, and the order to read it
 
+Since 2026-09-14 (`docs/output_inventory.md` section 6):
+
 ```
-$S0_RUNS_ROOT/qha/<tag>/<species>/basinNN/seedNN/frames.npy   the trajectory
-                                                 /meta.json    protocol + provenance
-analysis/qha/<tag>/                                            per-species analysis
-analysis/qha/<tag>/<species>_ensemble.json                     F_conf, ΔG, populations
+<molecule>/openmm/basinNN/traj.dcd  start.pdb  state.csv ...        the trajectory (OpenMM's files)
+<molecule>/_records/openmm/<setting>/basinNN/meta.json               protocol + provenance
+<molecule>/_records/openmm/<setting>/collect__*.parquet, collect.log  per-molecule analysis
+<molecule>/_records/openmm/<setting>/ensemble.json                   F_conf, ΔG, populations
+<molecule> = <root>/<tag>/<range>/<chunk>/<species>
 ```
 
 ```python
-from openqha.quasi_harmonic import qha, ensemble, basin_residence as br
-import numpy as np, json
-
-frames = np.load("frames.npy"); meta = json.load(open("meta.json"))
+from openqha.quasi_harmonic import qha, basin_residence as br, trajectory_reader
+tr = trajectory_reader.read_trajectory(engine_dir, records_dir=records_dir, setting="default")
+frames, meta = tr["positions_A"], tr["meta"]
 rec = qha.analyse(frames, meta["masses_amu"], meta=meta)
-res = br.basin_residence(frames, meta["symbols"])
+res = br.basin_residence(frames, tr["symbols"])
 print(br.interpret_saturation(qha.saturation_curve(frames, meta["masses_amu"]), res))
 ```
 

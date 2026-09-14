@@ -54,9 +54,12 @@ violates the first three at once.
 
 ## 3. Two production routes, on purpose
 
-Branch B produces trajectories two ways. They write the **same** `frames.npy` +
-`meta.json` contract and are read by the **same** analysis, so a disagreement between them
-is a measurement rather than a mystery.
+Branch B produces trajectories two ways. Until 2026-09-14 they wrote the **same**
+`frames.npy` + `meta.json` contract and were read by the **same** analysis, so a
+disagreement between them was a measurement rather than a mystery. Since then the OpenMM
+route writes OpenMM's own files into `<molecule>/openmm/basinNN/` and the analysis reads
+those (`docs/output_inventory.md` section 6); the ASE route still writes the old contract
+and is NOT read by collect until it is brought over -- an open item, not a decision.
 
 | | OpenMM route (**primary**) | ASE route |
 |---|---|---|

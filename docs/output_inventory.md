@@ -1,5 +1,7 @@
 # What the chain writes, file by file
 
+Sections 1-5: the state before 2026-09-14 (kept as the baseline). Section 6: what replaced it.
+
 Inventory taken from the code on 2026-09-14 (`s0_A_pipeline.py`, `crest.py`,
 `basin_store.py`, `s0_E_branchB_parsl.py`, `s0_B_qha_trajectory_openmm.py`,
 `s0_E_branchB_collect_parsl.py`, `s0_B_qha_analyse.py`, `s0_B_report_ensemble.py`,
@@ -122,3 +124,45 @@ For one molecule, one basin, one seed on the `qha` chain the engine results are 
 files (`crest_conformers.xyz`, `crest_best.xyz`, `crest_rotamers.xyz`, `frames.npy`) and
 the relaxed geometry `basins.xyz`; this code writes about 25 more, and on Tianhe the copy
 to `logs/node_local/` doubles the run tree.
+
+## 6. Since 2026-09-14: the molecule tree (ADR 0001, ADR 0002)
+
+Everything above this line is the state the user objected to. What replaced it:
+
+    <root>/<tag>/<range>/<chunk>/<qid>/
+      crest/                      CREST's working directory, verbatim (+ input.toml, <qid>.xyz, crest.out)
+      crest_shake1/               the SHAKE fallback attempt, only when it ran
+      mace/confNN/                opt.traj  opt.log  conf.extxyz      every tightened conformer
+      mace/basinNN/               basin.extxyz  hessian.npy           every surviving basin
+      openmm/basinNN/             start.pdb system.xml integrator.xml traj.dcd state.csv
+                                  state.xml state.chk                  (the default setting)
+                                  start_<setting>.pdb ... traj_<setting>.dcd ...
+                                  (every other setting, same folder, its name in the file)
+      xtb/basinNN/  orca/basinNN/ 02c only
+      _records/                   everything this repository writes about the run:
+        basins.json  basins.xyz                       branch A's record
+        openmm/<setting>/basinNN/{meta.json, driver.log, frames.npy, equilibrated.json}
+        openmm/<setting>/{collect.log, collect__*.parquet, collect.json,
+                          collect.driver.log, ensemble.json, 02d_frequency_identity.json}
+    <root>/<tag>/_records/        records about a whole tag: branchB_parsl_summary.json,
+                                  collect_batch.json
+
+    root   = <prefix>/HDD_POOL/<acct>/<user>/sherwin/runs, prefix /XYFS02 for partitions
+             ai and cn, /XYAIFS00 for a100x h100x hx a800x v100x (hpc/env/root.sh derives
+             it; S0_RUNS_ROOT set explicitly wins; off-cluster ~/runs/openQHA)
+    shard  = range 16 000 / chunk 1 000  (openqha/store/layout.py, the only place it is spelled)
+
+Engine files only in the engine folders. CREST runs node-local (`$S0_SCRATCH/openqha_crest/`)
+and its finished directory is copied once into `crest/`; nothing else is copied anywhere.
+The per-job scratch, the exit-trap copy to `logs/node_local/`, the basin store
+`data/basins/` and `analysis/branchA`, `analysis/qha` are gone; a script lists and, on
+request, deletes the old trees (`scripts/tooling/s0_delete_old_layout.py --plan`).
+
+Readers: `openqha.store.basins` (the basins, from `mace/`), `openqha.quasi_harmonic.
+trajectory_reader` (the trajectory, from `openmm/`); every driver takes `--basin-tag`
+(the tag the molecule directory is under) and `--setting`.
+
+Not covered by the change: the ASE-route trajectory driver (`s0_B_qha_trajectory.py`,
+CPU cross-check) still writes `frames.npy` + `meta.json` under the old runs root and the
+collect step no longer finds those; the Slurm `.out/.err` and parsl run directories stay
+under the repository's `logs/` until step 2 decides the records.

@@ -229,6 +229,14 @@ fi
 # they summarise, so the environment is asked for them FIRST. require.sh has no side
 # effects (common.sh does: threads, runs root), so it is sourced here on every site.
 source hpc/env/require.sh
+
+# parsl's run directory: a record about the job, not about a molecule, so it goes with
+# the tag's other per-tag records, <root>/<tag>/_records/parsl/<job>.<pid>/ (user ruling
+# 2026-09-14 on per-tag leftovers), one per process. NOT under the checkout: parsl chmods
+# its certificates directory to 0700, which a Windows drive under WSL refuses (measured
+# 2026-09-15), and the root is on a filesystem that honours modes on every site.
+export S0_PARSL_RUN_DIR="${S0_PARSL_RUN_DIR:-${S0_RUNS_ROOT:-$HOME/runs/openQHA}/$TAG/_records/parsl/${SLURM_JOB_ID:-pid$$}.$$}"
+
 openqha_require_modules pandas pyarrow || {
     echo "  Every chain's collect/report step writes parquet and fails at its LAST line" >&2
     echo "  without them -- after the trajectories (an113, 2026-09-13). On a login node:" >&2
@@ -446,7 +454,7 @@ if [ "$CHAIN" = "conformers" ]; then
         --hessian-mode analytic $BRANCH_A_ARGS
 elif [ "$BASINS_PRESENT" = "yes" ]; then
     echo
-    echo "---- branch A: already done for tag '$TAG' -- reusing those basins ----"
+    echo "---- branch A: already done for tag '${BASIN_TAG:-$TAG}' -- reusing those basins ----"
 elif [ "$KIND" = "gpu" ]; then
     echo "openQHA: no branch A product for '$SPECIES' under tag '$TAG', and branch A" >&2
     echo "  cannot run here (openqha-gpu has neither crest nor xtb). Run step 1 on the" >&2

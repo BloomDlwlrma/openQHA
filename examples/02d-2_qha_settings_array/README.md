@@ -73,7 +73,7 @@ Each is enforced in `array.slurm`, and each was a real failure mode, not a preca
 |---|---|
 | `CUDA_VISIBLE_DEVICES=k` | OpenMM and torch in row k see card k only |
 | `S0_CARD=k` | tells `tianhe_a.py` to run parsl on one card and **not pin workers itself** — parsl counts cards with `nvidia-smi -L`, which ignores `CUDA_VISIBLE_DEVICES`, and its fallback would put every row's three workers on cards 0, 1, 2 |
-| `S0_SCRATCH_TAG=card<k>`, `S0_KEEP_DIR=…_card<k>` | node-local scratch is keyed on the job id and `chain_body.sh`'s exit trap **`rm -rf`s it** — shared, the first row to finish would delete the other rows' running trajectories |
+| (until 2026-09-14) `S0_SCRATCH_TAG=card<k>`, `S0_KEEP_DIR=…_card<k>` | node-local scratch is keyed on the job id and `chain_body.sh`'s exit trap **`rm -rf`s it** — shared, the first row to finish would delete the other rows' running trajectories |
 
 Each row also gets its own parsl `run_dir` (`parsl_card<k>`), so G drivers starting at
 once do not race for `runinfo/NNN`.
@@ -85,8 +85,10 @@ examples/02d-2_qha_settings_array/generated/<NAME>.conf    the file each row sou
 examples/02d-2_qha_settings_array/generated/manifest       row order; the only thing the job reads to find its work
 logs/openqha_<species>_02d2_array_<arrayjob>_<task>.{out,err}   per array task
 logs/02d2_<NAME>_<arrayjob>_<task>.log                     per row
-analysis/qha/02d2_<NAME>/<species>_02d_frequency_identity.json   the answer, per row
-logs/node_local/<jobid>_card<k>/                           each row's scratch end state, trajectories included
+<molecule>/openmm/basinNN/traj_<NAME>.dcd ...              each row's trajectory: same basin folder, the row in the file name
+<molecule>/_records/openmm/<NAME>/02d_frequency_identity.json   the answer, per row
+   (<molecule> = <root>/<BASIN_TAG>/<range>/<chunk>/<species>; since 2026-09-14, docs/output_inventory.md section 6;
+    before: analysis/qha/02d2_<NAME>/... and logs/node_local/<jobid>_card<k>/)
 ```
 
 To change the experiment, edit `settings.tsv` and resubmit; `generated/` is rewritten. To

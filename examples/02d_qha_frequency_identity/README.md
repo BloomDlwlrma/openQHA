@@ -28,7 +28,7 @@ python examples/02d_qha_frequency_identity/s0_frequency_identity.py \
 ```
 
 The tag is `02d_prod` because that is what `branchA.conf` here sets and a branch A
-product is filed under its tag (`data/basins/02d_prod/…`); `--tag prod` fails with
+product is filed under its tag (`<root>/02d_prod/…/<qid>/mace/basinNN/`, since 2026-09-14); `--tag prod` fails with
 `no branch A product … under tag 'prod'`. Acetone's branch B for this example is 1 basin
 × 3 seeds = 3 dense trajectories, which is one card.
 
@@ -320,8 +320,10 @@ stage 2 says none of those three can be made to work.
 ## Output
 
 ```
-analysis/qha/<tag>/<species>_02d_frequency_identity.json
+<molecule>/_records/openmm/<setting>/02d_frequency_identity.json
 ```
+(`<molecule>` is the molecule directory of the BASIN tag; since 2026-09-14, before that
+`analysis/qha/<tag>/<species>_02d_frequency_identity.json`)
 
 Read in this order:
 

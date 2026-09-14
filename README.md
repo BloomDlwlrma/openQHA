@@ -324,12 +324,20 @@ python scripts/production/s0_E_branchA_parsl.py --edges --resource deimos --acco
 
 ### Where the results are
 
-A campaign is 133 885 molecules, so results are **sharded**, not one directory each:
+One directory per molecule under a tag, sharded (range 16 000, chunk 1 000) because a
+campaign is 133 885 molecules, with one folder per engine inside it and the engines' own
+files in those folders (since 2026-09-14; `docs/output_inventory.md` section 6):
 
 ```
-data/basins/<tag>/1_16000/1_4000/dsgdb9nsd_000018.basins.json
-data/basins/<tag>/1_16000/1_4000/dsgdb9nsd_000018.basins.xyz
+<root>/<tag>/1_16000/1_1000/dsgdb9nsd_000018/
+  crest/            CREST's working directory, verbatim
+  mace/basinNN/     basin.extxyz  hessian.npy        (mace/confNN/: every relaxation)
+  openmm/basinNN/   start.pdb system.xml integrator.xml traj.dcd state.csv state.xml state.chk
+  _records/         what this repository wrote about the run (basins.json, collect tables, ...)
 ```
+
+`<root>` is derived from the cluster's partition on Tianhe (`hpc/env/root.sh`) and is
+`~/runs/openQHA` elsewhere; `S0_RUNS_ROOT` overrides it.
 
 ```python
 from openqha import basin_store

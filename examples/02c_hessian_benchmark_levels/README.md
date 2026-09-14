@@ -27,7 +27,7 @@ the count the cost model was measured at and the one used here). The job is name
 `openqha_<species>_levels_02c_prod`, which is also its log file under `logs/`.
 
 **The tag is `02c_prod`**, because that is what `branchA.conf` here sets, and a branch A
-product is filed under its tag: `data/basins/02c_prod/…`. `--tag prod` answers
+product is filed under its tag: `<root>/02c_prod/…/<qid>/mace/basinNN/` (since 2026-09-14). `--tag prod` answers
 `no branch A product for dsgdb9nsd_000018 under tag 'prod'` even when `02c_prod` is
 sitting right there. Propanal under the same tag needs its own step 1:
 `bash examples/run_chain.sh examples/02c_hessian_benchmark_levels/branchA-propanal.conf deimos`

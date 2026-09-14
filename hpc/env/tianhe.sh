@@ -203,10 +203,9 @@ openqha_resolve_root || {
 }
 mkdir -p "$S0_RUNS_ROOT"
 
-# parsl's run directory (its own logs; a record, whose final home is step 2 of the
-# 2026-09-14 layout change). Per process, so several drivers in one allocation never
-# share a runinfo/. Beside the Slurm .out/.err, which is where job logs live meanwhile.
-export S0_PARSL_RUN_DIR="${S0_PARSL_RUN_DIR:-$OPENQHA_ROOT/logs/parsl/${SLURM_JOB_ID:-nojob}.$$}"
+# parsl's run directory is set by examples/chain_body.sh (it knows the tag):
+# <root>/<tag>/_records/parsl/<job>.<pid>/. The older hpc/slurm/*.slurm scripts fall back
+# to the resource configs' default, $S0_RUNS_ROOT/parsl.
 
 # ---- proxy ------------------------------------------------------------------------------
 # Outbound traffic goes through a proxy. conda and pip HANG rather than fail without it,

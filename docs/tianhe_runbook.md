@@ -94,9 +94,21 @@ setting. `tianhexy-i` appears in the table and this repository knows nothing els
 | **XYAIFS00** | `tianhexy-ai`, `k8s_xingyiAI_2` | `/XYAIFS00/HDD_POOL/<acct>/<user>/…/openQHA-main` (and `/XYAIFS00/HOME/<acct>/<user>`) |
 
 **TianheXY-CN and TianheXY-A see the same files.** So the two-step flow — branch A on
-`deimos`, branch B on `ai` — needs no data movement at all: the basin list branch A writes
-under `data/basins/<tag>/` is the file branch B reads, in the same repository checkout.
-Submit both from the XYFS02 checkout and forget about copying.
+`deimos`, branch B on `ai` — needs no data movement at all: the molecule directory branch
+A writes under the root (`<root>/<tag>/<range>/<chunk>/<qid>/mace/basinNN/`) is what branch
+B reads. Submit both from the XYFS02 checkout and forget about copying.
+
+**The root (since 2026-09-14, ADR 0002).** Not the checkout, not `$HOME`:
+
+```
+/XYFS02/HDD_POOL/<acct>/<user>/sherwin/runs      partitions ai, cn
+/XYAIFS00/HDD_POOL/<acct>/<user>/sherwin/runs    partitions a100x h100x hx a800x v100x
+```
+
+`hpc/env/root.sh` derives it from the partition (`OPENQHA_PARTITION`, then
+`SLURM_JOB_PARTITION`, else the mounted prefix) and `$HOME`; the job banner prints it on
+the `runs root` line; a node where it cannot be derived is refused. An explicit
+`S0_RUNS_ROOT` wins. The layout is `docs/output_inventory.md` section 6.
 
 **TianheXY-AI (`h100x`) is on a different filesystem.** Its checkout is a separate copy,
 and the manual's §3.2.2 recipe is the only way across:
@@ -638,7 +650,16 @@ precedence over the conf. Without that, a conf whose default is `PARTITION=ai` �
 try to `module load CUDA/12.3` on a CPU node. Found by inspection 2026-09-09, before it
 cost an allocation.
 
-### Node-local scratch: run there, carry the end state back  **[measured 2026-09-09]**
+### Node-local scratch (since 2026-09-14): sockets and CREST only, nothing carried back
+
+`hpc/env/tianhe.sh` sets `S0_SCRATCH=/tmp/<user>/<jobid>`. It holds the MACE server
+sockets and, while CREST runs, CREST's working directory (`openqha_crest/<qid>/`), which
+is copied once into `<molecule>/crest/` when CREST returns. The molecule tree itself is
+written straight to the shared root and stays there; there is no exit-trap copy and no
+`logs/node_local/` any more (ADR 0002). The section below describes the arrangement
+before that date and is kept as its record.
+
+### Node-local scratch: run there, carry the end state back  **[before 2026-09-14; measured 2026-09-09]**
 
 ```
 /tmp/<owner>/<SLURM_JOB_ID>/sockets/s0_mace_pool_0.sock

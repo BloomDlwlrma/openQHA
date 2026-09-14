@@ -157,6 +157,17 @@ def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
                 provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1,
                                        worker_init=_openmm_worker_init()),
             ),
+            # collect (s0_E_branchB_collect_parsl.py): one core per molecule, like the
+            # cluster configs. Absent until 2026-09-15, when the qha chain was first run
+            # end to end through examples/chain_body.sh on a workstation and stopped at
+            # "no executor labelled 'openqha_collect_executor'".
+            HighThroughputExecutor(
+                label=_labels.label("collect"),
+                max_workers_per_node=workers,
+                cores_per_worker=1.0,
+                cpu_affinity="none",
+                provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1),
+            ),
         ],
         run_dir=run_dir or os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
             os.environ.get("S0_RUNS_ROOT",

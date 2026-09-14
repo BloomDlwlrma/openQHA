@@ -129,11 +129,12 @@ basins                      conformers.py
       +--> thermo.py        q_rot, q_vib, and the conformational correction
       |
       v
-PRODUCT
-   data/basins/<tag>/<range>/<chunk>/<qid>.basins.json     the record
-                                    /<qid>.basins.xyz      the geometries
-   analysis/branchA/<tag>/<qid>/basins.json                the full driver record
-   analysis/branchA/<tag>/<qid>/driver.log                 its stdout, verbatim
+PRODUCT  (since 2026-09-14; docs/output_inventory.md section 6)
+   <molecule>/crest/                          CREST's working directory, verbatim
+   <molecule>/mace/confNN/                    opt.traj opt.log conf.extxyz  every relaxation
+   <molecule>/mace/basinNN/                   basin.extxyz hessian.npy      every basin
+   <molecule>/_records/basins.json, basins.xyz   the record (driver.log beside it via parsl)
+   <molecule> = <root>/<tag>/<range>/<chunk>/<qid>
 ```
 
 **Report the correction, not the basin count.** Five repeats on one molecule: the basin
@@ -496,7 +497,9 @@ arguments; neither touches chemistry.
 
 ## 7. Where the answer lands, and how to read it
 
-### The basin store — sharded, because 133 885 molecules is not one directory
+> **Since 2026-09-14 this is history.** Results live in one molecule directory per (tag, molecule) with one folder per engine -- `docs/output_inventory.md` section 6 is the description; `docs/adr/0001` and `0002` the decisions. The block below describes the layout before that date and is kept as its record.
+
+### The basin store — sharded, because 133 885 molecules is not one directory (before 2026-09-14)
 
 ```
 data/basins/<tag>/<range>/<chunk>/<qid>.basins.json
@@ -520,10 +523,11 @@ count as done.
 ### The full record
 
 ```
-analysis/branchA/<tag>/<qid>/basins.json     everything: census, criteria, provenance
-analysis/branchA/<tag>/<qid>/driver.log      the driver's stdout, verbatim
-analysis/branchE/<tag>/batch.json            the Parsl batch: plan + per-task results
+<molecule>/_records/basins.json              everything: census, criteria, provenance
+<molecule>/_records/basins.xyz               the basins as one multi-frame xyz
+analysis/branchE/<tag>/batch.json            the Parsl batch: plan + per-task results (step 2 will move it)
 ```
+(before 2026-09-14: `analysis/branchA/<tag>/<qid>/basins.json` and `driver.log`)
 
 `batch.json` carries the plan, including `settings_source` (which value came from the
 command line, which from the resource config, which from a built-in default) and

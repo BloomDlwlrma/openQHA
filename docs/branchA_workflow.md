@@ -245,7 +245,9 @@ python scripts/production/s0_A_pipeline.py --smiles "OCCO" --label ethyleneglyco
     --tag multibasin --skip-crest --reuse ~/runs/openQHA/branchA/multibasin/ethyleneglycol
 ```
 
-Products land in `analysis/branchA/<tag>/<label>/`: `basins.json`, `basins.xyz`,
+Products land in the molecule directory (`<root>/<tag>/_label/<label>/` for a SMILES
+molecule; since 2026-09-14, `docs/output_inventory.md` section 6): `mace/confNN/`,
+`mace/basinNN/`, and under `_records/`: `basins.json`, `basins.xyz`,
 `driver.log`. Scratch stays under `$S0_RUNS_ROOT/branchA/<tag>/<label>/`.
 
 ### The SMILES path, and what it costs
@@ -583,6 +585,9 @@ run it" and "a stranger can run it and get what the documentation promises".
 ---
 
 ## 9. Where the results are, and how to find one again
+
+> **Since 2026-09-14 this is history.** Results live in one molecule directory per (tag, molecule) with one folder per engine -- `docs/output_inventory.md` section 6 is the description; `docs/adr/0001` and `0002` the decisions. The block below describes the layout before that date and is kept as its record.
+
 
 A full QM9 campaign is 133 885 molecules. **One directory per molecule is not an option** —
 `ls` becomes unusable, ext4 without `dir_index` degrades past ~10k entries, a Lustre MDT

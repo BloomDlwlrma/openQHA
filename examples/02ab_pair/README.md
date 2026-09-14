@@ -5,8 +5,9 @@ bash examples/run_chain.sh examples/02ab_pair/branchA-pair.conf deimos
 ```
 
 One node, two CREST pipelines side by side, 4 threads each: `CHAIN=conformers_pair`.
-The products land under the canonical tags — `data/basins/acetone/…` and
-`data/basins/propanal/…` — so they are the inputs 02a's and 02b's GPU chains consume.
+The products land under the canonical tags — `<root>/acetone/…` and
+`<root>/propanal/…`, one molecule directory each (since 2026-09-14) — so they are the
+inputs 02a's and 02b's GPU chains consume.
 
 ## Why one job
 

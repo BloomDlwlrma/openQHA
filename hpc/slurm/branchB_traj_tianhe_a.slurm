@@ -53,7 +53,7 @@
 
 SPECIES="${SPECIES:?SPECIES not set (one QM9 id, e.g. dsgdb9nsd_000018)}"
 TAG="${TAG:-prod}"
-BASINS_FILE="${BASINS_FILE:-}"          # branch A's <qid>.basins.xyz, if it exists
+BASINS_FILE="${BASINS_FILE:-auto}"      # `auto`: branch A's mace/basinNN/basin.extxyz under TAG (since 2026-09-14)
 N_BASINS="${N_BASINS:-1}"
 N_SEEDS="${N_SEEDS:-1}"       # one per basin (ruling 2026-09-13)
 PROD_PS="${PROD_PS:-200}"

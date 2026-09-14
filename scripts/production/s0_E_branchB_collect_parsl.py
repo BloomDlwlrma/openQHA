@@ -221,7 +221,8 @@ def remaining(species, tag, cfg, no_resume=False, basin_tag=None, setting="defau
         todo.append(qid)
     return todo, dict(
         completion_criterion=COMPLETION,
-        trajectory_root=str(traj_root),
+        trajectories="<molecule>/openmm/basinNN/ under tag {!r}, setting {!r}".format(
+            basin_tag or tag, setting),
         n_candidates=len(species), n_already_done=len(done),
         n_no_trajectories_yet=len(no_traj), no_trajectories=no_traj[:20],
         n_remaining=len(todo),
@@ -263,7 +264,8 @@ def main():
 
     cfg = config.load()
     candidates, source = species_list(args, cfg)
-    species, record = remaining(candidates, args.tag, cfg, args.no_resume)
+    species, record = remaining(candidates, args.tag, cfg, args.no_resume,
+                                basin_tag=args.basin_tag, setting=args.setting)
 
     import resource_configs
     res = resource_configs.load(args.resource)
@@ -370,7 +372,8 @@ def main():
                    if k in os.environ}
 
     started = time.time()
-    futures = [app(qid, str(ROOT), args.tag, tuple(extra), env=passthrough)
+    futures = [app(qid, str(ROOT), args.tag, tuple(extra), env=passthrough,
+                   basin_tag=args.basin_tag, setting=args.setting)
                for qid in species]
     results = []
     for f in futures:
