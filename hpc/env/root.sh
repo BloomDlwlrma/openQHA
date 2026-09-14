@@ -67,3 +67,26 @@ openqha_resolve_root() {
     unset S0_RUNS_ROOT_IS_DEFAULT
     return 0
 }
+
+# The molecule directory of <qid> under <tag>, FOUND rather than composed: the shard rule
+# lives in openqha/store/layout.py and nothing else spells it. Prints the directory, or
+# nothing when branch A has not written `mace/basin00/basin.extxyz` there. Needs
+# S0_RUNS_ROOT (openqha_resolve_root, or an explicit export).
+openqha_find_molecule() {
+    local tag="$1" qid="$2" hit
+    [ -n "$S0_RUNS_ROOT" ] || return 1
+    hit="$(find "$S0_RUNS_ROOT/$tag" -path "*/$qid/mace/basin00/basin.extxyz" -print -quit 2>/dev/null)"
+    [ -n "$hit" ] || return 1
+    hit="${hit%/mace/basin00/basin.extxyz}"
+    printf '%s\n' "$hit"
+}
+
+# How many basins a molecule directory holds: the basinNN folders under mace/ that hold
+# a basin.extxyz. Prints the count (0 when none).
+openqha_count_basins() {
+    local mol="$1" n=0 d
+    for d in "$mol"/mace/basin[0-9][0-9]; do
+        [ -f "$d/basin.extxyz" ] && n=$((n + 1))
+    done
+    printf '%s\n' "$n"
+}

@@ -4,9 +4,9 @@
 
 **Blocked by:** 03 (OpenMM engine folder), 05 (MACE engine folder).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-14 (docs item carried to 09)
 
-- [ ] The basin count and geometries come from `mace/basinNN/`; a molecule with no `mace/` folder is refused naming the folder
-- [ ] The basin store module and `S0_BASIN_ROOT` are gone from code, confs and docs
-- [ ] The 02d-2 array reads basins from the basin tag's molecule directory and writes each row under `openmm/<row>/`
-- [ ] The existing branch B tests pass against the new source of basins
+- [x] The basin count and geometries come from `mace/basinNN/`; a molecule with no `mace/` folder is refused naming the folder
+- [x] The basin store module and `S0_BASIN_ROOT` are gone from code and confs (the docs and README mentions of `data/basins` go with the docs rewrite in ticket 09)
+- [x] The 02d-2 array reads basins from the basin tag's molecule directory and writes each row under `openmm/<row>/`
+- [x] The existing branch B tests pass against the new source of basins

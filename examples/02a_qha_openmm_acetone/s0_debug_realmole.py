@@ -65,7 +65,7 @@ from openqha import config                                          # noqa: E402
 from openqha.conformer_search import crest_census                    # noqa: E402
 from openqha.quasi_harmonic import basin_residence as br             # noqa: E402
 from openqha.quasi_harmonic import qha                               # noqa: E402
-from openqha.store import basin_store                                # noqa: E402
+from openqha.store import basins as basin_reader                     # noqa: E402
 
 #: name -> the trajectory driver's thermostat arguments. See the .conf header on why
 #: `nhc_*` (a coupling TIME in fs) and `langevin_*` (a friction in ps^-1) are not
@@ -127,8 +127,9 @@ def branch_a_basins(species, tag, threads=4, force=False):
     one basin cannot show the thing this file exists to show -- that a setting which
     moves T*S may move every basin together and change F_conf by nothing.
     """
-    j, x = basin_store.paths_for(species, tag=tag)[:2]
-    if force or not (j.exists() and x.exists()):
+    # Branch A's product is mace/basinNN/basin.extxyz in the molecule directory (ADR
+    # 0001); the trajectory driver is told `auto` and reads the same files.
+    if force or not basin_reader.exists(species, tag=tag):
         print("-- branch A: {} (tag {})".format(species, tag))
         cmd = [sys.executable, "-u",
                str(ROOT / "scripts" / "production" / "s0_A_pipeline.py"),
@@ -136,12 +137,12 @@ def branch_a_basins(species, tag, threads=4, force=False):
                "--hessian-mode", "analytic"]
         proc = subprocess.run(cmd, cwd=str(ROOT), text=True)
         if proc.returncode != 0:
-            raise SystemExit("branch A failed for {}; see analysis/branchA/{}/{}/"
-                             .format(species, tag, species))
-    rec = basin_store.read(species, tag=tag)
+            raise SystemExit("branch A failed for {} (tag {}); see the _records/ of its "
+                             "molecule directory".format(species, tag))
+    rec = basin_reader.read_record(species, tag=tag)
     if rec is None:
-        raise SystemExit("branch A wrote no basin record at {}".format(j))
-    return rec, x
+        raise SystemExit(basin_reader.missing_message(species, tag))
+    return rec, "auto"
 
 
 def basin_energies_and_sigma(rec, species, cfg):
@@ -180,6 +181,7 @@ def run_trajectory(species, tag, basins_file, basin, seed_index, thermostat,
               else "s0_B_qha_trajectory.py")
     cmd = [sys.executable, "-u", str(ROOT / "scripts" / "production" / script),
            "--species", species, "--tag", tag, "--basins", str(basins_file),
+           "--basin-tag", tag,
            "--basin", str(basin), "--seed-index", str(seed_index),
            "--prod-ps", str(prod_ps), "--equil-ps", str(equil_ps),
            "--sample-every", str(steps)]

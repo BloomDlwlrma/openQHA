@@ -481,9 +481,13 @@ def main():
     ap.add_argument("--species", default="dsgdb9nsd_000018")
     ap.add_argument("--tag", default="omm")
     ap.add_argument("--basins", default=None,
-                    help="branch A basin file (<qid>.basins.xyz). Without it there is "
-                         "ONE geometry -- the QM9 reference -- and it is not a basin "
-                         "list; the record says so.")
+                    help="`auto`: branch A's basins under --basin-tag, read from "
+                         "<molecule>/mace/basinNN/basin.extxyz (ADR 0001); a path: a "
+                         "multi-frame xyz to use instead. Without it there is ONE "
+                         "geometry -- the QM9 reference -- and it is not a basin list; "
+                         "the record says so.")
+    ap.add_argument("--basin-tag", default=None,
+                    help="the tag branch A's product is under (default: --tag)")
     ap.add_argument("--basin", type=int, default=None,
                     help="run only this basin index. This and --seed-index are what "
                          "make one (basin, seed) addressable by the execution layer.")
@@ -537,7 +541,15 @@ def main():
     model_path = engine.model_path()
 
     from ase.io import read
-    if args.basins:
+    if args.basins == "auto":
+        from openqha.store import basins as _basins
+        _btag = args.basin_tag or args.tag
+        frames_in = _basins.read_basins(args.species, tag=_btag, cfg=cfg)
+        if not frames_in:
+            raise SystemExit(_basins.missing_message(args.species, _btag, cfg=cfg))
+        geometry_source = "branch A basins: {}".format(
+            _basins.molecule_for(args.species, _btag, cfg) / "mace")
+    elif args.basins:
         frames_in = read(args.basins, index=":")
         geometry_source = "branch A basins: {}".format(args.basins)
     else:

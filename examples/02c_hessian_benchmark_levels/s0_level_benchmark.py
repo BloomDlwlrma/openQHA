@@ -60,7 +60,7 @@ from openqha import config                                             # noqa: E
 from openqha.potentials import engine                                  # noqa: E402
 from openqha.qm_interfaces import orca, xtb                            # noqa: E402
 from openqha.quasi_harmonic import mode_match                          # noqa: E402
-from openqha.store import basin_store                                  # noqa: E402
+from openqha.store import basins as basin_reader                       # noqa: E402
 from openqha.thermochem import hessian as hess_mod                     # noqa: E402
 from openqha.thermochem import thermo                                  # noqa: E402
 
@@ -274,20 +274,16 @@ def main():
         print("reference route (checked against the production driver):")
         print("  " + assert_route_matches_production())
 
-    rec_a = basin_store.read(args.species, tag=args.tag)
+    rec_a = basin_reader.read_record(args.species, tag=args.tag)
     if rec_a is None:
-        raise SystemExit(basin_store.missing_message(args.species, args.tag))
-    # Located by the store, not by the absolute path inside the record (see
-    # basin_store.xyz_for: the record crosses clusters, the path in it does not).
-    lines = basin_store.xyz_for(args.species, rec_a, tag=args.tag).read_text(
-        encoding="utf-8").splitlines()
-    geoms, i = [], 0
-    while i < len(lines) and lines[i].strip():
-        n = int(lines[i].split()[0])
-        blk = lines[i + 2:i + 2 + n]
-        geoms.append(([ln.split()[0] for ln in blk],
-                      np.array([[float(c) for c in ln.split()[1:4]] for ln in blk])))
-        i += n + 2
+        raise SystemExit(basin_reader.missing_message(args.species, args.tag))
+    # The geometries are the engine files mace/basinNN/basin.extxyz (ADR 0001), located
+    # by the layout, never by a path inside the record (the record crosses clusters,
+    # a path in it does not).
+    geoms = [(list(a.get_chemical_symbols()), np.asarray(a.get_positions(), dtype=float))
+             for a in basin_reader.read_basins(args.species, tag=args.tag)]
+    if not geoms:
+        raise SystemExit(basin_reader.missing_message(args.species, args.tag))
 
     calc, engine_name, prov = engine.calculator(device="cpu")
     runs = Path(config.runs_dir("level_benchmark", cfg)) / args.tag / args.species

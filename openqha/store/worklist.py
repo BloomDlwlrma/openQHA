@@ -27,7 +27,7 @@ filesystem, and its fix notes are the interesting part:
 """
 from __future__ import annotations
 
-from . import basin_store
+from . import basins as basin_reader, layout
 from .. import config as _config
 from ..conformer_search import filters
 
@@ -38,18 +38,17 @@ from ..conformer_search import filters
 #: as complete loses the geometries silently. `basin_store.write()` renames each into
 #: place after writing a `.part`, so a half-written file never has the final name -- but
 #: a job can still die between the two renames.
-COMPLETION = "both {qid}.basins.json and {qid}.basins.xyz exist in the shard"
+COMPLETION = "<molecule>/mace/basin00/basin.extxyz exists (ADR 0001, 2026-09-14)"
 
 
 def is_complete(qm9_index, cfg=None, tag=None):
     """The single definition of "done". Scanner and resubmitter must both use it."""
-    j, x = basin_store.paths_for(qm9_index, cfg, tag)[:2]
-    return j.exists() and x.exists()
+    return basin_reader.exists(qm9_index, tag=tag, cfg=cfg)
 
 
 def completed(cfg=None, tag=None, chunk_dir=None):
     """Indices already computed, by directory listing rather than per-molecule stat."""
-    return basin_store.completed(cfg=cfg, tag=tag, chunk_dir=chunk_dir)
+    return basin_reader.completed(tag=tag, cfg=cfg, chunk_dir=chunk_dir)
 
 
 def remaining(candidates, cfg=None, tag=None, chunk_dir=None, apply_gates=True,
@@ -72,7 +71,7 @@ def remaining(candidates, cfg=None, tag=None, chunk_dir=None, apply_gates=True,
     for i, qid in enumerate(candidates):
         if progress and i % 5000 == 0:
             progress("screening {}/{}".format(i, len(candidates)))
-        idx = basin_store._to_int(qid)
+        idx = layout.qid_number(qid)
         if idx in done:
             skipped_done.append(idx)
             continue

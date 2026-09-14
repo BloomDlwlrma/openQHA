@@ -167,6 +167,14 @@ PROD_PS = 1500.0           # literature_value: 1.5 ns, Rinaldo & Field 2003 p2.
 def load_atoms(args, cfg):
     """The starting geometries, and an honest label for where they came from."""
     from ase.io import read
+    if args.basins == "auto":
+        from openqha.store import basins as _basins
+        btag = args.basin_tag or args.tag
+        frames = _basins.read_basins(args.species, tag=btag, cfg=cfg)
+        if not frames:
+            raise SystemExit(_basins.missing_message(args.species, btag, cfg=cfg))
+        return frames, "branch A basins: {}".format(
+            _basins.molecule_for(args.species, btag, cfg) / "mace")
     if args.basins:
         frames = read(args.basins, index=":")
         return frames, "branch A basins: {}".format(args.basins)
@@ -593,8 +601,12 @@ def main():
     _p = qha.protocol()
     ap.add_argument("--species", default=None, help="QM9 index, e.g. dsgdb9nsd_000018")
     ap.add_argument("--basins", default=None,
-                    help="branch A basin file (<qid>_basins.xyz); overrides --species "
-                         "for geometry but --species still names the record")
+                    help="`auto`: branch A's basins under --basin-tag, read from "
+                         "<molecule>/mace/basinNN/basin.extxyz (ADR 0001); a path: a "
+                         "multi-frame xyz. Either overrides --species for geometry; "
+                         "--species still names the record")
+    ap.add_argument("--basin-tag", default=None,
+                    help="the tag branch A's product is under (default: --tag)")
     ap.add_argument("--tag", default="prod")
     ap.add_argument("--seeds", type=int, default=3,
                     help="independent trajectories per basin. 3 is the minimum that gives "

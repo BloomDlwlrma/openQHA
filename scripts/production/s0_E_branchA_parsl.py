@@ -185,7 +185,10 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
             except OSError:
                 pass
 
-    out = repo_root / "analysis" / "branchA" / tag / qm9_index / "basins.json"
+    _sys.path.insert(0, str(repo_root))
+    from openqha.store import basins as _basins, layout as _layout
+    # _records/basins.json in the molecule directory (ADR 0001, 2026-09-14).
+    out = _layout.records_dir(_basins.molecule_for(qm9_index, tag)) / "basins.json"
     summary = dict(qm9_index=qm9_index, seconds=_time.time() - started,
                    returncode=proc.returncode, command=cmd, socket=sock)
     if out.exists():

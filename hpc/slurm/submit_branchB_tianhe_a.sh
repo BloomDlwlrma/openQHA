@@ -74,8 +74,8 @@ for s in $LIST; do
     BASINS=$(python - <<PY
 import sys
 sys.path.insert(0, '.')
-from openqha import basin_store
-j, x = basin_store.paths_for("$s", tag="$TAG")[:2]
+from openqha.store import basins
+j = x = basins.molecule_for("$s", "$TAG") / "mace"
 print(x if x.exists() else "")
 PY
 )

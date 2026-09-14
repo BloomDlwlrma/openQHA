@@ -95,7 +95,7 @@ def _hpc_root(repo):
 sys.path.insert(0, str(_hpc_root(ROOT)))
 
 from openqha import config, qha  # noqa: E402
-from openqha.store import basin_store  # noqa: E402
+from openqha.store import basins as basin_reader  # noqa: E402
 
 #: Read once, at import, so --help shows the real defaults.
 _PROTOCOL = qha.protocol()
@@ -142,7 +142,8 @@ def _accepted_kwargs(fn):
 # ======================================================================================
 def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_ps,
                        equil_ps, wall_budget_s, route="ase", platform=None,
-                       basins_file=None, env=None, sample_every=None, setting="default"):
+                       basins_file=None, env=None, sample_every=None, setting="default",
+                       basin_tag=None):
     """One (basin, seed) trajectory, as a SUBPROCESS of the branch B driver.
 
     A subprocess rather than an import, for the same three reasons branch A uses one:
@@ -210,6 +211,8 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
         cmd += ["--wall-budget-s", str(wall_budget_s)]
     if basins_file:
         cmd += ["--basins", str(basins_file)]
+        if str(basins_file) == "auto" and basin_tag:
+            cmd += ["--basin-tag", str(basin_tag)]
 
     proc = _sp.run(cmd, cwd=str(repo_root), env=e, text=True,
                    stdout=_sp.PIPE, stderr=_sp.PIPE)
@@ -378,11 +381,11 @@ def main():
     basins_for, missing = {}, []
     basin_tag = args.basin_tag or args.tag
     for s in species:
-        j, x = basin_store.paths_for(s, tag=basin_tag)[:2]
-        if j.exists() and x.exists():
-            rec = basin_store.read(s, tag=basin_tag) or {}
-            n = len(rec.get("basins", [])) or 1
-            basins_for[s] = (str(x), n)
+        # The count is the number of mace/basinNN/basin.extxyz files (ADR 0001); the
+        # task is told `auto` and reads the same files itself.
+        n = len(basin_reader.basin_files(basin_reader.molecule_for(s, basin_tag)))
+        if n:
+            basins_for[s] = ("auto", n)
         else:
             basins_for[s] = (None, 1)
             missing.append(s)
@@ -563,7 +566,8 @@ def main():
     futures = [app(s, b, k, args.seed0, str(ROOT), args.tag, args.prod_ps, args.equil_ps,
                    budget, route=route, platform=platform,
                    basins_file=basins_for[s][0], env=passthrough,
-                   sample_every=args.sample_every, setting=args.setting)
+                   sample_every=args.sample_every, setting=args.setting,
+                   basin_tag=basin_tag)
                for s, b, k in tasks]
     results = []
     for f in futures:

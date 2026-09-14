@@ -59,7 +59,7 @@ from openqha import config                                             # noqa: E
 from openqha.potentials import engine                                  # noqa: E402
 from openqha.quasi_harmonic import mode_match, qha                     # noqa: E402
 from openqha.quasi_harmonic import basin_residence as br               # noqa: E402
-from openqha.store import basin_store                                  # noqa: E402
+from openqha.store import basins as basin_reader                       # noqa: E402
 from openqha.thermochem import hessian as hess_mod                     # noqa: E402
 from openqha.thermochem import gtotal, thermo                          # noqa: E402
 
@@ -81,23 +81,19 @@ def basin_geometries(species, tag):
     rejected rather than reordered: a silent reordering would scramble the mass
     weighting and every mode with it.
     """
-    rec = basin_store.read(species, tag=tag)
+    rec = basin_reader.read_record(species, tag=tag)
     if rec is None:
         raise SystemExit(
-            basin_store.missing_message(species, tag)
+            basin_reader.missing_message(species, tag)
             + "\n  This example starts from the basins branch A found; to make them:\n"
             "  bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos")
-    # Located by the store, not by the absolute path inside the record: the record was
-    # written on the CPU cluster and read here on the GPU one (an113, 2026-09-13).
-    lines = basin_store.xyz_for(species, rec, tag=tag).read_text(
-        encoding="utf-8").splitlines()
-    out, i = [], 0
-    while i < len(lines) and lines[i].strip():
-        n = int(lines[i].split()[0])
-        block = lines[i + 2:i + 2 + n]
-        out.append(([ln.split()[0] for ln in block],
-                    np.array([[float(c) for c in ln.split()[1:4]] for ln in block])))
-        i += n + 2
+    # The geometries are the engine files mace/basinNN/basin.extxyz (ADR 0001), located
+    # by the layout, never by a path inside the record: the record was written on the
+    # CPU cluster and read on the GPU one (an113, 2026-09-13).
+    out = [(list(a.get_chemical_symbols()), np.asarray(a.get_positions(), dtype=float))
+           for a in basin_reader.read_basins(species, tag=tag)]
+    if not out:
+        raise SystemExit(basin_reader.missing_message(species, tag))
     return out, rec
 
 

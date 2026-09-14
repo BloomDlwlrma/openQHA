@@ -137,14 +137,16 @@ if [ "$KIND" = "gpu" ]; then
     esac
 fi
 
-# Does step 1 exist? A pure filesystem question -- the basin store's layout is
-# <root>/<tag>/<shard>/<species>.basins.json -- so it needs no python and no imports.
+# Does step 1 exist? A filesystem question: branch A's product is
+# <root>/<tag>/<range>/<chunk>/<species>/mace/basin00/basin.extxyz (ADR 0001), found by
+# hpc/env/root.sh (no python, no imports; the root is derived from the partition).
 if [ "$CHAIN" != "conformers" ] && [ "$CHAIN" != "conformers_pair" ] && [ "$KIND" = "gpu" ]; then
-    BASINS_ROOT="${S0_BASIN_ROOT:-data/basins}"
-    if ! find "$BASINS_ROOT/$TAG" -name "${SPECIES}.basins.json" -print -quit 2>/dev/null \
-         | grep -q .; then
-        echo "openQHA: no branch A product for '$SPECIES' under tag '$TAG'." >&2
-        echo "  Looked in $BASINS_ROOT/$TAG/" >&2
+    # shellcheck disable=SC1091
+    source hpc/env/root.sh
+    OPENQHA_PARTITION="$PARTITION" openqha_resolve_root || exit 2
+    if ! openqha_find_molecule "${BASIN_TAG:-$TAG}" "$SPECIES" >/dev/null; then
+        echo "openQHA: no branch A product for '$SPECIES' under tag '${BASIN_TAG:-$TAG}'." >&2
+        echo "  Looked under $S0_RUNS_ROOT/${BASIN_TAG:-$TAG}/ for $SPECIES/mace/basin00/basin.extxyz" >&2
         echo "  Branch A is CREST + GFN2-xTB and cannot run on a GPU queue, so this job" >&2
         echo "  would start and then fail. Run step 1 first, with the SAME tag:" >&2
         echo "    bash examples/run_chain.sh $(dirname "$CONF")/branchA.conf deimos" >&2

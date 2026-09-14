@@ -90,8 +90,8 @@ for s in $SPECIES; do
 done
 python - <<PY
 import sys; sys.path.insert(0, '.')
-from openqha import basin_store
-c = basin_store.census(tag="$TAG")
+from openqha.store import basins
+c = basins.census(tag="$TAG")
 print("basin store: {} molecules under {}".format(c["total"], c["root"]))
 PY
 echo

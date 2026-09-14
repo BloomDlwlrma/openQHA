@@ -63,7 +63,7 @@ sys.path.insert(0, str(ROOT))
 from openqha import config                                          # noqa: E402
 from openqha.quasi_harmonic import basin_residence as br            # noqa: E402
 from openqha.quasi_harmonic import ensemble, qha                    # noqa: E402
-from openqha.store import basin_store                               # noqa: E402
+from openqha.store import basins as basin_reader                    # noqa: E402
 
 
 def basin_electronic(rec):
@@ -239,10 +239,10 @@ def main():
     cfg = config.load()
     temperature = config.temperature(cfg)
     basin_tag = args.basin_tag or args.tag
-    rec_a = basin_store.read(args.species, tag=basin_tag)
+    rec_a = basin_reader.read_record(args.species, tag=basin_tag)
     if rec_a is None:
         raise SystemExit(
-            basin_store.missing_message(args.species, basin_tag)
+            basin_reader.missing_message(args.species, basin_tag)
             + "\n  The ensemble is a sum over the basins branch A found; without it there "
             "is nothing to sum.\n"
             "  python scripts/production/s0_A_pipeline.py --species {} --tag {}"

@@ -20,7 +20,7 @@ before anyone has had to find anything in it.
         thermochem/         thermochemistry shared by both
             hessian, thermo, critical
         store/              where results live and how to find them again
-            layout, basin_store, artifacts, record, report, worklist
+            layout, basins, artifacts, record, report, worklist
         data/               locating input structures
             curated_qm9, qm9_uncharacterized
         qm_interfaces/      reference-level quantum chemistry  (ALF's own name)
@@ -97,7 +97,7 @@ _MOVED = {
     # thermochemistry
     "hessian": "thermochem", "thermo": "thermochem", "critical": "thermochem",
     # results
-    "basin_store": "store", "artifacts": "store", "record": "store",
+    "artifacts": "store", "record": "store",
     "report": "store", "worklist": "store",
     # inputs
     "curated_qm9": "data", "qm9_uncharacterized": "data",

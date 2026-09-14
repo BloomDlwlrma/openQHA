@@ -58,27 +58,25 @@ SUBMIT="${OPENQHA_SUBMIT:-yhbatch}"
 [ -f "$SETTINGS" ] || { echo "no settings file: $SETTINGS" >&2; exit 2; }
 
 # ---- the basins must exist, once, before N jobs go looking for them --------------------
-BASINS_ROOT="${S0_BASIN_ROOT:-data/basins}"
-if ! find "$BASINS_ROOT/$BASIN_TAG" -name "${SPECIES}.basins.json" -print -quit 2>/dev/null \
-     | grep -q .; then
+# Branch A's product is <root>/<BASIN_TAG>/<range>/<chunk>/<SPECIES>/mace/basinNN/
+# basin.extxyz (ADR 0001); hpc/env/root.sh finds it and counts the basins, on the login
+# node, with no python. The root is derived from the partition this array will run on.
+# shellcheck disable=SC1091
+source "$ROOT/hpc/env/root.sh"
+OPENQHA_PARTITION="${OPENQHA_GPU_PARTITION:-}" openqha_resolve_root || exit 2
+MOL_DIR="$(openqha_find_molecule "$BASIN_TAG" "$SPECIES")" || {
     echo "openQHA: no branch A product for '$SPECIES' under BASIN_TAG '$BASIN_TAG'." >&2
+    echo "  Looked under $S0_RUNS_ROOT/$BASIN_TAG/ for $SPECIES/mace/basin00/basin.extxyz." >&2
     echo "  Every row reads it. Make it once, on the CPU cluster:" >&2
     echo "    bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos            # acetone" >&2
     echo "    bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA-propanal.conf deimos   # propanal" >&2
-    ls -1 "$BASINS_ROOT" 2>/dev/null | sed 's/^/  tags present: /' >&2
+    ls -1 "$S0_RUNS_ROOT" 2>/dev/null | sed 's/^/  tags present: /' >&2
     exit 2
-fi
+}
 
 # ---- how many basins: it sets the workers per row ------------------------------------------
-BASIN_JSON="$(find "$BASINS_ROOT/$BASIN_TAG" -name "${SPECIES}.basins.json" -print -quit 2>/dev/null)"
-N_BASINS="$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1])).get('basins') or []))" "$BASIN_JSON" 2>/dev/null)"
-case "$N_BASINS" in ''|0|*[!0-9]*) echo "openQHA: could not count basins in $BASIN_JSON; assuming 1" >&2; N_BASINS=1 ;; esac
-W_MAX=0
-
-# ---- how many basins: it sets the workers per row ------------------------------------------
-BASIN_JSON="$(find "$BASINS_ROOT/$BASIN_TAG" -name "${SPECIES}.basins.json" -print -quit 2>/dev/null)"
-N_BASINS="$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1])).get('basins') or []))" "$BASIN_JSON" 2>/dev/null)"
-case "$N_BASINS" in ''|0|*[!0-9]*) echo "openQHA: could not count basins in $BASIN_JSON; assuming 1" >&2; N_BASINS=1 ;; esac
+N_BASINS="$(openqha_count_basins "$MOL_DIR")"
+case "$N_BASINS" in ''|0|*[!0-9]*) echo "openQHA: could not count basins in $MOL_DIR/mace; assuming 1" >&2; N_BASINS=1 ;; esac
 W_MAX=0
 
 # ---- read the rows -----------------------------------------------------------------------

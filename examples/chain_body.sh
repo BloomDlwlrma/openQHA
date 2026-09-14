@@ -358,8 +358,8 @@ BASINS_PRESENT=$(python - "$SPECIES" "${BASIN_TAG:-$TAG}" <<'PY'
 import sys
 sys.path.insert(0, ".")
 try:
-    from openqha.store import basin_store
-    print("yes" if basin_store.exists(sys.argv[1], tag=sys.argv[2]) else "no")
+    from openqha.store import basins
+    print("yes" if basins.exists(sys.argv[1], tag=sys.argv[2]) else "no")
 except Exception:                                                 # noqa: BLE001
     print("unknown")
 PY
