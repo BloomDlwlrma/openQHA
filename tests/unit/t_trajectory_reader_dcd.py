@@ -56,8 +56,10 @@ def main():
         eng = Path(t) / "openmm" / "default" / "basin00"
         rec = Path(t) / "_records" / "openmm" / "default" / "basin00"
         top = openmm_files.topology_for(numbers)
-        f = openmm_files.EngineFolder(eng, top, frame_spacing_ps=0.01)
+        f = openmm_files.EngineFolder(eng, top, frame_spacing_ps=0.01, setting="s1")
         openmm_files.write_start_pdb(f.paths["start.pdb"], top, frames[0])
+        check("a non-default setting writes traj_s1.dcd beside the folder's other settings",
+              f.paths["traj.dcd"].name == "traj_s1.dcd", f.paths["traj.dcd"].name)
         f.open_frames(append=False)
         for i in range(3):
             f.write_frame(frames[i], step=10 * (i + 1), time_ps=0.01 * (i + 1),
@@ -65,7 +67,7 @@ def main():
         f.close_frames()
 
         print("A/B/C. read back:")
-        r = tr.read_trajectory(eng)
+        r = tr.read_trajectory(eng, setting="s1")
         pos = r["positions_A"]
         check("shape (3, 4, 3) float64", pos.shape == (3, 4, 3) and pos.dtype == np.float64, (pos.shape, pos.dtype))
         d = float(np.abs(pos - frames).max())
@@ -87,18 +89,18 @@ def main():
         check("no records folder -> meta None", r["meta"] is None, r["meta"])
         rec.mkdir(parents=True)
         (rec / "meta.json").write_text(json.dumps(dict(seed=5, symbols=["O", "H", "H", "C"])), encoding="utf-8")
-        r2 = tr.read_trajectory(eng, records_dir=rec)
+        r2 = tr.read_trajectory(eng, records_dir=rec, setting="s1")
         check("meta.json read when present", r2["meta"] is not None and r2["meta"]["seed"] == 5, r2["meta"])
 
         print("D. refusals name the folder:")
         for missing in ("traj.dcd", "start.pdb"):
-            bad = Path(t) / "bad_" + missing if False else Path(t) / ("bad_" + missing)
+            bad = Path(t) / ("bad_" + missing)
             bad.mkdir()
             for n in ("traj.dcd", "start.pdb", "state.csv"):
                 if n != missing:
-                    (bad / n).write_bytes((eng / n).read_bytes())
+                    (bad / n).write_bytes(f.paths[n].read_bytes())
             try:
-                tr.read_trajectory(bad)
+                tr.read_trajectory(bad)                 # default setting: bare names
                 check("missing {} refused".format(missing), False, "no error")
             except FileNotFoundError as exc:
                 check("missing {} refused, folder named".format(missing),

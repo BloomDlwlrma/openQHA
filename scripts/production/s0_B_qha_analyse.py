@@ -81,7 +81,7 @@ def discover(molecule, setting):
 
 
 def analyse_one(engine_dir, records_dir, temperature_K, fractions, n_batches,
-                limit_frames=None):
+                limit_frames=None, setting="default"):
     """One trajectory: the identity assertion first, then the whole chain.
 
     Frames come from the engine folder (traj.dcd + start.pdb); the record beside them
@@ -90,7 +90,7 @@ def analyse_one(engine_dir, records_dir, temperature_K, fractions, n_batches,
     assertion cannot be made from a DCD alone.
     """
     from openqha.quasi_harmonic import trajectory_reader
-    tr = trajectory_reader.read_trajectory(engine_dir, records_dir=records_dir)
+    tr = trajectory_reader.read_trajectory(engine_dir, records_dir=records_dir, setting=setting)
     meta = tr["meta"]
     if meta is None:
         raise SystemExit(
@@ -183,12 +183,12 @@ def main():
     molecule = (Path(args.molecule_dir) if args.molecule_dir
                 else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
                                          args.species))
-    root = molecule / "openmm" / args.setting
+    root = molecule / "openmm"
     found = discover(molecule, args.setting)
     if not found:
-        raise SystemExit("no trajectories under {} (no basinNN/traj.dcd)\n"
+        raise SystemExit("no trajectories under {} (no basinNN/{})\n"
                          "Run scripts/production/s0_B_qha_trajectory_openmm.py first."
-                         .format(root))
+                         .format(root, layout.openmm_file_name("traj.dcd", args.setting)))
 
     print("=" * 92)
     print("Branch B -- quasi-harmonic analysis   {}  ({})".format(
@@ -202,7 +202,7 @@ def main():
     per_traj, by_basin = [], {}
     for basin, seed, engine_dir, records_dir in found:
         one = analyse_one(engine_dir, records_dir, temperature, fractions, args.batches,
-                          args.limit_frames)
+                          args.limit_frames, setting=args.setting)
         ent = one["analysis"]["entropy"]
         spec_rec = one["analysis"]["spectrum"]
         print("{:<9} {:<8} {:>7} frames   T*S_QH = {:9.4f}   T*S_Schl = {:9.4f}   "

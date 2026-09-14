@@ -8,8 +8,10 @@ files only in those folders, and this repository's records in `_records/`:
       crest_shake1/               the SHAKE fallback, only when it ran
       mace/confNN/                opt.traj  opt.log  conf.extxyz    every tightened conformer
       mace/basinNN/               basin.extxyz  hessian.npy         every surviving basin
-      openmm/<setting>/basinNN/   start.pdb system.xml integrator.xml traj.dcd
-                                  state.csv state.xml state.chk
+      openmm/basinNN/             start.pdb system.xml integrator.xml traj.dcd
+                                  state.csv state.xml state.chk        (the default setting)
+                                  start_<setting>.pdb ... traj_<setting>.dcd ...
+                                  (every other setting, same folder, its name in the file)
       xtb/basinNN/  orca/basinNN/ 02c only
       _records/                   everything this repository writes about the run
 
@@ -90,9 +92,42 @@ def mace_basin_dir(molecule, basin):
     return Path(molecule) / "mace" / "basin{:02d}".format(int(basin))
 
 
+#: The setting whose files keep the bare names.
+DEFAULT_SETTING = "default"
+
+
 def openmm_dir(molecule, setting, basin):
-    """One trajectory: `openmm/<setting>/basinNN/`. No seed level (ruling S0-B-59)."""
-    return Path(molecule) / "openmm" / str(setting) / "basin{:02d}".format(int(basin))
+    """The basin's one OpenMM folder, `openmm/basinNN/`, whatever the setting.
+
+    No seed level (ruling S0-B-59) and, since the user's ruling of 2026-09-14, no setting
+    level either: every setting's trajectory of a basin sits in the same folder and the
+    setting is in the file name (`openmm_file_name`). `setting` is accepted so a caller
+    states which run it means, and ignored here.
+    """
+    return Path(molecule) / "openmm" / "basin{:02d}".format(int(basin))
+
+
+def openmm_file_name(name, setting=DEFAULT_SETTING):
+    """`traj.dcd` for the default setting; `traj_<setting>.dcd` for any other.
+
+    The suffix is the SETTING, not the job id: a resumed trajectory is continued by a
+    later job and must find its own files by name; the job id belongs in the record.
+    """
+    if str(setting) == DEFAULT_SETTING:
+        return name
+    stem, dot, ext = name.partition(".")
+    return "{}_{}{}{}".format(stem, setting, dot, ext)
+
+
+def openmm_file(molecule, setting, basin, name):
+    """The on-disk path of one engine file of one trajectory."""
+    return openmm_dir(molecule, setting, basin) / openmm_file_name(name, setting)
+
+
+def tag_records_dir(root, tag):
+    """`<root>/<tag>/_records/`: records about a whole tag rather than one molecule (the
+    parsl drivers' batch summaries). User ruling 2026-09-14."""
+    return Path(root) / str(tag) / RECORDS
 
 
 def xtb_dir(molecule, basin):

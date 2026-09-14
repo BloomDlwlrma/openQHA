@@ -127,11 +127,11 @@ def crossings_per_basin(species, tag, cfg, setting="default", root=None):
     (per-basin dict, the openmm/<setting> folder it read)."""
     from openqha.quasi_harmonic import trajectory_reader
     molecule = basin_reader.molecule_for(species, tag, cfg, root=root)
-    root = molecule / "openmm" / str(setting)
+    root = molecule / "openmm"
     out = {}
     for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting):
         res_all = []
-        tr = trajectory_reader.read_trajectory(eng, records_dir=rec)
+        tr = trajectory_reader.read_trajectory(eng, records_dir=rec, setting=setting)
         res_all.append(br.basin_residence(tr["positions_A"], tr["symbols"]))
         out[b] = dict(
             distinct_crossings=int(sum(r["distinct_basin_crossings"] for r in res_all)),
@@ -177,7 +177,7 @@ def entropy_per_basin(species, tag, cfg, atoms_set="all", setting="default", roo
     molecule = basin_reader.molecule_for(species, tag, cfg, root=root)
     for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting):
         vals, frames_seen = [], 0
-        tr = trajectory_reader.read_trajectory(eng, records_dir=rec)
+        tr = trajectory_reader.read_trajectory(eng, records_dir=rec, setting=setting)
         frames = tr["positions_A"]
         syms = tr["symbols"]
         masses = np.asarray((tr["meta"] or {}).get("masses_amu") or tr["masses_amu"],

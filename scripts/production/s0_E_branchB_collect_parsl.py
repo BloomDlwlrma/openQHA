@@ -407,7 +407,9 @@ def main():
     print("slot_extrapolation                NOT COMPUTED -- the per-task cost under "
           "contention has not been measured (D0-P1-12, defects 34 and 56)")
 
-    out = ROOT / "analysis" / "qha" / args.tag / "collect" / "batch.json"
+    # <root>/<tag>/_records/collect_batch.json (user ruling 2026-09-14: per-tag leftovers).
+    from openqha.store import layout as _layout
+    out = _layout.tag_records_dir(config.runs_root(), args.tag) / "collect_batch.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(dict(plan=plan, results=results,
                                    wall_seconds_for_the_whole_batch=wall),

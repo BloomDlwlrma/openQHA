@@ -20,6 +20,14 @@ the records go is a separate decision (step 2), taken after this one.
 - Engine files and records in the same folder, as before: rejected, a reader cannot tell
   what the engine produced from what this code wrote about it.
 
+## Amendment (user, 2026-09-14, same day)
+
+The `openmm/<setting>/basinNN/` level is dropped: one `openmm/basinNN/` per basin holds
+every trajectory setting of that basin, the default setting under the bare file names
+and any other under `<stem>_<setting>.<ext>` (`traj_p1500_s5.dcd`). The suffix is the
+setting and not the job id, so a later job can resume the file by name. Records about a
+whole tag (batch summaries) live at `<root>/<tag>/_records/`.
+
 ## Consequences
 
 MACE and OpenMM have no file format of their own, so their folders hold the closest

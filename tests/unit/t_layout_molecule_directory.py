@@ -60,8 +60,17 @@ def main():
     check("crest fallback", layout.crest_dir(m, fallback_shake=1), m / "crest_shake1")
     check("mace conformer 3", layout.mace_conformer_dir(m, 3), m / "mace/conf03")
     check("mace basin 0", layout.mace_basin_dir(m, 0), m / "mace/basin00")
-    check("openmm default basin 1", layout.openmm_dir(m, "default", 1), m / "openmm/default/basin01")
-    check("openmm row p1500_s5 basin 0", layout.openmm_dir(m, "p1500_s5", 0), m / "openmm/p1500_s5/basin00")
+    # One openmm/basinNN per basin, every setting inside it (user ruling 2026-09-14, which
+    # replaced openmm/<setting>/basinNN); the setting is in the FILE NAME, and the
+    # default setting keeps the bare names.
+    check("openmm default basin 1", layout.openmm_dir(m, "default", 1), m / "openmm/basin01")
+    check("openmm row p1500_s5 basin 0", layout.openmm_dir(m, "p1500_s5", 0), m / "openmm/basin00")
+    check("default file name", layout.openmm_file_name("traj.dcd", "default"), "traj.dcd")
+    check("setting file name", layout.openmm_file_name("traj.dcd", "p1500_s5"), "traj_p1500_s5.dcd")
+    check("setting file name, pdb", layout.openmm_file_name("start.pdb", "p1500_s5"), "start_p1500_s5.pdb")
+    check("openmm_file composes both", layout.openmm_file(m, "p1500_s5", 0, "state.csv"),
+          m / "openmm/basin00/state_p1500_s5.csv")
+    check("tag records dir", layout.tag_records_dir(R, "02d_prod"), R / "02d_prod/_records")
     check("xtb basin 2", layout.xtb_dir(m, 2), m / "xtb/basin02")
     check("orca basin 2", layout.orca_dir(m, 2), m / "orca/basin02")
     check("records", layout.records_dir(m), m / "_records")

@@ -62,6 +62,7 @@ the drift is recorded, so it can be checked rather than assumed harmless.
 """
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -192,7 +193,7 @@ def flush_frames(frames_path, frames):
     return frames_path
 
 
-def already_complete(outdir, n_target, engine_dir=None):
+def already_complete(outdir, n_target, engine_dir=None, setting="default"):
     """The trajectory's own record, if this (basin, seed) is finished; else None.
 
     Finished means: meta.json is there, its production block says complete, and
@@ -216,7 +217,8 @@ def already_complete(outdir, n_target, engine_dir=None):
             # Since 2026-09-14 the trajectory IS traj.dcd (ADR 0001); the float64 copy in
             # the record is not what decides whether a basin is finished.
             from openqha.quasi_harmonic import openmm_files
-            n = openmm_files.dcd_frame_count(Path(engine_dir) / "traj.dcd")
+            n = openmm_files.dcd_frame_count(
+                Path(engine_dir) / layout.openmm_file_name("traj.dcd", setting))
         elif frames_p.exists():
             n = int(np.load(frames_p, mmap_mode="r").shape[0])
         else:
@@ -299,7 +301,8 @@ def run_one(species, positions_A, numbers, masses, model_path, engine_dir, recor
     n_target = int(round(prod_ps * 1000.0 / args.timestep_fs)) // args.sample_every
     topology = openmm_files.topology_for(numbers)
     folder = openmm_files.EngineFolder(
-        engine_dir, topology, frame_spacing_ps=args.sample_every * args.timestep_fs / 1000.0)
+        engine_dir, topology, frame_spacing_ps=args.sample_every * args.timestep_fs / 1000.0,
+        setting=args.setting)
     n_on_disk = folder.frames_on_disk()
     resume = bool(n_on_disk > 0 and folder.has_state())
     prev_prod = (prev_meta or {}).get("production") or {}
@@ -468,6 +471,7 @@ def run_one(species, positions_A, numbers, masses, model_path, engine_dir, recor
         temperature_error_K=(float(np.mean(temps) - temperature_K)
                              if temps else prev_prod.get("temperature_error_K")),
         centre_of_mass_drift_A=float(np.max(com_drift)) if com_drift else 0.0)
+    prod_record["files"] = {n: str(p) for n, p in folder.paths.items()}
     return np.array(have), equil_record, prod_record, force_record, thermo_record
 
 
@@ -600,7 +604,8 @@ def main():
                     temperature_mean_K=prod.get("temperature_mean_K"),
                     com_drift_A=prod.get("centre_of_mass_drift_A"))
 
-    done = {(b, k): already_complete(_records_dir(b), n_target, engine_dir=_engine_dir(b))
+    done = {(b, k): already_complete(_records_dir(b), n_target, engine_dir=_engine_dir(b),
+                                     setting=args.setting)
             for b, _g in basins for k in seed_indices}
     done = {bk: m for bk, m in done.items() if m is not None}
     if done:
@@ -647,8 +652,9 @@ def main():
 
     print("geometry    {}".format(geometry_source))
     print("molecule    {}".format(molecule))
-    print("engine      openmm/{}/basinNN/   (OpenMM's own files; records in _records/)"
-          .format(args.setting))
+    print("engine      openmm/basinNN/{}   (OpenMM's own files; records in _records/openmm/{}/)"
+          .format("" if args.setting == "default" else "  files *_{}.*".format(args.setting),
+                  args.setting))
     print()
 
     summary = []
@@ -678,6 +684,7 @@ def main():
                 args.species, relaxed_A, geom.get_atomic_numbers(), geom.get_masses(),
                 model_path, engine_dir, outdir, temperature, seed, args.equil_ps,
                 args.prod_ps, args, prev_meta=prev_meta)
+            folder_paths = prod.get("files") or {}
 
             meta = dict(
                 # ---- the identity assertion's inputs ----------------------------------
@@ -695,6 +702,8 @@ def main():
                 # ---- everything else --------------------------------------------------
                 qm9_index=args.species, basin_index=int(b), seed=int(seed),
                 setting=args.setting, engine_folder=str(engine_dir),
+                engine_files={n: str(p) for n, p in folder_paths.items()},
+                slurm_job_id=os.environ.get("SLURM_JOB_ID"),
                 seed_formula=seed_formula,
                 segments=segments_record(prev_meta, seed, prod),
                 geometry_source=geometry_source,
@@ -735,7 +744,7 @@ def main():
     (outroot / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8")
     print()
-    print("engine files under {}".format(molecule / "openmm" / args.setting))
+    print("engine files under {}  (setting {})".format(molecule / "openmm", args.setting))
     print("records under      {}".format(outroot))
     print("analyse with: python scripts/production/s0_B_qha_analyse.py --species {} "
           "--tag {}".format(args.species, args.tag))

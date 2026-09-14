@@ -36,12 +36,13 @@ NM_TO_A = 10.0
 CSV_COLUMNS = ("step", "time_ps", "potential_kJ", "kinetic_kJ", "temperature_K")
 
 
-def _need(folder, name):
-    p = Path(folder) / name
+def _need(folder, name, setting="default"):
+    from ..store import layout
+    p = Path(folder) / layout.openmm_file_name(name, setting)
     if not p.is_file():
         raise FileNotFoundError(
             "no {} in {}: not an OpenMM engine folder, or the trajectory never started"
-            .format(name, folder))
+            .format(p.name, folder))
     return p
 
 
@@ -62,17 +63,19 @@ def read_table(path):
     return {k: np.asarray(v) for k, v in cols.items()}
 
 
-def read_trajectory(engine_dir, records_dir=None):
+def read_trajectory(engine_dir, records_dir=None, setting="default"):
+    """`setting` picks the file names inside the folder (layout.openmm_file_name)."""
     import mdtraj as md
+    from ..store import layout
     engine_dir = Path(engine_dir)
-    dcd = _need(engine_dir, "traj.dcd")
-    pdb = _need(engine_dir, "start.pdb")
+    dcd = _need(engine_dir, "traj.dcd", setting)
+    pdb = _need(engine_dir, "start.pdb", setting)
     t = md.load(str(dcd), top=str(pdb))
     positions = np.asarray(t.xyz, dtype=np.float64) * NM_TO_A
     symbols = [a.element.symbol for a in t.topology.atoms]
     masses = np.asarray([a.element.mass for a in t.topology.atoms], dtype=float)
 
-    csv_p = engine_dir / "state.csv"
+    csv_p = engine_dir / layout.openmm_file_name("state.csv", setting)
     table = read_table(csv_p) if csv_p.is_file() else {k: np.zeros(0) for k in CSV_COLUMNS}
     n = int(positions.shape[0])
     if len(table["step"]) > n:
@@ -88,20 +91,22 @@ def read_trajectory(engine_dir, records_dir=None):
             meta = json.loads(mp.read_text(encoding="utf-8"))
 
     return dict(positions_A=positions, symbols=symbols, masses_amu=masses, table=table,
-                frame_spacing_ps=spacing, n_frames=n, meta=meta, engine_dir=str(engine_dir))
+                frame_spacing_ps=spacing, n_frames=n, meta=meta, engine_dir=str(engine_dir),
+                setting=str(setting))
 
 
 def trajectory_dirs(molecule, setting="default"):
-    """[(basin, engine_dir, records_dir)] for every basin folder under openmm/<setting>/
-    that holds a traj.dcd, in basin order. The records folder is named whether or not it
-    exists."""
+    """[(basin, engine_dir, records_dir)] for every openmm/basinNN/ that holds this
+    setting's DCD (`traj.dcd`, or `traj_<setting>.dcd`), in basin order. The records
+    folder is named whether or not it exists."""
     from ..store import layout
-    root = Path(molecule) / "openmm" / str(setting)
+    root = Path(molecule) / "openmm"
+    dcd = layout.openmm_file_name("traj.dcd", setting)
     out = []
     if not root.is_dir():
         return out
     for d in sorted(root.iterdir()):
-        if d.name.startswith("basin") and d.name[5:].isdigit() and (d / "traj.dcd").is_file():
+        if d.name.startswith("basin") and d.name[5:].isdigit() and (d / dcd).is_file():
             b = int(d.name[5:])
-            out.append((b, d, layout.records_dir(molecule) / "openmm" / str(setting) / d.name))
+            out.append((b, d, layout.openmm_records_dir(molecule, setting) / d.name))
     return out

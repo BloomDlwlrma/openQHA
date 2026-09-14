@@ -1,6 +1,8 @@
 """OpenMM's own files for one trajectory: what an engine folder holds (ADR 0001).
 
-    openmm/<setting>/basinNN/
+    openmm/basinNN/            (one folder per basin; a non-default setting's files carry
+                                the setting in their names, e.g. traj_p1500_s5.dcd -- see
+                                openqha.store.layout.openmm_file_name)
       start.pdb        the structure the dynamics started from (post-relax), one residue MOL
       system.xml       XmlSerializer of the System, TorchForce included
       integrator.xml   XmlSerializer of the integrator
@@ -114,10 +116,11 @@ def csv_row_count(path):
 class EngineFolder:
     """The seven files of one trajectory, opened for writing or appending."""
 
-    def __init__(self, folder, topology, frame_spacing_ps):
+    def __init__(self, folder, topology, frame_spacing_ps, setting="default"):
         self.folder = Path(folder)
         self.topology = topology
         self.frame_spacing_ps = float(frame_spacing_ps)
+        self.setting = str(setting)
         self.folder.mkdir(parents=True, exist_ok=True)
         self._dcd_fh = None
         self._dcd = None
@@ -126,8 +129,10 @@ class EngineFolder:
     # ---- what is on disk -------------------------------------------------------------
     @property
     def paths(self):
-        return {n: self.folder / n for n in ("start.pdb", "system.xml", "integrator.xml",
-                                             "traj.dcd", "state.csv", "state.xml", "state.chk")}
+        """Logical name -> on-disk path; the setting is in the name for non-default runs."""
+        from ..store import layout
+        return {n: self.folder / layout.openmm_file_name(n, self.setting)
+                for n in layout.OPENMM_FILES}
 
     def frames_on_disk(self):
         """The trajectory's own count: the DCD header, cross-checked against the CSV.

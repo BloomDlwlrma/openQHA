@@ -48,9 +48,9 @@ def check(label, ok, detail=""):
         FAIL.append(label)
 
 
-def run_driver(root, prod_ps):
+def run_driver(root, prod_ps, setting=SETTING):
     env = dict(os.environ, S0_RUNS_ROOT=str(root))
-    cmd = [sys.executable, str(DRIVER), "--species", QID, "--tag", TAG, "--setting", SETTING,
+    cmd = [sys.executable, str(DRIVER), "--species", QID, "--tag", TAG, "--setting", setting,
            "--platform", "CPU", "--equil-ps", "0.02", "--prod-ps", str(prod_ps),
            "--sample-every", "10", "--timestep-fs", "1.0"]
     t0 = time.time()
@@ -59,12 +59,14 @@ def run_driver(root, prod_ps):
     return p.returncode, p.stdout, time.time() - t0
 
 
-def load_dcd(eng):
+def load_dcd(eng, setting="default"):
     """mdtraj's reading of the DCD, or None with the reason when a file is missing."""
     import mdtraj as md
-    if not ((eng / "traj.dcd").exists() and (eng / "start.pdb").exists()):
+    dcd = eng / layout.openmm_file_name("traj.dcd", setting)
+    pdb = eng / layout.openmm_file_name("start.pdb", setting)
+    if not (dcd.exists() and pdb.exists()):
         return None
-    return md.load(str(eng / "traj.dcd"), top=str(eng / "start.pdb"))
+    return md.load(str(dcd), top=str(pdb))
 
 
 def csv_rows(path):
@@ -97,8 +99,8 @@ def main():
         t = load_dcd(eng)
         check("traj.dcd has 10 frames (mdtraj)", t is not None and t.n_frames == 10,
               t.n_frames if t is not None else "no dcd/pdb")
-        check("no seed level: basin00 sits directly under the setting",
-              eng.parent.name == SETTING and eng.name == "basin00")
+        check("no seed level, no setting level: openmm/basin00",
+              eng.parent.name == "openmm" and eng.name == "basin00")
         meta_p = rec / "openmm" / SETTING / "basin00" / "meta.json"
         check("record in _records/", meta_p.exists(), meta_p)
         check("no record or .npy in the engine folder",
@@ -131,6 +133,18 @@ def main():
               len({s["seed"] for s in meta.get("segments", [])}) == 1, meta.get("segments"))
         names = sorted(p.name for p in eng.iterdir())
         check("still exactly the seven files", names == sorted(layout.OPENMM_FILES), names)
+
+        print("D. a second setting lives in the SAME folder under its own file names")
+        rc, out, dt = run_driver(tmp, 0.05, setting="s2")
+        check("driver exit 0 ({:.0f} s)".format(dt), rc == 0, out[-1500:])
+        names = sorted(p.name for p in eng.iterdir())
+        want = sorted(list(layout.OPENMM_FILES) + [layout.openmm_file_name(n, "s2") for n in layout.OPENMM_FILES])
+        check("fourteen files: seven bare, seven with _s2", names == want, names)
+        t2 = load_dcd(eng, "s2")
+        check("traj_s2.dcd has 5 frames", t2 is not None and t2.n_frames == 5, t2.n_frames if t2 else None)
+        t = load_dcd(eng)
+        check("the default trajectory still has 20", t is not None and t.n_frames == 20, t.n_frames if t else None)
+        check("records under _records/openmm/s2/", (rec / "openmm" / "s2" / "basin00" / "meta.json").exists())
 
         print("C. third run over a finished basin does nothing")
         mtimes = {p.name: p.stat().st_mtime_ns for p in eng.iterdir()}

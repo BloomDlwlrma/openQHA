@@ -180,13 +180,14 @@ def stage_harmonic(symbols, positions, calc, temperature_K, frame_counts, seed):
 
 
 def stage_real(traj_dir, symbols, positions, omega, v_om, masses, temperature_K,
+               setting="default",
                fractions=(0.2, 0.4, 0.6, 0.8, 1.0)):
     """Stage 2. Prefixes of ONE trajectory: only the length changes."""
     from openqha.quasi_harmonic import trajectory_reader
     from openqha.store import layout as _layout
     tr = trajectory_reader.read_trajectory(
-        traj_dir, records_dir=_layout.records_dir(traj_dir.parents[2])
-        / "openmm" / traj_dir.parent.name / traj_dir.name)
+        traj_dir, setting=setting,
+        records_dir=_layout.openmm_records_dir(traj_dir.parents[1], setting) / traj_dir.name)
     meta = tr["meta"]
     if meta is None:
         raise SystemExit("no record beside {}: the identity assertion needs it".format(traj_dir))
@@ -335,13 +336,13 @@ def main():
             from openqha.store import basins as _basins, layout as _layout
             d = _layout.openmm_dir(_basins.molecule_for(args.species, args.tag, cfg),
                                    args.setting, b)
-            if not (d / "traj.dcd").exists():
+            if not (d / _layout.openmm_file_name("traj.dcd", args.setting)).exists():
                 print("  no trajectory at {} -- stage 2 skipped for this basin"
                       .format(d))
                 entry["real"] = dict(skipped=str(d))
             else:
                 real, rrows = stage_real(d, symbols, positions, omega, v_om, masses,
-                                         temperature)
+                                         temperature, setting=args.setting)
                 entry["real"] = real
                 print()
                 print("STAGE 2 -- real trajectory (deviation = stage 1 + the physics)")
@@ -352,7 +353,8 @@ def main():
                       "symmetry-equivalent".format(xd[-1], xs[-1]))
                 from openqha.quasi_harmonic import trajectory_reader as _tr
                 nu_full, v_nu_full, mean_full, _ = qha_modes(
-                    _tr.read_trajectory(d)["positions_A"], masses, positions)
+                    _tr.read_trajectory(d, setting=args.setting)["positions_A"], masses,
+                    positions)
 
                 # ---- STAGE 3: the substitution itself. No pairing anywhere in it.
                 e_el = float(basin_rec["energy_eV"]) * EV_TO_KCAL
