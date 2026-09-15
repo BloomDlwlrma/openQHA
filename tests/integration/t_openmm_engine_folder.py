@@ -101,14 +101,30 @@ def main():
               t.n_frames if t is not None else "no dcd/pdb")
         check("no seed level, no setting level: md_openmm/basin00",
               eng.parent.name == "md_openmm" and eng.name == "basin00")
-        # Step 2 (user, 2026-09-15): the record is md.toml + md.out, nothing else.
-        from openqha.store import report as _report, toml_out as _toml
-        rdir = rec / "md_openmm" / SETTING / "basin00"
+        # The Record (records redesign, 2026-09-15): _records/md_openmm/basin00/md.out + md.toml,
+        # no setting level; the .toml starts with the status block; STATUS is the marker.
+        from openqha.store import report as _report, property as _prop
+        from openqha.quasi_harmonic import md_record as _md
+        rdir = layout.basin_records_dir(mol, "openmm", 0)
         meta_p = rdir / "md.toml"
-        check("record md.toml in _records/", meta_p.exists(), meta_p)
+        check("record md.toml in _records/md_openmm/basin00/", meta_p.exists(), meta_p)
         rnames = sorted(p.name for p in rdir.iterdir()) if rdir.is_dir() else []
         check("records folder holds exactly md.out and md.toml", rnames == ["md.out", "md.toml"], rnames)
         check("md.out ends with the terminal line", _report.terminated_normally(rdir / "md.out", "md"))
+        ptext = meta_p.read_text(encoding="utf-8") if meta_p.exists() else ""
+        check("md.toml starts with [Calculation_Status], STATUS NORMAL TERMINATION",
+              ptext.startswith("[Calculation_Status]") and _prop.status_of(meta_p) == "NORMAL TERMINATION", ptext[:80])
+        doc = _prop.load(meta_p) if meta_p.exists() else {}
+        check("blocks: Calculation_Info Masses Force_Check Equilibration Production Segment",
+              all(b in doc for b in ("Calculation_Info", "Masses", "Force_Check", "Equilibration", "Production", "Segment")), list(doc))
+        check("identity inputs in Calculation_Info", doc.get("Calculation_Info", {}).get("TIMESTEP") == 1.0
+              and doc.get("Calculation_Info", {}).get("HMASS") == 1.008 and "Nose" in doc.get("Calculation_Info", {}).get("THERMOSTAT", ""),
+              doc.get("Calculation_Info"))
+        check("engine internals are not in md.toml", "collision_frequency" not in ptext and "weights_path" not in ptext
+              and "system.xml" not in ptext)
+        rtext = (rdir / "md.out").read_text(encoding="utf-8", errors="replace") if (rdir / "md.out").exists() else ""
+        check("...and are in md.out", "Provenance" in rtext and "collision frequency" in rtext and "system.xml" in rtext)
+        check("no directory named default under _records", not [p for p in rec.rglob("default") if p.is_dir()])
         check("no record or .npy in the engine folder",
               not any(n.endswith((".npy", ".json", ".toml", ".out")) for n in names))
         check("no summary.json, frames.npy, equilibrated.json anywhere under _records",
@@ -122,13 +138,13 @@ def main():
         check("20 frames in traj.dcd", t is not None and t.n_frames == 20,
               t.n_frames if t is not None else "no dcd/pdb")
         check("20 rows in state.csv", n_rows == 20, n_rows)
-        meta = _toml.load(meta_p) if meta_p.exists() else {}
+        meta = _md.read(rdir) or {}
         prod = meta.get("production") or {}
-        check("record says resumed, 10 already on disk, 10 generated",
+        check("record says resumed, 10 already on disk, 20 frames",
               prod.get("resumed") is True and prod.get("n_frames_already_on_disk") == 10
-              and prod.get("n_frames_generated_this_run") == 10, prod)
-        check("resumed from the state, not re-equilibrated",
-              str(prod.get("resumed_from", "")).startswith("state."), prod.get("resumed_from"))
+              and prod.get("n_frames") == 20, prod)
+        rtext = (rdir / "md.out").read_text(encoding="utf-8", errors="replace")
+        check("md.out says it resumed from the state, not re-equilibrated", "resumed from" in rtext and "state." in rtext)
         check("one velocity draw only (segments share the seed)",
               len({s["seed"] for s in meta.get("segments", [])}) == 1, meta.get("segments"))
         names = sorted(p.name for p in eng.iterdir())
@@ -144,7 +160,13 @@ def main():
         check("traj_s2.dcd has 5 frames", t2 is not None and t2.n_frames == 5, t2.n_frames if t2 else None)
         t = load_dcd(eng)
         check("the default trajectory still has 20", t is not None and t.n_frames == 20, t.n_frames if t else None)
-        check("records under _records/md_openmm/s2/", (rec / "md_openmm" / "s2" / "basin00" / "md.toml").exists())
+        rnames = sorted(p.name for p in rdir.iterdir())
+        check("records for s2 in the SAME folder: md_s2.out and md_s2.toml beside md.out and md.toml",
+              rnames == ["md.out", "md.toml", "md_s2.out", "md_s2.toml"], rnames)
+        check("md_s2.toml says setting s2, 5 frames", (_md.read(rdir, "s2") or {}).get("setting") == "s2"
+              and ((_md.read(rdir, "s2") or {}).get("production") or {}).get("n_frames") == 5, _md.read(rdir, "s2"))
+        check("no directory named default or s2 under _records",
+              not [p for p in rec.rglob("*") if p.is_dir() and p.name in ("default", "s2")])
 
         print("C. third run over a finished basin does nothing")
         mtimes = {p.name: p.stat().st_mtime_ns for p in eng.iterdir()}

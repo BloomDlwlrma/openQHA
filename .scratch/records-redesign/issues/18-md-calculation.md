@@ -4,9 +4,9 @@
 
 **Blocked by:** 16, and 17 by the user's sequencing (17 first, then 18).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-15
 
-- [ ] after the OpenMM and ASE integration tests, `_records/md_<route>/basinNN/` holds exactly `md.out` and `md.toml`; a run with `--setting s2` adds `md_s2.out` and `md_s2.toml` in the same folder; no directory named `default` exists under `_records`
-- [ ] the `.toml` starts with `[Calculation_Status]`; killed after equilibration it reads RUNNING and the next run resumes without re-equilibrating (unit test on the record module, integration on OpenMM)
-- [ ] the analysis asserts identity from `[Calculation_Info]` and `[Masses]` (unit test)
-- [ ] the md record module reads and writes both routes' files; no reader looks for the old flat keys
+- [x] after the OpenMM and ASE integration tests, `_records/md_<route>/basinNN/` holds exactly `md.out` and `md.toml`; a run with `--setting s2` adds `md_s2.out` and `md_s2.toml` in the same folder; no directory named `default` exists under `_records`
+- [x] the `.toml` starts with `[Calculation_Status]`; killed after equilibration it reads RUNNING and the next run resumes without re-equilibrating (unit test on the record module, integration on OpenMM)
+- [x] the analysis asserts identity from `[Calculation_Info]` and `[Masses]` (unit test)
+- [x] the md record module reads and writes both routes' files; no reader looks for the old flat keys

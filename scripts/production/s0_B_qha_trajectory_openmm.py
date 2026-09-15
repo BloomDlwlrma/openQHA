@@ -1,9 +1,10 @@
 """Branch B production trajectories, the OpenMM way: MACE + Nose-Hoover chain.
 
-PRODUCTION. It writes the same `frames.npy` + `meta.json` contract as
-`s0_B_qha_trajectory.py`, so `s0_B_qha_analyse.py` reads either without knowing which
-produced it. That is the point: the two routes are an INDEPENDENT IMPLEMENTATION PAIR of
-the same protocol, and their disagreement is a measurement rather than a mystery.
+PRODUCTION. It writes OpenMM's own files into `md_openmm/basinNN/` and the record
+`md.toml` + `md.out` beside them (ADR 0001; step 2, 2026-09-15); `s0_B_qha_analyse.py`
+reads this route and the ASE route (`s0_B_qha_trajectory.py`) through one reader. That
+is the point: the two routes are an INDEPENDENT IMPLEMENTATION PAIR of the same protocol,
+and their disagreement is a measurement rather than a mystery.
 
 Why a second driver rather than a flag
 --------------------------------------
@@ -166,39 +167,13 @@ def relax(atoms, model_path):
         energy_drop_kcal=float((e0 - e1) / 4.184), force_field=force_record)
 
 
-def flush_frames(frames_path, frames):
-    """Write `frames` to `frames_path` atomically: temp file first, then rename.
-
-    A job killed mid-write must leave the previous complete file, not a truncated array
-    that reads as corrupt. So the write goes to a sibling and is renamed into place.
-
-    **The sibling must end in `.npy`.** `np.save(path, arr)` appends `.npy` to any name
-    that does not already carry it, so the first version of this --
-
-        tmp = frames_path.with_suffix(frames_path.suffix + ".part")    # frames.npy.part
-        np.save(tmp, arr)                                              # -> frames.npy.part.npy
-        tmp.replace(frames_path)                                       # FileNotFoundError
-
-    -- failed on the FIRST flush of every trajectory, once any trajectory reached a flush
-    at all (an104, 2026-09-13: six of six, `frames.npy.part.npy` left beside each). No GPU
-    trajectory had got that far before; the code had never executed. Writing through an
-    open file handle sidesteps the suffix rule entirely, and the name is `.part.npy` so a
-    leftover from a killed job is still recognisable as a partial.
-    """
-    frames_path = Path(frames_path)
-    tmp = frames_path.with_name(frames_path.stem + ".part.npy")
-    with open(tmp, "wb") as fh:
-        np.save(fh, np.asarray(frames))
-    tmp.replace(frames_path)
-    return frames_path
-
-
 def already_complete(outdir, n_target, engine_dir=None, setting="default"):
-    """The trajectory's own record, if this (basin, seed) is finished; else None.
+    """The trajectory's own record, if this (basin, setting) is finished; else None.
 
-    Finished means: meta.json is there, its production block says complete, and
-    frames.npy holds at least n_target frames. Anything less -- a partial run, a killed
-    job, an older protocol with fewer frames -- is None and the driver resumes it.
+    Finished means: md.toml is there, its production block says complete, and the DCD
+    holds at least n_target frames. Anything less -- a partial run, a killed job, an
+    older protocol with fewer frames, a missing or unreadable record -- is None and the
+    driver resumes it.
 
     Why this exists (an113, 2026-09-13). The chain re-ran a task whose six trajectories
     were already complete. run_one() loaded the frames, saw nothing left to generate,
@@ -207,24 +182,11 @@ def already_complete(outdir, n_target, engine_dir=None, setting="default"):
     line each one had spent ~70 s re-tracing the model, re-relaxing and re-equilibrating
     a trajectory it was about to do nothing with. The resume path had never executed.
     """
-    outdir = Path(outdir)
-    meta_p, frames_p = outdir / "meta.json", outdir / "frames.npy"
-    if not meta_p.exists():
+    from openqha.quasi_harmonic import md_record, openmm_files
+    meta = md_record.read(outdir, setting)
+    if meta is None or engine_dir is None:
         return None
-    try:
-        meta = json.loads(meta_p.read_text(encoding="utf-8"))
-        if engine_dir is not None:
-            # Since 2026-09-14 the trajectory IS traj.dcd (ADR 0001); the float64 copy in
-            # the record is not what decides whether a basin is finished.
-            from openqha.quasi_harmonic import openmm_files
-            n = openmm_files.dcd_frame_count(
-                Path(engine_dir) / layout.openmm_file_name("traj.dcd", setting))
-        elif frames_p.exists():
-            n = int(np.load(frames_p, mmap_mode="r").shape[0])
-        else:
-            return None
-    except Exception:                                                 # noqa: BLE001
-        return None
+    n = openmm_files.dcd_frame_count(Path(engine_dir) / layout.openmm_file_name("traj.dcd", setting))
     prod = meta.get("production") or {}
     if prod.get("complete") and n >= int(n_target):
         return meta
@@ -250,11 +212,9 @@ def choose_seed(seed0, basin, seed_index):
     return int(seed0) + 1000 * int(basin) + int(seed_index), "seed0 + 1000*basin + seed_index"
 
 
-def _read_meta(path):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+def _read_meta(records_dir, setting="default"):
+    from openqha.quasi_harmonic import md_record
+    return md_record.read(records_dir, setting)
 
 
 def segments_record(prev_meta, seed, prod_record):
@@ -293,11 +253,6 @@ def run_one(species, positions_A, numbers, masses, model_path, engine_dir, recor
     from openqha.quasi_harmonic import openmm_files
 
     records_dir.mkdir(parents=True, exist_ok=True)
-    frames_path = records_dir / "frames.npy"
-    # Leftovers of the suffix bug described in flush_frames(): never a resumable file.
-    stale = records_dir / "frames.npy.part.npy"
-    if stale.exists():
-        stale.unlink()
     n_target = int(round(prod_ps * 1000.0 / args.timestep_fs)) // args.sample_every
     topology = openmm_files.topology_for(numbers)
     folder = openmm_files.EngineFolder(
@@ -307,16 +262,14 @@ def run_one(species, positions_A, numbers, masses, model_path, engine_dir, recor
     resume = bool(n_on_disk > 0 and folder.has_state())
     prev_prod = (prev_meta or {}).get("production") or {}
     equilibrated = bool(folder.has_state()
-                        and (n_on_disk > 0 or (records_dir / "equilibrated.json").exists()))
-    # The float64 frames in the record must agree with the DCD; a record shorter than the
-    # DCD (a kill between the two writes) is rebuilt from what the DCD holds.
-    have = list(np.load(frames_path)) if (resume and frames_path.exists()) else []
-    if resume and len(have) != n_on_disk:
-        have = have[:n_on_disk] if len(have) > n_on_disk else have
-        if len(have) < n_on_disk:
-            import mdtraj as md
-            t = md.load(str(folder.paths["traj.dcd"]), top=str(folder.paths["start.pdb"]))
-            have = list(t.xyz.astype(np.float64) * openmm_mace.NM_TO_A)[:n_on_disk]
+                        and (n_on_disk > 0 or (prev_meta or {}).get("equilibration_done")))
+    # THE TRAJECTORY IS traj.dcd. On a resume the frames already on disk are read back
+    # from it (through mdtraj, a different code from the writer); nothing is kept twice.
+    have = []
+    if resume:
+        import mdtraj as md
+        t = md.load(str(folder.paths["traj.dcd"]), top=str(folder.paths["start.pdb"]))
+        have = list(t.xyz.astype(np.float64) * openmm_mace.NM_TO_A)[:n_on_disk]
     if not resume:
         n_on_disk = 0
 
@@ -372,8 +325,7 @@ def run_one(species, positions_A, numbers, masses, model_path, engine_dir, recor
     # ---- equilibration, with the relaxation measured rather than assumed ------------
     t0 = time.time()
     if equilibrated:
-        equil_record = dict((prev_meta or {}).get("equilibration")
-                            or _read_meta(records_dir / "equilibrated.json") or {})
+        equil_record = dict((prev_meta or {}).get("equilibration") or {})
         equil_record["skipped_on_resume"] = True
     else:
         n_equil = int(round(equil_ps * 1000.0 / args.timestep_fs))
@@ -399,8 +351,15 @@ def run_one(species, positions_A, numbers, masses, model_path, engine_dir, recor
         # The equilibrated state is worth a flush of its own: at 520 ps it is hours of
         # work, and a job killed during production would otherwise redo it.
         folder.flush_state(context)
-        (records_dir / "equilibrated.json").write_text(
-            json.dumps(equil_record, indent=2), encoding="utf-8")
+        # The Property file says so at once, STATUS RUNNING (records redesign, 2026-09-15):
+        # a job killed during production resumes from the equilibrated state and the
+        # frames in the DCD, and the Batch table shows RUNNING for the cut trajectory.
+        from openqha.quasi_harmonic import md_record
+        md_record.write_running(
+            dict(qm9_index=species, basin_index=getattr(args, "_basin_index", None), route="openmm",
+                 setting=args.setting, seed=int(seed), equilibration=equil_record,
+                 equilibration_done=True, production=dict(complete=False, n_frames=0)),
+            records_dir, args.setting)
 
     # ---- production, flushed in chunks so a killed run is resumable -----------------
     t0 = time.time()
@@ -437,7 +396,6 @@ def run_one(species, positions_A, numbers, masses, model_path, engine_dir, recor
             # what a resume continues from), the record last.
             folder.flush_frames()
             folder.flush_state(context)
-            flush_frames(frames_path, have)     # atomic; see the function for the history
             if budget and (time.time() - t0) > budget:
                 stopped_on_budget = True
                 break
@@ -580,8 +538,10 @@ def main():
     molecule = (Path(args.molecule_dir) if args.molecule_dir
                 else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
                                          args.species))
-    records_root = layout.openmm_records_dir(molecule, args.setting)
-    outroot = records_root                     # where summary.json and the records go
+    # Records: _records/md_openmm/basinNN/, the setting in the file stem (md_s2.toml);
+    # no setting level (user ruling 2026-09-15, records redesign).
+    records_root = layout.md_records_dir(molecule, "openmm")
+    outroot = records_root
     basins = ([(args.basin, frames_in[args.basin])] if args.basin is not None
               else list(enumerate(frames_in)))
     seed_indices = ([args.seed_index] if args.seed_index is not None
@@ -592,7 +552,7 @@ def main():
         return layout.openmm_dir(molecule, args.setting, b)
 
     def _records_dir(b):
-        return records_root / "basin{:02d}".format(b)
+        return layout.basin_records_dir(molecule, "openmm", b)
 
     def _summary_from(meta, b, k):
         prod = meta.get("production") or {}
@@ -615,11 +575,9 @@ def main():
         # Nothing to compute: report what is on disk and stop, without loading a model.
         summary = [_summary_from(m, b, k) for (b, k), m in sorted(done.items())]
         for s in summary:
-            print("  basin {:>2} seed {:>2}  {:>5} frames  complete={}  (from meta.json)"
+            print("  basin {:>2} seed {:>2}  {:>5} frames  complete={}  (from md.toml)"
                   .format(s["basin"], s["seed_index"], s["n_frames"], s["complete"]))
         outroot.mkdir(parents=True, exist_ok=True)
-        (outroot / "summary.json").write_text(json.dumps(summary, indent=2),
-                                              encoding="utf-8")
         print()
         print("nothing to run; {} complete trajectories under {}".format(len(summary), outroot))
         return 0
@@ -675,7 +633,8 @@ def main():
             # A partial trajectory is resumed from its state (same velocities, same
             # thermostat variables), so it keeps the seed it was started with; a fresh
             # one draws. `segments` records every run over the trajectory either way.
-            prev_meta = _read_meta(outdir / "meta.json")
+            prev_meta = _read_meta(outdir, args.setting)
+            args._basin_index = int(b)
             if prev_meta and "seed" in prev_meta and engine_dir.exists():
                 seed, seed_formula = int(prev_meta["seed"]), "kept on resume (from the record)"
             else:
@@ -725,8 +684,12 @@ def main():
                 relaxation=relax_record,
                 equilibration=equil, production=prod)
             qha.assert_trajectory_identity(meta)
-            (outdir / "meta.json").write_text(
-                json.dumps(meta, indent=2, default=str), encoding="utf-8")
+            meta["equilibration_done"] = True
+            from openqha.quasi_harmonic import md_record
+            unknown = md_record.write(meta, outdir, args.setting)
+            if unknown:
+                raise RuntimeError("md.toml: keys outside the schema {}; add them to "
+                                   "openqha.quasi_harmonic.md_record.SCHEMA".format(unknown))
             summary.append(dict(basin=int(b), seed_index=int(k), seed=int(seed),
                                 n_frames=int(len(frames)),
                                 complete=prod["complete"],
@@ -741,8 +704,6 @@ def main():
                       _fmt(prod.get("temperature_mean_K"), "7.2f"),
                       _fmt(prod.get("centre_of_mass_drift_A"), "8.2f")))
 
-    (outroot / "summary.json").write_text(
-        json.dumps(summary, indent=2), encoding="utf-8")
     print()
     print("engine files under {}  (setting {})".format(molecule / layout.md_folder("openmm"), args.setting))
     print("records under      {}".format(outroot))

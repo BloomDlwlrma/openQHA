@@ -76,7 +76,7 @@ from openqha import config  # noqa: E402
 #: What has to exist for a molecule to count as collected. Stated, printed and stored --
 #: if the scanner and the worker disagree about what "done" means, molecules are skipped
 #: for ever and never recovered. Same rule as openqha/worklist.py states for branch A.
-COMPLETION = "<molecule>/_records/md_<route>/<setting>/collect.json exists and records n_trajectories"
+COMPLETION = "<molecule>/_records/md_<route>/<setting>/collect.out ends with 'openQHA collect terminated normally'"
 
 
 def result_path(repo_root, tag, species, basin_tag=None, setting="default", route="auto"):
@@ -86,7 +86,7 @@ def result_path(repo_root, tag, species, basin_tag=None, setting="default", rout
     from openqha.quasi_harmonic import trajectory_reader
     mol = basins.molecule_for(species, basin_tag or tag)
     r = route if route in ("openmm", "ase") else (trajectory_reader.route_found(mol, setting) or "openmm")
-    return layout.records_for(mol, r, setting) / "collect.json"
+    return layout.records_for(mol, r, setting) / "collect.out"
 
 
 def _accepted_kwargs(fn):
@@ -138,8 +138,6 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None
     _route = route if route in ("openmm", "ase") else (_tr.route_found(_mol, setting) or "openmm")
     out = _layout.records_for(_mol, _route, setting)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "collect.driver.log").write_text(
-        proc.stdout + "\n----- stderr -----\n" + proc.stderr, encoding="utf-8")
 
     summary = dict(species=species, command=" ".join(cmd),
                    returncode=proc.returncode,
@@ -175,14 +173,14 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None
                    and all(c["passed"] for c in criteria),
                    criteria=criteria)
 
-    # THE COMPLETION MARKER, written last and by rename. A task killed between the
-    # analysis and this write leaves no marker, so the molecule is redone -- which is the
-    # safe direction. A marker written first would mark unfinished work as done.
-    marker = out / "collect.json"
-    tmp = marker.with_suffix(".json.part")
-    tmp.write_text(_json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(marker)
+    # THE COMPLETION MARKER is the last line of collect.out, written by the analysis
+    # itself as its last act (CREST's own convention, 2026-09-15). A task killed before it
+    # leaves no marker, so the molecule is redone -- the safe direction. This driver
+    # writes nothing of its own beside the analysis's files.
+    from openqha.store import report as _report
+    marker = out / "collect.out"
     summary["marker"] = str(marker)
+    summary["marker_present"] = bool(_report.terminated_normally(marker, "collect"))
     return summary
 
 
@@ -213,11 +211,11 @@ def remaining(species, tag, cfg, no_resume=False, basin_tag=None, setting="defau
         return list(species), dict(completion_criterion="not consulted (--no-resume)",
                                    n_candidates=len(species),
                                    n_remaining=len(species))
-    from openqha.store import basins as _basins
+    from openqha.store import basins as _basins, report as _report
     from openqha.quasi_harmonic import trajectory_reader as _tr
     todo, done, no_traj = [], [], []
     for qid in species:
-        if result_path(ROOT, tag, qid, basin_tag, setting, route).exists():
+        if _report.terminated_normally(result_path(ROOT, tag, qid, basin_tag, setting, route), "collect"):
             done.append(qid)
             continue
         # A molecule with no trajectories is not "remaining"; it is upstream work that

@@ -188,8 +188,8 @@ def stage_real(traj_dir, symbols, positions, omega, v_om, masses, temperature_K,
     from openqha.store import layout as _layout
     tr = trajectory_reader.read_trajectory(
         traj_dir, setting=setting,
-        records_dir=_layout.records_for(traj_dir.parents[1], trajectory_reader.route_of(traj_dir),
-                                        setting) / traj_dir.name)
+        records_dir=_layout.basin_records_dir(traj_dir.parents[1], trajectory_reader.route_of(traj_dir),
+                                              int(traj_dir.name[5:])))
     meta = tr["meta"]
     if meta is None:
         raise SystemExit("no record beside {}: the identity assertion needs it".format(traj_dir))

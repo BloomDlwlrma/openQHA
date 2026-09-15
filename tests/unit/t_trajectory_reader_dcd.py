@@ -88,9 +88,12 @@ def main():
         print("E. the record rides along:")
         check("no records folder -> meta None", r["meta"] is None, r["meta"])
         rec.mkdir(parents=True)
-        (rec / "md.toml").write_text('seed = 5\nsymbols = ["O", "H", "H", "C"]\n', encoding="utf-8")
+        from openqha.quasi_harmonic import md_record
+        md_record.write(dict(seed=5, symbols=["O", "H", "H", "C"], masses_amu=[16.0, 1.0, 1.0, 12.0]), rec, "s1")
         r2 = tr.read_trajectory(eng, records_dir=rec, setting="s1")
-        check("md.toml read when present", r2["meta"] is not None and r2["meta"]["seed"] == 5, r2["meta"])
+        check("md_s1.toml read when present", r2["meta"] is not None and r2["meta"]["seed"] == 5
+              and r2["meta"]["symbols"] == ["O", "H", "H", "C"], r2["meta"])
+        check("the setting is in the stem, not a folder", (rec / "md_s1.toml").is_file() and not (rec / "s1").exists())
 
         print("D. refusals name the folder:")
         for missing in ("traj.dcd", "start.pdb"):

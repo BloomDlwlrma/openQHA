@@ -111,9 +111,9 @@ class Report:
     #: from the in-memory record, and the machine-readable copy is the `.parquet` of the
     #: same name (raw float64). The older conversion path through `json_to_log()` replaces
     #: it with the JSON wording.
-    SOURCE_NOTE = ("this file is a **laid-out** copy for people (numbers truncated to a "
-                   "fixed number of places); the machine-readable copy carrying full "
-                   "float64 precision is the .parquet of the same name.")
+    SOURCE_NOTE = ("this file is the Report, laid out for people (numbers truncated to a "
+                   "fixed number of places); what a program reads back, at full float64 "
+                   "precision, is the Property file (.toml) or the .dat tables of the same stem.")
 
     def __init__(self, title, subtitle=None, width=WIDTH, source_note=None):
         self.w = int(width)

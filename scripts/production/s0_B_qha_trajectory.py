@@ -401,8 +401,6 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
     outdir.mkdir(parents=True, exist_ok=True)
     engine_dir = Path(engine_dir) if engine_dir is not None else outdir
     engine_dir.mkdir(parents=True, exist_ok=True)
-    frames_path = outdir / "frames.npy"
-    progress_path = outdir / "progress.json"
     traj_path = engine_dir / layout.engine_file_name("md.traj", setting)
     log_path = engine_dir / layout.engine_file_name("md.log", setting)
 
@@ -477,12 +475,8 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
             traj.backend.fd.flush() if hasattr(traj, "backend") else None
         except Exception:                                                 # noqa: BLE001
             pass
-        np.save(frames_path, np.array(have, dtype=float))
         chunks += 1
         rep = integrity(atoms, d_max_ref, e_min, temperature_K)
-        progress_path.write_text(json.dumps(dict(
-            n_frames=n_have, n_target=n_target, integrity=rep,
-            wall_seconds=time.time() - t0), indent=2), encoding="utf-8")
         if not rep["ok"]:
             raise RuntimeError("molecular integrity failed after {} frames: {}"
                                .format(n_have, rep))
@@ -538,7 +532,7 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source,
             engine_dir=None):
     """One basin, one seed: relax, equilibrate, produce, and write the identity metadata.
 
-    `outdir` is the records folder (`_records/md_ase/<setting>/basinNN/`), `engine_dir` the
+    `outdir` is the records folder (`_records/md_ase/basinNN/`), `engine_dir` the
     engine folder (`md_ase/basinNN/`) that gets `start.extxyz`, `md.traj`, `md.log`.
     """
     from ase.io import write as ase_write
@@ -571,9 +565,8 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source,
     pin_com = pin_centre_of_mass(args.thermostat, args.pin_com)
 
     resuming = traj_path.exists()
-    previous = {}
-    if (outdir / "meta.json").exists():
-        previous = json.loads((outdir / "meta.json").read_text(encoding="utf-8"))
+    from openqha.quasi_harmonic import md_record
+    previous = md_record.read(outdir, args.setting) or {}
     if resuming:
         # Carry the original equilibration record forward. It describes how these frames
         # came to be, and a restart that overwrote it with "skipped" would erase the only
@@ -590,6 +583,12 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source,
                            args.wall_budget_s, e_min, d_max_ref,
                            args.thermostat, args.tdamp_fs, args.chain_length,
                            pin_com, engine_dir=engine_dir, setting=args.setting)
+    # The resume history, as the OpenMM driver keeps it: one entry per run that appended
+    # frames (the [[Segment]] blocks of md.toml).
+    segments = list(previous.get("segments") or [])
+    if int(prod.get("n_frames_generated_this_run") or 0) > 0 or not segments:
+        segments.append(dict(seed=int(seed), frames_from=int(prod.get("n_frames_already_on_disk") or 0),
+                             frames_to=int(prod.get("n_frames") or 0)))
 
     meta = dict(
         # ---- the identity assertion's inputs. Written here, checked in qha.py. --------
@@ -636,7 +635,7 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source,
         composite_notation=engine.composite_notation(),
         relaxation=(previous.get("relaxation", relax_rec) if resuming else relax_rec),
         equilibration=equil, production=prod,
-        n_runs=int(previous.get("n_runs", 0)) + 1,
+        segments=segments, n_runs=len(segments),
         protocol_source=("plan_B section 3; dt and friction from D0-C-30, "
                          "equilibration length measured (Rinaldo & Field needed 26x "
                          "their first guess)"),
@@ -646,7 +645,10 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source,
     # Fail here rather than in the analysis: the metadata is written by this script, so if
     # it cannot pass its own check the trajectory should not reach the disk looking valid.
     qha.assert_trajectory_identity(meta)
-    (outdir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    unknown = md_record.write(meta, outdir, args.setting)
+    if unknown:
+        raise RuntimeError("md.toml: keys outside the schema {}; add them to "
+                           "openqha.quasi_harmonic.md_record.SCHEMA".format(unknown))
     return frames, meta
 
 
@@ -721,11 +723,11 @@ def main():
     from openqha.store import layout
     # The molecule directory is the BASIN TAG's; a run under another --tag is a SETTING
     # inside it (ruling Q8, 2026-09-14). Engine files: md_ase/basinNN/; records:
-    # _records/md_ase/<setting>/basinNN/.
+    # _records/md_ase/basinNN/, the setting in the file stem (records redesign, 2026-09-15).
     molecule = (Path(args.molecule_dir) if args.molecule_dir
                 else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
                                          args.species or "unnamed"))
-    root = layout.records_for(molecule, "ase", args.setting)
+    root = layout.md_records_dir(molecule, "ase")
 
     print("=" * 92)
     print("Branch B -- quasi-harmonic production trajectories")
@@ -774,7 +776,7 @@ def main():
             seed = args.seed0 + 1000 * k + s
             # No seed level (ruling S0-B-59): one folder per basin. A second seed index,
             # if ever asked for, is a different setting and says so in its file names.
-            out = root / "basin{:02d}".format(k)
+            out = layout.basin_records_dir(molecule, "ase", k)
             eng = layout.ase_dir(molecule, args.setting, k)
             print("-- basin {} seed {} -> {}  (records {})".format(k, s, eng, out))
             t0 = time.time()
@@ -791,7 +793,6 @@ def main():
                 len(frames), meta["production"]["complete"],
                 summary[-1]["wall_seconds"], summary[-1]["temperature_mean_K"]))
 
-    (root / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print()
     print("{:<8} {:<6} {:>9} {:>10} {:>12}  {}".format(
         "basin", "seed", "frames", "wall s", "T mean K", "complete"))

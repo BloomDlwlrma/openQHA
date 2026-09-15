@@ -225,11 +225,13 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
                    command=" ".join(cmd), returncode=proc.returncode,
                    seconds=_time.time() - started)
 
-    # driver.log beside the driver's own record (ADR 0001): _records/<route>/<setting>/basinNN/
-    out = (_layout.records_for(_layout.molecule_dir(runs_root, basin_tag or tag, species),
-                               route, setting) / "basin{:02d}".format(basin))
+    # driver.log beside the trajectory's Record: _records/md_<route>/basinNN/, the setting
+    # in the stem (driver_s2.log), no setting level (records redesign, 2026-09-15, Q5).
+    from openqha.quasi_harmonic import md_record as _md
+    out = _layout.basin_records_dir(_layout.molecule_dir(runs_root, basin_tag or tag, species), route, basin)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "driver.log").write_text(
+    _toml_path, _out_path, _log_path = _md.paths(out, setting)
+    _log_path.write_text(
         proc.stdout + "\n----- stderr -----\n" + proc.stderr, encoding="utf-8")
 
     if proc.returncode != 0:
@@ -249,10 +251,9 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
 
     # The driver's own record is the source of truth; only enough is lifted out of it to
     # build the summary table.
-    # Since 2026-09-14 (ADR 0001): <molecule>/_records/<route>/<setting>/basinNN/meta.json.
-    meta_path = out / "meta.json"
-    if meta_path.exists():
-        meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+    meta_path = _toml_path
+    meta = _md.read(out, setting)
+    if meta is not None:
         prod = meta.get("production", {})
         summary.update(n_frames=prod.get("n_frames"), complete=prod.get("complete"),
                        stopped_on_wall_budget=prod.get("stopped_on_wall_budget"),

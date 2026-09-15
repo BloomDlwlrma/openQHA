@@ -14,7 +14,7 @@ its topology; `state.csv` is the per-frame energy and temperature at the same in
                           temperature_K -- one entry per frame
         frame_spacing_ps  from the CSV's time column (the DCD header carries it too)
         n_frames
-        meta              records_dir/meta.json as a dict, or None
+        meta              records_dir/md.toml as a dict, or None (since 2026-09-15)
         engine_dir
 
 A folder without `traj.dcd` or `start.pdb` is refused with a FileNotFoundError that
@@ -135,9 +135,8 @@ def read_trajectory(engine_dir, records_dir=None, setting="default"):
 
     meta = None
     if records_dir is not None:
-        mp = Path(records_dir) / "meta.json"
-        if mp.is_file():
-            meta = json.loads(mp.read_text(encoding="utf-8"))
+        from . import md_record
+        meta = md_record.read(records_dir, setting)
 
     return dict(positions_A=positions, symbols=symbols, masses_amu=masses, table=table,
                 frame_spacing_ps=spacing, n_frames=n, meta=meta, engine_dir=str(engine_dir),
@@ -152,7 +151,8 @@ def trajectory_dirs(molecule, setting="default", route="auto"):
     """[(basin, engine_dir, records_dir)] for every `<route>/basinNN/` that holds this
     setting's trajectory file, in basin order. `route="auto"` takes openmm when the
     molecule directory has any openmm trajectory of this setting, else ase. The records
-    folder is named whether or not it exists."""
+    folder (`_records/md_<route>/basinNN/`, every setting inside it) is named whether or
+    not it exists."""
     from ..store import layout
     routes = [route] if route in ROUTE_TRAJECTORY else ["openmm", "ase"]
     for r in routes:
@@ -162,7 +162,7 @@ def trajectory_dirs(molecule, setting="default", route="auto"):
         if root.is_dir():
             for d in sorted(root.iterdir()):
                 if d.name.startswith("basin") and d.name[5:].isdigit() and (d / fname).is_file():
-                    out.append((int(d.name[5:]), d, layout.records_for(molecule, r, setting) / d.name))
+                    out.append((int(d.name[5:]), d, layout.basin_records_dir(molecule, r, int(d.name[5:]))))
         if out or route in ROUTE_TRAJECTORY:
             return out
     return []

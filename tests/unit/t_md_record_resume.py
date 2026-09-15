@@ -40,13 +40,14 @@ def fake_dcd(path, n_frames):
 
 def main():
     from s0_B_qha_trajectory_openmm import already_complete
-    from openqha.store import toml_out
+    from openqha.quasi_harmonic import md_record
+    from openqha.store import property as prop
 
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
 
         def make(name, n_frames, complete, write_meta=True, meta_text=None):
-            rec = tmp / name / "_records" / "md_openmm" / "default" / "basin00"
+            rec = tmp / name / "_records" / "md_openmm" / "basin00"     # no setting level
             eng = tmp / name / "md_openmm" / "basin00"
             rec.mkdir(parents=True)
             eng.mkdir(parents=True)
@@ -55,9 +56,13 @@ def main():
                 if meta_text is not None:
                     (rec / "md.toml").write_text(meta_text, encoding="utf-8")
                 else:
-                    toml_out.dump(dict(seed=7, production=dict(complete=complete, n_frames=n_frames,
-                                                               temperature_mean_K=298.0)),
-                                  rec / "md.toml")
+                    md_record.write_running(dict(seed=7, equilibration_done=True,
+                                                 production=dict(complete=complete, n_frames=n_frames,
+                                                                 temperature_mean_K=298.0)), rec)
+                    if complete:
+                        md_record.write(dict(seed=7, equilibration_done=True,
+                                             production=dict(complete=True, n_frames=n_frames,
+                                                             temperature_mean_K=298.0)), rec)
             return rec, eng
 
         print("already_complete(records_dir, n_target, engine_dir) reads md.toml and the DCD header")
@@ -77,11 +82,29 @@ def main():
                                                              "complete" if got else "not complete"))
             if not ok:
                 FAIL.append("already_complete({}, {}) = {}, expected {}".format(label, n_target, got, want))
-        rec, eng = tmp / "ok" / "_records" / "md_openmm" / "default" / "basin00", tmp / "ok" / "md_openmm" / "basin00"
+        rec, eng = tmp / "ok" / "_records" / "md_openmm" / "basin00", tmp / "ok" / "md_openmm" / "basin00"
         meta = already_complete(rec, 5, engine_dir=eng, setting="default")
         if not (meta and meta["production"]["temperature_mean_K"] == 298.0 and meta["seed"] == 7):
             FAIL.append("already_complete did not return the md.toml content")
         print("   {}  the record it returns is md.toml's own".format("ok  " if meta and meta["seed"] == 7 else "FAIL"))
+        # STATUS (records redesign, ticket 18): RUNNING after equilibration, NORMAL TERMINATION at the end;
+        # a RUNNING record is not complete whatever its production block says; the setting is in the stem.
+        rec_r = tmp / "running" / "_records" / "md_openmm" / "basin00"
+        ok = md_record.status(rec_r) == prop.RUNNING and md_record.status(rec) == prop.NORMAL_TERMINATION
+        print("   {}  STATUS: RUNNING for the cut one, NORMAL TERMINATION for the finished one".format("ok  " if ok else "FAIL"))
+        if not ok:
+            FAIL.append("status: {} / {}".format(md_record.status(rec_r), md_record.status(rec)))
+        md_record.write(dict(seed=9, setting="s2", equilibration_done=True,
+                             production=dict(complete=True, n_frames=5)), rec, "s2")
+        names = sorted(p.name for p in rec.iterdir())
+        ok = names == ["md.out", "md.toml", "md_s2.out", "md_s2.toml"] and md_record.read(rec, "s2")["seed"] == 9
+        print("   {}  setting s2 lives in the same folder as md_s2.out / md_s2.toml: {}".format("ok  " if ok else "FAIL", names))
+        if not ok:
+            FAIL.append("setting stems: {}".format(names))
+        ok = "default" not in str(rec) and md_record.read(rec)["status"] == "NORMAL TERMINATION"
+        print("   {}  no 'default' in the path; read() carries status".format("ok  " if ok else "FAIL"))
+        if not ok:
+            FAIL.append("default in path or status missing")
 
     print()
     if FAIL:

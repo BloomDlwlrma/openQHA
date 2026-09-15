@@ -169,14 +169,9 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    # The LAST thing this driver does is report.write_parquet. Refuse now if it could
-    # not: with no engine, the run on an113 (2026-09-13) judged every criterion and then
-    # threw the lot away on its final line. Non-zero exit with no [PASS]/[FAIL] line, so
-    # collect shows it as CRASHED with this sentence, not as a verdict.
-    try:
-        report.parquet_engine()
-    except ImportError as exc:
-        raise SystemExit("s0_B_qha_analyse: {}".format(exc))
+    # (Until 2026-09-15 a parquet-engine preflight stood here: the tables were parquet and
+    # pyarrow's absence on an113 threw a finished analysis away on its last line. The
+    # tables are whitespace .dat now and need nothing beyond the standard library.)
 
     cfg = config.load()
     temperature = args.temperature or config.temperature(cfg)
@@ -428,8 +423,7 @@ def main():
         subtitle="{}  ({})   tag {}".format(args.species, spec.get("name"), args.tag))
     r.section("What produced these numbers")
     r.kv("species", args.species)
-    r.kv("engine", per_traj[0]["meta"]["engine"].get("name"))
-    r.kv("composite_notation", per_traj[0]["meta"].get("composite_notation"))
+    r.kv("engine", per_traj[0]["meta"].get("engine_name"))
     r.kv("temperature_K", temperature)
     r.kv("symmetry_number", spec["symmetry_number"], note=spec.get("symmetry_reason"))
     r.kv("electronic_degeneracy", spec["electronic_degeneracy"])
@@ -536,7 +530,6 @@ def main():
         superposition_cross_check=superposition,
         criteria=[dict(criterion=c, measured=m, passed=p) for c, m, p in verdicts],
     ))
-    log_path = r.write(str(out_stem) + ".log")
 
     tables = dict(
         trajectories=[dict(
@@ -568,14 +561,24 @@ def main():
         criteria=[dict(species=args.species, criterion=c, measured=str(m), passed=p)
                   for c, m, p in verdicts],
     )
-    written = report.write_parquet(tables, out_stem)
+    # CREST/ORCA style (step 2, 2026-09-15): the tables as whitespace .dat, then the
+    # report collect.out LAST -- its terminal line is the completion marker the collect
+    # driver looks for, so a kill before this line leaves the molecule to be redone.
+    from openqha.store import dat
+    written = []
+    for name, rows in tables.items():
+        if rows:
+            p = out_stem.parent / "{}.{}.dat".format(out_stem.name, "blank" if name == "blank_control" else name)
+            dat.write_table(p, rows)
+            written.append((p, len(rows)))
+    out_path = r.write(str(out_stem) + ".out", step="collect")
 
     print()
     for criterion, measured, passed in verdicts:
         print("[{}] {}".format("PASS" if passed else "FAIL", criterion.splitlines()[0]))
         print("       measured: {}".format(measured))
-    print("\nwritten:\n  {}".format(log_path))
-    for p, n, _cols in written:
+    print("\nwritten:\n  {}".format(out_path))
+    for p, n in written:
         print("  {}  ({} rows)".format(p, n))
     return 0 if all(p for _c, _m, p in verdicts) else 1
 
