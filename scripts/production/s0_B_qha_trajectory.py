@@ -382,50 +382,79 @@ def equilibrate(atoms, calc, temperature_K, seed, equil_ps, timestep_fs, frictio
 
 def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
             friction_per_ps, sample_every, wall_budget_s, e_min, d_max_ref,
-            thermostat=None, tdamp_fs=None, chain_length=None, pin_com=None):
-    """The production segment, flushed in chunks so that it can be resumed."""
+            thermostat=None, tdamp_fs=None, chain_length=None, pin_com=None,
+            engine_dir=None, setting="default"):
+    """The production segment, flushed in chunks so that it can be resumed.
+
+    `outdir` is the RECORDS folder (frames.npy, progress.json); `engine_dir` the ASE
+    engine folder `md_ase/basinNN/` that gets `md.traj` (ASE Trajectory: positions, momenta,
+    energy, forces per sampled frame) and `md.log` (ASE MDLogger), the two files ASE
+    writes by itself (ADR 0001, ticket 10). A resume continues from the last frame of
+    `md.traj`, which carries the momenta; `state.npz` is gone.
+    """
     from ase import units
+    from ase.io import read as ase_read
+    from ase.io.trajectory import Trajectory
+    from ase.md import MDLogger
+    from openqha.store import layout
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    engine_dir = Path(engine_dir) if engine_dir is not None else outdir
+    engine_dir.mkdir(parents=True, exist_ok=True)
     frames_path = outdir / "frames.npy"
-    state_path = outdir / "state.npz"
     progress_path = outdir / "progress.json"
+    traj_path = engine_dir / layout.engine_file_name("md.traj", setting)
+    log_path = engine_dir / layout.engine_file_name("md.log", setting)
 
     n_target = int(round(prod_ps * 1000.0 / timestep_fs / sample_every))
-    have = []
-    if frames_path.exists():
-        have = list(np.load(frames_path))
+    # THE TRAJECTORY IS md.traj: what is on disk is what ASE wrote there. The float64
+    # copy in frames.npy is a record and is rebuilt from md.traj when the two disagree
+    # (a kill between the two writes).
+    on_disk = ase_read(str(traj_path), index=":") if traj_path.exists() else []
+    have = [a.get_positions().copy() for a in on_disk]
     n_have = len(have)
+    resumed_from = None
     if n_have >= n_target:
         return np.array(have), dict(resumed=True, complete=True, n_frames=n_have,
                                     n_target=n_target, wall_seconds=0.0,
-                                    chunks_this_run=0, n_frames_generated_this_run=0)
+                                    chunks_this_run=0, n_frames_generated_this_run=0,
+                                    resumed_from="md.traj",
+                                    engine_files=dict(folder=str(engine_dir), frames_in_traj=n_have))
 
     # A resumed run CONTINUES the trajectory rather than restarting it: positions and
-    # momenta are restored from the last flush. Without this the second segment would
-    # begin from a freshly equilibrated state -- statistically defensible, since both
-    # segments sample the same canonical distribution, but it would silently discard the
-    # correlation across the seam and repeat the equilibration cost every restart.
+    # momenta are restored from the last frame ASE wrote. Without this the second segment
+    # would begin from a freshly equilibrated state -- statistically defensible, since
+    # both segments sample the same canonical distribution, but it would silently discard
+    # the correlation across the seam and repeat the equilibration cost every restart.
     #
     # What a restart does NOT reproduce is the Langevin noise sequence, which begins again
-    # from the seed. So a resumed trajectory is not byte-identical to an uninterrupted one
-    # on the same machine, and hpc/configs/qha_md.json says so rather than claiming a
-    # reproducibility that does not exist.
-    if n_have and state_path.exists():
-        st = np.load(state_path)
-        atoms.set_positions(st["positions"])
-        atoms.set_momenta(st["momenta"])
+    # from the seed, nor a Nose-Hoover chain's own variables (ASE keeps them in the
+    # integrator, not in the frame). So a resumed trajectory is not byte-identical to an
+    # uninterrupted one, and the record says so.
+    if n_have:
+        last = on_disk[-1]
+        atoms.set_positions(last.get_positions())
+        if last.get_momenta() is not None and np.any(last.get_momenta()):
+            atoms.set_momenta(last.get_momenta())
+        resumed_from = "md.traj"
 
     n_start = n_have
     rng = np.random.RandomState(int(seed) + 1)
     dyn, _name = make_dynamics(atoms, temperature_K, timestep_fs, friction_per_ps, rng,
                                thermostat, tdamp_fs, chain_length)
     buf, temps = [], []
+    traj = Trajectory(str(traj_path), mode="a" if n_have else "w", atoms=atoms)
+    logger = MDLogger(dyn, atoms, str(log_path), header=not n_have, stress=False,
+                      peratom=False, mode="a" if n_have else "w")
 
     def grab():
         buf.append(atoms.get_positions().copy())
         temps.append(instantaneous_temperature(atoms))
 
+    # Order matters: the frame (positions, momenta, energy, forces) then the log row, at
+    # the same instant, so md.traj and md.log stay row-aligned.
+    dyn.attach(traj.write, interval=sample_every)
+    dyn.attach(logger, interval=sample_every)
     dyn.attach(grab, interval=sample_every)
     if (PIN_CENTRE_OF_MASS if pin_com is None else pin_com):
         dyn.attach(lambda: recentre(atoms), interval=1)   # see 
@@ -442,9 +471,13 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
         dyn.run(want * sample_every)
         have.extend(buf)
         n_have, buf[:] = len(have), []
+        # The engine files first (ASE flushes md.traj per frame; the log per row), the
+        # record after them.
+        try:
+            traj.backend.fd.flush() if hasattr(traj, "backend") else None
+        except Exception:                                                 # noqa: BLE001
+            pass
         np.save(frames_path, np.array(have, dtype=float))
-        np.savez(state_path, positions=atoms.get_positions(),
-                 momenta=atoms.get_momenta())
         chunks += 1
         rep = integrity(atoms, d_max_ref, e_min, temperature_K)
         progress_path.write_text(json.dumps(dict(
@@ -457,6 +490,8 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
             stopped_on_budget = True
             break
 
+    traj.close()
+    logger.logfile.close() if hasattr(logger, "logfile") and hasattr(logger.logfile, "close") else None
     wall = time.time() - t0
     arr = np.array(have, dtype=float)
     generated = int(len(arr) - n_start)
@@ -472,6 +507,9 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
         t_err = None
     return arr, dict(
         resumed=bool(n_start > 0), n_frames_already_on_disk=int(n_start),
+        resumed_from=resumed_from,
+        engine_files=dict(folder=str(engine_dir), traj=str(traj_path), log=str(log_path),
+                          frames_in_traj=int(len(arr))),
         complete=bool(len(arr) >= n_target),
         stopped_on_wall_budget=stopped_on_budget,
         n_frames=int(len(arr)), n_target=int(n_target), chunks_this_run=int(chunks),
@@ -496,11 +534,27 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
         integrity=integrity(atoms, d_max_ref, e_min, temperature_K))
 
 
-def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
-    """One basin, one seed: relax, equilibrate, produce, and write the identity metadata."""
+def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source,
+            engine_dir=None):
+    """One basin, one seed: relax, equilibrate, produce, and write the identity metadata.
+
+    `outdir` is the records folder (`_records/md_ase/<setting>/basinNN/`), `engine_dir` the
+    engine folder (`md_ase/basinNN/`) that gets `start.extxyz`, `md.traj`, `md.log`.
+    """
+    from ase.io import write as ase_write
+    from openqha.store import layout
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    engine_dir = Path(engine_dir) if engine_dir is not None else outdir
+    engine_dir.mkdir(parents=True, exist_ok=True)
+    traj_path = engine_dir / layout.engine_file_name("md.traj", args.setting)
     relaxed, relax_rec = relax(atoms, calc, fmax=args.fmax)
+    start_path = engine_dir / layout.engine_file_name("start.extxyz", args.setting)
+    if not traj_path.exists():
+        # The start of THIS trajectory, with the energy and forces at it, as ASE writes
+        # them. Not rewritten on a resume: the trajectory did start here.
+        relaxed.get_potential_energy(); relaxed.get_forces()
+        ase_write(str(start_path), relaxed, format="extxyz")
     e_min = relaxed.get_potential_energy()
     d_max_ref = float(relaxed.get_all_distances().max())
 
@@ -516,7 +570,7 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
     # been produced would be a refusal that arrives too late to mean anything.
     pin_com = pin_centre_of_mass(args.thermostat, args.pin_com)
 
-    resuming = (outdir / "state.npz").exists() and (outdir / "frames.npy").exists()
+    resuming = traj_path.exists()
     previous = {}
     if (outdir / "meta.json").exists():
         previous = json.loads((outdir / "meta.json").read_text(encoding="utf-8"))
@@ -535,7 +589,7 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
                            TIMESTEP_FS, args.friction, args.sample_every,
                            args.wall_budget_s, e_min, d_max_ref,
                            args.thermostat, args.tdamp_fs, args.chain_length,
-                           pin_com)
+                           pin_com, engine_dir=engine_dir, setting=args.setting)
 
     meta = dict(
         # ---- the identity assertion's inputs. Written here, checked in qha.py. --------
@@ -566,6 +620,8 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source):
                 else "openQHA.branchB.nose_hoover"),
         # ---- everything else ---------------------------------------------------------
         qm9_index=args.species, basin_index=int(basin_index), seed=int(seed),
+        setting=args.setting, route="ase", engine_folder=str(engine_dir),
+        slurm_job_id=os.environ.get("SLURM_JOB_ID"),
         geometry_source=geometry_source,
         symbols=list(relaxed.get_chemical_symbols()),
         masses_amu=[float(x) for x in masses],
@@ -608,6 +664,12 @@ def main():
     ap.add_argument("--basin-tag", default=None,
                     help="the tag branch A's product is under (default: --tag)")
     ap.add_argument("--tag", default="prod")
+    ap.add_argument("--setting", default="default",
+                    help="the trajectory setting: md_ase/basinNN/*_<setting>.* in the molecule "
+                         "directory of --basin-tag (ADR 0001, ticket 10)")
+    ap.add_argument("--molecule-dir", default=None,
+                    help="override the molecule directory (default: from S0_RUNS_ROOT, "
+                         "--basin-tag or --tag, --species through openqha.store.layout)")
     ap.add_argument("--seeds", type=int, default=3,
                     help="independent trajectories per basin. 3 is the minimum that gives "
                          "a between-seed spread, which is acceptance criterion 5")
@@ -656,7 +718,14 @@ def main():
         args.temperature = config.temperature(cfg)
 
     frames_in, geometry_source = load_atoms(args, cfg)
-    root = Path(config.runs_dir("qha", cfg)) / args.tag / (args.species or "unnamed")
+    from openqha.store import layout
+    # The molecule directory is the BASIN TAG's; a run under another --tag is a SETTING
+    # inside it (ruling Q8, 2026-09-14). Engine files: md_ase/basinNN/; records:
+    # _records/md_ase/<setting>/basinNN/.
+    molecule = (Path(args.molecule_dir) if args.molecule_dir
+                else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
+                                         args.species or "unnamed"))
+    root = layout.records_for(molecule, "ase", args.setting)
 
     print("=" * 92)
     print("Branch B -- quasi-harmonic production trajectories")
@@ -680,7 +749,9 @@ def main():
     print("prohibitions   no bias, no constraints, real hydrogen mass")
     print("length         {} ps equilibration + {} ps production x {} seeds"
           .format(args.equil_ps, args.prod_ps, args.seeds))
-    print("output         {}".format(root))
+    print("molecule       {}".format(molecule))
+    print("engine         md_ase/basinNN/{}   (ASE's own files; records in _records/md_ase/{}/)".format(
+        "" if args.setting == "default" else "  files *_{}.*".format(args.setting), args.setting))
     n_frames = int(round(args.prod_ps * 1000.0 / TIMESTEP_FS / args.sample_every))
     n_dof = 3 * len(frames_in[0]) - 6
     print("frames/traj    {}   against 3N-6 = {}  (rank limit is frames-1)"
@@ -701,10 +772,14 @@ def main():
             # out by the execution layer and the same task run by hand produce the same
             # trajectory. Nothing about placement may enter it.
             seed = args.seed0 + 1000 * k + s
-            out = root / "basin{:02d}".format(k) / "seed{:02d}".format(s)
-            print("-- basin {} seed {} -> {}".format(k, s, out))
+            # No seed level (ruling S0-B-59): one folder per basin. A second seed index,
+            # if ever asked for, is a different setting and says so in its file names.
+            out = root / "basin{:02d}".format(k)
+            eng = layout.ase_dir(molecule, args.setting, k)
+            print("-- basin {} seed {} -> {}  (records {})".format(k, s, eng, out))
             t0 = time.time()
-            frames, meta = run_one(atoms, calc, out, args, cfg, k, seed, geometry_source)
+            frames, meta = run_one(atoms, calc, out, args, cfg, k, seed, geometry_source,
+                                   engine_dir=eng)
             summary.append(dict(
                 basin=k, seed=s, path=str(out), n_frames=len(frames),
                 complete=meta["production"]["complete"],
@@ -725,7 +800,8 @@ def main():
             r["basin"], r["seed"], r["n_frames"], r["wall_seconds"],
             "-" if r["temperature_mean_K"] is None
             else "{:.2f}".format(r["temperature_mean_K"]), r["complete"]))
-    print("\nwritten to {}".format(root))
+    print("\nengine files under {}  (setting {})".format(molecule / layout.md_folder("ase"), args.setting))
+    print("records under      {}".format(root))
     return 0
 
 

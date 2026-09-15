@@ -194,9 +194,9 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
            "--basin", str(basin), "--seed-index", str(seed_index),
            "--seed0", str(seed0),
            "--prod-ps", str(prod_ps), "--equil-ps", str(equil_ps)]
-    if route == "openmm":
-        # openmm/<setting>/basinNN/ under the molecule directory (ADR 0001, 2026-09-14).
-        cmd += ["--setting", str(setting)]
+    # <route>/basinNN/ under the molecule directory, the setting in the file names
+    # (ADR 0001, 2026-09-14); both drivers take it.
+    cmd += ["--setting", str(setting)]
     # The sampling interval is a science setting and normally comes from
     # `configs/branchB_protocol.yaml`. It is overridable here because the two products
     # of a trajectory want opposite intervals: the entropy wants 1.0 ps to filter
@@ -225,14 +225,9 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
                    command=" ".join(cmd), returncode=proc.returncode,
                    seconds=_time.time() - started)
 
-    if route == "openmm":
-        # driver.log beside the driver's own record (ADR 0001).
-        out = (_layout.openmm_records_dir(
-            _layout.molecule_dir(runs_root, basin_tag or tag, species), setting)
-            / "basin{:02d}".format(basin))
-    else:
-        out = (repo_root / "analysis" / "qha" / tag / species
-               / "basin{:02d}_seed{}".format(basin, seed_index))
+    # driver.log beside the driver's own record (ADR 0001): _records/<route>/<setting>/basinNN/
+    out = (_layout.records_for(_layout.molecule_dir(runs_root, basin_tag or tag, species),
+                               route, setting) / "basin{:02d}".format(basin))
     out.mkdir(parents=True, exist_ok=True)
     (out / "driver.log").write_text(
         proc.stdout + "\n----- stderr -----\n" + proc.stderr, encoding="utf-8")
@@ -254,14 +249,8 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
 
     # The driver's own record is the source of truth; only enough is lifted out of it to
     # build the summary table.
-    if route == "openmm":
-        # Since 2026-09-14 (ADR 0001): <molecule>/_records/openmm/<setting>/basinNN/meta.json.
-        meta_path = (_layout.openmm_records_dir(
-            _layout.molecule_dir(runs_root, basin_tag or tag, species), setting)
-            / "basin{:02d}".format(basin) / "meta.json")
-    else:
-        meta_path = (runs_root / "qha" / tag / species / "basin{:02d}".format(basin)
-                     / "seed{:02d}".format(seed_index) / "meta.json")
+    # Since 2026-09-14 (ADR 0001): <molecule>/_records/<route>/<setting>/basinNN/meta.json.
+    meta_path = out / "meta.json"
     if meta_path.exists():
         meta = _json.loads(meta_path.read_text(encoding="utf-8"))
         prod = meta.get("production", {})

@@ -134,7 +134,7 @@ Everything above this line is the state the user objected to. What replaced it:
       crest_shake1/               the SHAKE fallback attempt, only when it ran
       mace/confNN/                opt.traj  opt.log  conf.extxyz      every tightened conformer
       mace/basinNN/               basin.extxyz  hessian.npy           every surviving basin
-      openmm/basinNN/             start.pdb system.xml integrator.xml traj.dcd state.csv
+      md_openmm/basinNN/             start.pdb system.xml integrator.xml traj.dcd state.csv
                                   state.xml state.chk                  (the default setting)
                                   start_<setting>.pdb ... traj_<setting>.dcd ...
                                   (every other setting, same folder, its name in the file)

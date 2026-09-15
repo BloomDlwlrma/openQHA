@@ -332,7 +332,7 @@ files in those folders (since 2026-09-14; `docs/output_inventory.md` section 6):
 <root>/<tag>/1_16000/1_1000/dsgdb9nsd_000018/
   crest/            CREST's working directory, verbatim
   mace/basinNN/     basin.extxyz  hessian.npy        (mace/confNN/: every relaxation)
-  openmm/basinNN/   start.pdb system.xml integrator.xml traj.dcd state.csv state.xml state.chk
+  md_openmm/basinNN/   start.pdb system.xml integrator.xml traj.dcd state.csv state.xml state.chk
   _records/         what this repository wrote about the run (basins.json, collect tables, ...)
 ```
 

@@ -99,19 +99,19 @@ def main():
         t = load_dcd(eng)
         check("traj.dcd has 10 frames (mdtraj)", t is not None and t.n_frames == 10,
               t.n_frames if t is not None else "no dcd/pdb")
-        check("no seed level, no setting level: openmm/basin00",
-              eng.parent.name == "openmm" and eng.name == "basin00")
-        meta_p = rec / "openmm" / SETTING / "basin00" / "meta.json"
+        check("no seed level, no setting level: md_openmm/basin00",
+              eng.parent.name == "md_openmm" and eng.name == "basin00")
+        meta_p = rec / "md_openmm" / SETTING / "basin00" / "meta.json"
         check("record in _records/", meta_p.exists(), meta_p)
         check("no record or .npy in the engine folder",
               not any(n.endswith((".npy", ".json")) for n in names))
-        frames_p = rec / "openmm" / SETTING / "basin00" / "frames.npy"
+        frames_p = rec / "md_openmm" / SETTING / "basin00" / "frames.npy"
         if t is not None and frames_p.exists() and t.n_frames == 10:
             f64 = np.load(frames_p)
             d = np.abs(t.xyz * 10.0 - f64).max()
             check("DCD positions equal the float64 frames to float32 precision (max {:.1e} A)".format(d),
                   d < 1e-3, d)
-        summ = rec / "openmm" / SETTING / "summary.json"
+        summ = rec / "md_openmm" / SETTING / "summary.json"
         check("summary.json in _records/", summ.exists(), summ)
 
         print("B. second run with a longer protocol resumes from the state and appends")
@@ -144,7 +144,7 @@ def main():
         check("traj_s2.dcd has 5 frames", t2 is not None and t2.n_frames == 5, t2.n_frames if t2 else None)
         t = load_dcd(eng)
         check("the default trajectory still has 20", t is not None and t.n_frames == 20, t.n_frames if t else None)
-        check("records under _records/openmm/s2/", (rec / "openmm" / "s2" / "basin00" / "meta.json").exists())
+        check("records under _records/md_openmm/s2/", (rec / "md_openmm" / "s2" / "basin00" / "meta.json").exists())
 
         print("C. third run over a finished basin does nothing")
         mtimes = {p.name: p.stat().st_mtime_ns for p in eng.iterdir()}

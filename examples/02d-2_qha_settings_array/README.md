@@ -85,8 +85,8 @@ examples/02d-2_qha_settings_array/generated/<NAME>.conf    the file each row sou
 examples/02d-2_qha_settings_array/generated/manifest       row order; the only thing the job reads to find its work
 logs/openqha_<species>_02d2_array_<arrayjob>_<task>.{out,err}   per array task
 logs/02d2_<NAME>_<arrayjob>_<task>.log                     per row
-<molecule>/openmm/basinNN/traj_<NAME>.dcd ...              each row's trajectory: same basin folder, the row in the file name
-<molecule>/_records/openmm/<NAME>/02d_frequency_identity.json   the answer, per row
+<molecule>/md_openmm/basinNN/traj_<NAME>.dcd ...              each row's trajectory: same basin folder, the row in the file name
+<molecule>/_records/md_openmm/<NAME>/02d_frequency_identity.json   the answer, per row
    (<molecule> = <root>/<BASIN_TAG>/<range>/<chunk>/<species>; since 2026-09-14, docs/output_inventory.md section 6;
     before: analysis/qha/02d2_<NAME>/... and logs/node_local/<jobid>_card<k>/)
 ```

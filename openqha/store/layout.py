@@ -8,12 +8,19 @@ files only in those folders, and this repository's records in `_records/`:
       crest_shake1/               the SHAKE fallback, only when it ran
       mace/confNN/                opt.traj  opt.log  conf.extxyz    every tightened conformer
       mace/basinNN/               basin.extxyz  hessian.npy         every surviving basin
-      openmm/basinNN/             start.pdb system.xml integrator.xml traj.dcd
+      md_openmm/basinNN/          start.pdb system.xml integrator.xml traj.dcd
                                   state.csv state.xml state.chk        (the default setting)
                                   start_<setting>.pdb ... traj_<setting>.dcd ...
                                   (every other setting, same folder, its name in the file)
+      md_ase/basinNN/             start.extxyz  md.traj  md.log  (the ASE route, the CPU
+                                  cross-check; same setting-in-the-name rule)
       xtb/basinNN/  orca/basinNN/ 02c only
       _records/                   everything this repository writes about the run
+
+The MD folders are named by ROLE (user ruling 2026-09-15): `mace/` is the potential's
+relax + Hessian, `md_openmm/` and `md_ase/` are the two implementations of the same
+sampling step. The route identifiers a driver takes (`--route openmm|ase`) are unchanged;
+`md_folder(route)` maps them to the folder and nothing else spells the folder name.
 
 The shard is arithmetic on the QM9 index: range 16 000, chunk 1 000 (user ruling
 2026-09-14; the retired basin store used 4 000), so a directory holds at most 1 000
@@ -35,6 +42,10 @@ RANGE = 16000
 #: The engine files of one OpenMM trajectory, in the order they are created.
 OPENMM_FILES = ("start.pdb", "system.xml", "integrator.xml", "traj.dcd",
                 "state.csv", "state.xml", "state.chk")
+
+#: The engine files of one ASE-route trajectory (ASE's own forms): the post-relax start,
+#: the Trajectory (positions, momenta, energy, forces per frame), the MDLogger table.
+ASE_FILES = ("start.extxyz", "md.traj", "md.log")
 
 #: The engine files of one tightened conformer (ASE's own forms).
 MACE_CONFORMER_FILES = ("opt.traj", "opt.log", "conf.extxyz")
@@ -95,16 +106,56 @@ def mace_basin_dir(molecule, basin):
 #: The setting whose files keep the bare names.
 DEFAULT_SETTING = "default"
 
+#: Route identifier -> the MD folder inside a molecule directory (named by role).
+MD_FOLDER = {"openmm": "md_openmm", "ase": "md_ase"}
+
+
+def md_folder(route):
+    """`md_openmm` for route `openmm`, `md_ase` for `ase`."""
+    try:
+        return MD_FOLDER[str(route)]
+    except KeyError:
+        raise ValueError("unknown MD route {!r}; known: {}".format(route, sorted(MD_FOLDER)))
+
+
+def route_of_folder(name):
+    """The inverse of `md_folder`, or None for a folder that is not an MD folder."""
+    for r, f in MD_FOLDER.items():
+        if f == str(name):
+            return r
+    return None
+
 
 def openmm_dir(molecule, setting, basin):
-    """The basin's one OpenMM folder, `openmm/basinNN/`, whatever the setting.
+    """The basin's one OpenMM folder, `md_openmm/basinNN/`, whatever the setting.
 
     No seed level (ruling S0-B-59) and, since the user's ruling of 2026-09-14, no setting
     level either: every setting's trajectory of a basin sits in the same folder and the
     setting is in the file name (`openmm_file_name`). `setting` is accepted so a caller
     states which run it means, and ignored here.
     """
-    return Path(molecule) / "openmm" / "basin{:02d}".format(int(basin))
+    return Path(molecule) / md_folder("openmm") / "basin{:02d}".format(int(basin))
+
+
+def ase_dir(molecule, setting, basin):
+    """The basin's one ASE-route folder, `md_ase/basinNN/`; the setting is in the file name."""
+    return Path(molecule) / md_folder("ase") / "basin{:02d}".format(int(basin))
+
+
+def engine_file_name(name, setting=DEFAULT_SETTING):
+    """`traj.dcd` / `md.traj` for the default setting; `traj_<setting>.dcd` for any other.
+    The one naming rule for every trajectory engine (ruling 2026-09-14)."""
+    if str(setting) == DEFAULT_SETTING:
+        return name
+    stem, dot, ext = name.partition(".")
+    return "{}_{}{}{}".format(stem, setting, dot, ext)
+
+
+def records_for(molecule, route, setting):
+    """`_records/<md folder>/<setting>/` (`_records/md_openmm/default/`): the driver's records
+    per basin, and collect's, the ensemble report's and 02d's records for that route and
+    setting. Named like the engine folder it describes."""
+    return Path(molecule) / RECORDS / md_folder(route) / str(setting)
 
 
 def openmm_file_name(name, setting=DEFAULT_SETTING):
@@ -113,10 +164,7 @@ def openmm_file_name(name, setting=DEFAULT_SETTING):
     The suffix is the SETTING, not the job id: a resumed trajectory is continued by a
     later job and must find its own files by name; the job id belongs in the record.
     """
-    if str(setting) == DEFAULT_SETTING:
-        return name
-    stem, dot, ext = name.partition(".")
-    return "{}_{}{}{}".format(stem, setting, dot, ext)
+    return engine_file_name(name, setting)
 
 
 def openmm_file(molecule, setting, basin, name):
@@ -143,6 +191,5 @@ def records_dir(molecule):
 
 
 def openmm_records_dir(molecule, setting):
-    """`_records/openmm/<setting>/`: the driver's records per basin, and collect's,
-    the ensemble report's and 02d's records for that setting."""
-    return Path(molecule) / RECORDS / "openmm" / str(setting)
+    """`_records/md_openmm/<setting>/` -- `records_for(molecule, "openmm", setting)`."""
+    return records_for(molecule, "openmm", setting)

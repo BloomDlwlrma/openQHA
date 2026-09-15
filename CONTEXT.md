@@ -29,9 +29,11 @@ _Avoid_: run directory, output directory, work directory (CREST's own term is ke
 the folder CREST runs in)
 
 **Engine folder**:
-The folder inside a molecule directory named after the engine that wrote into it:
-`crest/`, `mace/`, `openmm/`, `xtb/`, `orca/`.
-_Avoid_: stage folder, branch folder
+The folder inside a molecule directory that one engine wrote into: `crest/`, `mace/`
+(the potential's relax and Hessian), `md_openmm/` and `md_ase/` (the two implementations
+of the sampling step), `xtb/`, `orca/`. The MD folders are named by role because "mace"
+and "ase" side by side read as one thing twice.
+_Avoid_: stage folder, branch folder, route folder
 
 **Basin**:
 One local minimum of a molecule that survived branch A's deduplication and Hessian

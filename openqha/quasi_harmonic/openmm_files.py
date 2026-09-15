@@ -1,6 +1,6 @@
 """OpenMM's own files for one trajectory: what an engine folder holds (ADR 0001).
 
-    openmm/basinNN/            (one folder per basin; a non-default setting's files carry
+    md_openmm/basinNN/         (one folder per basin; a non-default setting's files carry
                                 the setting in their names, e.g. traj_p1500_s5.dcd -- see
                                 openqha.store.layout.openmm_file_name)
       start.pdb        the structure the dynamics started from (post-relax), one residue MOL

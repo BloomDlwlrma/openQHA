@@ -500,13 +500,14 @@ qha)    # the conformational free energy: A -> B -> collect -> F_conf
     echo "---- collect: quasi-harmonic analysis per molecule --------------------"
     must python -u scripts/production/s0_E_branchB_collect_parsl.py \
         --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}" \
-        ${SETTING:+--setting "$SETTING"} --resource "${COLLECT_RESOURCE:-$RESOURCE}"
+        ${SETTING:+--setting "$SETTING"} --route "$ROUTE" \
+        --resource "${COLLECT_RESOURCE:-$RESOURCE}"
 
     echo
     echo "---- the answer: F_conf over the ensemble -----------------------------"
     must python -u scripts/production/s0_B_report_ensemble.py \
         --species "$SPECIES" --tag "$TAG" --basin-tag "${BASIN_TAG:-$TAG}" \
-        ${SETTING:+--setting "$SETTING"}
+        ${SETTING:+--setting "$SETTING"} --route "$ROUTE"
     ;;
 
 levels) # 02c: MACE vs GFN2-xTB vs RI-MP2, energies and forces through to G - E_el
@@ -543,10 +544,10 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
     # --tag reads the basins (BASIN_TAG); --traj-tag reads this run's trajectories; --out
     # files the report under this run's tag, so two settings never overwrite each other.
     # --tag names the molecule directory (branch A's tag); --setting the openmm/<setting>/
-    # the trajectories went to; the report lands in _records/openmm/<setting>/ (ADR 0001).
+    # the trajectories went to; the report lands in _records/md_openmm/<setting>/ (ADR 0001).
     must python -u examples/02d_qha_frequency_identity/s0_frequency_identity.py \
         --species "$SPECIES" --tag "${BASIN_TAG:-$TAG}" --stage all \
-        ${SETTING:+--setting "$SETTING"} \
+        ${SETTING:+--setting "$SETTING"} --route "$ROUTE" \
         ${NU_CUT:+--nu-cut "$NU_CUT"}
     ;;
 

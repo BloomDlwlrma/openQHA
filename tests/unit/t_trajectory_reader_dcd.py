@@ -53,8 +53,8 @@ def main():
     rng = np.random.RandomState(3)
     frames = 2.0 + 0.3 * rng.standard_normal((3, 4, 3))
     with tempfile.TemporaryDirectory() as t:
-        eng = Path(t) / "openmm" / "default" / "basin00"
-        rec = Path(t) / "_records" / "openmm" / "default" / "basin00"
+        eng = Path(t) / "md_openmm" / "basin00"       # <molecule>/md_openmm/basinNN: the route is the parent name
+        rec = Path(t) / "_records" / "md_openmm" / "default" / "basin00"
         top = openmm_files.topology_for(numbers)
         f = openmm_files.EngineFolder(eng, top, frame_spacing_ps=0.01, setting="s1")
         openmm_files.write_start_pdb(f.paths["start.pdb"], top, frames[0])
@@ -94,7 +94,7 @@ def main():
 
         print("D. refusals name the folder:")
         for missing in ("traj.dcd", "start.pdb"):
-            bad = Path(t) / ("bad_" + missing)
+            bad = Path(t) / "md_openmm" / ("bad_" + missing)
             bad.mkdir()
             for n in ("traj.dcd", "start.pdb", "state.csv"):
                 if n != missing:

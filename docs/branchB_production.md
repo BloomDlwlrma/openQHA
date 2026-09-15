@@ -86,7 +86,7 @@ production                             protocol.production_ps, frame every
       |                                flushed every chunk_frames, .part-then-rename
       v
 openmm/basinKK/ traj.dcd + state.csv   <molecule>/openmm/basinKK/  (since 2026-09-14;
-+ start.pdb, system/integrator.xml,    the record meta.json under _records/openmm/<setting>/;
++ start.pdb, system/integrator.xml,    the record meta.json under _records/md_openmm/<setting>/;
   state.xml, state.chk                 before: frames.npy + meta.json under $S0_RUNS_ROOT/qha/)
       |
       v  qha.assert_trajectory_identity(meta)      REFUSES a biased or constrained run,
@@ -233,10 +233,10 @@ indices — an F_conf that looked multi-basin and was not.
 Since 2026-09-14 (`docs/output_inventory.md` section 6):
 
 ```
-<molecule>/openmm/basinNN/traj.dcd  start.pdb  state.csv ...        the trajectory (OpenMM's files)
-<molecule>/_records/openmm/<setting>/basinNN/meta.json               protocol + provenance
-<molecule>/_records/openmm/<setting>/collect__*.parquet, collect.log  per-molecule analysis
-<molecule>/_records/openmm/<setting>/ensemble.json                   F_conf, ΔG, populations
+<molecule>/md_openmm/basinNN/traj.dcd  start.pdb  state.csv ...        the trajectory (OpenMM's files)
+<molecule>/_records/md_openmm/<setting>/basinNN/meta.json               protocol + provenance
+<molecule>/_records/md_openmm/<setting>/collect__*.parquet, collect.log  per-molecule analysis
+<molecule>/_records/md_openmm/<setting>/ensemble.json                   F_conf, ΔG, populations
 <molecule> = <root>/<tag>/<range>/<chunk>/<species>
 ```
 

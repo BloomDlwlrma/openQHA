@@ -67,7 +67,7 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp:
         # Since 2026-09-14 (ADR 0001) the tables sit in the molecule directory:
-        # <root>/<tag>/<range>/<chunk>/<species>/_records/openmm/default/collect__*.parquet
+        # <root>/<tag>/<range>/<chunk>/<species>/_records/md_openmm/default/collect__*.parquet
         stem = drv.collect_stem(SPECIES, TAG, root=tmp)
         stem.parent.mkdir(parents=True)
 

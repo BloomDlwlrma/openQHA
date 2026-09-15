@@ -127,13 +127,13 @@ workers), so the defaults need nothing from this conf.
 <root>/<tag>/1_16000/1_1000/dsgdb9nsd_000035/
   crest/                              branch A: CREST's working directory
   mace/basinNN/basin.extxyz, hessian.npy   branch A: the basins
-  openmm/basinNN/traj.dcd, start.pdb, state.csv, ...   branch B: OpenMM's files
+  md_openmm/basinNN/traj.dcd, start.pdb, state.csv, ...   branch B: OpenMM's files
   _records/basins.json                branch A's record
-  _records/openmm/default/            collect tables, ensemble.json  (F_conf, populations, ΔG)
+  _records/md_openmm/default/            collect tables, ensemble.json  (F_conf, populations, ΔG)
 ```
 (since 2026-09-14; `docs/output_inventory.md` section 6. The test chain's TAG is
 `propanal_t30` for its records; its trajectories go into the molecule directory of
-BASIN_TAG `propanal` under `openmm/basinNN/`, setting `default`.)
+BASIN_TAG `propanal` under `md_openmm/basinNN/`, setting `default`.)
 
 Read in this order:
 

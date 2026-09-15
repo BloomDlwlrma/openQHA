@@ -187,7 +187,8 @@ def stage_real(traj_dir, symbols, positions, omega, v_om, masses, temperature_K,
     from openqha.store import layout as _layout
     tr = trajectory_reader.read_trajectory(
         traj_dir, setting=setting,
-        records_dir=_layout.openmm_records_dir(traj_dir.parents[1], setting) / traj_dir.name)
+        records_dir=_layout.records_for(traj_dir.parents[1], trajectory_reader.route_of(traj_dir),
+                                        setting) / traj_dir.name)
     meta = tr["meta"]
     if meta is None:
         raise SystemExit("no record beside {}: the identity assertion needs it".format(traj_dir))
@@ -281,6 +282,10 @@ def main():
                     help="which openmm/<setting>/ of the molecule directory holds the "
                          "trajectories (stage real). Until 2026-09-14 this was --traj-tag.")
     ap.add_argument("--traj-tag", default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--route", default="auto", choices=("auto", "openmm", "ase"),
+                    help="which engine's trajectories to read: md_openmm/basinNN (traj.dcd) "
+                         "or md_ase/basinNN (md.traj); auto takes openmm when present, else ase")
+
     ap.add_argument("--basin", type=int, default=None,
                     help="one basin only; default every basin branch A found")
     ap.add_argument("--nu-cut", default="25,50,100,150",
@@ -334,9 +339,11 @@ def main():
 
         if args.stage in ("real", "all"):
             from openqha.store import basins as _basins, layout as _layout
-            d = _layout.openmm_dir(_basins.molecule_for(args.species, args.tag, cfg),
-                                   args.setting, b)
-            if not (d / _layout.openmm_file_name("traj.dcd", args.setting)).exists():
+            from openqha.quasi_harmonic import trajectory_reader as _tr
+            _mol = _basins.molecule_for(args.species, args.tag, cfg)
+            _hits = [(bb, e) for bb, e, _r in _tr.trajectory_dirs(_mol, args.setting, args.route) if bb == b]
+            d = _hits[0][1] if _hits else _layout.openmm_dir(_mol, args.setting, b)
+            if not _hits:
                 print("  no trajectory at {} -- stage 2 skipped for this basin"
                       .format(d))
                 entry["real"] = dict(skipped=str(d))
@@ -399,9 +406,11 @@ def main():
 
     report["wall_seconds"] = time.time() - t0
     from openqha.store import basins as _basins, layout as _layout
+    from openqha.quasi_harmonic import trajectory_reader as _tr2
+    _mol = _basins.molecule_for(args.species, args.tag, cfg)
+    _route = args.route if args.route in ("openmm", "ase") else (_tr2.route_found(_mol, args.setting) or "openmm")
     out = Path(args.out) if args.out else (
-        _layout.openmm_records_dir(_basins.molecule_for(args.species, args.tag, cfg),
-                                   args.setting) / "02d_frequency_identity.json")
+        _layout.records_for(_mol, _route, args.setting) / "02d_frequency_identity.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print()

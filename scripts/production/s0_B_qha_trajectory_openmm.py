@@ -529,7 +529,7 @@ def main():
     ap.add_argument("--platform", default="CPU")
     # WHERE (ADR 0001, 2026-09-14): engine files under
     #   <root>/<tag>/<range>/<chunk>/<qid>/openmm/<setting>/basinNN/
-    # and this driver's record under <...>/<qid>/_records/openmm/<setting>/basinNN/.
+    # and this driver's record under <...>/<qid>/_records/md_openmm/<setting>/basinNN/.
     # The setting is `default` for the chains and the row name for examples/02d-2.
     ap.add_argument("--setting", default="default",
                     help="the trajectory setting this run belongs to (openmm/<setting>/)")
@@ -652,7 +652,7 @@ def main():
 
     print("geometry    {}".format(geometry_source))
     print("molecule    {}".format(molecule))
-    print("engine      openmm/basinNN/{}   (OpenMM's own files; records in _records/openmm/{}/)"
+    print("engine      md_openmm/basinNN/{}   (OpenMM's own files; records in _records/md_openmm/{}/)"
           .format("" if args.setting == "default" else "  files *_{}.*".format(args.setting),
                   args.setting))
     print()
@@ -744,7 +744,7 @@ def main():
     (outroot / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8")
     print()
-    print("engine files under {}  (setting {})".format(molecule / "openmm", args.setting))
+    print("engine files under {}  (setting {})".format(molecule / layout.md_folder("openmm"), args.setting))
     print("records under      {}".format(outroot))
     print("analyse with: python scripts/production/s0_B_qha_analyse.py --species {} "
           "--tag {}".format(args.species, args.tag))

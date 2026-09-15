@@ -63,20 +63,69 @@ def read_table(path):
     return {k: np.asarray(v) for k, v in cols.items()}
 
 
+EV_TO_KJ = 96.48533212
+
+
+def route_of(engine_dir):
+    """`openmm` or `ase`, from the folder's place in the tree
+    (`<molecule>/md_openmm/basinNN` or `<molecule>/md_ase/basinNN`)."""
+    from ..store import layout
+    r = layout.route_of_folder(Path(engine_dir).parent.name)
+    if r is None:
+        raise ValueError("{} is not under an md_openmm/ or md_ase/ folder of a molecule directory"
+                         .format(engine_dir))
+    return r
+
+
+def read_md_log(path):
+    """ASE's MDLogger table as the same dict of arrays the CSV gives.
+
+    MDLogger writes `Time[ps] Etot[eV] Epot[eV] Ekin[eV] T[K]` (no step count: `step`
+    is the row index); energies are converted to kJ/mol so the keys mean the same thing
+    for both routes.
+    """
+    cols = {k: [] for k in CSV_COLUMNS}
+    with open(path, encoding="utf-8") as fh:
+        for i, line in enumerate(l for l in fh if l.strip() and not l.lstrip().startswith("Time")):
+            f = line.split()
+            if len(f) < 5:
+                continue
+            cols["step"].append(len(cols["step"]))
+            cols["time_ps"].append(float(f[0]))
+            cols["potential_kJ"].append(float(f[2]) * EV_TO_KJ)
+            cols["kinetic_kJ"].append(float(f[3]) * EV_TO_KJ)
+            cols["temperature_K"].append(float(f[4]))
+    return {k: np.asarray(v) for k, v in cols.items()}
+
+
 def read_trajectory(engine_dir, records_dir=None, setting="default"):
-    """`setting` picks the file names inside the folder (layout.openmm_file_name)."""
-    import mdtraj as md
+    """`setting` picks the file names inside the folder (layout.engine_file_name); the
+    route (openmm: traj.dcd + start.pdb + state.csv; ase: md.traj + md.log) comes from the
+    folder's parent name."""
     from ..store import layout
     engine_dir = Path(engine_dir)
-    dcd = _need(engine_dir, "traj.dcd", setting)
-    pdb = _need(engine_dir, "start.pdb", setting)
-    t = md.load(str(dcd), top=str(pdb))
-    positions = np.asarray(t.xyz, dtype=np.float64) * NM_TO_A
-    symbols = [a.element.symbol for a in t.topology.atoms]
-    masses = np.asarray([a.element.mass for a in t.topology.atoms], dtype=float)
-
-    csv_p = engine_dir / layout.openmm_file_name("state.csv", setting)
-    table = read_table(csv_p) if csv_p.is_file() else {k: np.zeros(0) for k in CSV_COLUMNS}
+    route = route_of(engine_dir)
+    if route == "ase":
+        from ase.io import read as ase_read
+        traj = _need(engine_dir, "md.traj", setting)
+        frames = ase_read(str(traj), index=":")
+        if not frames:
+            raise FileNotFoundError("{} holds no frame yet".format(traj))
+        positions = np.asarray([a.get_positions() for a in frames], dtype=np.float64)
+        symbols = list(frames[0].get_chemical_symbols())
+        masses = np.asarray(frames[0].get_masses(), dtype=float)
+        log_p = engine_dir / layout.engine_file_name("md.log", setting)
+        table = read_md_log(log_p) if log_p.is_file() else {k: np.zeros(0) for k in CSV_COLUMNS}
+    else:
+        import mdtraj as md
+        dcd = _need(engine_dir, "traj.dcd", setting)
+        pdb = _need(engine_dir, "start.pdb", setting)
+        t = md.load(str(dcd), top=str(pdb))
+        positions = np.asarray(t.xyz, dtype=np.float64) * NM_TO_A
+        symbols = [a.element.symbol for a in t.topology.atoms]
+        masses = np.asarray([a.element.mass for a in t.topology.atoms], dtype=float)
+        csv_p = engine_dir / layout.openmm_file_name("state.csv", setting)
+        table = read_table(csv_p) if csv_p.is_file() else {k: np.zeros(0) for k in CSV_COLUMNS}
     n = int(positions.shape[0])
     if len(table["step"]) > n:
         table = {k: v[:n] for k, v in table.items()}
@@ -92,21 +141,34 @@ def read_trajectory(engine_dir, records_dir=None, setting="default"):
 
     return dict(positions_A=positions, symbols=symbols, masses_amu=masses, table=table,
                 frame_spacing_ps=spacing, n_frames=n, meta=meta, engine_dir=str(engine_dir),
-                setting=str(setting))
+                setting=str(setting), route=route)
 
 
-def trajectory_dirs(molecule, setting="default"):
-    """[(basin, engine_dir, records_dir)] for every openmm/basinNN/ that holds this
-    setting's DCD (`traj.dcd`, or `traj_<setting>.dcd`), in basin order. The records
+#: The trajectory file each route is recognised by.
+ROUTE_TRAJECTORY = {"openmm": "traj.dcd", "ase": "md.traj"}
+
+
+def trajectory_dirs(molecule, setting="default", route="auto"):
+    """[(basin, engine_dir, records_dir)] for every `<route>/basinNN/` that holds this
+    setting's trajectory file, in basin order. `route="auto"` takes openmm when the
+    molecule directory has any openmm trajectory of this setting, else ase. The records
     folder is named whether or not it exists."""
     from ..store import layout
-    root = Path(molecule) / "openmm"
-    dcd = layout.openmm_file_name("traj.dcd", setting)
-    out = []
-    if not root.is_dir():
-        return out
-    for d in sorted(root.iterdir()):
-        if d.name.startswith("basin") and d.name[5:].isdigit() and (d / dcd).is_file():
-            b = int(d.name[5:])
-            out.append((b, d, layout.openmm_records_dir(molecule, setting) / d.name))
-    return out
+    routes = [route] if route in ROUTE_TRAJECTORY else ["openmm", "ase"]
+    for r in routes:
+        root = Path(molecule) / layout.md_folder(r)
+        fname = layout.engine_file_name(ROUTE_TRAJECTORY[r], setting)
+        out = []
+        if root.is_dir():
+            for d in sorted(root.iterdir()):
+                if d.name.startswith("basin") and d.name[5:].isdigit() and (d / fname).is_file():
+                    out.append((int(d.name[5:]), d, layout.records_for(molecule, r, setting) / d.name))
+        if out or route in ROUTE_TRAJECTORY:
+            return out
+    return []
+
+
+def route_found(molecule, setting="default", route="auto"):
+    """The route `trajectory_dirs` would read, or None."""
+    dirs = trajectory_dirs(molecule, setting, route)
+    return route_of(dirs[0][1]) if dirs else None

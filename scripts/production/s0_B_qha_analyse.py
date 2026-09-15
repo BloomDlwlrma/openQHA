@@ -68,7 +68,7 @@ GMX_BUDGET_KCAL = 0.05
 SMOKE_LENGTH_PS = 20.0
 
 
-def discover(molecule, setting):
+def discover(molecule, setting, route="auto"):
     """Every trajectory of one setting: (basin label, seed label, engine_dir, records_dir).
 
     The labels are directory names, as before (`basin00`, and `seed00` for the one
@@ -77,7 +77,7 @@ def discover(molecule, setting):
     """
     from openqha.quasi_harmonic import trajectory_reader
     return [("basin{:02d}".format(b), "seed00", eng, rec)
-            for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting)]
+            for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting, route)]
 
 
 def analyse_one(engine_dir, records_dir, temperature_K, fractions, n_batches,
@@ -150,7 +150,11 @@ def main():
     ap.add_argument("--basin-tag", default=None,
                     help="the tag the molecule directory is under (branch A's; default --tag)")
     ap.add_argument("--setting", default="default",
-                    help="which openmm/<setting>/ to analyse")
+                    help="which setting's trajectories to analyse")
+    ap.add_argument("--route", default="auto", choices=("auto", "openmm", "ase"),
+                    help="which engine's trajectories to read: md_openmm/basinNN (traj.dcd) "
+                         "or md_ase/basinNN (md.traj); auto takes openmm when present, else ase")
+
     ap.add_argument("--molecule-dir", default=None,
                     help="override the molecule directory (default: from S0_RUNS_ROOT)")
     ap.add_argument("--temperature", type=float, default=None)
@@ -183,12 +187,15 @@ def main():
     molecule = (Path(args.molecule_dir) if args.molecule_dir
                 else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
                                          args.species))
-    root = molecule / "openmm"
-    found = discover(molecule, args.setting)
+    from openqha.quasi_harmonic import trajectory_reader as _tr
+    found = discover(molecule, args.setting, args.route)
     if not found:
-        raise SystemExit("no trajectories under {} (no basinNN/{})\n"
-                         "Run scripts/production/s0_B_qha_trajectory_openmm.py first."
-                         .format(root, layout.openmm_file_name("traj.dcd", args.setting)))
+        raise SystemExit("no trajectories under {} for route {!r}, setting {!r} (no "
+                         "md_openmm/basinNN/traj.dcd or md_ase/basinNN/md.traj)\n"
+                         "Run a branch B trajectory driver first."
+                         .format(molecule, args.route, args.setting))
+    route = _tr.route_of(found[0][2])       # (basin label, seed label, engine_dir, records_dir)
+    root = molecule / layout.md_folder(route)
 
     print("=" * 92)
     print("Branch B -- quasi-harmonic analysis   {}  ({})".format(
@@ -415,7 +422,7 @@ def main():
     # ---- product ---------------------------------------------------------------------
     # collect.log and collect__<table>.parquet beside the driver's records (ADR 0001).
     out_stem = Path(args.out) if args.out else (
-        layout.openmm_records_dir(molecule, args.setting) / "collect")
+        layout.records_for(molecule, route, args.setting) / "collect")
     r = report.Report(
         "openQHA branch B -- quasi-harmonic analysis",
         subtitle="{}  ({})   tag {}".format(args.species, spec.get("name"), args.tag))

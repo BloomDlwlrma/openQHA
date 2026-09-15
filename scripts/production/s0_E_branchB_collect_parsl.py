@@ -76,14 +76,17 @@ from openqha import config  # noqa: E402
 #: What has to exist for a molecule to count as collected. Stated, printed and stored --
 #: if the scanner and the worker disagree about what "done" means, molecules are skipped
 #: for ever and never recovered. Same rule as openqha/worklist.py states for branch A.
-COMPLETION = "<molecule>/_records/openmm/<setting>/collect.json exists and records n_trajectories"
+COMPLETION = "<molecule>/_records/md_<route>/<setting>/collect.json exists and records n_trajectories"
 
 
-def result_path(repo_root, tag, species, basin_tag=None, setting="default"):
-    """The completion marker: <molecule>/_records/openmm/<setting>/collect.json (ADR 0001)."""
+def result_path(repo_root, tag, species, basin_tag=None, setting="default", route="auto"):
+    """The completion marker: <molecule>/_records/<route>/<setting>/collect.json (ADR 0001).
+    With route `auto` the route is the one the trajectories are found under."""
     from openqha.store import basins, layout
-    return layout.openmm_records_dir(
-        basins.molecule_for(species, basin_tag or tag), setting) / "collect.json"
+    from openqha.quasi_harmonic import trajectory_reader
+    mol = basins.molecule_for(species, basin_tag or tag)
+    r = route if route in ("openmm", "ase") else (trajectory_reader.route_found(mol, setting) or "openmm")
+    return layout.records_for(mol, r, setting) / "collect.json"
 
 
 def _accepted_kwargs(fn):
@@ -96,7 +99,7 @@ def _accepted_kwargs(fn):
 # The task. It runs in a worker process, so it must be self-contained.
 # ======================================================================================
 def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None,
-                setting="default"):
+                setting="default", route="auto"):
     """One molecule's quasi-harmonic analysis, as a SUBPROCESS of the analysis driver.
 
     A subprocess rather than an import, for the three reasons branch A uses one: a crash
@@ -122,14 +125,18 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None
     cmd = [_sys.executable, "-u",
            str(repo_root / "scripts" / "production" / "s0_B_qha_analyse.py"),
            "--species", species, "--tag", tag,
-           "--basin-tag", str(basin_tag or tag), "--setting", str(setting)] + list(extra_args)
+           "--basin-tag", str(basin_tag or tag), "--setting", str(setting),
+           "--route", str(route)] + list(extra_args)
     proc = _sp.run(cmd, cwd=str(repo_root), env=e, text=True,
                    stdout=_sp.PIPE, stderr=_sp.PIPE)
 
     # This driver's own log and marker beside collect's tables (ADR 0001).
     _sys.path.insert(0, str(repo_root))
     from openqha.store import basins as _basins, layout as _layout
-    out = _layout.openmm_records_dir(_basins.molecule_for(species, basin_tag or tag), setting)
+    from openqha.quasi_harmonic import trajectory_reader as _tr
+    _mol = _basins.molecule_for(species, basin_tag or tag)
+    _route = route if route in ("openmm", "ase") else (_tr.route_found(_mol, setting) or "openmm")
+    out = _layout.records_for(_mol, _route, setting)
     out.mkdir(parents=True, exist_ok=True)
     (out / "collect.driver.log").write_text(
         proc.stdout + "\n----- stderr -----\n" + proc.stderr, encoding="utf-8")
@@ -193,7 +200,8 @@ def species_list(args, cfg):
     raise SystemExit("give --species or --edges")
 
 
-def remaining(species, tag, cfg, no_resume=False, basin_tag=None, setting="default"):
+def remaining(species, tag, cfg, no_resume=False, basin_tag=None, setting="default",
+              route="auto"):
     """Which molecules still need collecting, and an account of how that was decided.
 
     Scan then execute, the pattern taken from this project's own
@@ -209,19 +217,19 @@ def remaining(species, tag, cfg, no_resume=False, basin_tag=None, setting="defau
     from openqha.quasi_harmonic import trajectory_reader as _tr
     todo, done, no_traj = [], [], []
     for qid in species:
-        if result_path(ROOT, tag, qid, basin_tag, setting).exists():
+        if result_path(ROOT, tag, qid, basin_tag, setting, route).exists():
             done.append(qid)
             continue
         # A molecule with no trajectories is not "remaining"; it is upstream work that
         # has not happened. Counting it as remaining makes the collection pass look
         # behind when it is actually waiting.
-        if not _tr.trajectory_dirs(_basins.molecule_for(qid, basin_tag or tag, cfg), setting):
+        if not _tr.trajectory_dirs(_basins.molecule_for(qid, basin_tag or tag, cfg), setting, route):
             no_traj.append(qid)
             continue
         todo.append(qid)
     return todo, dict(
         completion_criterion=COMPLETION,
-        trajectories="<molecule>/openmm/basinNN/ under tag {!r}, setting {!r}".format(
+        trajectories="<molecule>/md_<route>/basinNN/ under tag {!r}, setting {!r}".format(
             basin_tag or tag, setting),
         n_candidates=len(species), n_already_done=len(done),
         n_no_trajectories_yet=len(no_traj), no_trajectories=no_traj[:20],
@@ -242,7 +250,11 @@ def main():
     ap.add_argument("--basin-tag", default=None,
                     help="the tag the molecule directory is under (default: --tag)")
     ap.add_argument("--setting", default="default",
-                    help="which openmm/<setting>/ to collect")
+                    help="which setting's trajectories to collect")
+    ap.add_argument("--route", default="auto", choices=("auto", "openmm", "ase"),
+                    help="which engine's trajectories to read: md_openmm/basinNN (traj.dcd) "
+                         "or md_ase/basinNN (md.traj); auto takes openmm when present, else ase")
+
     ap.add_argument("--no-resume", action="store_true",
                     help="do NOT subtract molecules that already have a result")
     ap.add_argument("--no-gmx", action="store_true", default=True,
@@ -265,7 +277,7 @@ def main():
     cfg = config.load()
     candidates, source = species_list(args, cfg)
     species, record = remaining(candidates, args.tag, cfg, args.no_resume,
-                                basin_tag=args.basin_tag, setting=args.setting)
+                                basin_tag=args.basin_tag, setting=args.setting, route=args.route)
 
     import resource_configs
     res = resource_configs.load(args.resource)
@@ -373,7 +385,7 @@ def main():
 
     started = time.time()
     futures = [app(qid, str(ROOT), args.tag, tuple(extra), env=passthrough,
-                   basin_tag=args.basin_tag, setting=args.setting)
+                   basin_tag=args.basin_tag, setting=args.setting, route=args.route)
                for qid in species]
     results = []
     for f in futures:

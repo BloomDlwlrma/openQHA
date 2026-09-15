@@ -15,7 +15,7 @@ WHAT IT PUTS TOGETHER
 
 WHERE T*S IS READ FROM, AND WHY NOT THE FRAMES
 ----------------------------------------------
-`s0_B_qha_analyse.py` (the collect step) writes `<molecule>/_records/openmm/<setting>/
+`s0_B_qha_analyse.py` (the collect step) writes `<molecule>/_records/md_openmm/<setting>/
 collect__trajectories.parquet` (ADR 0001; before 2026-09-14 `analysis/qha/<tag>/<species>__
 trajectories.parquet`), one row per (basin, seed) with the entropy it judged against the criteria.
 This step reads THAT. Until 2026-09-13 it re-ran `qha.analyse` on the raw frames -- a
@@ -88,15 +88,18 @@ def basin_electronic(rec):
     return out
 
 
-def collect_stem(species, tag, setting="default", root=None):
+def collect_stem(species, tag, setting="default", root=None, route="auto"):
     """Where s0_B_qha_analyse.py put this molecule's tables (its own default --out):
-    <molecule>/_records/openmm/<setting>/collect (ADR 0001). `tag` is the basin tag."""
+    <molecule>/_records/<route>/<setting>/collect (ADR 0001). `tag` is the basin tag;
+    route `auto` is the one the trajectories are found under (openmm before ase)."""
     from openqha.store import layout
-    return layout.openmm_records_dir(basin_reader.molecule_for(species, tag, root=root),
-                                     setting) / "collect"
+    from openqha.quasi_harmonic import trajectory_reader
+    mol = basin_reader.molecule_for(species, tag, root=root)
+    r = route if route in ("openmm", "ase") else (trajectory_reader.route_found(mol, setting) or "openmm")
+    return layout.records_for(mol, r, setting) / "collect"
 
 
-def collect_tables(species, tag, setting="default", root=None):
+def collect_tables(species, tag, setting="default", root=None, route="auto"):
     """(trajectories, criteria) as lists of row dicts, from collect's parquet tables.
 
     Refuses when the trajectories table is absent: this step sums what collect judged
@@ -104,7 +107,7 @@ def collect_tables(species, tag, setting="default", root=None):
     the reading (older products have none) and its absence is recorded, not ignored.
     """
     import pandas as pd
-    stem = collect_stem(species, tag, setting, root)
+    stem = collect_stem(species, tag, setting, root, route)
     traj = stem.parent / (stem.name + "__trajectories.parquet")
     if not traj.is_file():
         raise SystemExit(
@@ -120,16 +123,18 @@ def collect_tables(species, tag, setting="default", root=None):
     return rows, criteria
 
 
-def crossings_per_basin(species, tag, cfg, setting="default", root=None):
+def crossings_per_basin(species, tag, cfg, setting="default", root=None, route="auto"):
     """Basin residence from the frames -- the one thing collect's table does not carry.
 
     The frames are read from the engine folder (traj.dcd, ADR 0001); returns
     (per-basin dict, the openmm/<setting> folder it read)."""
     from openqha.quasi_harmonic import trajectory_reader
     molecule = basin_reader.molecule_for(species, tag, cfg, root=root)
-    root = molecule / "openmm"
+    dirs = trajectory_reader.trajectory_dirs(molecule, setting, route)
+    from openqha.store import layout as _layout
+    root = molecule / _layout.md_folder(trajectory_reader.route_of(dirs[0][1]) if dirs else "openmm")
     out = {}
-    for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting):
+    for b, eng, rec in dirs:
         res_all = []
         tr = trajectory_reader.read_trajectory(eng, records_dir=rec, setting=setting)
         res_all.append(br.basin_residence(tr["positions_A"], tr["symbols"]))
@@ -140,7 +145,8 @@ def crossings_per_basin(species, tag, cfg, setting="default", root=None):
     return out, root
 
 
-def entropy_per_basin(species, tag, cfg, atoms_set="all", setting="default", root=None):
+def entropy_per_basin(species, tag, cfg, atoms_set="all", setting="default", root=None,
+                      route="auto"):
     """Mean T*S over the seeds of each basin, plus what the trajectories did.
 
     `all`: from collect's trajectories table -- the judged numbers, nothing recomputed.
@@ -152,10 +158,10 @@ def entropy_per_basin(species, tag, cfg, atoms_set="all", setting="default", roo
     the two the same, because "we did not run it" and "its entropy is zero" are different
     statements and only one of them is ever true.
     """
-    xing, traj_root = crossings_per_basin(species, tag, cfg, setting, root)
+    xing, traj_root = crossings_per_basin(species, tag, cfg, setting, root, route)
     per_basin = {}
     if atoms_set == "all":
-        rows, _ = collect_tables(species, tag, setting, root)
+        rows, _ = collect_tables(species, tag, setting, root, route)
         by_basin = {}
         for r in rows:
             by_basin.setdefault(basin_index(r["basin"]), []).append(r)
@@ -175,7 +181,7 @@ def entropy_per_basin(species, tag, cfg, atoms_set="all", setting="default", roo
 
     from openqha.quasi_harmonic import trajectory_reader
     molecule = basin_reader.molecule_for(species, tag, cfg, root=root)
-    for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting):
+    for b, eng, rec in trajectory_reader.trajectory_dirs(molecule, setting, route):
         vals, frames_seen = [], 0
         tr = trajectory_reader.read_trajectory(eng, records_dir=rec, setting=setting)
         frames = tr["positions_A"]
@@ -229,7 +235,11 @@ def main():
     ap.add_argument("--basin-tag", default=None,
                     help="tag whose branch A basins to sum over (default: --tag)")
     ap.add_argument("--setting", default="default",
-                    help="which openmm/<setting>/ to sum over")
+                    help="which setting's trajectories to sum over")
+    ap.add_argument("--route", default="auto", choices=("auto", "openmm", "ase"),
+                    help="which engine's trajectories to read: md_openmm/basinNN (traj.dcd) "
+                         "or md_ase/basinNN (md.traj); auto takes openmm when present, else ase")
+
     ap.add_argument("--atoms", default="all", choices=("all", "heavy", "both"))
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
@@ -259,10 +269,11 @@ def main():
     # written (the file is the record of what was summed) and then refused at exit,
     # the way collect refuses -- except under OPENQHA_SMOKE=1, where the test chain has
     # already said every number under this tag is plumbing.
-    _, criteria = collect_tables(args.species, basin_tag, args.setting)
+    _, criteria = collect_tables(args.species, basin_tag, args.setting, route=args.route)
     n_pass, n_crit = criteria_verdict(criteria)
-    print("collect   {} of {} criteria passed  (_records/openmm/{}/collect__criteria.parquet; tag {})".format(
-        n_pass, n_crit, args.setting, args.tag) if n_crit
+    _stem = collect_stem(args.species, basin_tag, args.setting, route=args.route)
+    print("collect   {} of {} criteria passed  (_records/{}/{}/collect__criteria.parquet; tag {})".format(
+        n_pass, n_crit, _stem.parent.parent.name, args.setting, args.tag) if n_crit
         else "collect   wrote no criteria table for this molecule")
 
     report = dict(species=args.species, tag=args.tag, basin_tag=basin_tag,
@@ -270,7 +281,7 @@ def main():
                   collect_criteria=dict(passed=n_pass, total=n_crit), results={})
     for atoms_set in sets:
         per_basin, root = entropy_per_basin(args.species, basin_tag, cfg, atoms_set,
-                                            args.setting)
+                                            args.setting, route=args.route)
         basins = []
         for i, de in enumerate(e_rel):
             got = per_basin.get(i)
@@ -303,8 +314,7 @@ def main():
 
     from openqha.store import layout as _layout
     out = Path(args.out) if args.out else (
-        _layout.openmm_records_dir(basin_reader.molecule_for(args.species, basin_tag, cfg),
-                                   args.setting) / "ensemble.json")
+        collect_stem(args.species, basin_tag, args.setting, route=args.route).parent / "ensemble.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print()
