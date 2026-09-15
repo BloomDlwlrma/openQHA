@@ -18,9 +18,29 @@ an OpenMM `.dcd`.
 _Avoid_: raw output, native output, product (that word is reserved for the answer)
 
 **Record**:
-A file this repository writes about a run: settings, verdicts, timings, logs, summaries.
-`meta.json`, `basins.json`, the collect parquet tables, `driver.log`, completion markers.
-_Avoid_: metadata, artefact, sidecar
+What this repository writes about one Calculation: a Report and a Property file, in the
+molecule directory. Nothing is written about a Batch.
+_Avoid_: metadata, artefact, sidecar, summary
+
+**Report**:
+The `.out` text a Calculation leaves for a human, in the form CREST's `crest.out` and
+ORCA's `.out` take; its last line says the Calculation terminated normally.
+_Avoid_: log (that is an engine's or Slurm's stdout), summary
+
+**Property file**:
+The `.toml` beside a Report holding what a later step reads back, in the form ORCA's
+`.property.txt` takes: a status block, the inputs, and the result blocks; nothing else.
+_Avoid_: metadata file, meta, record file, settings file
+
+**Calculation**:
+One step applied to one molecule or one basin: a CREST run, a MACE relax and Hessian,
+one MD trajectory, one collect, one ensemble. The unit that owns a Record.
+_Avoid_: task, job (that is Slurm's word), run
+
+**Batch**:
+One driver invocation that runs many Calculations inside one Slurm job or array row.
+Its only trace is the Slurm log, which lists every Calculation's return code and Record.
+_Avoid_: campaign, chain, pipeline (for the invocation), summary
 
 **Molecule directory**:
 The one directory that holds everything for one molecule under one tag, with one folder

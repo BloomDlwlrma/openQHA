@@ -151,10 +151,31 @@ def engine_file_name(name, setting=DEFAULT_SETTING):
     return "{}_{}{}{}".format(stem, setting, dot, ext)
 
 
+def md_records_dir(molecule, route):
+    """`_records/<md folder>/` (`_records/md_openmm/`): where the trajectory, collect, ensemble
+    and 02d Records of one route live. No setting level (user ruling 2026-09-15, records
+    redesign Q7 of round 1): the setting is in the file stem, `record_file_name`, exactly
+    as for engine files. Named like the engine folder it describes."""
+    return Path(molecule) / RECORDS / md_folder(route)
+
+
+def basin_records_dir(molecule, route, basin):
+    """`_records/<md folder>/basinNN/`: one trajectory's Record (`md.out`, `md.toml`,
+    `driver.log`, and the `md_<setting>.*` of every other setting)."""
+    return md_records_dir(molecule, route) / "basin{:02d}".format(int(basin))
+
+
+def record_file_name(name, setting=DEFAULT_SETTING):
+    """`md.toml` for the default setting, `md_s2.toml` for setting `s2`;
+    `collect.trajectories.dat` -> `collect_s2.trajectories.dat`. The engine-file rule,
+    applied to Records: a Report and its Property file share a stem."""
+    return engine_file_name(name, setting)
+
+
 def records_for(molecule, route, setting):
-    """`_records/<md folder>/<setting>/` (`_records/md_openmm/default/`): the driver's records
-    per basin, and collect's, the ensemble report's and 02d's records for that route and
-    setting. Named like the engine folder it describes."""
+    """`_records/<md folder>/<setting>/` -- the step-2 form with a setting LEVEL, which the
+    user ruled out on 2026-09-15. Kept while tickets 17-19 of the records redesign move
+    the callers to `md_records_dir` + `record_file_name`; ticket 19 deletes it."""
     return Path(molecule) / RECORDS / md_folder(route) / str(setting)
 
 
