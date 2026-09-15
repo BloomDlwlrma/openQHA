@@ -5,7 +5,9 @@
 # stderr; it never falls back to $HOME (the 2026-09-12 defect was a default nobody chose).
 #
 #     root = <prefix>/HDD_POOL/<acct>/<user>/<S0_RUNS_TAIL>
-#     prefix   /XYFS02   for partitions ai, cn                (TianheXY-A, TianheXY-CN)
+#     prefix   /XYFS02   for partitions ai, temp (TianheXY-A) and cn, deimos, debug
+#                        (TianheXY-CN; deimos measured 2026-09-13: branch A on cnode5200
+#                        wrote under /XYFS02/HDD_POOL, the 02d_prod basins record)
 #              /XYAIFS00 for partitions a100x h100x hx a800x v100x  (TianheXY-AI)
 #     acct, user  from HOME = /HOME/<acct>/<user>  (or /XYAIFS00/HOME/<acct>/<user>)
 #     tail     S0_RUNS_TAIL, default sherwin/runs -- ONE variable, so another account
@@ -28,7 +30,7 @@ openqha_resolve_root() {
 
     part="${OPENQHA_PARTITION:-${SLURM_JOB_PARTITION:-}}"
     case "$part" in
-        ai|cn)                     prefix=/XYFS02 ;;
+        ai|temp|cn|deimos|debug)   prefix=/XYFS02 ;;
         a100x|h100x|hx|a800x|v100x) prefix=/XYAIFS00 ;;
         "")
             have_a=0;  [ -d "${S0_MOUNT_BASE:-}/XYFS02/HDD_POOL" ]   && have_a=1
@@ -39,8 +41,8 @@ openqha_resolve_root() {
                 prefix=/XYAIFS00
             elif [ "$have_a" = 1 ] && [ "$have_ai" = 1 ]; then
                 echo "openQHA: both /XYFS02 and /XYAIFS00 are mounted here and no partition is" >&2
-                echo "  known, so the root cannot be chosen. Set OPENQHA_PARTITION (ai, cn," >&2
-                echo "  a100x, h100x, hx, a800x, v100x) or S0_RUNS_ROOT." >&2
+                echo "  known, so the root cannot be chosen. Set OPENQHA_PARTITION (ai, temp, cn," >&2
+                echo "  deimos, debug, a100x, h100x, hx, a800x, v100x) or S0_RUNS_ROOT." >&2
                 return 1
             else
                 echo "openQHA: neither /XYFS02/HDD_POOL nor /XYAIFS00/HDD_POOL is mounted and" >&2
@@ -49,8 +51,8 @@ openqha_resolve_root() {
                 return 1
             fi ;;
         *)
-            echo "openQHA: partition '$part' is not one this file knows (ai, cn -> /XYFS02;" >&2
-            echo "  a100x, h100x, hx, a800x, v100x -> /XYAIFS00). Add it here, or set" >&2
+            echo "openQHA: partition '$part' is not one this file knows (ai, temp, cn, deimos," >&2
+            echo "  debug -> /XYFS02; a100x, h100x, hx, a800x, v100x -> /XYAIFS00). Add it here, or set" >&2
             echo "  S0_RUNS_ROOT explicitly." >&2
             return 1 ;;
     esac
