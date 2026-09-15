@@ -795,7 +795,6 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
     # reads the basins from mace/basinNN/basin.extxyz and the store is retired.
     outdir = layout.records_dir(molecule)
     outdir.mkdir(parents=True, exist_ok=True)
-    xyz_text = _basins_xyz_text(basins, labelled, name, record)
     record["molecule_dir"] = str(molecule)
     record["mace"] = dict(
         folder=str(molecule / "mace"),
@@ -804,10 +803,115 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
         hessians=[str(layout.mace_basin_dir(molecule, i) / "hessian.npy")
                   for i in range(len(basins))])
     record["output_dir"] = str(outdir)
-    (outdir / "basins.json").write_text(
-        json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-    (outdir / "basins.xyz").write_text(xyz_text, encoding="utf-8")
+    record["tag"] = args.tag
+    # The Record of this Calculation (records redesign, user ruling 2026-09-15):
+    # branchA.out is the Report a person reads, everything above expanded, last line the
+    # terminal line; branchA.toml is the Property file a program reads, ORCA's
+    # .property.txt shape (status, inputs, the result blocks a later step reads) and
+    # nothing else. The Report first, the Property file last: STATUS = NORMAL TERMINATION
+    # is the completion marker, so it must be the last thing written.
+    from openqha.store import branch_a_property
+    write_branch_a_report(record, outdir / branch_a_property.REPORT)
+    unknown = branch_a_property.write(outdir / branch_a_property.FILE, record)
+    if unknown:
+        raise RuntimeError("branchA.toml: keys outside the schema {}; add them to "
+                           "openqha.store.branch_a_property.SCHEMA".format(unknown))
     return record
+
+
+def write_branch_a_report(record, path):
+    """`branchA.out`: what a person reads. Sections in the order the work happened, the
+    basins table, the criteria, then the complete record expanded, and the terminal line."""
+    from openqha.store import report as _report
+    r = _report.Report("openQHA branch A -- conformer search, basins, Hessians",
+                       subtitle="{}  ({})   tag {}".format(
+                           record.get("qm9_index") or record.get("label"), record.get("name"),
+                           record.get("tag")))
+    # Provenance is the Report's (records redesign, 2026-09-15): the Property file holds
+    # only what a later step reads, so the engine, the weights, the versions, the machine
+    # and the neighbour-list probe are printed here, once, as ORCA prints its version.
+    eng = record.get("engine") or {}
+    r.section("Provenance")
+    r.kv("engine", eng.get("engine"))
+    r.kv("composite_notation", record.get("composite_notation"))
+    r.kv("weights_path", eng.get("weights_path"))
+    r.kv("weights_bytes", eng.get("bytes"))
+    r.kv("interface", eng.get("interface"))
+    r.kv("mace_torch_version", eng.get("mace_torch_version"))
+    r.kv("torch_version", eng.get("torch_version"))
+    r.kv("dtype", eng.get("dtype"))
+    patch = eng.get("neighbour_list_patch") or {}
+    r.kv("neighbour_list_patch_applied", patch.get("applied"))
+    r.kv("installed_mace_defect_present", (patch.get("installed") or {}).get("defect_present"))
+    cvers = record.get("crest_version") or {}
+    r.kv("crest_version", "{} ({})".format(cvers.get("version"), cvers.get("commit")))
+    r.kv("crest_binary", (record.get("crest") or {}).get("binary"))
+    r.kv("protocol_source", record.get("protocol_source"))
+    for k, v in (record.get("machine") or {}).items():
+        r.kv("machine_" + k, v)
+    r.kv("generated_by", record.get("generated_by"))
+    r.section("Settings")
+    for k, v in (record.get("settings") or {}).items():
+        r.kv(k, v)
+    g = record.get("gate") or {}
+    r.section("Gate")
+    for k in ("smiles", "smiles_source", "gates_enabled", "passed", "reason"):
+        if k in g:
+            r.kv(k, g[k])
+    c = record.get("crest") or {}
+    r.section("CREST")
+    for k in ("workdir", "ran_in", "returncode", "n_conformers", "terminated_normally",
+              "n_terminated_early", "n_completed_successfully", "total_engrad_calls",
+              "energy_spread", "shake_used", "used_shake_fallback", "wall_seconds",
+              "wall_is_valid_cost", "reused_scratch"):
+        if k in c:
+            r.kv(k, c[k])
+    cv = record.get("census") or {}
+    r.section("Census: tighten, deduplicate, Hessian")
+    for k in ("n_frames_from_crest", "n_reference_geometries_pooled", "n_input_frames_total",
+              "n_not_converged", "n_graph_changed", "max_residual_force_eV_A",
+              "n_basins_by_repo_criteria", "n_saddle_points_rejected"):
+        if k in cv:
+            r.kv(k, cv[k])
+    r.section("Basins")
+    rows = []
+    for b in record.get("basins") or []:
+        s = b.get("symmetry") or {}
+        rows.append([b.get("basin_index"), "{:.6f}".format(b["energy_eV"]),
+                     "{:.4f}".format(b["relative_kcal"]), s.get("sigma"),
+                     s.get("pymsym_point_group"), "{:.2f}".format(b.get("lowest_frequency_cm_inv", float("nan"))),
+                     "{:.4f}".format((b.get("thermo") or {}).get("G_minus_Eel_kcal", float("nan")))])
+    r.table(["basin", "E / eV", "rel / kcal", "sigma", "pg", "nu_min / cm-1", "G - E_el / kcal"], rows)
+    # Per basin: the sigma diagnostics and the tolerance sweep (criterion 9's evidence),
+    # then the thermochemistry breakdown. These left the Property file on 2026-09-15.
+    for b in record.get("basins") or []:
+        s = b.get("symmetry") or {}
+        r.section("Basin {}: symmetry".format(b.get("basin_index")))
+        for k, v in s.items():
+            if k == "tolerance_sweep":
+                continue
+            r.kv(k, v)
+        sweep = s.get("tolerance_sweep") or {}
+        if sweep:
+            r.table(["tolerance / A", "sigma", "n_improper"],
+                    [[t, (row or {}).get("sigma"), (row or {}).get("n_improper")]
+                     for t, row in sweep.items()], title="sigma over the tolerance sweep")
+        th = b.get("thermo") or {}
+        r.section("Basin {}: thermochemistry".format(b.get("basin_index")))
+        for k, v in th.items():
+            if isinstance(v, dict):
+                for kk, vv in v.items():
+                    r.kv("{}_{}".format(k, kk), vv)
+            else:
+                r.kv(k, v)
+    r.section("Acceptance criteria")
+    for crit in record.get("criteria") or []:
+        r.verdict("{} {}".format(crit.get("number", ""), crit.get("criterion", "")),
+                  crit.get("detail"), bool(crit.get("passed")))
+    r.kv("all_criteria_passed", record.get("all_criteria_passed"))
+    r.kv("wall_seconds_total", record.get("wall_seconds_total"))
+    r.json_dump(record, title="complete record (expanded)")
+    return r.write(path, step="branch A")
 
 
 def _basins_xyz_text(basins, labelled, qid, record):
@@ -938,7 +1042,7 @@ def main():
     print()
     print("wall {:.1f} s   all criteria passed: {}".format(
         record["wall_seconds_total"], record["all_criteria_passed"]))
-    print("written {}".format(record["output_dir"]))
+    print("written {}/branchA.out and branchA.toml".format(record["output_dir"]))
     return 0 if record["all_criteria_passed"] else 1
 
 

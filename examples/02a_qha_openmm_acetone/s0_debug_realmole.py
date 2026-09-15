@@ -66,6 +66,7 @@ from openqha.conformer_search import crest_census                    # noqa: E40
 from openqha.quasi_harmonic import basin_residence as br             # noqa: E402
 from openqha.quasi_harmonic import qha                               # noqa: E402
 from openqha.store import basins as basin_reader                     # noqa: E402
+from openqha.store import branch_a_property                          # noqa: E402
 
 #: name -> the trajectory driver's thermostat arguments. See the .conf header on why
 #: `nhc_*` (a coupling TIME in fs) and `langevin_*` (a friction in ps^-1) are not
@@ -153,16 +154,13 @@ def basin_energies_and_sigma(rec, species, cfg):
     """
     spec = config.species(species, cfg)
     out = []
-    for i, b in enumerate(rec.get("basins", [])):
-        # `relative_kcal`, by name. A basin without it RAISES rather than defaulting to
-        # zero -- a default of 0.0 is a valid relative energy, so the mistake would make
-        # every basin look degenerate and no check would fire.
-        if "relative_kcal" not in b:
-            raise KeyError(
-                "basin {} has no `relative_kcal`; keys are {}".format(i, sorted(b)))
-        sigma = (b.get("symmetry") or {}).get("sigma", spec["symmetry_number"])
-        out.append(dict(index=i, rel_kcal=float(b["relative_kcal"]),
-                        sigma=int(sigma),
+    # RELATIVE of each [[Basin]] block of branchA.toml, by name; a basin without it RAISES
+    # rather than defaulting to zero (a default of 0.0 is a valid relative energy, so the
+    # mistake would make every basin look degenerate and no check would fire).
+    rel = branch_a_property.relative_kcal(rec)
+    for i, b in enumerate(branch_a_property.basin_rows(rec)):
+        sigma = b.get("SIGMA", spec["symmetry_number"])
+        out.append(dict(index=i, rel_kcal=rel[i], sigma=int(sigma),
                         degeneracy=int(spec["electronic_degeneracy"])))
     return out
 

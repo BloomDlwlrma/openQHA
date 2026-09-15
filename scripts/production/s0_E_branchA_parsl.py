@@ -187,26 +187,31 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
 
     _sys.path.insert(0, str(repo_root))
     from openqha.store import basins as _basins, layout as _layout
-    # _records/basins.json in the molecule directory (ADR 0001, 2026-09-14).
-    out = _layout.records_dir(_basins.molecule_for(qm9_index, tag)) / "basins.json"
+    from openqha.store import branch_a_property as _bap, property as _prop
+    # _records/branchA.toml in the molecule directory: branch A's Property file (records
+    # redesign, 2026-09-15). STATUS is the completion marker.
+    out = _basins.record_path(qm9_index, tag)
     summary = dict(qm9_index=qm9_index, seconds=_time.time() - started,
                    returncode=proc.returncode, command=cmd, socket=sock)
-    if out.exists():
-        rec = _json.loads(out.read_text(encoding="utf-8"))
+    status = _prop.status_of(out)
+    if status == _prop.NORMAL_TERMINATION:
+        rec = _basins.read_record(qm9_index, tag)
+        crit, cr, cen = rec.get("Criteria", {}), rec.get("CREST_Run", {}), rec.get("Census", {})
         summary.update(
-            n_basins=rec["census"]["n_basins"],
-            n_conformers_crest_reports=rec["census"]["crest_vs_repo"][
-                "n_conformers_reported_by_crest"],
-            all_criteria_passed=rec["all_criteria_passed"],
-            failed_criteria=[c["number"] for c in rec["criteria"]
-                             if not c["passed"]],
-            sigma=[b["symmetry"]["sigma"] for b in rec["basins"]],
-            used_shake_fallback=rec["crest"].get("used_shake_fallback"),
-            crest_seconds=rec["crest"].get("wall_seconds"),
-            wall_is_valid_cost=rec["crest"].get("wall_is_valid_cost"),
+            status=status,
+            n_basins=cen.get("N_BASINS"),
+            n_conformers_crest_reports=cr.get("N_CONFORMERS"),
+            all_criteria_passed=bool(crit.get("ALL_PASSED")),
+            failed_criteria=list(crit.get("FAILED") or []),
+            sigma=[b.get("SIGMA") for b in _bap.basin_rows(rec)],
+            used_shake_fallback=cr.get("USED_SHAKE_FALLBACK"),
+            crest_seconds=cr.get("WALL"),
+            wall_is_valid_cost=cr.get("WALL_IS_VALID_COST"),
             output=str(out))
     else:
-        summary["error"] = "no basins.json was written"
+        summary["status"] = status or _prop.FAILED
+        summary["error"] = ("branchA.toml has STATUS {}".format(status) if status
+                            else "no branchA.toml was written")
         summary["stdout_tail"] = "\n".join(proc.stdout.splitlines()[-25:])
         summary["stderr_tail"] = "\n".join(proc.stderr.splitlines()[-25:])
     # The driver's own log, kept per molecule.

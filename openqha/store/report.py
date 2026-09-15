@@ -210,7 +210,13 @@ class Report:
         self.lines += _render(obj, 1, self.w)
         return self
 
-    def write(self, path):
+    def write(self, path, step=None):
+        """Write the report. With `step`, the LAST line is the terminal line
+        `openQHA <step> terminated normally` -- CREST's own convention, and since
+        2026-09-15 the completion marker of every step that writes a `.out`: a report
+        killed before its last line is not finished, and `terminated_normally()` says so.
+        Written to `.part` and renamed, so the last line is either there or the file is not.
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         foot = ["", "-" * self.w,
@@ -218,8 +224,29 @@ class Report:
                     _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
                 self.source_note,
                 "-" * self.w]
-        path.write_text("\n".join(self.lines + foot) + "\n", encoding="utf-8")
+        if step:
+            foot += ["", terminal_line(step)]
+        tmp = path.with_name(path.name + ".part")
+        tmp.write_text("\n".join(self.lines + foot) + "\n", encoding="utf-8")
+        tmp.replace(path)
         return path
+
+
+def terminal_line(step):
+    return "openQHA {} terminated normally".format(step)
+
+
+def terminated_normally(path, step):
+    """Does the `.out` at `path` end with this step's terminal line? False when the file
+    is absent, empty, cut short, or another step's."""
+    path = Path(path)
+    if not path.is_file():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace").rstrip("\n")
+    except OSError:
+        return False
+    return bool(text) and text.splitlines()[-1].strip() == terminal_line(step)
 
 
 # ======================================================================================
@@ -270,7 +297,7 @@ def _render(obj, depth, width, key=None):
         if key is not None:
             out.append("{}{}:".format(ind[:-2], key))
         for k, v in obj.items():
-            out += _render(v, depth + 1, width, key=k)
+            out += _render(v, depth + 1, width, key=str(k))
         return out
     if _is_number_list(obj):
         u = unit_of(key or "")

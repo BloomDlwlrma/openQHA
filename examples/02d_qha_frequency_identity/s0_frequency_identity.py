@@ -60,6 +60,7 @@ from openqha.potentials import engine                                  # noqa: E
 from openqha.quasi_harmonic import mode_match, qha                     # noqa: E402
 from openqha.quasi_harmonic import basin_residence as br               # noqa: E402
 from openqha.store import basins as basin_reader                       # noqa: E402
+from openqha.store import branch_a_property                          # noqa: E402
 from openqha.thermochem import hessian as hess_mod                     # noqa: E402
 from openqha.thermochem import gtotal, thermo                          # noqa: E402
 
@@ -316,14 +317,14 @@ def main():
     for b, (symbols, positions) in enumerate(geoms):
         if args.basin is not None and b != args.basin:
             continue
-        basin_rec = rec_a["basins"][b]
-        sigma = int(basin_rec["thermo"]["rotational"]["symmetry_number"])
-        degen = int(basin_rec.get("electronic_degeneracy", 1))
+        basin_rec = branch_a_property.basin_rows(rec_a)[b]   # the [[Basin]] block
+        sigma = int(basin_rec["SIGMA"])
+        degen = int(basin_rec.get("G0", 1))
         entry = dict(basin_index=b, sigma=sigma, electronic_degeneracy=degen)
         print()
         print("-" * 92)
         print("basin {}  sigma {}  rel {:.4f} kcal/mol".format(
-            b, sigma, float(basin_rec["relative_kcal"])))
+            b, sigma, branch_a_property.relative_kcal(rec_a)[b]))
         print("-" * 92)
 
         harm, hrows, omega, v_om, masses, h = stage_harmonic(
@@ -364,7 +365,7 @@ def main():
                     positions)
 
                 # ---- STAGE 3: the substitution itself. No pairing anywhere in it.
-                e_el = float(basin_rec["energy_eV"]) * EV_TO_KCAL
+                e_el = float(basin_rec["ENERGY"]) * EV_TO_KCAL
                 gt = stage_gtotal(nu_full, omega, masses, positions, mean_full,
                                   sigma, degen, e_el, temperature)
                 entry["gtotal"] = gt
@@ -409,12 +410,18 @@ def main():
     from openqha.quasi_harmonic import trajectory_reader as _tr2
     _mol = _basins.molecule_for(args.species, args.tag, cfg)
     _route = args.route if args.route in ("openmm", "ase") else (_tr2.route_found(_mol, args.setting) or "openmm")
-    out = Path(args.out) if args.out else (
-        _layout.records_for(_mol, _route, args.setting) / "02d_frequency_identity.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+    # CREST/ORCA style (step 2, 2026-09-15): .toml for programs, .out for people.
+    from openqha.store import report as _rep, toml_out
+    stem = (Path(args.out).with_suffix("") if args.out
+            else _layout.records_for(_mol, _route, args.setting) / "02d_frequency_identity")
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    toml_out.dump(report, stem.with_suffix(".toml"))
+    rr = _rep.Report("openQHA 02d -- may nu_k replace omega_i?",
+                     subtitle="{}  tag {}  setting {}".format(args.species, args.tag, args.setting))
+    rr.json_dump(report, title="the four stages, per basin (02d_frequency_identity.toml holds the same)")
+    out = rr.write(stem.with_suffix(".out"), step="02d")
     print()
-    print("written {}  ({:.1f} s)".format(out, report["wall_seconds"]))
+    print("written {} and {}  ({:.1f} s)".format(out, stem.with_suffix(".toml"), report["wall_seconds"]))
     return 0
 
 

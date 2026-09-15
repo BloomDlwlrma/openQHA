@@ -52,9 +52,13 @@ def main():
             d.mkdir(parents=True)
             (d / "basin.extxyz").write_text(EXTXYZ.format(c=b, b=b, e=-10.0 - b), encoding="utf-8")
         layout.records_dir(mol).mkdir()
-        (layout.records_dir(mol) / "basins.json").write_text(
-            json.dumps(dict(qm9_index=qid, basins=[dict(relative_kcal=0.0), dict(relative_kcal=1.2)])),
-            encoding="utf-8")
+        # The Property file, branchA.toml (records redesign, 2026-09-15): the status
+        # block first, then the blocks a later step reads.
+        from openqha.store import property as prop
+        prop.write(layout.records_dir(mol) / "branchA.toml",
+                   {"Calculation_Info": {"QM9_INDEX": qid},
+                    "Basin": [{"INDEX": 0, "RELATIVE": 0.0}, {"INDEX": 1, "RELATIVE": 1.2}]},
+                   {}, status=prop.NORMAL_TERMINATION, progname="openQHA branchA")
 
         print("A. existence and count come from mace/basinNN/basin.extxyz:")
         check("exists(qid, tag)", basins.exists(qid, tag=tag) is True)
@@ -74,7 +78,11 @@ def main():
 
         print("C. the record and the message:")
         rec = basins.read_record(qid, tag=tag)
-        check("record read from _records/basins.json", rec is not None and len(rec["basins"]) == 2, rec)
+        check("record read from _records/branchA.toml", rec is not None and len(rec["Basin"]) == 2, rec)
+        from openqha.store import branch_a_property
+        check("relative_kcal from the Basin blocks", branch_a_property.relative_kcal(rec) == [0.0, 1.2])
+        check("status() reads the marker", basins.status(qid, tag=tag) == "NORMAL TERMINATION")
+        check("done() = marker and basins", basins.done(qid, tag=tag) is True and basins.done(qid, tag="other") is False)
         check("no record for another tag", basins.read_record(qid, tag="other") is None)
         msg = basins.missing_message(qid, "other")
         check("missing message names the mace folder it looked for",
@@ -84,14 +92,22 @@ def main():
         print("D. the finished set under a tag (resume subtracts it):")
         done = basins.completed(tag=tag)
         check("completed = {18}", done == {18}, done)
-        # a molecule with a record but no basin file is NOT finished
+        # a molecule with a Property file but no basin file is NOT finished, and neither
+        # is one with basins but no Property file (killed between the census and the record)
         qid2 = "dsgdb9nsd_000019"
         mol2 = layout.molecule_dir(tmp, tag, qid2)
         layout.records_dir(mol2).mkdir(parents=True)
-        (layout.records_dir(mol2) / "basins.json").write_text("{}", encoding="utf-8")
+        (layout.records_dir(mol2) / "branchA.toml").write_text("", encoding="utf-8")
         check("record without mace/basin00 is not finished", basins.completed(tag=tag) == {18})
+        qid3 = "dsgdb9nsd_000020"
+        d3 = layout.mace_basin_dir(layout.molecule_dir(tmp, tag, qid3), 0)
+        d3.mkdir(parents=True)
+        (d3 / "basin.extxyz").write_text(EXTXYZ.format(c=0, b=0, e=-10.0), encoding="utf-8")
+        check("basins without branchA.toml are not finished", basins.completed(tag=tag) == {18})
+        check("is_complete agrees", __import__("openqha.store.worklist", fromlist=["x"]).is_complete(qid3, tag=tag) is False)
         c = basins.census(tag=tag)
-        check("census counts 1 under 1_16000/1_1000", c["total"] == 1 and c["chunks"].get("1_16000/1_1000") == 1, c)
+        # census counts molecules WITH BASINS (18 and 20), done() and completed() ask for the marker too
+        check("census counts 2 under 1_16000/1_1000", c["total"] == 2 and c["chunks"].get("1_16000/1_1000") == 2, c)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         os.environ.pop("S0_RUNS_ROOT", None)

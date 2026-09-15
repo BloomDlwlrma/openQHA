@@ -4,10 +4,10 @@
 
 **Blocked by:** 16.
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-15
 
-- [ ] after the branch A integration tests, `_records/` holds exactly `branchA.out` and `branchA.toml`; the `.toml` starts with `[Calculation_Status]`, STATUS is NORMAL TERMINATION, and the `.out` ends with the terminal line
-- [ ] `branchA.toml` has no key outside the schema; the sigma sweep, criterion details and thermochemistry breakdown are found in `branchA.out`
-- [ ] the basins reader hands basins, sigma, g0 and G - E_el to the ensemble report from `[[Basin]]` (unit test)
-- [ ] the branch A parsl driver's completion check reads STATUS (unit test)
-- [ ] no `basins.toml` is written or read anywhere in the repository
+- [x] after the branch A integration tests, `_records/` holds exactly `branchA.out` and `branchA.toml`; the `.toml` starts with `[Calculation_Status]`, STATUS is NORMAL TERMINATION, and the `.out` ends with the terminal line
+- [x] `branchA.toml` has no key outside the schema; the sigma sweep, criterion details and thermochemistry breakdown are found in `branchA.out`
+- [x] the basins reader hands basins, sigma, g0 and G - E_el to the ensemble report from `[[Basin]]` (unit test)
+- [x] the branch A parsl driver's completion check reads STATUS (unit test)
+- [x] no `basins.toml` is written or read anywhere in the repository

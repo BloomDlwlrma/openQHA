@@ -126,22 +126,35 @@ def main():
         crest = layout.crest_dir(mol)
         names = crest_set(crest)
         check("pipeline ran to its record (exit {})".format(rc),
-              (layout.records_dir(mol) / "basins.json").exists(), out[-1500:])
+              (layout.records_dir(mol) / "branchA.toml").exists(), out[-1500:])
+        # The Record (records redesign, 2026-09-15): branchA.out (the Report) and
+        # branchA.toml (the Property file), nothing else; the .toml starts with the status
+        # block and STATUS is the marker; the .out ends with the terminal line.
+        from openqha.store import report as _report, property as _prop, branch_a_property as _bap
+        recs = sorted(p.name for p in layout.records_dir(mol).iterdir())
+        check("_records holds exactly branchA.out and branchA.toml", recs == ["branchA.out", "branchA.toml"], recs)
+        check("branchA.out ends with the terminal line",
+              _report.terminated_normally(layout.records_dir(mol) / "branchA.out", "branch A"))
+        ptext = (layout.records_dir(mol) / "branchA.toml").read_text(encoding="utf-8")
+        check("branchA.toml starts with [Calculation_Status]", ptext.startswith("[Calculation_Status]"), ptext[:80])
+        check("STATUS is NORMAL TERMINATION", _prop.status_of(layout.records_dir(mol) / "branchA.toml") == "NORMAL TERMINATION")
+        rtext = (layout.records_dir(mol) / "branchA.out").read_text(encoding="utf-8", errors="replace")
+        check("the Report carries the provenance and the sigma sweep",
+              "Provenance" in rtext and "weights path" in rtext and "tolerance sweep" in rtext, rtext[:400])
+        check("the Property file does not", "weights_path" not in ptext and "tolerance_sweep" not in ptext)
         check("crest/ holds crest's own files and ours, nothing else",
               names is not None and set(names) == CREST_OWN | OURS, names)
         check("no crest_shake1/", not layout.crest_dir(mol, fallback_shake=1).exists())
         check("the scratch copy is gone", not (scratch / "openqha_crest").exists()
               or not any((scratch / "openqha_crest").iterdir()),
               crest_set(scratch / "openqha_crest"))
-        rec = json.loads((layout.records_dir(mol) / "basins.json").read_text(encoding="utf-8"))
-        check("record's crest workdir is crest/", rec["crest"]["workdir"] == str(crest), rec["crest"].get("workdir"))
-        check("record says where it ran", "ran_in" in rec["crest"] and str(scratch) in rec["crest"]["ran_in"],
-              rec["crest"].get("ran_in"))
+        check("the Report's CREST section names crest/ as workdir and the scratch as ran_in",
+              "workdir" in rtext and str(crest) in rtext and "ran in" in rtext and str(scratch) in rtext, rtext[:400])
 
         print("C. a second run under the same settings reuses crest/ without a scratch")
         rc, out = run_pipeline(root, scratch, fake, "a")
-        rec = json.loads((layout.records_dir(mol) / "basins.json").read_text(encoding="utf-8"))
-        check("reused_scratch is True", rec["crest"].get("reused_scratch") is True, rec["crest"].get("reused_scratch"))
+        rec = _prop.load(layout.records_dir(mol) / "branchA.toml")
+        check("REUSED_SCRATCH is true", rec["CREST_Run"].get("REUSED_SCRATCH") is True, rec.get("CREST_Run"))
         check("no scratch directory was created", not (scratch / "openqha_crest" / QID).exists())
 
         print("B. SHAKE=2 terminates early: the first attempt is kept beside the retry")
@@ -157,11 +170,15 @@ def main():
         check("retry's does not", (c2 / "crest.out").exists() and "terminated EARLY" not in _out(c2))
         check("scratch gone after the move", not (scratch / "openqha_crest" / QID).exists()
               and not (scratch / "openqha_crest" / (QID + "_shake1")).exists())
-        rb = (layout.records_dir(mol_b) / "basins.json")
-        rec = json.loads(rb.read_text(encoding="utf-8")) if rb.exists() else {"crest": {}}
-        check("record: used_shake_fallback, workdir crest_shake1/, first_attempt crest/",
-              rec["crest"].get("used_shake_fallback") is True and rec["crest"].get("workdir") == str(c2)
-              and (rec["crest"].get("first_attempt") or {}).get("workdir") == str(c1), rec["crest"])
+        rb = (layout.records_dir(mol_b) / "branchA.toml")
+        rec = _prop.load(rb) if rb.exists() else {"CREST_Run": {}}
+        rp_b = layout.records_dir(mol_b) / "branchA.out"
+        rtext_b = rp_b.read_text(encoding="utf-8", errors="replace") if rp_b.exists() else ""
+        check("Property file: USED_SHAKE_FALLBACK and SHAKE_USED 1",
+              rec["CREST_Run"].get("USED_SHAKE_FALLBACK") is True and rec["CREST_Run"].get("SHAKE_USED") == 1,
+              rec.get("CREST_Run"))
+        check("Report: workdir crest_shake1/, first attempt crest/",
+              str(c2) in rtext_b and str(c1) in rtext_b and "first_attempt" in rtext_b, rtext_b[-600:])
 
         print("D. a crest that fails still leaves its crest.out in crest/")
         rc, out = run_pipeline(root, scratch, fake, "d", {"FAKE_CREST_FAIL": "1"})

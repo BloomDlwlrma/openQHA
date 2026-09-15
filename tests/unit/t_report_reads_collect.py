@@ -1,6 +1,6 @@
 """report_ensemble sums the entropies collect judged; it does not analyse frames itself.
 
-UNIT. pandas + pyarrow (the same two every chain's last step needs); under two seconds.
+UNIT. No engine, no pandas (since 2026-09-15 collect's tables are whitespace .dat); under a second.
 
 The defect (an113, 2026-09-13)
 ------------------------------
@@ -56,8 +56,7 @@ def _load_driver():
 
 def main():
     try:
-        import pandas as pd
-        import pyarrow  # noqa: F401
+        from openqha.store import dat
     except ImportError as exc:
         print("skipped: {}".format(exc))
         return 0
@@ -89,12 +88,10 @@ def main():
                      TS_QH_kcal=ts, TS_Schlitter_kcal=ts + 0.1)
                 for b, s, ts in [(0, 0, 10.0), (0, 1, 10.2), (0, 2, 10.4),
                                  (1, 0, 12.0), (1, 1, 12.0), (1, 2, 12.0)]]
-        pd.DataFrame(rows).to_parquet(
-            stem.parent / (stem.name + "__trajectories.parquet"), index=False)
+        dat.write_table(stem.parent / (stem.name + ".trajectories.dat"), rows)
         crit = [dict(species=SPECIES, criterion="c{}".format(i), measured="x",
                      passed=(i < 5)) for i in range(10)]
-        pd.DataFrame(crit).to_parquet(
-            stem.parent / (stem.name + "__criteria.parquet"), index=False)
+        dat.write_table(stem.parent / (stem.name + ".criteria.dat"), crit)
 
         print("\nA. per-basin T*S is the mean over the table's seeds")
         per_basin, _ = drv.entropy_per_basin(SPECIES, TAG, cfg, "all", root=tmp)
@@ -121,6 +118,22 @@ def main():
             "ok  " if ok else "FAIL", n_pass, n_crit, drv.criteria_verdict(None)))
         if not ok:
             FAIL.append("criteria_verdict: {} {}".format(n_pass, n_crit))
+
+    # D. (records redesign, ticket 17) the electronic energies come from branchA.toml's
+    #    [[Basin]] blocks, RELATIVE by name; a basin without it raises, never zero.
+    doc = {"Calculation_Status": {"STATUS": "NORMAL TERMINATION"},
+           "Basin": [{"INDEX": 1, "RELATIVE": 0.836}, {"INDEX": 0, "RELATIVE": 0.0}]}
+    rel = drv.basin_electronic(doc)
+    ok = rel == [0.0, 0.836]
+    print("{}  basin_electronic reads RELATIVE from [[Basin]] in INDEX order: {}".format("ok  " if ok else "FAIL", rel))
+    if not ok:
+        FAIL.append("basin_electronic: {}".format(rel))
+    try:
+        drv.basin_electronic({"Basin": [{"INDEX": 0}]})
+        FAIL.append("basin_electronic did not raise without RELATIVE")
+        print("FAIL  no RELATIVE: did not raise")
+    except KeyError:
+        print("ok    no RELATIVE: raises, no silent zero")
 
     print()
     if FAIL:

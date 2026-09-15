@@ -2,7 +2,8 @@
 
     <molecule>/mace/basinNN/basin.extxyz     the basins, one file each, branch A's atom order
     <molecule>/mace/basinNN/hessian.npy      the raw analytic Hessian at that basin
-    <molecule>/_records/basins.json          the branch A record (this repository's file)
+    <molecule>/_records/branchA.toml         branch A's Property file (records redesign, 2026-09-15)
+    <molecule>/_records/branchA.out          branch A's Report; its last line is the marker
 
 Every reader of the basins -- branch B (`--basins auto`), the ensemble report, 02c, 02d,
 the chain's "already done" check, the campaign worklist -- asks here. The existence of a
@@ -55,11 +56,39 @@ def read_basins(qid, tag, cfg=None, root=None):
 
 
 def read_record(qid, tag, cfg=None, root=None):
-    """`_records/basins.json`, or None when branch A has not written one under this tag."""
-    p = layout.records_dir(molecule_for(qid, tag, cfg, root)) / "basins.json"
+    """`_records/branchA.toml` as a dict of blocks (`Calculation_Status`, `Calculation_Info`,
+    `CREST_Run`, `Census`, `Basin` (a list), `Criteria`), or None when branch A has not
+    written one under this tag. `openqha.store.branch_a_property` spells the keys and
+    answers the usual questions (`basin_rows`, `relative_kcal`)."""
+    from . import property as prop
+    p = record_path(qid, tag, cfg, root)
     if not p.is_file():
         return None
-    return json.loads(p.read_text(encoding="utf-8"))
+    return prop.load(p)
+
+
+def record_path(qid, tag, cfg=None, root=None):
+    from . import branch_a_property
+    return layout.records_dir(molecule_for(qid, tag, cfg, root)) / branch_a_property.FILE
+
+
+def report_path(qid, tag, cfg=None, root=None):
+    from . import branch_a_property
+    return layout.records_dir(molecule_for(qid, tag, cfg, root)) / branch_a_property.REPORT
+
+
+def status(qid, tag, cfg=None, root=None):
+    """STATUS of branch A's Property file: NORMAL TERMINATION when branch A finished,
+    None when there is no Property file (or it has no status block)."""
+    from . import property as prop
+    return prop.status_of(record_path(qid, tag, cfg, root))
+
+
+def done(qid, tag, cfg=None, root=None):
+    """Did branch A finish for this molecule under this tag: STATUS is NORMAL TERMINATION
+    and the basins exist as engine files."""
+    from . import property as prop
+    return status(qid, tag, cfg, root) == prop.NORMAL_TERMINATION and exists(qid, tag, cfg, root)
 
 
 def tags_for(qid, cfg=None, root=None):
@@ -94,22 +123,30 @@ def missing_message(qid, tag, cfg=None, root=None):
 def completed(tag, cfg=None, root=None, chunk_dir=None):
     """QM9 indices whose basins exist under `tag`: what a resume subtracts.
 
-    A record without `mace/basin00/basin.extxyz` is NOT finished: the geometries are the
-    product, and a job killed between the census and the record leaves neither.
+    Done means both: `mace/basin00/basin.extxyz` (the geometries are the product) AND
+    `_records/branchA.toml` (the Property file, written last, only ever with STATUS
+    NORMAL TERMINATION by branch A). A job killed between the census and the record
+    leaves the first without the second and is redone. Two globs, no per-molecule stat
+    (the Lustre lesson in `worklist.py`); the same rule as `done()`, one molecule at a time.
     `chunk_dir` ("1_1000") restricts the scan to one leaf, for a per-chunk job.
     """
+    from . import branch_a_property
     base = Path(root if root is not None else config.runs_root(cfg)) / str(tag)
     if not base.is_dir():
         return set()
-    pattern = ("*/{}/*/mace/basin00/basin.extxyz".format(chunk_dir) if chunk_dir
-               else "*/*/*/mace/basin00/basin.extxyz")
-    out = set()
-    for p in base.glob(pattern):
-        try:
-            out.add(layout.qid_number(p.parents[2].name))
-        except ValueError:
-            continue
-    return out
+    leaf = "*/{}/*".format(chunk_dir) if chunk_dir else "*/*/*"
+
+    def _numbers(pattern, up):
+        out = set()
+        for p in base.glob(pattern):
+            try:
+                out.add(layout.qid_number(p.parents[up].name))
+            except ValueError:
+                continue
+        return out
+
+    return (_numbers(leaf + "/mace/basin00/basin.extxyz", 2)
+            & _numbers(leaf + "/" + layout.RECORDS + "/" + branch_a_property.FILE, 1))
 
 
 def census(tag, cfg=None, root=None):

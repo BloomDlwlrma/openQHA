@@ -101,18 +101,18 @@ def main():
               t.n_frames if t is not None else "no dcd/pdb")
         check("no seed level, no setting level: md_openmm/basin00",
               eng.parent.name == "md_openmm" and eng.name == "basin00")
-        meta_p = rec / "md_openmm" / SETTING / "basin00" / "meta.json"
-        check("record in _records/", meta_p.exists(), meta_p)
+        # Step 2 (user, 2026-09-15): the record is md.toml + md.out, nothing else.
+        from openqha.store import report as _report, toml_out as _toml
+        rdir = rec / "md_openmm" / SETTING / "basin00"
+        meta_p = rdir / "md.toml"
+        check("record md.toml in _records/", meta_p.exists(), meta_p)
+        rnames = sorted(p.name for p in rdir.iterdir()) if rdir.is_dir() else []
+        check("records folder holds exactly md.out and md.toml", rnames == ["md.out", "md.toml"], rnames)
+        check("md.out ends with the terminal line", _report.terminated_normally(rdir / "md.out", "md"))
         check("no record or .npy in the engine folder",
-              not any(n.endswith((".npy", ".json")) for n in names))
-        frames_p = rec / "md_openmm" / SETTING / "basin00" / "frames.npy"
-        if t is not None and frames_p.exists() and t.n_frames == 10:
-            f64 = np.load(frames_p)
-            d = np.abs(t.xyz * 10.0 - f64).max()
-            check("DCD positions equal the float64 frames to float32 precision (max {:.1e} A)".format(d),
-                  d < 1e-3, d)
-        summ = rec / "md_openmm" / SETTING / "summary.json"
-        check("summary.json in _records/", summ.exists(), summ)
+              not any(n.endswith((".npy", ".json", ".toml", ".out")) for n in names))
+        check("no summary.json, frames.npy, equilibrated.json anywhere under _records",
+              not [p for p in rec.rglob("*") if p.name in ("summary.json", "frames.npy", "equilibrated.json", "meta.json")])
 
         print("B. second run with a longer protocol resumes from the state and appends")
         rc, out, dt = run_driver(tmp, 0.20)
@@ -122,7 +122,7 @@ def main():
         check("20 frames in traj.dcd", t is not None and t.n_frames == 20,
               t.n_frames if t is not None else "no dcd/pdb")
         check("20 rows in state.csv", n_rows == 20, n_rows)
-        meta = json.loads(meta_p.read_text(encoding="utf-8")) if meta_p.exists() else {}
+        meta = _toml.load(meta_p) if meta_p.exists() else {}
         prod = meta.get("production") or {}
         check("record says resumed, 10 already on disk, 10 generated",
               prod.get("resumed") is True and prod.get("n_frames_already_on_disk") == 10
@@ -144,7 +144,7 @@ def main():
         check("traj_s2.dcd has 5 frames", t2 is not None and t2.n_frames == 5, t2.n_frames if t2 else None)
         t = load_dcd(eng)
         check("the default trajectory still has 20", t is not None and t.n_frames == 20, t.n_frames if t else None)
-        check("records under _records/md_openmm/s2/", (rec / "md_openmm" / "s2" / "basin00" / "meta.json").exists())
+        check("records under _records/md_openmm/s2/", (rec / "md_openmm" / "s2" / "basin00" / "md.toml").exists())
 
         print("C. third run over a finished basin does nothing")
         mtimes = {p.name: p.stat().st_mtime_ns for p in eng.iterdir()}

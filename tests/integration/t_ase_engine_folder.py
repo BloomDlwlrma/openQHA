@@ -90,14 +90,16 @@ def main():
         check("md.log has 10 rows", len(rows) == 10, len(rows))
         check("start.extxyz carries energy and forces",
               (eng / "start.extxyz").exists() and read(str(eng / "start.extxyz")).calc is not None)
-        check("records in _records/md_ase/default/basin00 (meta, progress, frames.npy)",
-              all((rec / n).exists() for n in ("meta.json", "progress.json", "frames.npy")),
-              sorted(p.name for p in rec.iterdir()) if rec.is_dir() else None)
-        check("no state.npz anywhere", not list(mol.rglob("state.npz")))
+        from openqha.store import report as _report, toml_out as _toml
+        rnames = sorted(p.name for p in rec.iterdir()) if rec.is_dir() else None
+        check("records in _records/md_ase/default/basin00: exactly md.out and md.toml",
+              rnames == ["md.out", "md.toml"], rnames)
+        check("md.out ends with the terminal line", _report.terminated_normally(rec / "md.out", "md"))
+        check("no state.npz, frames.npy or progress.json anywhere",
+              not [p for p in mol.rglob("*") if p.name in ("state.npz", "frames.npy", "progress.json")])
         r = trajectory_reader.read_trajectory(eng, records_dir=rec, setting="default")
-        if (rec / "frames.npy").exists() and n_traj == 10:
-            d = float(np.abs(r["positions_A"] - np.load(rec / "frames.npy")).max())
-            check("reader's positions equal the driver's frames (max {:.1e} A)".format(d), d < 1e-6, d)
+        check("reader gets the record from md.toml", r["meta"] is not None and r["meta"].get("route") == "ase",
+              (r["meta"] or {}).get("route"))
         check("reader table: 10 rows, temperature column", len(r["table"]["temperature_K"]) == 10, r["table"])
         check("reader route = ase", r.get("route") == "ase", r.get("route"))
 
@@ -106,7 +108,7 @@ def main():
         check("driver exit 0 ({:.0f} s)".format(dt), rc == 0, out[-1500:])
         n_traj = len(read(str(eng / "md.traj"), index=":"))
         check("20 frames in md.traj", n_traj == 20, n_traj)
-        meta = json.loads((rec / "meta.json").read_text(encoding="utf-8"))
+        meta = _toml.load(rec / "md.toml")
         prod = meta.get("production") or {}
         check("record says resumed with 10 already on disk", prod.get("resumed") is True
               and prod.get("n_frames_already_on_disk") == 10, prod)
@@ -125,8 +127,11 @@ def main():
                            "--route", "auto", "--no-gmx"], tmp)
         check("analyse ran (exit {} is a verdict, not a crash)".format(rc),
               "[PASS]" in out or "[FAIL]" in out, out[-1500:])
-        tab = layout.records_for(mol, "ase", "default") / "collect__trajectories.parquet"
+        tab = layout.records_for(mol, "ase", "default") / "collect.trajectories.dat"
         check("collect tables under _records/md_ase/default/", tab.exists(), tab)
+        from openqha.store import report as _rep
+        check("collect.out ends with the terminal line (the marker)",
+              _rep.terminated_normally(layout.records_for(mol, "ase", "default") / "collect.out", "collect"))
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

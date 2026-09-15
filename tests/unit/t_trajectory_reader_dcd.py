@@ -13,7 +13,7 @@ trajectory from `traj.dcd` + `start.pdb` + `state.csv`, never from `frames.npy`.
     B. symbols and masses come from start.pdb's elements, in the engine's atom order
     C. the per-frame table has one row per frame and the CSV's five columns
     D. a folder without traj.dcd, or without start.pdb, is refused with the folder named
-    E. the records folder's meta.json rides along when it exists, and is None when not
+    E. the records folder's md.toml rides along when it exists, and is None when not
 """
 import json
 import sys
@@ -88,9 +88,9 @@ def main():
         print("E. the record rides along:")
         check("no records folder -> meta None", r["meta"] is None, r["meta"])
         rec.mkdir(parents=True)
-        (rec / "meta.json").write_text(json.dumps(dict(seed=5, symbols=["O", "H", "H", "C"])), encoding="utf-8")
+        (rec / "md.toml").write_text('seed = 5\nsymbols = ["O", "H", "H", "C"]\n', encoding="utf-8")
         r2 = tr.read_trajectory(eng, records_dir=rec, setting="s1")
-        check("meta.json read when present", r2["meta"] is not None and r2["meta"]["seed"] == 5, r2["meta"])
+        check("md.toml read when present", r2["meta"] is not None and r2["meta"]["seed"] == 5, r2["meta"])
 
         print("D. refusals name the folder:")
         for missing in ("traj.dcd", "start.pdb"):

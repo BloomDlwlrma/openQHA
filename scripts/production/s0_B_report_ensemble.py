@@ -65,27 +65,17 @@ from openqha import config                                          # noqa: E402
 from openqha.quasi_harmonic import basin_residence as br            # noqa: E402
 from openqha.quasi_harmonic import ensemble, qha                    # noqa: E402
 from openqha.store import basins as basin_reader                    # noqa: E402
+from openqha.store import branch_a_property                         # noqa: E402
 
 
 def basin_electronic(rec):
-    """Relative electronic energy per basin, kcal/mol, from branch A's record.
-
-    The key is `relative_kcal`. It is looked up by name and a basin without it RAISES --
-    it does not fall back to 0.0. An earlier version guessed three other names and, when
-    all three missed, gave every basin zero: propanal's three basins (0.0000 / 0.8360 /
-    0.8360) came out degenerate and F_conf read -0.6509 instead of -0.2354. There was no
-    error, because a default of 0.0 is a perfectly valid relative energy.
+    """Relative electronic energy per basin, kcal/mol, from branch A's Property file:
+    RELATIVE of each [[Basin]] block, looked up by name. A basin without it RAISES (in
+    `branch_a_property.relative_kcal`) rather than defaulting to 0.0: an earlier version
+    guessed three names and, when all missed, gave every basin zero, so propanal's three
+    basins came out degenerate and F_conf read -0.6509 instead of -0.2354 with no error.
     """
-    out = []
-    for i, b in enumerate(rec.get("basins", [])):
-        if "relative_kcal" not in b:
-            raise KeyError(
-                "basin {} of this branch A record has no `relative_kcal`. Its keys are "
-                "{}. Refusing to assume zero: a missing relative energy would make the "
-                "basins look degenerate and F_conf would be wrong without saying so."
-                .format(i, sorted(b)))
-        out.append(float(b["relative_kcal"]))
-    return out
+    return branch_a_property.relative_kcal(rec)
 
 
 def collect_stem(species, tag, setting="default", root=None, route="auto"):
@@ -100,15 +90,15 @@ def collect_stem(species, tag, setting="default", root=None, route="auto"):
 
 
 def collect_tables(species, tag, setting="default", root=None, route="auto"):
-    """(trajectories, criteria) as lists of row dicts, from collect's parquet tables.
+    """(trajectories, criteria) as lists of row dicts, from collect's .dat tables.
 
     Refuses when the trajectories table is absent: this step sums what collect judged
     and has nothing to sum before collect has run. The criteria table is optional in
     the reading (older products have none) and its absence is recorded, not ignored.
     """
-    import pandas as pd
+    from openqha.store import dat
     stem = collect_stem(species, tag, setting, root, route)
-    traj = stem.parent / (stem.name + "__trajectories.parquet")
+    traj = stem.parent / (stem.name + ".trajectories.dat")
     if not traj.is_file():
         raise SystemExit(
             "s0_B_report_ensemble: no collect product for {} under tag {!r}:\n    {}\n"
@@ -116,10 +106,9 @@ def collect_tables(species, tag, setting="default", root=None, route="auto"):
             "Run collect first:\n"
             "    python scripts/production/s0_B_qha_analyse.py --species {} --tag {}"
             .format(species, tag, traj, species, tag))
-    rows = pd.read_parquet(traj).to_dict("records")
-    crit_path = stem.parent / (stem.name + "__criteria.parquet")
-    criteria = (pd.read_parquet(crit_path).to_dict("records")
-                if crit_path.is_file() else None)
+    rows = dat.read_table(traj)
+    crit_path = stem.parent / (stem.name + ".criteria.dat")
+    criteria = dat.read_table(crit_path) if crit_path.is_file() else None
     return rows, criteria
 
 
@@ -272,7 +261,7 @@ def main():
     _, criteria = collect_tables(args.species, basin_tag, args.setting, route=args.route)
     n_pass, n_crit = criteria_verdict(criteria)
     _stem = collect_stem(args.species, basin_tag, args.setting, route=args.route)
-    print("collect   {} of {} criteria passed  (_records/{}/{}/collect__criteria.parquet; tag {})".format(
+    print("collect   {} of {} criteria passed  (_records/{}/{}/collect.criteria.dat; tag {})".format(
         n_pass, n_crit, _stem.parent.parent.name, args.setting, args.tag) if n_crit
         else "collect   wrote no criteria table for this molecule")
 
@@ -312,13 +301,31 @@ def main():
         report["results"][atoms_set] = rec
         report["trajectory_root"] = str(root)
 
-    from openqha.store import layout as _layout
-    out = Path(args.out) if args.out else (
-        collect_stem(args.species, basin_tag, args.setting, route=args.route).parent / "ensemble.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+    # CREST/ORCA style (step 2, 2026-09-15): ensemble.toml is the answer a program reads,
+    # ensemble.out the one a person reads, its last line the marker.
+    from openqha.store import report as _rep, toml_out
+    stem = (Path(args.out).with_suffix("") if args.out
+            else collect_stem(args.species, basin_tag, args.setting, route=args.route).parent / "ensemble")
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    toml_out.dump(report, stem.with_suffix(".toml"))
+    rr = _rep.Report("openQHA -- F_conf over the ensemble",
+                     subtitle="{}  tag {}  basin tag {}  setting {}".format(
+                         args.species, args.tag, basin_tag, args.setting))
+    for atoms_set, rec in (report.get("results") or {}).items():
+        rr.section("atoms: {}".format(atoms_set))
+        for k, v in rec.items():
+            if not isinstance(v, (dict, list)):
+                rr.kv(k, v)
+        pb = rec.get("per_basin_detail") or {}
+        if pb:
+            rr.table(["basin", "T*S / kcal", "n_frames", "source", "distinct", "symmetry"],
+                     [[b, "{:.4f}".format(d["TS_kcal"]) if d else "-", (d or {}).get("n_frames", "-"),
+                       (d or {}).get("source", "-"), (d or {}).get("distinct_crossings", "-"),
+                       (d or {}).get("symmetry_crossings", "-")] for b, d in sorted(pb.items())])
+    rr.json_dump(report, title="complete record (ensemble.toml holds the same, for programs)")
+    out = rr.write(stem.with_suffix(".out"), step="ensemble")
     print()
-    print("written {}".format(out))
+    print("written {} and {}".format(out, stem.with_suffix(".toml")))
 
     # A missing basin means the sum is over fewer terms than the molecule has, and the
     # answer is biased toward whatever was run. That is a failure, not a note -- in a

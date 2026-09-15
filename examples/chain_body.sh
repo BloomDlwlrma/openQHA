@@ -237,12 +237,10 @@ source hpc/env/require.sh
 # 2026-09-15), and the root is on a filesystem that honours modes on every site.
 export S0_PARSL_RUN_DIR="${S0_PARSL_RUN_DIR:-${S0_RUNS_ROOT:-$HOME/runs/openQHA}/$TAG/_records/parsl/${SLURM_JOB_ID:-pid$$}.$$}"
 
-openqha_require_modules pandas pyarrow || {
-    echo "  Every chain's collect/report step writes parquet and fails at its LAST line" >&2
-    echo "  without them -- after the trajectories (an113, 2026-09-13). On a login node:" >&2
-    echo "      pip install pyarrow     # the conda solve was refused on ln301, 2026-09-13" >&2
-    echo "  then confirm numpy was left alone:" >&2
-    echo "      python scripts/tooling/s0_probe_openmm_cuda.py --quiet --no-accuracy --steps 10" >&2
+# (pandas and pyarrow were required here until 2026-09-15; the tables are .dat now.)
+openqha_require_modules numpy || {
+    echo "  (numpy is the one module every step imports; the tables collect writes are" >&2
+    echo "   whitespace .dat since 2026-09-15 and need nothing else.)" >&2
     exit 2
 }
 

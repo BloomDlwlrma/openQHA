@@ -61,6 +61,7 @@ from openqha.potentials import engine                                  # noqa: E
 from openqha.qm_interfaces import orca, xtb                            # noqa: E402
 from openqha.quasi_harmonic import mode_match                          # noqa: E402
 from openqha.store import basins as basin_reader                       # noqa: E402
+from openqha.store import branch_a_property                          # noqa: E402
 from openqha.thermochem import hessian as hess_mod                     # noqa: E402
 from openqha.thermochem import thermo                                  # noqa: E402
 
@@ -300,13 +301,13 @@ def main():
     for b, (symbols, positions) in enumerate(geoms):
         if args.basin is not None and b != args.basin:
             continue
-        br_ = rec_a["basins"][b]
-        sigma = int(br_["thermo"]["rotational"]["symmetry_number"])
-        degen = int(br_.get("electronic_degeneracy", 1))
+        br_ = branch_a_property.basin_rows(rec_a)[b]       # the [[Basin]] block
+        sigma = int(br_["SIGMA"])
+        degen = int(br_.get("G0", 1))
         print()
         print("-" * 96)
         print("basin {}  sigma {}  rel {:.4f} kcal/mol".format(
-            b, sigma, float(br_["relative_kcal"])))
+            b, sigma, branch_a_property.relative_kcal(rec_a)[b]))
         print("-" * 96)
 
         got = {}
