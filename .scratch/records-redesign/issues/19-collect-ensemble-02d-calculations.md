@@ -4,9 +4,9 @@
 
 **Blocked by:** 17, 18.
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-15
 
-- [ ] after the end-to-end integration tests, `_records/md_<route>/` holds exactly `collect.out`, `collect.toml`, the four `.dat`, `ensemble.out`, `ensemble.toml` (plus the 02d pair when 02d ran) and the `basinNN/` folders; a setting run adds the `_s2` stems in the same folder
-- [ ] every `.toml` starts with `[Calculation_Status]` and every `.out` ends with the terminal line
-- [ ] the ensemble report's numbers come from `branchA.toml` `[[Basin]]` and the `.dat` (unit test extended)
-- [ ] no `_records/md_<route>/<setting>/` path is written or read anywhere
+- [x] after the end-to-end integration tests, `_records/md_<route>/` holds exactly `collect.out`, `collect.toml`, the four `.dat`, `ensemble.out`, `ensemble.toml` (plus the 02d pair when 02d ran) and the `basinNN/` folders; a setting run adds the `_s2` stems in the same folder
+- [x] every `.toml` starts with `[Calculation_Status]` and every `.out` ends with the terminal line
+- [x] the ensemble report's numbers come from `branchA.toml` `[[Basin]]` and the `.dat` (unit test extended)
+- [x] no `_records/md_<route>/<setting>/` path is written or read anywhere

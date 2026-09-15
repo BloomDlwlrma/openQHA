@@ -76,17 +76,18 @@ from openqha import config  # noqa: E402
 #: What has to exist for a molecule to count as collected. Stated, printed and stored --
 #: if the scanner and the worker disagree about what "done" means, molecules are skipped
 #: for ever and never recovered. Same rule as openqha/worklist.py states for branch A.
-COMPLETION = "<molecule>/_records/md_<route>/<setting>/collect.out ends with 'openQHA collect terminated normally'"
+COMPLETION = "<molecule>/_records/md_<route>/collect[_<setting>].toml carries STATUS NORMAL TERMINATION"
 
 
 def result_path(repo_root, tag, species, basin_tag=None, setting="default", route="auto"):
-    """The completion marker: <molecule>/_records/<route>/<setting>/collect.json (ADR 0001).
-    With route `auto` the route is the one the trajectories are found under."""
-    from openqha.store import basins, layout
-    from openqha.quasi_harmonic import trajectory_reader
+    """The collect stem, `<molecule>/_records/md_<route>/collect[_<setting>]`; its `.toml` carries
+    the completion marker (STATUS). With route `auto` the route is the one the trajectories
+    are found under."""
+    from openqha.store import basins
+    from openqha.quasi_harmonic import chain_records, trajectory_reader
     mol = basins.molecule_for(species, basin_tag or tag)
     r = route if route in ("openmm", "ase") else (trajectory_reader.route_found(mol, setting) or "openmm")
-    return layout.records_for(mol, r, setting) / "collect.out"
+    return chain_records.stem(mol, r, setting, chain_records.COLLECT)
 
 
 def _accepted_kwargs(fn):
@@ -136,12 +137,17 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None
     from openqha.quasi_harmonic import trajectory_reader as _tr
     _mol = _basins.molecule_for(species, basin_tag or tag)
     _route = route if route in ("openmm", "ase") else (_tr.route_found(_mol, setting) or "openmm")
-    out = _layout.records_for(_mol, _route, setting)
+    from openqha.quasi_harmonic import chain_records as _cr
+    out = _layout.md_records_dir(_mol, _route)
     out.mkdir(parents=True, exist_ok=True)
+    _stem = _cr.stem(_mol, _route, setting, _cr.COLLECT)
 
+    from openqha.store import batch_table as _bt
     summary = dict(species=species, command=" ".join(cmd),
-                   returncode=proc.returncode,
-                   seconds=_time.time() - started)
+                   returncode=proc.returncode, rc=proc.returncode,
+                   seconds=_time.time() - started,
+                   status=_bt.status_after(proc.returncode, _cr.collect_paths(_stem)["toml"]),
+                   record=_bt.absolute(_cr.collect_paths(_stem)["toml"]))
 
     # Lift only enough out of the driver's own product to build the table. The parquet
     # tables it wrote stay the source of truth.
@@ -173,14 +179,13 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None
                    and all(c["passed"] for c in criteria),
                    criteria=criteria)
 
-    # THE COMPLETION MARKER is the last line of collect.out, written by the analysis
-    # itself as its last act (CREST's own convention, 2026-09-15). A task killed before it
-    # leaves no marker, so the molecule is redone -- the safe direction. This driver
-    # writes nothing of its own beside the analysis's files.
-    from openqha.store import report as _report
-    marker = out / "collect.out"
-    summary["marker"] = str(marker)
-    summary["marker_present"] = bool(_report.terminated_normally(marker, "collect"))
+    # THE COMPLETION MARKER is STATUS in collect.toml, written by the analysis itself as
+    # its last act (records redesign, 2026-09-15). A task killed before it leaves no marker,
+    # so the molecule is redone -- the safe direction. This driver writes nothing of its
+    # own beside the analysis's files.
+    summary["marker"] = str(_cr.collect_paths(_stem)["toml"])
+    summary["status"] = _cr.collect_status(_stem)
+    summary["marker_present"] = _cr.collect_done(_stem)
     return summary
 
 
@@ -211,11 +216,11 @@ def remaining(species, tag, cfg, no_resume=False, basin_tag=None, setting="defau
         return list(species), dict(completion_criterion="not consulted (--no-resume)",
                                    n_candidates=len(species),
                                    n_remaining=len(species))
-    from openqha.store import basins as _basins, report as _report
-    from openqha.quasi_harmonic import trajectory_reader as _tr
+    from openqha.store import basins as _basins
+    from openqha.quasi_harmonic import chain_records as _cr, trajectory_reader as _tr
     todo, done, no_traj = [], [], []
     for qid in species:
-        if _report.terminated_normally(result_path(ROOT, tag, qid, basin_tag, setting, route), "collect"):
+        if _cr.collect_done(result_path(ROOT, tag, qid, basin_tag, setting, route)):
             done.append(qid)
             continue
         # A molecule with no trajectories is not "remaining"; it is upstream work that
@@ -396,20 +401,19 @@ def main():
     wall = time.time() - started
     parsl.dfk().cleanup()
 
+    # The Batch table (records redesign, 2026-09-15): the same first seven columns as the
+    # branch A and B drivers, then this driver's own. It is all a Batch leaves.
+    from openqha.store import batch_table as _bt
     print()
-    print("{:<20} {:>7} {:>10} {:>10}  {}".format(
-        "species", "trajs", "seconds", "criteria", "status"))
     for r in results:
-        if r.get("error"):
-            print("{:<20} CRASHED  {}".format(
-                r.get("species", "?"), (r.get("error_line") or str(r["error"]).strip()
-                                        .splitlines()[-1:] or ["?"])[0][:120]
-                if not r.get("error_line") else r["error_line"][:120]))
-            continue
-        print("{:<20} {:>7} {:>10.1f} {:>10}  {}".format(
-            r["species"], r.get("n_trajectories", "-"), r["seconds"],
-            "{}/{}".format(r.get("n_criteria_passed", 0), r.get("n_criteria", 0)),
-            "PASS" if r.get("all_criteria_passed") else "FAIL"))
+        if r.get("error") and not r.get("error_line"):
+            tail = [l for l in str(r["error"]).strip().splitlines() if l.strip()]
+            r["error_line"] = tail[-1] if tail else "(no error text captured)"
+        r["trajs"] = r.get("n_trajectories")
+        r["criteria_passed"] = ("{}/{}".format(r.get("n_criteria_passed", 0), r.get("n_criteria", 0))
+                                if r.get("n_criteria") else None)
+        r["verdict"] = ("PASS" if r.get("all_criteria_passed") else "FAIL") if not r.get("error") else None
+    _bt.print_table(results, extra=(("trajs", 5, ">"), ("criteria_passed", 8, ">"), ("verdict", 7, "<")))
 
     ok = [r for r in results if r.get("all_criteria_passed")]
     single = [r["seconds"] for r in results if not r.get("error")]
@@ -420,16 +424,11 @@ def main():
     print("slot_extrapolation                NOT COMPUTED -- the per-task cost under "
           "contention has not been measured (D0-P1-12, defects 34 and 56)")
 
-    # <root>/<tag>/_records/collect_batch.json (user ruling 2026-09-14: per-tag leftovers).
-    from openqha.store import layout as _layout
-    out = _layout.tag_records_dir(config.runs_root(), args.tag) / "collect_batch.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(dict(plan=plan, results=results,
-                                   wall_seconds_for_the_whole_batch=wall),
-                              indent=2, ensure_ascii=False), encoding="utf-8")
+    # A Batch leaves no record of its own (user ruling 2026-09-15, Q4 (b)): the table above,
+    # in the Slurm log, is its report. collect_batch.json is gone.
     print()
-    print("{}/{} molecules passed every criterion".format(len(ok), len(results)))
-    print("written {}".format(out))
+    for l in _bt.footer(wall, len(ok), len(results)):
+        print(l)
     if len(ok) == len(results):
         return 0
     # OPENQHA_SMOKE=1 (set by hpc/tools/test30.sh, never by a production path): a

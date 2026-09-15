@@ -541,8 +541,9 @@ identity) # 02d: may nu_k replace omega_i in ZPE, enthalpy and entropy?
     echo "---- 02d: G_total from omega and from nu, term by term ----------------"
     # --tag reads the basins (BASIN_TAG); --traj-tag reads this run's trajectories; --out
     # files the report under this run's tag, so two settings never overwrite each other.
-    # --tag names the molecule directory (branch A's tag); --setting the openmm/<setting>/
-    # the trajectories went to; the report lands in _records/md_openmm/<setting>/ (ADR 0001).
+    # --tag names the molecule directory (branch A's tag); --setting the trajectory setting
+    # (a file stem, no folder); the report lands in _records/md_<route>/ beside collect's.
+
     must python -u examples/02d_qha_frequency_identity/s0_frequency_identity.py \
         --species "$SPECIES" --tag "${BASIN_TAG:-$TAG}" --stage all \
         ${SETTING:+--setting "$SETTING"} --route "$ROUTE" \

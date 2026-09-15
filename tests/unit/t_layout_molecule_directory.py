@@ -71,8 +71,11 @@ def main():
     check("md_folder(openmm)", layout.md_folder("openmm"), "md_openmm")
     check("md_folder(ase)", layout.md_folder("ase"), "md_ase")
     check("route_of_folder(md_ase)", layout.route_of_folder("md_ase"), "ase")
-    check("records_for openmm", layout.records_for(m, "openmm", "default"), m / "_records/md_openmm/default")
-    check("records_for ase s2", layout.records_for(m, "ase", "s2"), m / "_records/md_ase/s2")
+    # No setting level under _records (user ruling 2026-09-15): the setting is in the stem.
+    check("md_records_dir openmm", layout.md_records_dir(m, "openmm"), m / "_records/md_openmm")
+    check("basin_records_dir ase 1", layout.basin_records_dir(m, "ase", 1), m / "_records/md_ase/basin01")
+    check("record_file_name s2", layout.record_file_name("collect.out", "s2"), "collect_s2.out")
+    check("no records_for any more", hasattr(layout, "records_for") or hasattr(layout, "openmm_records_dir"), False)
     check("default file name", layout.openmm_file_name("traj.dcd", "default"), "traj.dcd")
     check("setting file name", layout.openmm_file_name("traj.dcd", "p1500_s5"), "traj_p1500_s5.dcd")
     check("setting file name, pdb", layout.openmm_file_name("start.pdb", "p1500_s5"), "start_p1500_s5.pdb")

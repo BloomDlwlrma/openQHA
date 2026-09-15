@@ -415,9 +415,10 @@ def main():
     ]
 
     # ---- product ---------------------------------------------------------------------
-    # collect.log and collect__<table>.parquet beside the driver's records (ADR 0001).
-    out_stem = Path(args.out) if args.out else (
-        layout.records_for(molecule, route, args.setting) / "collect")
+    # collect.out, collect.toml and the four .dat tables in _records/md_<route>/, the setting
+    # in the stem (collect_s2.out); no setting level (records redesign, 2026-09-15).
+    from openqha.quasi_harmonic import chain_records
+    out_stem = Path(args.out) if args.out else chain_records.stem(molecule, route, args.setting, chain_records.COLLECT)
     r = report.Report(
         "openQHA branch B -- quasi-harmonic analysis",
         subtitle="{}  ({})   tag {}".format(args.species, spec.get("name"), args.tag))
@@ -572,6 +573,17 @@ def main():
             dat.write_table(p, rows)
             written.append((p, len(rows)))
     out_path = r.write(str(out_stem) + ".out", step="collect")
+    # The Property file LAST: its STATUS is what the collect Batch reads to say this molecule
+    # is done, so a kill before this line leaves the molecule to be redone.
+    _m0 = per_traj[0]["meta"]
+    unknown = chain_records.write_collect(out_stem, dict(
+        species=args.species, tag=args.tag, basin_tag=args.basin_tag or args.tag, setting=args.setting,
+        route=route, engine=_m0.get("engine_name"), temperature_K=temperature,
+        sigma=spec["symmetry_number"], g0=spec["electronic_degeneracy"],
+        n_trajectories=len(per_traj), n_basins=len({t["basin"] for t in per_traj}),
+        frame_spacing_fs=_m0.get("frame_spacing_fs"), timestep_fs=_m0.get("timestep_fs")), verdicts)
+    if unknown:
+        raise RuntimeError("collect.toml: keys outside the schema {}".format(unknown))
 
     print()
     for criterion, measured, passed in verdicts:

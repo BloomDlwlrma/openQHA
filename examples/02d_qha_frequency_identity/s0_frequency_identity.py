@@ -280,7 +280,7 @@ def main():
     ap.add_argument("--stage", default="harmonic",
                     choices=("harmonic", "real", "all"))
     ap.add_argument("--setting", default="default",
-                    help="which openmm/<setting>/ of the molecule directory holds the "
+                    help="which setting (file stem in md_<route>/basinNN/) holds the "
                          "trajectories (stage real). Until 2026-09-14 this was --traj-tag.")
     ap.add_argument("--traj-tag", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--route", default="auto", choices=("auto", "openmm", "ase"),
@@ -410,16 +410,21 @@ def main():
     from openqha.quasi_harmonic import trajectory_reader as _tr2
     _mol = _basins.molecule_for(args.species, args.tag, cfg)
     _route = args.route if args.route in ("openmm", "ase") else (_tr2.route_found(_mol, args.setting) or "openmm")
-    # CREST/ORCA style (step 2, 2026-09-15): .toml for programs, .out for people.
-    from openqha.store import report as _rep, toml_out
+    # The Record (records redesign, 2026-09-15): the Report first, the Property file last;
+    # _records/md_<route>/02d_frequency_identity[_<setting>].{out,toml}.
+    from openqha.store import report as _rep
+    from openqha.quasi_harmonic import chain_records
+    report["setting"], report["route"] = args.setting, _route
     stem = (Path(args.out).with_suffix("") if args.out
-            else _layout.records_for(_mol, _route, args.setting) / "02d_frequency_identity")
+            else chain_records.stem(_mol, _route, args.setting, chain_records.IDENTITY))
     stem.parent.mkdir(parents=True, exist_ok=True)
-    toml_out.dump(report, stem.with_suffix(".toml"))
     rr = _rep.Report("openQHA 02d -- may nu_k replace omega_i?",
                      subtitle="{}  tag {}  setting {}".format(args.species, args.tag, args.setting))
-    rr.json_dump(report, title="the four stages, per basin (02d_frequency_identity.toml holds the same)")
+    rr.json_dump(report, title="the four stages, per basin (expanded)")
     out = rr.write(stem.with_suffix(".out"), step="02d")
+    unknown = chain_records.write_identity(stem, report)
+    if unknown:
+        raise RuntimeError("02d_frequency_identity.toml: keys outside the schema {}".format(unknown))
     print()
     print("written {} and {}  ({:.1f} s)".format(out, stem.with_suffix(".toml"), report["wall_seconds"]))
     return 0

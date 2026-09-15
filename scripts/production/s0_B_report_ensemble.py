@@ -15,9 +15,9 @@ WHAT IT PUTS TOGETHER
 
 WHERE T*S IS READ FROM, AND WHY NOT THE FRAMES
 ----------------------------------------------
-`s0_B_qha_analyse.py` (the collect step) writes `<molecule>/_records/md_openmm/<setting>/
-collect__trajectories.parquet` (ADR 0001; before 2026-09-14 `analysis/qha/<tag>/<species>__
-trajectories.parquet`), one row per (basin, seed) with the entropy it judged against the criteria.
+`s0_B_qha_analyse.py` (the collect step) writes `<molecule>/_records/md_<route>/
+collect[_<setting>].trajectories.dat` (records redesign 2026-09-15; before 2026-09-14
+`analysis/qha/<tag>/<species>__trajectories.parquet`), one row per (basin, seed) with the entropy it judged against the criteria.
 This step reads THAT. Until 2026-09-13 it re-ran `qha.analyse` on the raw frames -- a
 second analysis that could differ from the judged one (temperature, settings) and that
 skipped, without a word, any trajectory shorter than 3N frames. The first chain to reach
@@ -80,13 +80,13 @@ def basin_electronic(rec):
 
 def collect_stem(species, tag, setting="default", root=None, route="auto"):
     """Where s0_B_qha_analyse.py put this molecule's tables (its own default --out):
-    <molecule>/_records/<route>/<setting>/collect (ADR 0001). `tag` is the basin tag;
-    route `auto` is the one the trajectories are found under (openmm before ase)."""
-    from openqha.store import layout
-    from openqha.quasi_harmonic import trajectory_reader
+    <molecule>/_records/md_<route>/collect[_<setting>] (no setting level, records redesign
+    2026-09-15). `tag` is the basin tag; route `auto` is the one the trajectories are
+    found under (openmm before ase)."""
+    from openqha.quasi_harmonic import chain_records, trajectory_reader
     mol = basin_reader.molecule_for(species, tag, root=root)
     r = route if route in ("openmm", "ase") else (trajectory_reader.route_found(mol, setting) or "openmm")
-    return layout.records_for(mol, r, setting) / "collect"
+    return chain_records.stem(mol, r, setting, chain_records.COLLECT)
 
 
 def collect_tables(species, tag, setting="default", root=None, route="auto"):
@@ -261,11 +261,12 @@ def main():
     _, criteria = collect_tables(args.species, basin_tag, args.setting, route=args.route)
     n_pass, n_crit = criteria_verdict(criteria)
     _stem = collect_stem(args.species, basin_tag, args.setting, route=args.route)
-    print("collect   {} of {} criteria passed  (_records/{}/{}/collect.criteria.dat; tag {})".format(
-        n_pass, n_crit, _stem.parent.parent.name, args.setting, args.tag) if n_crit
+    print("collect   {} of {} criteria passed  ({}.criteria.dat; tag {})".format(
+        n_pass, n_crit, _stem, args.tag) if n_crit
         else "collect   wrote no criteria table for this molecule")
 
-    report = dict(species=args.species, tag=args.tag, basin_tag=basin_tag,
+    report = dict(species=args.species, tag=args.tag, basin_tag=basin_tag, setting=args.setting,
+                  route=(args.route if args.route in ("openmm", "ase") else _stem.parent.name[3:]),
                   temperature_K=temperature, n_basins_branch_a=len(e_rel),
                   collect_criteria=dict(passed=n_pass, total=n_crit), results={})
     for atoms_set in sets:
@@ -301,13 +302,15 @@ def main():
         report["results"][atoms_set] = rec
         report["trajectory_root"] = str(root)
 
-    # CREST/ORCA style (step 2, 2026-09-15): ensemble.toml is the answer a program reads,
-    # ensemble.out the one a person reads, its last line the marker.
-    from openqha.store import report as _rep, toml_out
+    # The Record (records redesign, 2026-09-15): ensemble.out is the Report, written first;
+    # ensemble.toml the Property file, written last (STATUS is the marker); the setting in
+    # the stem, beside collect's files in _records/md_<route>/.
+    from openqha.store import report as _rep
+    from openqha.quasi_harmonic import chain_records
+    from openqha.store import layout as _layout
     stem = (Path(args.out).with_suffix("") if args.out
-            else collect_stem(args.species, basin_tag, args.setting, route=args.route).parent / "ensemble")
+            else _stem.parent / _layout.record_file_name(chain_records.ENSEMBLE, args.setting))
     stem.parent.mkdir(parents=True, exist_ok=True)
-    toml_out.dump(report, stem.with_suffix(".toml"))
     rr = _rep.Report("openQHA -- F_conf over the ensemble",
                      subtitle="{}  tag {}  basin tag {}  setting {}".format(
                          args.species, args.tag, basin_tag, args.setting))
@@ -322,8 +325,11 @@ def main():
                      [[b, "{:.4f}".format(d["TS_kcal"]) if d else "-", (d or {}).get("n_frames", "-"),
                        (d or {}).get("source", "-"), (d or {}).get("distinct_crossings", "-"),
                        (d or {}).get("symmetry_crossings", "-")] for b, d in sorted(pb.items())])
-    rr.json_dump(report, title="complete record (ensemble.toml holds the same, for programs)")
+    rr.json_dump(report, title="complete record (expanded)")
     out = rr.write(stem.with_suffix(".out"), step="ensemble")
+    unknown = chain_records.write_ensemble(stem, report)
+    if unknown:
+        raise RuntimeError("ensemble.toml: keys outside the schema {}".format(unknown))
     print()
     print("written {} and {}".format(out, stem.with_suffix(".toml")))
 

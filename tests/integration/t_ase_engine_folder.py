@@ -7,7 +7,7 @@ MACE is absent.
 The decision (ADR 0001; ticket 10, 2026-09-15): `md_ase/basinNN/` holds `start.extxyz`,
 `md.traj` (ASE Trajectory) and `md.log` (ASE MDLogger) and nothing else; a partial
 trajectory resumes from the last frame of `md.traj`; the driver's records go to
-`_records/md_ase/<setting>/basinNN/`; the same reader reads it and collect finds it with
+`_records/md_ase/basinNN/`; the same reader reads it and collect finds it with
 `--route auto`.
 
     run 1  prod 0.10 ps, frame every 10 fs  -> 10 frames, the three files, nothing else
@@ -133,11 +133,16 @@ def main():
                            "--route", "auto", "--no-gmx"], tmp)
         check("analyse ran (exit {} is a verdict, not a crash)".format(rc),
               "[PASS]" in out or "[FAIL]" in out, out[-1500:])
-        tab = layout.records_for(mol, "ase", "default") / "collect.trajectories.dat"
-        check("collect tables under _records/md_ase/default/", tab.exists(), tab)
+        from openqha.quasi_harmonic import chain_records as _cr
+        _cstem = _cr.stem(mol, "ase", "default", _cr.COLLECT)
+        tab = _cr.collect_paths(_cstem)["trajectories"]
+        check("collect tables under _records/md_ase/", tab.exists(), tab)
         from openqha.store import report as _rep
         check("collect.out ends with the terminal line (the marker)",
-              _rep.terminated_normally(layout.records_for(mol, "ase", "default") / "collect.out", "collect"))
+              _rep.terminated_normally(_cr.collect_paths(_cstem)["out"], "collect"))
+        check("collect.toml beside it, STATUS NORMAL TERMINATION (the collect Batch's marker)", _cr.collect_done(_cstem))
+        check("collect's files are in _records/md_ase/, no setting level",
+              _cstem.parent == mol / "_records" / "md_ase" and not (mol / "_records" / "md_ase" / "default").exists())
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

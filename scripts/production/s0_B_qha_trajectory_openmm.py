@@ -486,11 +486,11 @@ def main():
     ap.add_argument("--num-ys", type=int, default=NUM_YOSHIDA_SUZUKI)
     ap.add_argument("--platform", default="CPU")
     # WHERE (ADR 0001, 2026-09-14): engine files under
-    #   <root>/<tag>/<range>/<chunk>/<qid>/openmm/<setting>/basinNN/
-    # and this driver's record under <...>/<qid>/_records/md_openmm/<setting>/basinNN/.
+    #   <root>/<tag>/<range>/<chunk>/<qid>/md_openmm/basinNN/  (the setting in the file names)
+    # and this driver's record under <...>/<qid>/_records/md_openmm/basinNN/ (same rule).
     # The setting is `default` for the chains and the row name for examples/02d-2.
     ap.add_argument("--setting", default="default",
-                    help="the trajectory setting this run belongs to (openmm/<setting>/)")
+                    help="the trajectory setting this run belongs to (in the file stems)")
     ap.add_argument("--molecule-dir", default=None,
                     help="override the molecule directory (default: from S0_RUNS_ROOT, "
                          "--tag and --species through openqha.store.layout)")

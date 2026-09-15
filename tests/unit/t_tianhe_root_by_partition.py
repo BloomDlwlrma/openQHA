@@ -6,7 +6,7 @@ a second; skipped with a message where bash is absent.
 The decision (ADR 0002, user 2026-09-14)
 ----------------------------------------
     root = <prefix>/HDD_POOL/<acct>/<user>/sherwin/runs
-    prefix /XYFS02  for partitions ai, cn      (TianheXY-A, TianheXY-CN)
+    prefix /XYFS02  for partitions ai, temp, cn, deimos, debug (TianheXY-A, TianheXY-CN)
            /XYAIFS00 for a100x h100x hx a800x v100x (TianheXY-AI)
     acct, user from HOME = /HOME/<acct>/<user>; the tail is one variable, S0_RUNS_TAIL.
 
@@ -71,7 +71,8 @@ def main():
         AI = "/XYAIFS00/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs"
 
         print("A. by partition (no mount needed):")
-        for part, want in (("ai", A), ("cn", A), ("a100x", AI), ("h100x", AI),
+        for part, want in (("ai", A), ("temp", A), ("cn", A), ("deimos", A), ("debug", A),
+                           ("a100x", AI), ("h100x", AI),
                            ("hx", AI), ("a800x", AI), ("v100x", AI)):
             rc, got = resolve({"OPENQHA_PARTITION": part}, str(tmp))
             check("OPENQHA_PARTITION=" + part, (rc, got), (0, want))

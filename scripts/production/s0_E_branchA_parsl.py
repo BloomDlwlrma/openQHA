@@ -191,8 +191,10 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
     # _records/branchA.toml in the molecule directory: branch A's Property file (records
     # redesign, 2026-09-15). STATUS is the completion marker.
     out = _basins.record_path(qm9_index, tag)
-    summary = dict(qm9_index=qm9_index, seconds=_time.time() - started,
-                   returncode=proc.returncode, command=cmd, socket=sock)
+    from openqha.store import batch_table as _bt
+    summary = dict(qm9_index=qm9_index, species=qm9_index, seconds=_time.time() - started,
+                   returncode=proc.returncode, rc=proc.returncode, command=cmd, socket=sock,
+                   status=_bt.status_after(proc.returncode, out), record=_bt.absolute(out))
     status = _prop.status_of(out)
     if status == _prop.NORMAL_TERMINATION:
         rec = _basins.read_record(qm9_index, tag)
@@ -431,45 +433,31 @@ def main():
     wall = time.time() - started
     parsl.dfk().cleanup()
 
-    print("{:<20} {:>8} {:>8} {:>10} {:>8}  {}".format(
-        "species", "basins", "CREST", "seconds", "fallback", "criteria"))
+    # The Batch table (records redesign, 2026-09-15): the same first seven columns as the
+    # branch B and collect drivers, then this driver's own. It is all a Batch leaves.
+    from openqha.store import batch_table as _bt
     for r in results:
-        if r.get("error"):
-            print("{:<20} {}".format(r.get("qm9_index", "?"), r["error"]))
-            continue
-        print("{:<20} {:>8} {:>8} {:>10.1f} {:>8}  {}".format(
-            r["qm9_index"], r.get("n_basins", "-"),
-            r.get("n_conformers_crest_reports", "-"), r["seconds"],
-            str(r.get("used_shake_fallback")),
-            "PASS" if r.get("all_criteria_passed") else
-            "FAIL {}".format(r.get("failed_criteria"))))
+        if r.get("error") and not r.get("error_line"):
+            tail = [l for l in str(r["error"]).strip().splitlines() if l.strip()]
+            r["error_line"] = tail[-1] if tail else "(no error text captured)"
+        r["CREST"] = r.get("n_conformers_crest_reports")
+        r["fallback"] = None if r.get("used_shake_fallback") is None else str(r["used_shake_fallback"])
+        r["verdict"] = (("PASS" if r.get("all_criteria_passed") else "FAIL {}".format(r.get("failed_criteria")))
+                        if r.get("status") == "NORMAL TERMINATION" else None)
+    _bt.print_table(results, extra=(("n_basins", 6, ">"), ("CREST", 5, ">"), ("fallback", 8, ">"), ("verdict", 7, "<")))
 
     ok = [r for r in results if r.get("all_criteria_passed")]
-    summary = dict(
-        plan=plan, results=results,
-        cost=dict(
-            # THREE numbers, kept apart on purpose (D0-P1-12; defects 34 and 56).
-            wall_seconds_for_the_whole_batch=wall,
-            single_task_seconds=[r.get("seconds") for r in results
-                                 if r.get("seconds")],
-            slot_extrapolation_note=(
-                "NOT computed here. Dividing the batch wall clock by the worker "
-                "count produces a number that describes neither one molecule nor "
-                "the batch. If a per-molecule cost under contention is wanted, "
-                "measure it."),
-        ),
-        n_ok=len(ok), n_total=len(results),
-        all_passed=bool(len(ok) == len(results)))
+    # THREE cost numbers, kept apart on purpose (D0-P1-12; defects 34 and 56): the batch
+    # wall (footer), each task's seconds (the table), and a slot extrapolation that is NOT
+    # computed: dividing the batch wall by the worker count describes neither one
+    # molecule nor the batch.
 
-    out = S0_ROOT / "analysis" / "branchE" / args.tag / "batch.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
-                   encoding="utf-8")
+    # A Batch leaves no record of its own (user ruling 2026-09-15, Q4 (b)): the table above,
+    # in the Slurm log, is its report. analysis/branchE/<tag>/batch.json is gone.
     print()
-    print("batch wall {:.1f} s   {}/{} passed every criterion".format(
-        wall, len(ok), len(results)))
-    print("written    {}".format(out))
-    return 0 if summary["all_passed"] else 1
+    for l in _bt.footer(wall, len(ok), len(results)):
+        print(l)
+    return 0 if len(ok) == len(results) else 1
 
 
 if __name__ == "__main__":

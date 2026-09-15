@@ -4,10 +4,10 @@
 
 **Blocked by:** 17, 18.
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-15 (the branch A driver.log finding below is still open for the user)
 
-- [ ] the branch B parsl driver on the local resource config with one basin prints the header and one line whose `record` is the absolute path of an existing `md.toml` with STATUS NORMAL TERMINATION, and nothing is written under `<root>/<tag>/_records/` except `parsl/` (new integration test)
-- [ ] the branch A and collect drivers print the same first seven columns (unit test on the line formatter)
-- [ ] no batch summary is dumped as JSON by the three drivers; `analysis/branchE` is not created
+- [x] the branch B parsl driver on the local resource config with one basin prints the header and one line whose `record` is the absolute path of an existing `md.toml` with STATUS NORMAL TERMINATION, and nothing is written under `<root>/<tag>/_records/` except `parsl/` (new integration test)
+- [x] the branch A and collect drivers print the same first seven columns (unit test on the line formatter)
+- [x] no batch summary is dumped as JSON by the three drivers; `analysis/branchE` is not created
 
 Found during 17 (for the user to rule on here): the branch A parsl driver also writes each Calculation's stdout to `<repo>/analysis/branchA/<tag>/<qid>/driver.log`, a Batch writing into the checkout. The MD driver's `driver.log` sits beside `md.out` (Q5); the branch A one has no ruling. Proposal: `_records/driver.log` beside `branchA.out`, and `analysis/branchA/` no longer created.

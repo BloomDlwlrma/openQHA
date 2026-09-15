@@ -219,10 +219,10 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
     runs_root = _Path(e.get("S0_RUNS_ROOT", _os.path.expanduser("~/runs/openQHA")))
     _sys.path.insert(0, str(repo_root))
     from openqha.store import layout as _layout
-    summary = dict(species=species, basin=basin, seed_index=seed_index,
+    summary = dict(species=species, basin=basin, seed=seed_index, seed_index=seed_index,
                    route=route, platform=platform,
                    cuda_visible_devices=visible,
-                   command=" ".join(cmd), returncode=proc.returncode,
+                   command=" ".join(cmd), returncode=proc.returncode, rc=proc.returncode,
                    seconds=_time.time() - started)
 
     # driver.log beside the trajectory's Record: _records/md_<route>/basinNN/, the setting
@@ -233,6 +233,11 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
     _toml_path, _out_path, _log_path = _md.paths(out, setting)
     _log_path.write_text(
         proc.stdout + "\n----- stderr -----\n" + proc.stderr, encoding="utf-8")
+    # The Batch table's two columns (records redesign, 2026-09-15): STATUS read from the
+    # Property file after the subprocess returned, and its absolute path.
+    from openqha.store import batch_table as _bt
+    summary["status"] = _bt.status_after(proc.returncode, _toml_path)
+    summary["record"] = _bt.absolute(_toml_path)
 
     if proc.returncode != 0:
         # **The LAST meaningful line, not the first 60 characters of the last 2000.**
@@ -304,7 +309,7 @@ def main():
                          "the count from branch A's own record, so the number and the "
                          "geometries cannot disagree. An integer caps it.")
     ap.add_argument("--setting", default="default",
-                    help="the trajectory setting (openmm/<setting>/ in the molecule "
+                    help="the trajectory setting (the file stem in md_<route>/basinNN/ of the molecule "
                          "directory); `default` for the chains, the row name for 02d-2")
     ap.add_argument("--seeds", type=int, default=1,
                     help="trajectories per basin. ONE is the production setting (ruling "
@@ -577,27 +582,19 @@ def main():
     wall = time.time() - started
     parsl.dfk().cleanup()
 
-    print("{:<20} {:>6} {:>6} {:>8} {:>9} {:>10} {:>5}  {}".format(
-        "species", "basin", "seed", "frames", "T mean K", "seconds", "card",
-        "complete"))
+    # The Batch table (records redesign, 2026-09-15): the same first seven columns as the
+    # branch A and collect drivers, then this driver's own. It is all a Batch leaves.
+    from openqha.store import batch_table as _bt
     for r in results:
-        if r.get("error"):
+        if r.get("error") and not r.get("error_line"):
             # The first version did `(error_line or ...)[0]` -- on a STRING, so the table
-            # showed the first CHARACTER of the diagnosis ("F" for FileNotFoundError) and
-            # the reader had to open the JSON. Measured an104 2026-09-13, six rows of "F".
-            line = (r.get("error_line") or "").strip()
-            if not line:
-                tail = [l for l in str(r["error"]).strip().splitlines() if l.strip()]
-                line = tail[-1] if tail else "(no error text captured)"
-            print("{:<20} {:>6} {:>6}  FAILED  {}".format(
-                r.get("species", "?"), r.get("basin", "?"), r.get("seed_index", "?"),
-                line[:160]))
-            continue
-        print("{:<20} {:>6} {:>6} {:>8} {:>9} {:>10.1f} {:>5}  {}".format(
-            r["species"], r["basin"], r["seed_index"], r.get("n_frames", "-"),
-            "-" if r.get("temperature_mean_K") is None
-            else "{:.2f}".format(r["temperature_mean_K"]),
-            r["seconds"], r.get("cuda_visible_devices") or "-", r.get("complete")))
+            # showed the first CHARACTER of the diagnosis ("F" for FileNotFoundError).
+            # Measured an104 2026-09-13, six rows of "F".
+            tail = [l for l in str(r["error"]).strip().splitlines() if l.strip()]
+            r["error_line"] = tail[-1] if tail else "(no error text captured)"
+        r["T_mean"] = None if r.get("temperature_mean_K") is None else round(r["temperature_mean_K"], 2)
+        r["card"] = r.get("cuda_visible_devices") or "-"
+    _bt.print_table(results, extra=(("frames", 6, ">"), ("T_mean", 8, ">"), ("card", 4, ">"), ("complete", 8, "<")))
 
     # If every task reports the same card, the per-worker pinning is broken and the run
     # was 8x slower for a reason that would otherwise show up only as "the GPU is slow".
@@ -626,16 +623,13 @@ def main():
     print("slot_extrapolation                NOT COMPUTED -- the per-task cost under "
           "contention has not been measured (D0-P1-12, defects 34 and 56)")
 
-    # <root>/<tag>/_records/branchB_parsl_summary.json: a record about the whole batch,
-    # not one molecule (user ruling 2026-09-14).
-    from openqha.store import layout as _layout
-    out = _layout.tag_records_dir(config.runs_root(), args.tag) / "branchB_parsl_summary.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(dict(plan=plan, results=results,
-                                   wall_seconds_for_the_whole_batch=wall), indent=2),
-                   encoding="utf-8")
-    print("\nwritten {}".format(out))
-    return 0 if all(not r.get("error") for r in results) else 1
+    # A Batch leaves no record of its own (user ruling 2026-09-15, Q4 (b)): the table above,
+    # in the Slurm log, is its report. The summary JSON of 2026-09-14 is gone.
+    ok = [r for r in results if not r.get("error")]
+    print()
+    for l in _bt.footer(wall, len(ok), len(results), "ran to a record"):
+        print(l)
+    return 0 if len(ok) == len(results) else 1
 
 
 if __name__ == "__main__":

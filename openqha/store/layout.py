@@ -172,13 +172,6 @@ def record_file_name(name, setting=DEFAULT_SETTING):
     return engine_file_name(name, setting)
 
 
-def records_for(molecule, route, setting):
-    """`_records/<md folder>/<setting>/` -- the step-2 form with a setting LEVEL, which the
-    user ruled out on 2026-09-15. Kept while tickets 17-19 of the records redesign move
-    the callers to `md_records_dir` + `record_file_name`; ticket 19 deletes it."""
-    return Path(molecule) / RECORDS / md_folder(route) / str(setting)
-
-
 def openmm_file_name(name, setting=DEFAULT_SETTING):
     """`traj.dcd` for the default setting; `traj_<setting>.dcd` for any other.
 
@@ -194,8 +187,9 @@ def openmm_file(molecule, setting, basin, name):
 
 
 def tag_records_dir(root, tag):
-    """`<root>/<tag>/_records/`: records about a whole tag rather than one molecule (the
-    parsl drivers' batch summaries). User ruling 2026-09-14."""
+    """`<root>/<tag>/_records/`: the one per-tag folder, holding parsl's own run
+    directories (`parsl/<job>.<pid>/`). Since 2026-09-15 no Batch record lives here: the
+    Slurm log is the Batch's report (CONTEXT.md, Batch)."""
     return Path(root) / str(tag) / RECORDS
 
 
@@ -210,7 +204,3 @@ def orca_dir(molecule, basin):
 def records_dir(molecule):
     return Path(molecule) / RECORDS
 
-
-def openmm_records_dir(molecule, setting):
-    """`_records/md_openmm/<setting>/` -- `records_for(molecule, "openmm", setting)`."""
-    return records_for(molecule, "openmm", setting)
