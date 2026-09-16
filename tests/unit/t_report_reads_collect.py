@@ -1,6 +1,6 @@
 """report_ensemble sums the entropies collect judged; it does not analyse frames itself.
 
-UNIT. No engine, no pandas (since 2026-09-15 collect's tables are whitespace .dat); under a second.
+UNIT. No engine, no pandas (since 2026-09-16 collect leaves one Table, collect.dat); under a second.
 
 The defect (an113, 2026-09-13)
 ------------------------------
@@ -13,8 +13,8 @@ printed ten seconds earlier -- reported
 
 because `entropy_per_basin` re-ran `qha.analyse` on the raw frames and skipped, without
 a word, every trajectory shorter than 3N frames. Its own docstring says "It assembles, it
-does not compute". Now it reads `analysis/qha/<tag>/<species>__trajectories.parquet`,
-the rows collect judged, and carries collect's criteria verdict into its exit code.
+does not compute". Now it reads the `trajectories` section of `collect.dat` (since 2026-09-16;
+parquet before), the rows collect judged, and carries the verdict of `collect.toml` into its exit code.
 
 What is asserted
 ----------------
@@ -23,7 +23,8 @@ What is asserted
      TS_QH_kcal, with n_seeds and the source recorded; a basin with no row is None
      (MISSING), not zero and not recomputed.
   B. With no table at all it refuses, naming the collect command.
-  C. criteria_verdict counts the criteria table: 5 of 10; (None, None) without one.
+  C. collect_verdict reads N_PASSED/N_TOTAL from [Criteria] in collect.toml: 5 of 10;
+     (None, None) without a Property file or without the block.
 """
 import importlib.util
 import sys
@@ -55,31 +56,42 @@ def _load_driver():
 
 
 def main():
-    try:
-        from openqha.store import dat
-    except ImportError as exc:
-        print("skipped: {}".format(exc))
-        return 0
+    from openqha.quasi_harmonic import chain_records
     drv = _load_driver()
     from openqha import config
     cfg = config.load()
 
     with tempfile.TemporaryDirectory() as tmp:
-        # Since 2026-09-14 (ADR 0001) the tables sit in the molecule directory:
-        # <root>/<tag>/<range>/<chunk>/<species>/_records/md_openmm/default/collect__*.parquet
+        # Since 2026-09-14 (ADR 0001) collect's Record sits in the molecule directory:
+        # <root>/<tag>/<range>/<chunk>/<species>/_records/md_openmm/collect.{out,toml,dat}
         stem = drv.collect_stem(SPECIES, TAG, root=tmp)
         stem.parent.mkdir(parents=True)
 
         print("B. no collect product -> refusal that names the collect command")
         try:
-            drv.collect_tables(SPECIES, TAG, root=tmp)
-            FAIL.append("collect_tables returned with no table present")
+            drv.collect_trajectories(SPECIES, TAG, root=tmp)
+            FAIL.append("collect_trajectories returned with no Table present")
             print("   FAIL  returned")
         except SystemExit as exc:
-            ok = "s0_B_qha_analyse.py" in str(exc) and TAG in str(exc)
+            ok = "s0_B_qha_analyse.py" in str(exc) and TAG in str(exc) and "collect.dat" in str(exc)
             print("   {}  {}".format("ok  " if ok else "FAIL", str(exc).splitlines()[0]))
             if not ok:
-                FAIL.append("the refusal does not name the collect command")
+                FAIL.append("the refusal does not name the collect command and the Table")
+        ok = drv.collect_verdict(SPECIES, TAG, root=tmp) == (None, None)
+        print("   {}  no collect.toml -> verdict (None, None)".format("ok  " if ok else "FAIL"))
+        if not ok:
+            FAIL.append("verdict without a Property file is not (None, None)")
+        # A Table that lost its [trajectories] section is refused, not read as "every basin missing".
+        (chain_records.collect_paths(stem)["dat"]).write_text("\n".join(["[blank]", "# species basin", ""]), encoding="utf-8")
+        try:
+            drv.collect_trajectories(SPECIES, TAG, root=tmp)
+            FAIL.append("a Table without [trajectories] was not refused")
+            print("   FAIL  Table without [trajectories] returned")
+        except SystemExit as exc:
+            ok = "[trajectories]" in str(exc) and "blank" in str(exc)
+            print("   {}  a Table without [trajectories] is refused, naming what it has".format("ok  " if ok else "FAIL"))
+            if not ok:
+                FAIL.append("the refusal for a Table without [trajectories] does not say so")
 
         # The labels are collect's: directory names, not integers. The first fixture
         # here used 0/1 and passed while the real table ('basin00') raised ValueError.
@@ -88,10 +100,11 @@ def main():
                      TS_QH_kcal=ts, TS_Schlitter_kcal=ts + 0.1)
                 for b, s, ts in [(0, 0, 10.0), (0, 1, 10.2), (0, 2, 10.4),
                                  (1, 0, 12.0), (1, 1, 12.0), (1, 2, 12.0)]]
-        dat.write_table(stem.parent / (stem.name + ".trajectories.dat"), rows)
-        crit = [dict(species=SPECIES, criterion="c{}".format(i), measured="x",
-                     passed=(i < 5)) for i in range(10)]
-        dat.write_table(stem.parent / (stem.name + ".criteria.dat"), crit)
+        # One Table (2026-09-16): the trajectories section beside empty blank and assembly.
+        chain_records.write_collect_table(stem, dict(trajectories=rows, blank=[], assembly=[]))
+        verdicts = [("{}  criterion {}".format(i, i), "x", i < 5) for i in range(10)]
+        chain_records.write_collect(stem, dict(species=SPECIES, tag=TAG, basin_tag=TAG,
+                                               setting="default", route="openmm"), verdicts)
 
         print("\nA. per-basin T*S is the mean over the table's seeds")
         per_basin, _ = drv.entropy_per_basin(SPECIES, TAG, cfg, "all", root=tmp)
@@ -110,14 +123,21 @@ def main():
         print("   {}  basin 2 (no row) -> {}".format(
             "ok  " if per_basin.get(2) is None else "FAIL", per_basin.get(2)))
 
-        print("\nC. collect's verdict is counted, not recomputed")
-        _, criteria = drv.collect_tables(SPECIES, TAG, root=tmp)
-        n_pass, n_crit = drv.criteria_verdict(criteria)
-        ok = (n_pass, n_crit) == (5, 10) and drv.criteria_verdict(None) == (None, None)
-        print("   {}  {} of {} passed; none -> {}".format(
-            "ok  " if ok else "FAIL", n_pass, n_crit, drv.criteria_verdict(None)))
+        print("\nC. collect's verdict is read from [Criteria] in collect.toml, not recounted")
+        n_pass, n_crit = drv.collect_verdict(SPECIES, TAG, root=tmp)
+        ok = (n_pass, n_crit) == (5, 10)
+        print("   {}  {} of {} passed".format("ok  " if ok else "FAIL", n_pass, n_crit))
         if not ok:
-            FAIL.append("criteria_verdict: {} {}".format(n_pass, n_crit))
+            FAIL.append("collect_verdict: {} {}".format(n_pass, n_crit))
+        # A Property file without the block is "no verdict", not zero.
+        from openqha.store import property as prop
+        prop.write(chain_records.collect_paths(stem)["toml"],
+                   {prop.INFO_BLOCK: {"QM9_INDEX": SPECIES}}, chain_records.COLLECT_SCHEMA,
+                   status=prop.NORMAL_TERMINATION, progname=chain_records.COLLECT_PROGNAME)
+        ok = drv.collect_verdict(SPECIES, TAG, root=tmp) == (None, None)
+        print("   {}  collect.toml without [Criteria] -> (None, None)".format("ok  " if ok else "FAIL"))
+        if not ok:
+            FAIL.append("a Property file without [Criteria] did not give (None, None)")
 
     # D. (records redesign, ticket 17) the electronic energies come from branchA.toml's
     #    [[Basin]] blocks, RELATIVE by name; a basin without it raises, never zero.

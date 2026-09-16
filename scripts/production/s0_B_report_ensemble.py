@@ -11,12 +11,12 @@ WHAT IT PUTS TOGETHER
     F_conf = -kT ln sum_i exp(-dG_i / kT)
 
     dE_el,i   branch A, from the basin store
-    T*S_i     branch B, from collect's per-trajectory table (mean over seeds)
+    T*S_i     branch B, from the trajectories section of collect's Table (mean over seeds)
 
 WHERE T*S IS READ FROM, AND WHY NOT THE FRAMES
 ----------------------------------------------
 `s0_B_qha_analyse.py` (the collect step) writes `<molecule>/_records/md_<route>/
-collect[_<setting>].trajectories.dat` (records redesign 2026-09-15; before 2026-09-14
+collect[_<setting>].dat`, section `[trajectories]` (one Table since 2026-09-16; four `.dat` from 2026-09-15; before 2026-09-14
 `analysis/qha/<tag>/<species>__trajectories.parquet`), one row per (basin, seed) with the entropy it judged against the criteria.
 This step reads THAT. Until 2026-09-13 it re-ran `qha.analyse` on the raw frames -- a
 second analysis that could differ from the judged one (temperature, settings) and that
@@ -89,27 +89,41 @@ def collect_stem(species, tag, setting="default", root=None, route="auto"):
     return chain_records.stem(mol, r, setting, chain_records.COLLECT)
 
 
-def collect_tables(species, tag, setting="default", root=None, route="auto"):
-    """(trajectories, criteria) as lists of row dicts, from collect's .dat tables.
-
-    Refuses when the trajectories table is absent: this step sums what collect judged
-    and has nothing to sum before collect has run. The criteria table is optional in
-    the reading (older products have none) and its absence is recorded, not ignored.
-    """
-    from openqha.store import dat
+def collect_trajectories(species, tag, setting="default", root=None, route="auto"):
+    """The `trajectories` section of collect's Table, `collect[_<setting>].dat`, as row
+    dicts. Refuses when the Table is absent: this step sums what collect judged and has
+    nothing to sum before collect has run."""
+    from openqha.quasi_harmonic import chain_records
     stem = collect_stem(species, tag, setting, root, route)
-    traj = stem.parent / (stem.name + ".trajectories.dat")
-    if not traj.is_file():
+    table = chain_records.collect_paths(stem)["dat"]
+    if not table.is_file():
         raise SystemExit(
             "s0_B_report_ensemble: no collect product for {} under tag {!r}:\n    {}\n"
             "  This step sums the entropies collect judged; it does not analyse frames. "
             "Run collect first:\n"
             "    python scripts/production/s0_B_qha_analyse.py --species {} --tag {}"
-            .format(species, tag, traj, species, tag))
-    rows = dat.read_table(traj)
-    crit_path = stem.parent / (stem.name + ".criteria.dat")
-    criteria = dat.read_table(crit_path) if crit_path.is_file() else None
-    return rows, criteria
+            .format(species, tag, table, species, tag))
+    tables = chain_records.read_collect_table(stem)
+    if "trajectories" not in tables:
+        raise SystemExit("s0_B_report_ensemble: {} has no [trajectories] section (it has {}); "
+                         "nothing to sum".format(table, sorted(k for k in tables if k) or "no sections"))
+    return tables["trajectories"]
+
+
+def collect_verdict(species, tag, setting="default", root=None, route="auto"):
+    """(passed, total) from `[Criteria]` in collect's Property file, `collect.toml` --
+    the file a later step reads back (CONTEXT.md). (None, None) when there is no
+    Property file or no `[Criteria]` block: "no verdict", never zero."""
+    from openqha.quasi_harmonic import chain_records
+    from openqha.store import property as prop
+    stem = collect_stem(species, tag, setting, root, route)
+    toml = chain_records.collect_paths(stem)["toml"]
+    if not toml.is_file():
+        return None, None
+    crit = (prop.load(toml) or {}).get("Criteria") or {}
+    if crit.get("N_TOTAL") is None:
+        return None, None
+    return int(crit.get("N_PASSED") or 0), int(crit["N_TOTAL"])
 
 
 def crossings_per_basin(species, tag, cfg, setting="default", root=None, route="auto"):
@@ -150,7 +164,7 @@ def entropy_per_basin(species, tag, cfg, atoms_set="all", setting="default", roo
     xing, traj_root = crossings_per_basin(species, tag, cfg, setting, root, route)
     per_basin = {}
     if atoms_set == "all":
-        rows, _ = collect_tables(species, tag, setting, root, route)
+        rows = collect_trajectories(species, tag, setting, root, route)
         by_basin = {}
         for r in rows:
             by_basin.setdefault(basin_index(r["basin"]), []).append(r)
@@ -203,13 +217,6 @@ def basin_index(label):
     if text.startswith("basin"):
         text = text[len("basin"):]
     return int(text)
-
-
-def criteria_verdict(criteria):
-    """(passed, total) from collect's criteria table; (None, None) if it wrote none."""
-    if not criteria:
-        return None, None
-    return sum(1 for c in criteria if bool(c.get("passed"))), len(criteria)
 
 
 def _msrrho_comparison(molecule, rec_a, report, temperature):
@@ -294,12 +301,11 @@ def main():
     # written (the file is the record of what was summed) and then refused at exit,
     # the way collect refuses -- except under OPENQHA_SMOKE=1, where the test chain has
     # already said every number under this tag is plumbing.
-    _, criteria = collect_tables(args.species, basin_tag, args.setting, route=args.route)
-    n_pass, n_crit = criteria_verdict(criteria)
+    n_pass, n_crit = collect_verdict(args.species, basin_tag, args.setting, route=args.route)
     _stem = collect_stem(args.species, basin_tag, args.setting, route=args.route)
-    print("collect   {} of {} criteria passed  ({}.criteria.dat; tag {})".format(
+    print("collect   {} of {} criteria passed  ({}.toml [Criteria]; tag {})".format(
         n_pass, n_crit, _stem, args.tag) if n_crit
-        else "collect   wrote no criteria table for this molecule")
+        else "collect   left no verdict for this molecule (no collect.toml, or no [Criteria])")
 
     report = dict(species=args.species, tag=args.tag, basin_tag=basin_tag, setting=args.setting,
                   route=(args.route if args.route in ("openmm", "ase") else _stem.parent.name[3:]),

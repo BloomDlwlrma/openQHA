@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 (Collect leaves `collect.dat`).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-16
 
-- [ ] the ensemble's per-basin T*S equals the mean of the `trajectories` rows of that basin (unit test with a fake product: one `collect.dat` + one `collect.toml` under a temporary root)
-- [ ] `COLLECT_PASSED` / `COLLECT_TOTAL` in `ensemble.toml` equal `N_PASSED` / `N_TOTAL` of `collect.toml`
-- [ ] no `collect.dat` is refused by name; a `collect.toml` without `[Criteria]` is reported as "no verdict", not as zero
-- [ ] `t_report_reads_collect` rewritten to the new product and green
+- [x] the ensemble's per-basin T*S equals the mean of the `trajectories` rows of that basin (unit test with a fake product: one `collect.dat` + one `collect.toml` under a temporary root)
+- [x] `COLLECT_PASSED` / `COLLECT_TOTAL` in `ensemble.toml` equal `N_PASSED` / `N_TOTAL` of `collect.toml`
+- [x] no `collect.dat` is refused by name; a `collect.toml` without `[Criteria]` is reported as "no verdict", not as zero
+- [x] `t_report_reads_collect` rewritten to the new product and green
