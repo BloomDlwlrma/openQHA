@@ -129,6 +129,150 @@ def _qrrho(nu, temperature_K, nu0_cm, moments_amu_A2):
                            "the low-frequency limit = kT/2")
 
 
+# ------------------------------------------------------------------ msRRHO presets
+#: The three published parameterisations of the rigid-rotor / harmonic-oscillator
+#: interpolation for low modes. `tau_cm` is the crossover frequency of the Chai /
+#: Head-Gordon weight w = 1 / (1 + (tau/omega)^4); `ithr_cm` the threshold below which
+#: an imaginary mode may be inverted under the `invert_below` policy (None: never);
+#: `rotor_cap` is what the free-rotor moment of inertia is capped by -- the molecule's
+#: mean principal moment (CREST `axis_module.f90:173`) or Grimme's fixed 1e-44 kg m^2;
+#: `interpolate` names the quantities that take the weight. Enthalpy and zero-point
+#: energy are never interpolated by any of them.
+#:
+#:   crest       Pracht & Grimme, Chem. Sci. 2021, 12, 6551; `classes.f90:276-278`
+#:   xtb         the xtb `$thermo` defaults
+#:   grimme2012  Grimme, Chem. Eur. J. 2012, 18, 9955
+MSRRHO_PRESETS = {
+    "crest": dict(tau_cm=25.0, ithr_cm=-50.0, rotor_cap="mean_principal_moment",
+                  interpolate=("S", "Cp")),
+    "xtb": dict(tau_cm=50.0, ithr_cm=-20.0, rotor_cap="mean_principal_moment",
+                interpolate=("S", "Cp")),
+    "grimme2012": dict(tau_cm=100.0, ithr_cm=None, rotor_cap=1.0e-44,
+                       interpolate=("S",)),
+}
+#: CREST's `vibthr`: it DROPS |omega| < 1 cm^-1 as rigid-body leftovers of an
+#: unprojected Hessian. Our spectra are Eckart-projected before they get here, so the
+#: same number is an assertion: a projected mode this low is a projection error.
+VIBTHR_CM = 1.0
+#: Per-mode table cut-off in the report (CREST prints up to max(300, w=0.99 point)).
+MODE_TABLE_MAX_CM = 300.0
+C_CM_PER_S = 2.99792458e10
+
+
+def _free_rotor_s_kcal_per_K(nu_cm, rotor_cap_kg_m2, temperature_K):
+    """Entropy of one free rotor with sigma = 1 whose moment is the oscillator's
+    mu = h / (8 pi^2 c nu), capped as mu B / (mu + B). CREST `thermodyn` line for line."""
+    mu = H_SI / (8.0 * math.pi ** 2 * C_CM_PER_S * nu_cm)
+    mu_eff = mu * rotor_cap_kg_m2 / (mu + rotor_cap_kg_m2)
+    s = KB_SI * (0.5 + math.log(math.sqrt(
+        8.0 * math.pi ** 3 * mu_eff * KB_SI * temperature_K) / H_SI))
+    return s * NA * J_TO_KCAL
+
+
+def _cp_ho_kcal_per_K(nu_cm, temperature_K):
+    x = _x(nu_cm, temperature_K)
+    if x > X_FROZEN:
+        return 0.0
+    ex = math.exp(-x)
+    return KB_KCAL * x * x * ex / (1.0 - ex) ** 2
+
+
+def _apply_imaginary_policy(nu, policy, ithr_cm):
+    """Return (frequencies, n_inverted) or raise. `refuse` raises on any non-positive
+    mode; `invert_below` takes |omega| for modes in (ithr, 0) and raises below ithr."""
+    nu = np.asarray(nu, dtype=float)
+    if policy not in ("refuse", "invert_below"):
+        raise ValueError("imaginary_policy must be 'refuse' or 'invert_below', "
+                         "received {!r}".format(policy))
+    tiny = np.abs(nu) < VIBTHR_CM
+    if tiny.any():
+        raise ValueError("{} projected mode(s) below {} cm^-1 (|omega| = {:.3f}): a "
+                         "rigid-body leftover, the spectrum was not projected"
+                         .format(int(tiny.sum()), VIBTHR_CM, float(np.abs(nu).min())))
+    neg = nu < 0.0
+    if not neg.any():
+        return nu, 0
+    lowest = float(nu.min())
+    if policy == "refuse":
+        raise ValueError("{} imaginary mode(s), lowest {:.2f} cm^-1: not a minimum, "
+                         "refusing under the 'refuse' policy".format(int(neg.sum()), lowest))
+    if ithr_cm is None:
+        raise ValueError("this preset defines no ithr; 'invert_below' is not available")
+    if lowest < ithr_cm:
+        raise ValueError("imaginary mode {:.2f} cm^-1 is below ithr = {:.1f}: not "
+                         "invertible".format(lowest, ithr_cm))
+    return np.abs(nu), int(neg.sum())
+
+
+def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_REF,
+           imaginary_policy="refuse", fscal=1.0):
+    """The modified (and scaled) RRHO vibrational term of one basin under a preset.
+
+    Per mode: S = w S_HO + (1 - w) S_FR and, for presets that say so, Cp likewise;
+    H(T) - H(0) and the zero-point energy are always harmonic. The free rotor has
+    sigma = 1 and a capped moment; see MSRRHO_PRESETS. Returns the totals, the per-mode
+    table (ascending omega) and every convention that produced the number.
+    """
+    if preset not in MSRRHO_PRESETS:
+        raise ValueError("unknown msRRHO preset {!r}; known: {}".format(
+            preset, ", ".join(sorted(MSRRHO_PRESETS))))
+    p = MSRRHO_PRESETS[preset]
+    nu = np.asarray(frequencies_cm, dtype=float) * float(fscal)
+    nu, n_inverted = _apply_imaginary_policy(nu, imaginary_policy, p["ithr_cm"])
+    nu = np.sort(nu)
+    if p["rotor_cap"] == "mean_principal_moment":
+        cap = float(np.mean(principal_moments(masses, positions))) * AMU_KG * 1e-20
+    else:
+        cap = float(p["rotor_cap"])
+    tau = float(p["tau_cm"])
+    modes, s_tot, s_ho_tot, cp_tot, h_tot, zpe = [], 0.0, 0.0, 0.0, 0.0, 0.0
+    for w_nu in nu:
+        w_ho = 1.0 / (1.0 + (tau / w_nu) ** 4)
+        s_ho = s_mode_kcal_per_K(w_nu, temperature_K)
+        s_fr = _free_rotor_s_kcal_per_K(w_nu, cap, temperature_K)
+        s = w_ho * s_ho + (1.0 - w_ho) * s_fr
+        cp_ho = _cp_ho_kcal_per_K(w_nu, temperature_K)
+        cp = w_ho * cp_ho + (1.0 - w_ho) * 0.5 * KB_KCAL if "Cp" in p["interpolate"] else cp_ho
+        h = e_mode_kcal(w_nu, temperature_K) - 0.5 * HC_KCAL * w_nu
+        s_tot += s
+        s_ho_tot += s_ho
+        cp_tot += cp
+        h_tot += h
+        zpe += 0.5 * HC_KCAL * w_nu
+        modes.append(dict(omega_cm=float(w_nu), w_HO=float(w_ho),
+                          TS_HO_kcal=float(temperature_K * s_ho),
+                          TS_FR_kcal=float(temperature_K * s_fr),
+                          TS_kcal=float(temperature_K * s)))
+    return dict(preset=preset, tau_cm=tau, ithr_cm=p["ithr_cm"],
+                rotor_cap_kg_m2=cap, rotor_cap_rule=p["rotor_cap"],
+                interpolated=list(p["interpolate"]), fscal=float(fscal),
+                imaginary_policy=imaginary_policy, n_inverted=n_inverted,
+                temperature_K=float(temperature_K),
+                S_vib_kcal_per_K=float(s_tot), S_vib_HO_kcal_per_K=float(s_ho_tot),
+                TS_vib_kcal=float(temperature_K * s_tot),
+                TS_vib_HO_kcal=float(temperature_K * s_ho_tot),
+                Cp_vib_kcal_per_K=float(cp_tot), H_thermal_kcal=float(h_tot),
+                ZPE_kcal=float(zpe),
+                A_vib_kcal=float(zpe + h_tot - temperature_K * s_tot),
+                n_modes=int(nu.size), lowest_frequency_cm_inv=float(nu.min()),
+                modes=modes)
+
+
+def preset_spread(frequencies_cm, masses, positions, temperature_K=T_REF,
+                  imaginary_policy="refuse", fscal=1.0):
+    """T*S_vib under every preset, and the spread: the error-bar line for the choice of
+    convention (on acetone 0.19 kcal/mol between `crest` and `grimme2012`)."""
+    ts = {}
+    for name in MSRRHO_PRESETS:
+        r = msrrho(frequencies_cm, masses, positions, preset=name,
+                   temperature_K=temperature_K, imaginary_policy=imaginary_policy,
+                   fscal=fscal)
+        ts[name] = r["TS_vib_kcal"]
+        ts["HO"] = r["TS_vib_HO_kcal"]      # the same for every preset
+    return dict(TS_vib_kcal=ts, max_minus_min_kcal=float(max(ts.values()) - min(ts.values())),
+                temperature_K=float(temperature_K))
+
+
 # ------------------------------------------------------------------ rotational
 def principal_moments(masses, positions):
     """Principal moments of inertia in amu*A^2, ascending."""

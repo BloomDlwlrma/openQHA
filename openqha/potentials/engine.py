@@ -459,6 +459,23 @@ def committee(names=None, device="cpu"):
     return out
 
 
-def composite_notation(reference="RI-MP2/cc-pVTZ", name=None):
-    """The `high//low` string that must appear in every product (D0-4)."""
-    return "{} // {}".format(reference, name or engine_name())
+#: The level (CONTEXT.md) every MACE number is compared to for model error: the level
+#: MACE-OFF23 was trained to (SPICE, PSI4). ADR 0004.
+REFERENCE_LEVEL = "wb97m-d3bj_def2-tzvppd"
+
+
+def level_name(name=None):
+    """The level (CONTEXT.md spelling) an engine runs: lower-case, `-` and `_` kept as
+    in the registry name. `MACE-OFF23_medium` -> `mace-off23_medium`."""
+    n = name or engine_name()
+    if n not in ENGINES:
+        raise KeyError("unknown engine {!r}; registered: {}".format(
+            n, ", ".join(sorted(ENGINES))))
+    return n.lower()
+
+
+def composite_notation(reference=None, name=None):
+    """The `high // low` string that must appear in every product (D0-4), spelled with
+    level names so that records and the level folders agree: the reference level first
+    (REFERENCE_LEVEL unless another level is given), then the engine's level."""
+    return "{} // {}".format(reference or REFERENCE_LEVEL, level_name(name))

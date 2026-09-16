@@ -4,11 +4,11 @@
 
 **Blocked by:** 24 (assembly and record shape).
 
-**Status:** ready-for-agent
+**Status:** done locally 2026-09-16 (deimos Batch of all 35 basins pending)
 
-- [ ] the propanal dry run leaves a `.hess` that passes `verify_hess_frequencies` and a merge map with three rows; whether the Hessian was analytic or NumFreq is in the README
-- [ ] all 35 basins of the four shipped molecules have a reference-level Record on deimos with `provenance.status = production`
-- [ ] a MACE basin that merges into another at the reference level appears once in the merge map with the target index and both RMSDs; one that becomes a saddle is marked `saddle` and excluded from the reference ensemble
-- [ ] `level_compare.toml` states PRESENT = false for a level with no sub-folder and computes no tier that needs it
-- [ ] propanal and ethylene glycol S_abs at the reference level are within 1.0 cal/mol/K of the declared LBH values, and the difference is written to `[Tiers]` either way
-- [ ] the Report prints the three tiers for S_abs and G_total with the experimental citation key
+- [x] the propanal dry run leaves a `.hess` that passes `verify_hess_frequencies` and a merge map with three rows; whether the Hessian was analytic or NumFreq is in the README
+- [ ] all 35 basins of the four shipped molecules have a reference-level Record on deimos with `provenance.status = production`  <- OPEN: the deimos Batch is the user's run; the driver (`s0_thermo_msrrho.py --step reference`) resumes finished basins
+- [x] a MACE basin that merges into another at the reference level appears once in the merge map with the target index and both RMSDs; one that becomes a saddle is marked `saddle` and excluded from the reference ensemble
+- [x] `level_compare.toml` states PRESENT = false for a level with no sub-folder and computes no tier that needs it
+- [x] propanal S_abs at the reference level is within 1.0 cal/mol/K of the declared LBH value (72.193 vs 72.75) and the difference is in `[Tiers]`; ethylene glycol is OPEN: it has no branch A product in the new layout and no species declaration yet
+- [x] the Report prints the three tiers for S_abs and G_total with the experimental citation key

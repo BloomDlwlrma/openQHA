@@ -26,7 +26,9 @@ Products:
     docs/orca_inputs/deimos_504/run_hint.sh
 """
 import json
+import sys
 from pathlib import Path
+
 
 def _repo_root():
     """Directory holding the openQHA package, found by walking up from this file.
@@ -42,6 +44,9 @@ def _repo_root():
 
 
 ROOT = _repo_root()
+sys.path.insert(0, str(ROOT))
+from openqha.potentials import engine  # noqa: E402
+
 ORCA = ROOT / "docs" / "orca_inputs"
 OUT = ORCA / "deimos_504"
 
@@ -93,7 +98,7 @@ def main():
                   loc="LocMet AHFB, OCC true",
                   maxcore_mb=MAXCORE_MB, nprocs=NPROCS,
                   geometry_source="the lowest MACE-OFF23-SC optimised conformer -- digit-for-digit identical to the existing .inp",
-                  composite_notation="DLPNO-CCSD(T)/cc-pVTZ // MACE-OFF23-SC",
+                  composite_notation=engine.composite_notation(reference="dlpno-ccsdt_cc-pvtz", name="MACE-OFF23-SC"),
                   provenance="00_QM9_reaction_eng/hkuhpc/sbatch_tianhe/gen_orca_input.sh "
                              "and core-bind/orca.md",
                   files={})

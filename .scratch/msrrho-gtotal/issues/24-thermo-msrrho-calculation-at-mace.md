@@ -4,13 +4,13 @@
 
 **Blocked by:** 22 (presets), 23 (degeneracy), records-redesign 17 (`branchA.toml` `[[Basin]]` blocks).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-16
 
-- [ ] a one-basin molecule (acetone) gives S'_conf = 0 and dS_bar = 0 exactly and S_abs = S_msRRHO of that basin (70.68 cal/mol/K on the stored Hessian)
-- [ ] G_total from the partition function equals the Gibbs-Shannon route (S_abs, H_conf) to 1e-9 kcal/mol
-- [ ] an enantiomer pair entered as two basins with g' = 1 gives the same S'_conf as one basin with g' = 2
-- [ ] propanal's gauche basin carries g' = 2 into the populations, and the Report shows S'_conf with and without it
-- [ ] a basin with an imaginary mode is EXCLUDED = true, listed with its lowest frequency, and N_EXCLUDED counts it
-- [ ] the `.toml` starts with `[Calculation_Status]`, holds only the blocks in the spec, and lives under `levels/mace-off23_medium/`; no file is written under `_records/`
-- [ ] a molecule with `S_EXPERIMENT` but no `S_EXPERIMENT_SOURCE` (or a key absent from the .bib) is refused at configuration time
-- [ ] the ensemble report prints one comparison line: msRRHO S_abs next to the trajectory route
+- [x] a one-basin molecule (acetone) gives S'_conf = 0 and dS_bar = 0 exactly and S_abs = S_msRRHO of that basin (70.68 cal/mol/K on the stored Hessian)
+- [x] G_total from the partition function equals the Gibbs-Shannon route (S_abs, H_conf) to 1e-9 kcal/mol
+- [x] an enantiomer pair entered as two basins with g' = 1 gives the same S'_conf as one basin with g' = 2
+- [x] propanal's gauche basin carries g' = 2 into the populations, and the Report shows S'_conf with and without it
+- [x] a basin with an imaginary mode is EXCLUDED = true, listed with its lowest frequency, and N_EXCLUDED counts it
+- [x] the `.toml` starts with `[Calculation_Status]`, holds only the blocks in the spec, and lives under `levels/mace-off23_medium/`; no file is written under `_records/`
+- [x] a molecule with `S_EXPERIMENT` but no `S_EXPERIMENT_SOURCE` (or a key absent from the .bib) is refused at configuration time
+- [x] the ensemble report prints one comparison line: msRRHO S_abs next to the trajectory route
