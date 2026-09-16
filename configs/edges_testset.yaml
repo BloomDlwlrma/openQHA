@@ -86,6 +86,11 @@ species:
     symmetry_number: 1
     symmetry_reason: "Cs: no proper rotation axis"
     electronic_degeneracy: 1
+    # Experimental gas-phase absolute entropy at 298.15 K (cal/mol/K): the LBH set as
+    # tabulated in pracht2021's ESI Table 1 (propionaldehyde, entry 27). A value without a
+    # source key resolvable in docs/cite/cite_openQHA.bib is refused (ticket 24).
+    experimental_entropy_cal_per_K: 72.75
+    experimental_entropy_source: "li2016lbh"
   dsgdb9nsd_000036:
     name: "N-methylformamide"
     smiles: "CNC=O"

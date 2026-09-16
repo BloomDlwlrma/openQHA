@@ -117,6 +117,40 @@ def species(qm9_index, cfg=None):
     return s
 
 
+#: The BibTeX file every `experimental_entropy_source` key must resolve in.
+CITE_BIB = S0_ROOT / "docs" / "cite" / "cite_openQHA.bib"
+
+
+def bibtex_keys(path=CITE_BIB):
+    """The citation keys declared in the repository's BibTeX file."""
+    import re
+    text = Path(path).read_text(encoding="utf-8")
+    return set(re.findall(r"^@\w+\{\s*([^,\s]+)\s*,", text, flags=re.MULTILINE))
+
+
+def experimental_entropy(qm9_index, cfg=None):
+    """The declared experimental gas-phase absolute entropy of a species at 298.15 K,
+    cal/mol/K, with its citation key: `(value, key)`, or None when none is declared.
+
+    A value without a source, or a source key absent from `docs/cite/cite_openQHA.bib`,
+    is refused: the SI table is generated from these keys, so a value that cannot be
+    cited cannot be entered (ticket 24).
+    """
+    cfg = cfg or load()
+    s = (cfg.get("species") or {}).get(qm9_index) or {}
+    value = s.get("experimental_entropy_cal_per_K")
+    key = s.get("experimental_entropy_source")
+    if value is None and key is None:
+        return None
+    if value is None or key is None:
+        raise KeyError("{}: experimental_entropy_cal_per_K and experimental_entropy_source "
+                       "must be declared together".format(qm9_index))
+    if key not in bibtex_keys():
+        raise KeyError("{}: experimental_entropy_source {!r} is not a key in {}"
+                       .format(qm9_index, key, CITE_BIB))
+    return float(value), str(key)
+
+
 def qm9_root(cfg=None):
     cfg = cfg or load()
     p = Path(os.environ.get("S0_QM9_ROOT", "")) if os.environ.get("S0_QM9_ROOT") \

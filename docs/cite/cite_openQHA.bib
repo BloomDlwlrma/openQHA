@@ -219,3 +219,65 @@
 	year = {2015},
 	doi = {10.1016/j.softx.2015.06.001},
 }
+
+% =======================================================================================
+% msRRHO free energy (tickets 22-26, 2026-09-16): the entropy assembly, its conventions,
+% and the experimental absolute entropies the chain is compared to.
+% =======================================================================================
+
+% The assembly S_abs = S_msRRHO(ref) + S'_conf + dS_bar, the g' rule (rotamers 1,
+% geometric enantiomers 2) and tau = 25 cm^-1 for the rotor interpolation.
+@article{pracht2021,
+	title = {Calculation of absolute molecular entropies and heat capacities made simple},
+	author = {Pracht, Philipp and Grimme, Stefan},
+	journal = {Chemical Science},
+	volume = {12},
+	pages = {6551--6568},
+	year = {2021},
+	doi = {10.1039/D1SC00621E},
+}
+
+% The original rigid-rotor / harmonic-oscillator interpolation (tau = 100 cm^-1,
+% B_av = 1e-44 kg m^2): the `grimme2012` preset.
+@article{grimme2012,
+	title = {Supramolecular binding thermodynamics by dispersion-corrected density
+	         functional theory},
+	author = {Grimme, Stefan},
+	journal = {Chemistry -- A European Journal},
+	volume = {18},
+	pages = {9955--9964},
+	year = {2012},
+	doi = {10.1002/chem.201200497},
+}
+
+% The LBH benchmark set of experimental gas-phase absolute entropies (39 molecules,
+% ethane to n-octane), as tabulated in the ESI of pracht2021 (their Table 1); the values
+% openQHA declares as `experimental_entropy_cal_per_K` come from that table, which cites
+% nist_webbook and frenkel1994 for the measurements.
+@article{li2016lbh,
+	title = {Thermodynamics of anharmonic systems: uncoupled mode approximations for
+	         molecules},
+	author = {Li, Yi-Pei and Bell, Alexis T. and Head-Gordon, Martin},
+	journal = {Journal of Chemical Theory and Computation},
+	volume = {12},
+	pages = {2861--2870},
+	year = {2016},
+	doi = {10.1021/acs.jctc.5b01177},
+}
+
+@misc{nist_webbook,
+	title = {{NIST} Chemistry {WebBook}, {NIST} Standard Reference Database Number 69},
+	editor = {Linstrom, P. J. and Mallard, W. G.},
+	publisher = {National Institute of Standards and Technology},
+	url = {https://webbook.nist.gov/chemistry/},
+	doi = {10.18434/T4D303},
+}
+
+@book{frenkel1994,
+	title = {Thermodynamics of Organic Compounds in the Gas State},
+	author = {Frenkel, M. and Marsh, K. N. and Wilhoit, R. C. and Kabo, G. J. and
+	          Roganov, G. N.},
+	publisher = {Thermodynamics Research Center},
+	series = {TRC Data Series},
+	year = {1994},
+}

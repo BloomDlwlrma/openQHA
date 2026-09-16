@@ -1,0 +1,95 @@
+[Calculation_Status]
+PROGNAME = "openQHA branchA"     # String: the step that wrote this file
+VERSION  = "0.3.0"               # String: openQHA version
+STATUS   = "NORMAL TERMINATION"  # String: the completion marker
+
+[Calculation_Info]
+QM9_INDEX          = "dsgdb9nsd_000035"         # String: the molecule (QM9 index, or the label of a SMILES molecule)
+NAME               = "propanal"                 # String: the molecule's name in the config
+SMILES             = "CCC=O"                    # String: declared in config
+TAG                = "propanal"                 # String: the tag this run was made under
+ENGINE             = "MACE-OFF23_medium"        # String: the potential
+MOLECULE_DIR       = "/home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035"  # String: the molecule directory (ADR 0001)
+WORKHORSE          = "gfn2"                     # String: CREST sampling level
+REFINE             = "sp"                       # String: CREST refinement of the survivors
+RUNTYPE            = "imtd-gc"                  # String: CREST run type
+OPTLEV             = "tight"                    # String: CREST optimisation level
+SHAKE              = 2                          # Integer: SHAKE (2: all bonds) in CREST's MD
+TSTEP              = 5.0                        # Double, fs: CREST MD time step
+HMASS              = 2.0                        # Double, amu: hydrogen mass in CREST's MD
+THREADS            = 4                          # Integer: CREST threads
+FMAX               = 0.0001                     # Double, eV/A: tightening convergence on the max force
+DEDUP_RMSD         = 0.125                      # Double, A: CREGEN three-fold deduplication: RMSD threshold
+DEDUP_CRITERION    = "cregen_three_fold"        # String: the deduplication criterion
+DEDUP_ETHR         = 0.05                       # Double, kcal/mol: CREGEN energy threshold
+DEDUP_BTHR         = 0.01                       # Double: CREGEN relative rotational-constant threshold
+HESSIAN_MODE       = "analytic"                 # String: analytic or finite_difference
+TEMPERATURE        = 298.15                     # Double, K: thermochemistry temperature
+SYMMETRY_TOLERANCE = 0.1                        # Double, A: sigma detection tolerance
+
+[CREST_Run]
+RETURNCODE          = 0                  # Integer: CREST's exit code
+TERMINATED_NORMALLY = true               # Boolean: crest.out carries CREST's own terminal line
+N_CONFORMERS        = 2                  # Integer: what CREST reported; not a basin count
+N_TERMINATED_EARLY  = 0                  # Integer: MD runs CREST terminated early
+SHAKE_USED          = 2                  # Integer: the SHAKE that actually ran (read back from input.toml)
+USED_SHAKE_FALLBACK = false              # Boolean: the declared fallback ran instead of the published protocol
+WALL                = 237.3080596923828  # Double, s: CREST wall time
+WALL_IS_VALID_COST  = true               # Boolean: false when a directory was reused
+REUSED_SCRATCH      = false              # Boolean: an existing CREST directory was reused
+
+[Census]
+N_FRAMES_IN         = 3                      # Integer: CREST conformers plus pooled reference geometries
+N_FROM_CREST        = 2                      # Integer: frames from the CREST ensemble
+N_POOLED            = 1                      # Integer: reference geometries pooled
+N_NOT_CONVERGED     = 0                      # Integer: frames whose tightening did not converge
+N_GRAPH_CHANGED     = 0                      # Integer: frames whose bond graph changed in tightening
+N_SADDLES_REJECTED  = 0                      # Integer: frames rejected for imaginary modes
+N_BASINS            = 3                      # Integer: after tightening and deduplication
+BASIN_CONFORMER_IDS = [0, 2, 1]              # ArrayOfIntegers: the input frame each basin came from
+MAX_RESIDUAL_FORCE  = 7.751286203028229e-05  # Double, eV/A: largest residual force after tightening
+
+[[Basin]]
+INDEX        = 0                     # Integer
+ENERGY       = -5259.188956350778    # Double, eV: electronic energy after tightening
+RELATIVE     = 0.0                   # Double, kcal/mol: above the lowest basin
+SIGMA        = 1                     # Integer: symmetry number
+SIGMA_SOURCE = "declared_in_config"  # String: declared_in_config, or detected
+G0           = 1                     # Integer: electronic degeneracy
+G0_SOURCE    = "declared_in_config"  # String: declared_in_config, or assumed_singlet
+N_IMAGINARY  = 0                     # Integer: imaginary modes of the Hessian
+LOWEST_FREQ  = 128.45144404900887    # Double, cm^-1: lowest harmonic frequency
+G_MINUS_EEL  = 36.025264519663565    # Double, kcal/mol: harmonic G - E_el at TEMPERATURE
+A_MINUS_EEL  = 35.432779569842715    # Double, kcal/mol: harmonic A - E_el at TEMPERATURE
+
+[[Basin]]
+INDEX        = 1                     # Integer
+ENERGY       = -5259.152703422057    # Double, eV: electronic energy after tightening
+RELATIVE     = 0.8360123967774538    # Double, kcal/mol: above the lowest basin
+SIGMA        = 1                     # Integer: symmetry number
+SIGMA_SOURCE = "declared_in_config"  # String: declared_in_config, or detected
+G0           = 1                     # Integer: electronic degeneracy
+G0_SOURCE    = "declared_in_config"  # String: declared_in_config, or assumed_singlet
+N_IMAGINARY  = 0                     # Integer: imaginary modes of the Hessian
+LOWEST_FREQ  = 73.96268038053842     # Double, cm^-1: lowest harmonic frequency
+G_MINUS_EEL  = 35.76985456554162     # Double, kcal/mol: harmonic G - E_el at TEMPERATURE
+A_MINUS_EEL  = 35.17736961572077     # Double, kcal/mol: harmonic A - E_el at TEMPERATURE
+
+[[Basin]]
+INDEX        = 2                     # Integer
+ENERGY       = -5259.152703421838    # Double, eV: electronic energy after tightening
+RELATIVE     = 0.8360124018320543    # Double, kcal/mol: above the lowest basin
+SIGMA        = 1                     # Integer: symmetry number
+SIGMA_SOURCE = "declared_in_config"  # String: declared_in_config, or detected
+G0           = 1                     # Integer: electronic degeneracy
+G0_SOURCE    = "declared_in_config"  # String: declared_in_config, or assumed_singlet
+N_IMAGINARY  = 0                     # Integer: imaginary modes of the Hessian
+LOWEST_FREQ  = 73.99673930434822     # Double, cm^-1: lowest harmonic frequency
+G_MINUS_EEL  = 35.77009495831237     # Double, kcal/mol: harmonic G - E_el at TEMPERATURE
+A_MINUS_EEL  = 35.17761000849152     # Double, kcal/mol: harmonic A - E_el at TEMPERATURE
+
+[Criteria]
+N_PASSED   = 9     # Integer: acceptance criteria passed
+N_TOTAL    = 9     # Integer: acceptance criteria checked (each with its detail in branchA.out)
+ALL_PASSED = true  # Boolean: what the batch driver reads
+FAILED     = []    # ArrayOfIntegers: numbers of the criteria that failed

@@ -76,6 +76,8 @@ SCHEMA = {
         "N_CORES": ("Integer", None, "RMSD-distinct core structures among them"),
         "MIRROR_FLAG": ("Boolean", None, "a mirrored partner was found below the threshold"),
         "MAX_CORE_RMSD": ("Double", "A", "largest core RMSD inside the rotamer group"),
+        "MIRROR_PARTNER": ("Integer", None, "the basin that is this one's mirror image, or -1"),
+        "DUPLICATE_OF": ("Integer", None, "a basin with the same core (should not happen), or -1"),
     },
 }
 
@@ -249,10 +251,62 @@ def basin_conformers(molecule):
     return out
 
 
+def n_frames_from_crest(molecule):
+    """How many of branch A's input frames came from CREST's conformer file: `[Census]
+    N_FROM_CREST` of `branchA.toml`. The frames after them are pooled reference
+    geometries that have no CREST rotamer group. None when the record is absent."""
+    p = layout.records_dir(molecule) / "branchA.toml"
+    if not p.is_file():
+        return None
+    doc = prop.load(p)
+    return int((doc.get("Census") or {}).get("N_FROM_CREST"))
+
+
+def basin_mirror_pairs(molecule, excluded, rthr=RTHR_A, mirror_factor=MIRROR_FACTOR):
+    """Pairs of basins that are mirror images of each other on the core atoms (branch A's
+    deduplication superimposes by proper rotation only, so it keeps both enantiomers when
+    both were among its input frames). Returns ({basin: partner}, {basin: duplicate}).
+
+    This is the "count once" rule (plan_AB section 4.1) applied at the basin level: a
+    basin whose mirror image is itself a basin contributes with g' = 1, whatever CREST's
+    rotamer group said, because the partner already stands in the sum.
+    """
+    from ase.io import read
+    from ..store import basins as basins_mod
+    atoms = [(int(p.parent.name[len("basin"):]), read(str(p), format="extxyz"))
+             for p in basins_mod.basin_files(molecule)]
+    if not atoms:
+        return {}, {}
+    n = len(atoms[0][1])
+    core = [i for i in range(n) if i not in set(excluded)]
+    partner, duplicate = {}, {}
+    for k, (bi, ai) in enumerate(atoms):
+        for bj, aj in atoms[:k]:
+            ci = ai.get_positions()[core]
+            cj = aj.get_positions()[core]
+            r = kabsch_rmsd(ci, cj)
+            if r < rthr:
+                duplicate[bi] = bj
+                duplicate[bj] = bi
+                continue
+            m = cj.copy()
+            m[:, 0] *= -1.0
+            if kabsch_rmsd(ci, m) < mirror_factor * rthr:
+                partner[bi] = bj
+                partner[bj] = bi
+    return partner, duplicate
+
+
 def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
                     mirror_factor=MIRROR_FACTOR):
     """The `degeneracy` Calculation: g' per basin, written to the level folder.
 
+    Three sources of g', in this order of precedence:
+      mirror_is_basin  the basin's mirror image is itself a basin: g' = 1 for both
+      core_count       CREST's rotamer group of the basin's conformer (g' = n_cores)
+      unsampled        that group has one member: g' = 1, a floor not a finding
+      pooled_frame     the basin came from a pooled reference geometry, not from CREST:
+                       no rotamer group exists, g' = 1
     Returns the record (also what the Property file holds, plus the per-conformer detail
     the Report prints).
     """
@@ -262,17 +316,32 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
     pairs = basin_conformers(molecule)
     if not pairs:
         raise FileNotFoundError("no basin.extxyz under {}".format(molecule / "mace"))
+    n_crest = n_frames_from_crest(molecule)
+    if n_crest is None:
+        n_crest = len(confs)
+    excluded = confs[0]["excluded_atoms"] if confs else []
+    partner, duplicate = basin_mirror_pairs(molecule, excluded, rthr, mirror_factor)
     rows = []
     for b, c in pairs:
-        if c >= len(confs):
-            raise ValueError("basin {} points at conformer {} but cre_members lists {}"
-                             .format(b, c, len(confs)))
-        r = confs[c]
-        rows.append(dict(index=b, conformer=c, g_prime=r["g_prime"],
-                         g_prime_source=r["g_prime_source"], n_rotamers=r["n_rotamers"],
-                         n_cores=r["n_cores"], mirror_flag=r["mirror_flag"],
-                         max_core_rmsd=r["max_core_rmsd"]))
-    excluded = confs[0]["excluded_atoms"] if confs else []
+        if c < n_crest:
+            if c >= len(confs):
+                raise ValueError("basin {} points at CREST conformer {} but cre_members "
+                                 "lists {}".format(b, c, len(confs)))
+            r = confs[c]
+            row = dict(index=b, conformer=c, g_prime=r["g_prime"],
+                       g_prime_source=r["g_prime_source"], n_rotamers=r["n_rotamers"],
+                       n_cores=r["n_cores"], mirror_flag=r["mirror_flag"],
+                       max_core_rmsd=r["max_core_rmsd"])
+        else:
+            row = dict(index=b, conformer=c, g_prime=1, g_prime_source="pooled_frame",
+                       n_rotamers=0, n_cores=1, mirror_flag=False, max_core_rmsd=0.0)
+        if b in partner:
+            row.update(g_prime=1, g_prime_source="mirror_is_basin",
+                       mirror_flag=True, mirror_partner=partner[b])
+        else:
+            row["mirror_partner"] = -1
+        row["duplicate_of"] = duplicate.get(b, -1)
+        rows.append(row)
     lvl = layout.level_dir(molecule, level)
     info = {"MOLECULE_DIR": str(molecule), "LEVEL": str(level), "CREST_DIR": str(crest_dir),
             "N_CONFORMERS": len(confs),
@@ -284,7 +353,9 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
                          "G_PRIME": r["g_prime"], "G_PRIME_SOURCE": r["g_prime_source"],
                          "N_ROTAMERS": r["n_rotamers"], "N_CORES": r["n_cores"],
                          "MIRROR_FLAG": r["mirror_flag"],
-                         "MAX_CORE_RMSD": r["max_core_rmsd"]} for r in rows]}
+                         "MAX_CORE_RMSD": r["max_core_rmsd"],
+                         "MIRROR_PARTNER": r["mirror_partner"],
+                         "DUPLICATE_OF": r["duplicate_of"]} for r in rows]}
     missing = prop.write(lvl / "degeneracy.toml", blocks, SCHEMA, prop.NORMAL_TERMINATION,
                          PROGNAME)
     if missing:
@@ -301,8 +372,13 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
               [[i, c["n_rotamers"], c["n_cores"], c["g_prime"], c["mirror_flag"],
                 "%.4f" % c["max_core_rmsd"], c["g_prime_source"]] for i, c in enumerate(confs)])
     rep.section("per basin")
-    rep.table(["basin", "conformer", "g'", "source"],
-              [[r["index"], r["conformer"], r["g_prime"], r["g_prime_source"]] for r in rows])
+    rep.table(["basin", "conformer", "g'", "mirror partner", "source"],
+              [[r["index"], r["conformer"], r["g_prime"],
+                r["mirror_partner"] if r["mirror_partner"] >= 0 else "-",
+                r["g_prime_source"]] for r in rows])
+    if duplicate:
+        rep.warn("basins with the same core structure were kept apart by branch A: {}; "
+                 "they would be counted twice".format(sorted(duplicate.items())))
     rep.note("g' counts RMSD-distinct core structures inside one conformer's rotamer group "
              "with the rotor-group atoms excluded; a methyl rotation is never a state, a "
              "mirror image always is. Both mirror images must have been sampled by CREST; "

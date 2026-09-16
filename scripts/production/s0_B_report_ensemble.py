@@ -212,6 +212,42 @@ def criteria_verdict(criteria):
     return sum(1 for c in criteria if bool(c.get("passed"))), len(criteria)
 
 
+def _msrrho_comparison(molecule, rec_a, report, temperature):
+    """Lines comparing the msRRHO Calculation's per-basin T*S_vib and S_abs with the
+    trajectory route's T*S, or [] when no thermo_msrrho record exists at the potential's
+    level. Reads `levels/<level>/thermo_msrrho.toml` (ADR 0004)."""
+    from openqha.potentials import engine
+    from openqha.store import layout, property as prop
+    engine_name = (rec_a.get("Calculation_Info") or {}).get("ENGINE")
+    if not engine_name:
+        return []
+    try:
+        level = engine.level_name(engine_name)
+    except KeyError:
+        return []
+    path = layout.level_dir(molecule, level) / "thermo_msrrho.toml"
+    if not path.is_file():
+        return []
+    doc = prop.load(path)
+    res = doc.get("Result") or {}
+    rows = {int(r["INDEX"]): r for r in doc.get("Basin") or []}
+    lines = ["  msRRHO at {}: S_abs = {:.3f} cal/mol/K, G_total = {:.4f} kcal/mol  ({})"
+             .format(level, res.get("S_ABS", float("nan")), res.get("G_TOTAL", float("nan")),
+                     path)]
+    if "S_EXPERIMENT" in res:
+        lines.append("  experiment {:.2f} cal/mol/K [{}]: S_abs - experiment = {:+.3f}".format(
+            res["S_EXPERIMENT"], res.get("S_EXPERIMENT_SOURCE"), res.get("S_ABS_MINUS_EXPERIMENT")))
+    for atoms_set, rec in (report.get("results") or {}).items():
+        pb = rec.get("per_basin_detail") or {}
+        for b, d in sorted(pb.items()):
+            r = rows.get(int(b))
+            ts_h = (r.get("S_VIB") or 0.0) * temperature / 1000.0 if r and not r.get("EXCLUDED") else None
+            lines.append("  basin {} ({} atoms): T*S trajectory {} kcal/mol   T*S_vib msRRHO {}".format(
+                b, atoms_set, "{:.4f}".format(d["TS_kcal"]) if d else "-",
+                "{:.4f}".format(ts_h) if ts_h is not None else "-"))
+    return lines
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -325,6 +361,16 @@ def main():
                      [[b, "{:.4f}".format(d["TS_kcal"]) if d else "-", (d or {}).get("n_frames", "-"),
                        (d or {}).get("source", "-"), (d or {}).get("distinct_crossings", "-"),
                        (d or {}).get("symmetry_crossings", "-")] for b, d in sorted(pb.items())])
+    # The Hessian route beside the trajectory route (ticket 24): when the thermo_msrrho
+    # Calculation has run for this molecule at the potential's level, its per-basin
+    # msRRHO T*S_vib and its S_abs are printed next to the trajectory T*S -- one line of
+    # comparison, never merged into F_conf.
+    msrrho_line = _msrrho_comparison(basin_reader.molecule_for(args.species, basin_tag),
+                                     rec_a, report, temperature)
+    if msrrho_line:
+        rr.section("msRRHO (Hessian route) beside the trajectory route")
+        for line in msrrho_line:
+            rr.text(line)
     rr.json_dump(report, title="complete record (expanded)")
     out = rr.write(stem.with_suffix(".out"), step="ensemble")
     unknown = chain_records.write_ensemble(stem, report)

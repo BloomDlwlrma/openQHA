@@ -168,6 +168,30 @@ def main():
         except FileNotFoundError as exc:
             check("a missing cre_members raises naming the file", "cre_members" in str(exc))
 
+    # ------------------------------------------------------------ the real molecule dir
+    # tests/data/propanal_molecule is the branch A product of tag `propanal` (2026-09-15):
+    # CREST found 2 conformers (cis, gauche); the pooled QM9 reference geometry turned
+    # out to be the OTHER enantiomer of gauche, so branch A kept the pair as basins 1 and
+    # 2 (mirrored core RMSD 0.0000 A, dE 2e-10 eV). The count-once rule: both g' = 1.
+    src = ROOT / "tests" / "data" / "propanal_molecule"
+    with tempfile.TemporaryDirectory(prefix="degeneracy_real_") as tmp:
+        import shutil
+        mol = Path(tmp) / "dsgdb9nsd_000035"
+        shutil.copytree(src, mol)
+        out = degeneracy.run_calculation(mol, level="mace-off23_medium")
+        rows = out["basins"]
+        check("real propanal: basins 1 and 2 are each other's mirror partner",
+              rows[1]["mirror_partner"] == 2 and rows[2]["mirror_partner"] == 1, rows)
+        check("real propanal: g' = (1, 1, 1) -- the pair counts once",
+              [r["g_prime"] for r in rows] == [1, 1, 1])
+        check("real propanal: sources are core_count / mirror_is_basin x2",
+              [r["g_prime_source"] for r in rows] == ["core_count", "mirror_is_basin", "mirror_is_basin"])
+        check("real propanal: the CREST gauche group itself still reports 2 cores",
+              out["conformers"][1]["n_cores"] == 2 and out["conformers"][1]["mirror_flag"] is True)
+        doc = prop.load(layout.level_dir(mol, "mace-off23_medium") / "degeneracy.toml")
+        check("MIRROR_PARTNER is in the Property file",
+              [r["MIRROR_PARTNER"] for r in doc["Basin"]] == [-1, 2, 1])
+
     if FAIL:
         print("FAIL: " + ", ".join(FAIL))
         sys.exit(1)
