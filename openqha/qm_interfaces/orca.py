@@ -132,6 +132,80 @@ def single_point(symbols, positions, method, basis, workdir=None, nprocs=8,
     return rec
 
 
+#: The reference level (ADR 0004): the level MACE-OFF23 was trained to. `Freq` asks
+#: for the analytic Hessian; ORCA 6.0.1 accepts it for this meta-GGA range-separated
+#: hybrid (propanal basin 0, 8 cores: 226 s, "SCF Response" module, 0 imaginary modes,
+#: measured 2026-09-16). `NumFreq` is the declared fallback if a build refuses.
+REFERENCE_KEYWORDS = "wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF"
+
+
+def final_energy_from_out(out_text):
+    """The last `FINAL SINGLE POINT ENERGY` of an ORCA output, Eh (dispersion included).
+    The `.hess` file's `$act_energy` is a placeholder (0.0 in ORCA 6.0.1) and is not used."""
+    vals = re.findall(r"FINAL SINGLE POINT ENERGY\s+([-+]?\d+\.\d+)", out_text)
+    if not vals:
+        raise ValueError("no FINAL SINGLE POINT ENERGY in the ORCA output")
+    return float(vals[-1])
+
+
+def hessian_route(out_text):
+    """'analytic' when ORCA ran the analytic Hessian (the SCF Response module), 'numerical'
+    when it fell back to or was asked for NumFreq, else 'unknown'."""
+    if "NUMERICAL FREQUENCIES" in out_text or "Numerical frequency" in out_text:
+        return "numerical"
+    if "SCF Response" in out_text or "ANALYTICAL FREQUENCIES" in out_text:
+        return "analytic"
+    return "unknown"
+
+
+def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORDS,
+                         nprocs=8, maxcore=3000, charge=0, mult=1, stem="job",
+                         timeout_s=None):
+    """Geometry optimisation plus Hessian at one level, in `workdir` (an engine folder).
+
+    Skips ORCA when `workdir/<stem>.hess` exists and the `.out` terminated normally, so a
+    Batch can be resumed. Returns the relaxed geometry (A), energy (Eh, the last FINAL
+    SINGLE POINT ENERGY of the `.out`), the parsed Hessian record (`parse_hess`), whether the
+    Hessian was analytic or numerical, the wall time, and ORCA's version.
+    """
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    inp = workdir / (stem + ".inp")
+    out = workdir / (stem + ".out")
+    hess = workdir / (stem + ".hess")
+    done = hess.is_file() and out.is_file() and \
+        "****ORCA TERMINATED NORMALLY****" in out.read_text(encoding="utf-8", errors="replace")
+    seconds = None
+    if not done:
+        lines = ["! {}".format(keywords), "%pal nprocs {} end".format(int(nprocs)),
+                 "%maxcore {}".format(int(maxcore)), "* xyz {} {}".format(int(charge), int(mult))]
+        for s, r in zip(symbols, positions):
+            lines.append("{:2s} {:18.10f} {:18.10f} {:18.10f}".format(s, *r))
+        lines.append("*")
+        inp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        t0 = time.time()
+        with open(out, "w") as fh:
+            rc = subprocess.call([orca_binary(), str(inp)], stdout=fh, stderr=subprocess.STDOUT,
+                                 cwd=str(workdir), timeout=timeout_s)
+        seconds = time.time() - t0
+        text = out.read_text(encoding="utf-8", errors="replace")
+        if "****ORCA TERMINATED NORMALLY****" not in text:
+            raise RuntimeError("ORCA did not finish normally in {} (rc {}). Tail:\n{}".format(
+                workdir, rc, "\n".join(text.split("\n")[-25:])))
+    text = out.read_text(encoding="utf-8", errors="replace")
+    parsed = parse_hess(hess)
+    if parsed["symbols"] != list(symbols):
+        raise ValueError("ORCA reordered the atoms in {}: {} -> {}".format(
+            workdir, list(symbols), parsed["symbols"]))
+    m = re.search(r"Program Version\s+(\S+)", text)
+    return dict(keywords=keywords, workdir=str(workdir), stem=stem,
+                positions_A=(np.asarray(parsed["positions_bohr"]) / BOHR_PER_ANGSTROM).tolist(),
+                energy_eh=final_energy_from_out(text), hess=parsed,
+                hessian_route=hessian_route(text), seconds=seconds,
+                orca_version=m.group(1) if m else "unknown", nprocs=int(nprocs),
+                n_imaginary=int((np.asarray(parsed["frequencies_cm_inv"]) < -1.0).sum()))
+
+
 def composite(symbols, positions, terms, nprocs=8, maxcore=3500, keep=False,
               timeout_s=None, progress=None, charge=0, mult=1):
     """Convenience entry point for a single recipe -- internally just "build the term pool

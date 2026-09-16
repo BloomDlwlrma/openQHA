@@ -326,24 +326,68 @@ python scripts/production/s0_E_branchA_parsl.py --edges --resource deimos --acco
 
 One directory per molecule under a tag, sharded (range 16 000, chunk 1 000) because a
 campaign is 133 885 molecules, with one folder per engine inside it and the engines' own
-files in those folders (since 2026-09-14; `docs/output_inventory.md` section 6):
+files in those folders (since 2026-09-14; `docs/output_inventory.md` sections 6 and 8):
 
 ```
 <root>/<tag>/1_16000/1_1000/dsgdb9nsd_000018/
-  crest/            CREST's working directory, verbatim
-  mace/basinNN/     basin.extxyz  hessian.npy        (mace/confNN/: every relaxation)
+  crest/               CREST's working directory, verbatim
+  mace/basinNN/        basin.extxyz  hessian.npy        (mace/confNN/: every relaxation)
   md_openmm/basinNN/   start.pdb system.xml integrator.xml traj.dcd state.csv state.xml state.chk
-  _records/         what this repository wrote about the run (basins.json, collect tables, ...)
+  _records/            this repository's Records, one per Calculation, in the form ORCA and
+                       CREST use: a .out Report for a person (last line: terminated normally)
+                       and a .toml Property file for a program ([Calculation_Status] first)
+    branchA.out  branchA.toml
+    md_openmm/basinNN/md.out  md.toml  driver.log
+    md_openmm/collect.out  collect.toml  collect.*.dat    ensemble.out  ensemble.toml
 ```
 
-`<root>` is derived from the cluster's partition on Tianhe (`hpc/env/root.sh`) and is
-`~/runs/openQHA` elsewhere; `S0_RUNS_ROOT` overrides it.
+Another setting of the same basin keeps the same folders and puts the setting in the file
+stem (`traj_s2.dcd`, `md_s2.toml`); a Batch (a driver over many molecules) leaves no record,
+its Slurm log is the report. `<root>` is derived from the cluster's partition on Tianhe
+(`hpc/env/root.sh`) and is `~/runs/openQHA` elsewhere; `S0_RUNS_ROOT` overrides it. Sample
+Records: `examples/02b_qha_openmm_propanal/sample_records/`.
+
+### Free energy from the basins, and the reference level
+
+The msRRHO free energy (Pracht & Grimme, Chem. Sci. 2021, 12, 6551, assembled inside
+openQHA with CREST's conventions: tau = 25 cm^-1, rotor moment capped by the mean principal
+moment, entropy and Cp interpolated, imaginary modes refused) is one Calculation per level,
+written to the molecule's level folder (ADR 0004):
+
+```bash
+python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step mace
+python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step reference --nprocs 8
+python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step compare
+```
+
+```
+<molecule>/levels/
+  mace-off23_medium/        degeneracy.{out,toml}  thermo_msrrho.{out,toml}
+  wb97m-d3bj_def2-tzvppd/   thermo_msrrho.{out,toml}  merge_map.dat
+  gfn2/                     thermo_msrrho.{out,toml}   (the CREST --entropy seam, ticket 25)
+  level_compare.{out,toml}  every level beside the reference and the experiment
+<molecule>/orca/wb97m-d3bj_def2-tzvppd/basinNN/   job.{inp,out,hess,xyz}   (engine files)
+```
+
+**Reference level.** `wb97m-d3bj_def2-tzvppd` is the level MACE-OFF23 was trained to
+(SPICE), so "model error" is the model and not a level difference. ORCA input line:
+`! wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF`. **The analytic Hessian works** for this
+meta-GGA range-separated hybrid in ORCA 6.0.1 (the `SCF Response` module runs; propanal
+basin 0, 10 atoms, 8 cores: 226 s wall, 5 optimisation cycles, 0 imaginary modes,
+measured 2026-09-16). `NumFreq` is the declared fallback for a build that refuses, and the
+route actually taken is written into `merge_map.dat` (`hessian_route`) for every basin.
+Production reference calculations run on deimos with ORCA 6.1.1; a local run is a dry run
+and says so through the ORCA version in the Report. On propanal (three MACE basins) the
+MACE level gives S_abs = 72.355 cal/mol/K against the experimental 72.75 (LBH set, see
+`docs/cite/cite_openQHA.bib`, keys `li2016lbh`, `nist_webbook`, `frenkel1994`).
 
 ```python
-from openqha import basin_store
-basin_store.paths_for("dsgdb9nsd_000018", tag="prod")   # where it would be
-basin_store.read("dsgdb9nsd_000018", tag="prod")        # the record, or None
-basin_store.census(tag="prod")                          # how many per chunk
+from openqha.store import basins, branch_a_property
+basins.molecule_for("dsgdb9nsd_000018", tag="prod")     # the molecule directory
+basins.read_basins("dsgdb9nsd_000018", tag="prod")      # the basins as ase.Atoms
+rec = basins.read_record("dsgdb9nsd_000018", tag="prod")  # branchA.toml as blocks, or None
+branch_a_property.relative_kcal(rec)                    # RELATIVE of every [[Basin]]
+basins.census(tag="prod")                               # how many per chunk
 ```
 
 ---

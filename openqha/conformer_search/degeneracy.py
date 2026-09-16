@@ -44,6 +44,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+from ase.data import atomic_numbers
 
 from ..store import layout, property as prop, report
 from . import crest
@@ -71,7 +72,7 @@ SCHEMA = {
         "INDEX": ("Integer", None, "basin index"),
         "CONFORMER": ("Integer", None, "the CREST conformer the basin came from (0-based)"),
         "G_PRIME": ("Integer", None, "enantiomer degeneracy g'"),
-        "G_PRIME_SOURCE": ("String", None, "core_count, or unsampled (one rotamer)"),
+        "G_PRIME_SOURCE": ("String", None, "mirror_pair, class_inherited, achiral, no_mirror_sampled, pooled_frame or mirror_is_basin"),
         "N_ROTAMERS": ("Integer", None, "rotamers of that conformer"),
         "N_CORES": ("Integer", None, "RMSD-distinct core structures among them"),
         "MIRROR_FLAG": ("Boolean", None, "a mirrored partner was found below the threshold"),
@@ -145,6 +146,44 @@ def rotor_group_atoms(classes, adjacency):
     return sorted(excluded)
 
 
+def symmetry_class(numbers, positions):
+    """CREST propagates the enantiomer flag inside a point-group class; here the class
+    is `achiral` (an improper operation exists), or `chiral_s<sigma>` (none exists, sigma
+    proper operations). C1 -> chiral_s1, C2 -> chiral_s2, Cs / Ci / C2v / C2h -> achiral."""
+    from . import symmetry
+    ops = symmetry.symmetry_operations(np.asarray(numbers, dtype=int),
+                                       np.asarray(positions, dtype=float))
+    if ops["n_improper"] > 0:
+        return "achiral"
+    return "chiral_s{}".format(int(ops["sigma"]))
+
+
+def rotor_factor(classes, adjacency):
+    """CREST's g_rot: the product of the sizes of the freely rotatable groups (a methyl
+    contributes 3). A group is freely rotatable when its common neighbour has at most one
+    other neighbour (ESI rule); a CH2 in a chain is excluded from the RMSD but is not a
+    rotor. Constant for every conformer of a molecule; cancels in every population."""
+    adj = np.asarray(adjacency)
+    n = len(classes)
+    by_class = {}
+    for i, c in enumerate(classes):
+        by_class.setdefault(c, []).append(i)
+    factor = 1
+    for members in by_class.values():
+        if len(members) < 2:
+            continue
+        a, b = members[0], members[1]
+        common = [c for c in range(n) if adj[a, c] and adj[b, c]]
+        if len(common) != 1:
+            continue
+        centre = common[0]
+        if all(adj[centre, m] for m in members):
+            others = [c for c in range(n) if adj[centre, c] and c not in members]
+            if len(others) <= 1:
+                factor *= len(members)
+    return int(factor)
+
+
 # ====================================================================== CREST files
 def read_cre_members(path):
     """`cre_members`: first line the conformer count, then one line per conformer
@@ -200,16 +239,19 @@ def conformer_degeneracies(crest_dir, rthr=RTHR_A, mirror_factor=MIRROR_FACTOR):
         core_ok = False
     else:
         core_ok = True
+    numbers = [atomic_numbers[s] for s in symbols]
+    g_rot = rotor_factor(classes, adj)
     out = []
     for n_rot, lo, hi in members:
         idx = list(range(lo - 1, hi))
         if len(idx) != n_rot or hi > len(frames):
             raise ValueError("cre_members row ({}, {}, {}) does not match {} structures in "
                              "crest_rotamers.xyz".format(n_rot, lo, hi, len(frames)))
-        rec = dict(n_rotamers=n_rot, excluded_atoms=excluded, core_atoms=core)
+        rec = dict(n_rotamers=n_rot, excluded_atoms=excluded, core_atoms=core,
+                   symmetry_class=symmetry_class(numbers, xyz[idx[0]]), g_rot=g_rot)
         if n_rot < 2 or not core_ok:
-            rec.update(n_cores=1, g_prime=1, mirror_flag=False, max_core_rmsd=0.0,
-                       g_prime_source="unsampled" if n_rot < 2 else "core_too_small")
+            rec.update(n_cores=1, mirror_flag=False, max_core_rmsd=0.0,
+                       cores_source="unsampled" if n_rot < 2 else "core_too_small")
             out.append(rec)
             continue
         m = len(idx)
@@ -226,9 +268,24 @@ def conformer_degeneracies(crest_dir, rthr=RTHR_A, mirror_factor=MIRROR_FACTOR):
                     if kabsch_rmsd(ci, mirrored) < mirror_factor * rthr:
                         mirror = True
         n_cores = unique_cores(rmat, rthr)
-        rec.update(n_cores=n_cores, g_prime=n_cores, mirror_flag=bool(mirror),
-                   max_core_rmsd=float(rmat.max()), g_prime_source="core_count")
+        rec.update(n_cores=n_cores, mirror_flag=bool(mirror),
+                   max_core_rmsd=float(rmat.max()), cores_source="core_count")
         out.append(rec)
+    # CREST's g' (`enantiofac`, entropic.f90 lines 1044-1061): 2 for every conformer whose
+    # symmetry class contains a conformer with a mirror match, 1 otherwise. The class is
+    # propagated on purpose: a C1 conformer whose mirror image was not sampled still has
+    # one. The core count is kept as the diagnostic it is in CREST (`corefac`, the factor
+    # in cre_degen2 = g_rot * n_cores / g_sym).
+    flagged = {r["symmetry_class"] for r in out if r["mirror_flag"]}
+    for r in out:
+        if r["mirror_flag"]:
+            r.update(g_prime=2, g_prime_source="mirror_pair")
+        elif r["symmetry_class"] in flagged:
+            r.update(g_prime=2, g_prime_source="class_inherited")
+        else:
+            r.update(g_prime=1, g_prime_source=("achiral" if r["symmetry_class"] == "achiral"
+                                                 else "no_mirror_sampled"))
+        r["cre_degen2_equivalent"] = int(g_rot * r["n_cores"])
     return out
 
 
@@ -331,10 +388,11 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
             row = dict(index=b, conformer=c, g_prime=r["g_prime"],
                        g_prime_source=r["g_prime_source"], n_rotamers=r["n_rotamers"],
                        n_cores=r["n_cores"], mirror_flag=r["mirror_flag"],
-                       max_core_rmsd=r["max_core_rmsd"])
+                       max_core_rmsd=r["max_core_rmsd"], symmetry_class=r["symmetry_class"])
         else:
             row = dict(index=b, conformer=c, g_prime=1, g_prime_source="pooled_frame",
-                       n_rotamers=0, n_cores=1, mirror_flag=False, max_core_rmsd=0.0)
+                       n_rotamers=0, n_cores=1, mirror_flag=False, max_core_rmsd=0.0,
+                       symmetry_class="")
         if b in partner:
             row.update(g_prime=1, g_prime_source="mirror_is_basin",
                        mirror_flag=True, mirror_partner=partner[b])
@@ -368,9 +426,10 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
         rep.kv(k, v)
     rep.kv("excluded atoms (0-based)", " ".join(str(i) for i in excluded) or "none")
     rep.section("per conformer")
-    rep.table(["conformer", "rotamers", "cores", "g'", "mirror", "max core RMSD", "source"],
-              [[i, c["n_rotamers"], c["n_cores"], c["g_prime"], c["mirror_flag"],
-                "%.4f" % c["max_core_rmsd"], c["g_prime_source"]] for i, c in enumerate(confs)])
+    rep.kv("rotor factor g_rot (cancels in every population)", confs[0]["g_rot"] if confs else 1)
+    rep.table(["conformer", "rotamers", "cores", "class", "mirror", "g'", "source", "cre_degen2 eq."],
+              [[i, c["n_rotamers"], c["n_cores"], c["symmetry_class"], c["mirror_flag"], c["g_prime"],
+                c["g_prime_source"], c["cre_degen2_equivalent"]] for i, c in enumerate(confs)])
     rep.section("per basin")
     rep.table(["basin", "conformer", "g'", "mirror partner", "source"],
               [[r["index"], r["conformer"], r["g_prime"],
@@ -379,10 +438,11 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
     if duplicate:
         rep.warn("basins with the same core structure were kept apart by branch A: {}; "
                  "they would be counted twice".format(sorted(duplicate.items())))
-    rep.note("g' counts RMSD-distinct core structures inside one conformer's rotamer group "
-             "with the rotor-group atoms excluded; a methyl rotation is never a state, a "
-             "mirror image always is. Both mirror images must have been sampled by CREST; "
-             "'unsampled' means the group has one member and g' = 1 is a floor, not a finding.")
+    rep.note("g' follows CREST's enantiofac: 2 for every conformer whose symmetry class "
+             "holds a conformer with a sampled mirror partner (a C1 conformer has a mirror "
+             "image whether or not it was sampled), 1 otherwise. The core count is the "
+             "diagnostic CREST writes into cre_degen2 (= g_rot * cores). A basin whose mirror "
+             "image is itself a basin is counted once: g' = 1 for both.")
     rep.write(lvl / "degeneracy.out", step=STEP)
     return dict(level=str(level), crest_dir=str(crest_dir), conformers=confs, basins=rows,
                 excluded_atoms=excluded, record=lvl / "degeneracy.toml")

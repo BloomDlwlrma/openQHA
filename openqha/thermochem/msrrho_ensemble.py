@@ -69,7 +69,7 @@ SCHEMA = {
         "SIGMA": ("Integer", None, "external symmetry number of the basin"),
         "G0": ("Integer", None, "electronic degeneracy"),
         "G_PRIME": ("Integer", None, "enantiomer degeneracy"),
-        "G_PRIME_SOURCE": ("String", None, "core_count, mirror_is_basin, pooled_frame or unsampled"),
+        "G_PRIME_SOURCE": ("String", None, "mirror_pair, class_inherited, achiral, no_mirror_sampled, pooled_frame or mirror_is_basin"),
         "E_EL": ("Double", "kcal/mol", "electronic energy"),
         "ZPE": ("Double", "kcal/mol", "zero-point energy (harmonic)"),
         "H_THERMAL": ("Double", "kcal/mol", "vibrational H(T)-H(0) (harmonic)"),
@@ -291,6 +291,17 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
             "ITHR_POLICY": imaginary_policy, "FSCAL": float(fscal), "TEMPERATURE": T,
             "PRESSURE": float(thermo.P_STD), "REFERENCE_BASIN": ens["reference_basin"],
             "PTOT": float(ptot), "EXTRAPOLATION": "none"}
+    write_records(lvl, info, basins, ens, spread, exp)
+    out = dict(ens)
+    out.update(basins=basins, info=info, preset_spread=spread, experimental=exp,
+               record=lvl / "thermo_msrrho.toml")
+    return out
+
+
+def write_records(lvl, info, basins, ens, spread, exp, extra_blocks=None, schema=None):
+    """Write thermo_msrrho.toml and thermo_msrrho.out into the level folder lvl from
+    the pieces run_calculation (or a reference-level Calculation) assembled."""
+    lvl = Path(lvl)
     rows = []
     for b in basins:
         row = {"INDEX": b["index"], "SIGMA": b["sigma"], "G0": b["g0"],
@@ -317,15 +328,14 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
                            "DS_BAR": ens["dS_bar_cal_per_K"], "H_CONF": ens["H_conf_kcal"],
                            "CP_CONF": ens["Cp_conf_cal_per_K"]},
               "Result": result}
-    missing = prop.write(lvl / "thermo_msrrho.toml", blocks, SCHEMA, prop.NORMAL_TERMINATION,
-                         PROGNAME)
+    if extra_blocks:
+        blocks.update(extra_blocks)
+    missing = prop.write(lvl / "thermo_msrrho.toml", blocks, schema or SCHEMA,
+                         prop.NORMAL_TERMINATION, PROGNAME)
     if missing:
         raise RuntimeError("thermo_msrrho.toml keys outside the schema: {}".format(missing))
     _write_report(lvl / "thermo_msrrho.out", info, basins, ens, spread, exp)
-    out = dict(ens)
-    out.update(basins=basins, info=info, preset_spread=spread, experimental=exp,
-               record=lvl / "thermo_msrrho.toml")
-    return out
+    return lvl / "thermo_msrrho.toml"
 
 
 def _write_report(path, info, basins, ens, spread, exp):

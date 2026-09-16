@@ -7,12 +7,13 @@ real `crest_rotamers.xyz`, `cre_members` and `crest_conformers.xyz` of propanal
 (dsgdb9nsd_000035, branch A multibasin run, GFN2), whose gauche conformer's six rotamers
 were shown on 2026-09-15 to be 3 methyl rotamers x 2 mirror images (heavy-atom RMSD 0.36 A,
 0.000-0.008 A after x -> -x). CREST's own numbers for that file: conformer 1 (cis)
-3 rotamers, conformer 2 (gauche) 6, conformer 3 one; g' = (1, 2, 1).
+3 rotamers, conformer 2 (gauche) 6, conformer 3 one. CREST's g' (enantiofac) is (1, 2, 2):
+the third conformer is C1 and inherits the flag of its class; its core count is 1.
 
 The hand-built cases probe the three branches of the algorithm on their own: an achiral
 group whose members differ only by a methyl rotation (g' = 1 because the rotor atoms are
 excluded from the RMSD), a chiral pair (g' = 2 with the mirror flag), and a single-member
-group (`unsampled`, g' = 1).
+group (`unsampled` cores, g' inherited from its chiral class).
 """
 import math
 import os
@@ -90,12 +91,18 @@ def main():
     # ------------------------------------------------------------ propanal, the real file
     res = degeneracy.conformer_degeneracies(DATA)
     g = [r["g_prime"] for r in res]
-    check("propanal g' = (1, 2, 1) from CREST's own rotamer file", g == [1, 2, 1], g)
+    check("propanal g' = (1, 2, 2) from CREST's own rotamer file (CREST's enantiofac: the"
+          " third conformer is C1 and inherits the flag)", g == [1, 2, 2], g)
     check("propanal rotamer counts (3, 6, 1) read from cre_members",
           [r["n_rotamers"] for r in res] == [3, 6, 1])
     check("gauche conformer carries the mirror flag; cis does not",
           res[1]["mirror_flag"] is True and res[0]["mirror_flag"] is False)
-    check("third conformer is 'unsampled' (one rotamer)", res[2]["g_prime_source"] == "unsampled")
+    check("third conformer: one rotamer ('unsampled' cores), g' by class inheritance",
+          res[2]["cores_source"] == "unsampled" and res[2]["g_prime_source"] == "class_inherited")
+    check("symmetry classes: cis achiral, gauche and third chiral_s1",
+          [r["symmetry_class"] for r in res] == ["achiral", "chiral_s1", "chiral_s1"])
+    check("cre_degen2 equivalents (g_rot * cores) = (3, 6, 3) as CREST writes them",
+          [r["cre_degen2_equivalent"] for r in res] == [3, 6, 3] and res[0]["g_rot"] == 3)
     check("gauche core count is 2 and cis core count is 1",
           res[1]["n_cores"] == 2 and res[0]["n_cores"] == 1)
     check("propanal excludes the three methyl hydrogens from the RMSD",
@@ -129,8 +136,9 @@ def main():
               res[0]["g_prime"] == 1 and res[0]["n_cores"] == 1, res[0])
         check("a chiral pair gives g' = 2 with the mirror flag",
               res[1]["g_prime"] == 2 and res[1]["mirror_flag"] is True, res[1])
-        check("a single-member group is 'unsampled', g' = 1",
-              res[2]["g_prime"] == 1 and res[2]["g_prime_source"] == "unsampled")
+        check("a single-member group has 'unsampled' cores and inherits g' from its class",
+              res[2]["cores_source"] == "unsampled" and res[2]["g_prime"] == 2
+              and res[2]["g_prime_source"] == "class_inherited")
 
         # ------------------------------------------------------------ the Calculation
         mol = d / "mol"
@@ -156,9 +164,9 @@ def main():
         check("the Report ends with the terminal line",
               report.terminated_normally(lvl / "degeneracy.out", "degeneracy"))
         rows = doc["Basin"]
-        check("one [[Basin]] row per basin with G_PRIME (1, 2, 1) mapped by conformer",
-              [r["G_PRIME"] for r in rows] == [1, 2, 1] and [r["CONFORMER"] for r in rows] == [0, 1, 2])
-        check("out['basins'] agrees with the file", [b["g_prime"] for b in out["basins"]] == [1, 2, 1])
+        check("one [[Basin]] row per basin with G_PRIME (1, 2, 2) mapped by conformer",
+              [r["G_PRIME"] for r in rows] == [1, 2, 2] and [r["CONFORMER"] for r in rows] == [0, 1, 2])
+        check("out['basins'] agrees with the file", [b["g_prime"] for b in out["basins"]] == [1, 2, 2])
 
         # ------------------------------------------------------------ missing input
         os.remove(mol / "crest" / "cre_members")
@@ -184,8 +192,8 @@ def main():
               rows[1]["mirror_partner"] == 2 and rows[2]["mirror_partner"] == 1, rows)
         check("real propanal: g' = (1, 1, 1) -- the pair counts once",
               [r["g_prime"] for r in rows] == [1, 1, 1])
-        check("real propanal: sources are core_count / mirror_is_basin x2",
-              [r["g_prime_source"] for r in rows] == ["core_count", "mirror_is_basin", "mirror_is_basin"])
+        check("real propanal: sources are achiral / mirror_is_basin x2",
+              [r["g_prime_source"] for r in rows] == ["achiral", "mirror_is_basin", "mirror_is_basin"])
         check("real propanal: the CREST gauche group itself still reports 2 cores",
               out["conformers"][1]["n_cores"] == 2 and out["conformers"][1]["mirror_flag"] is True)
         doc = prop.load(layout.level_dir(mol, "mace-off23_medium") / "degeneracy.toml")

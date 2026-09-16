@@ -221,6 +221,44 @@ def optimise_and_hessian(symbols, positions, gfn=2, charge=0, uhf=0, workdir=Non
     return rec
 
 
+def hessian_at(symbols, positions, gfn=2, charge=0, uhf=0, workdir=None, keep=False,
+               accuracy=0.2, nprocs=1):
+    """`xtb --hess`: the Hessian AT THIS GEOMETRY, no re-optimisation.
+
+    The counterpart of `optimise_and_hessian` for the case where the geometry is the
+    level's own minimum already (CREST's optimised conformers at GFN2, ticket 25) or
+    where the point must not move (a label at a fixed geometry). An imaginary mode is
+    reported, not repaired.
+    """
+    tmp = workdir or tempfile.mkdtemp(prefix="openqha_xtb_hess_")
+    tmp = Path(tmp)
+    tmp.mkdir(parents=True, exist_ok=True)
+    _write_xyz(tmp / "in.xyz", symbols, positions)
+    env = dict(os.environ)
+    env["OMP_NUM_THREADS"] = str(int(nprocs))
+    env["MKL_NUM_THREADS"] = str(int(nprocs))
+    cmd = [xtb_binary(), "in.xyz", "--hess", "--gfn", str(int(gfn)),
+           "--chrg", str(int(charge)), "--uhf", str(int(uhf)), "--acc", str(float(accuracy))]
+    t0 = time.time()
+    proc = subprocess.run(cmd, cwd=str(tmp), capture_output=True, text=True, env=env)
+    wall = time.time() - t0
+    (tmp / "xtb.log").write_text(proc.stdout + proc.stderr, encoding="utf-8")
+    if proc.returncode != 0:
+        raise RuntimeError("xtb --hess exited {} in {}. Last lines:\n{}".format(
+            proc.returncode, tmp, "\n".join((proc.stdout + proc.stderr).splitlines()[-25:])))
+    h_eh_bohr2 = parse_turbomole_hessian(tmp / "hessian", len(symbols))
+    rec = dict(method="GFN{}-xTB".format(int(gfn)), binary=xtb_binary(), version=version(),
+               command=" ".join(cmd), workdir=str(tmp), wall_seconds=float(wall),
+               symbols=list(symbols), positions_A=np.asarray(positions, float).tolist(),
+               hessian_eV_A2=orca.hessian_to_ev_per_angstrom2(h_eh_bohr2),
+               xtb_frequencies_cm_inv=parse_vibspectrum(tmp / "vibspectrum"),
+               accuracy=float(accuracy), charge=int(charge), uhf=int(uhf))
+    if not keep and workdir is None:
+        shutil.rmtree(tmp, ignore_errors=True)
+        rec["workdir"] = None
+    return rec
+
+
 #: xtb writes the rigid entries of `vibspectrum` as exactly `-0.00` / `0.00`, so they
 #: are identified by being at zero rather than by being the smallest. That distinction
 #: matters: a molecule with an imaginary mode has an entry BELOW the rigid ones, and

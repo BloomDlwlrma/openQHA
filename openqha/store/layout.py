@@ -212,6 +212,22 @@ LEVELS = "levels"
 _LEVEL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 
+def crest_entropy_dir(molecule, run):
+    """`crest_entropy/runNN/`: one CREST `--entropy` run (ticket 25); a separate engine
+    folder because CREST's entropy mode writes its own tree beside the branch A run."""
+    return Path(molecule) / "crest_entropy" / "run{:02d}".format(int(run))
+
+
+def xtb_entropy_dir(molecule, run, conformer):
+    """`xtb/entropy_runNN/confKK/`: the xtb Hessian of one CREST entropy-run conformer."""
+    return Path(molecule) / "xtb" / "entropy_run{:02d}".format(int(run)) / "conf{:02d}".format(int(conformer))
+
+
+def orca_level_dir(molecule, level, basin):
+    """`orca/<level>/basinNN/`: ORCA's engine files for one basin at one level (ticket 26)."""
+    return Path(molecule) / "orca" / str(level) / "basin{:02d}".format(int(basin))
+
+
 def level_dir(molecule, level):
     """`<molecule>/levels/<level>/`. The level name must already be in the CONTEXT.md
     spelling (lower-case, `wb97m-d3bj_def2-tzvppd`, `gfn2`, `mace-off23_medium`); an
