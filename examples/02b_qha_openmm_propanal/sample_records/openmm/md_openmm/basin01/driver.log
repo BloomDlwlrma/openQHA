@@ -1,0 +1,68 @@
+============================================================================================
+Branch B production -- OpenMM route (MACE + Nose-Hoover chain)
+============================================================================================
+species     dsgdb9nsd_000035   10 atoms
+engine      MACE-OFF23_medium
+cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled.
+force check dE = 0.000e+00 eV   max|dF| = 2.135e-15 eV/A   traced vs eager 2.946e-16   agrees = True
+thermostat  Nose-Hoover chain, collision 50.0/ps (tdamp 20.0 fs), chain 5, MTS 5, YS 5
+protocol    dt = 1.0 fs, frame every 1000.0 fs, T = 298.15 K
+length      1.0 ps equilibration + 5.0 ps production x 1 seeds
+platform    CPU
+geometry    branch A basins: /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/mace
+molecule    /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035
+engine      md_openmm/basinNN/   (OpenMM's own files; records in _records/md_openmm/default/)
+
+basin  1    relaxed, dropped 0.0000 kcal/mol
+  basin  1 seed  0      5 frames  complete=True     532.9 s  T =  297.85 K  COM drift    14.31 A
+
+engine files under /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm  (setting default)
+records under      /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/_records/md_openmm
+analyse with: python scripts/production/s0_B_qha_analyse.py --species dsgdb9nsd_000035 --tag propanal_t30
+
+----- stderr -----
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_wigner.py:10: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.
+  _Jd, _W3j_flat, _W3j_indices = torch.load(os.path.join(os.path.dirname(__file__), 'constants.pt'))
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/modules/utils.py:636: TracerWarning: Converting a tensor to a Python integer might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  num_graphs = int(data["ptr"].numel() - 1)
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:524: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert x.shape[-1] == self._in1_dim, "Incorrect last dimension for x"
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:525: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert y.shape[-1] == self._in2_dim, "Incorrect last dimension for y"
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:449: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert weight.shape[-1] == self.weight_numel, "Invalid weight shape"
+/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/openqha/quasi_harmonic/openmm_mace.py:382: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /home/conda/feedstock_root/build_artifacts/libtorch_1781830578422/work/torch/csrc/autograd/generated/python_variable_methods.cpp:838.)
+  e_openmm_eV = float(energy_kj) / EV_TO_KJ_PER_MOL
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/calculators/mace.py:226: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.
+  torch.load(f=model_path, map_location=device)
+WARNING:root:Warning: importing 'simtk.openmm' is deprecated.  Import 'openmm' instead.
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/modules/utils.py:636: TracerWarning: Converting a tensor to a Python integer might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  num_graphs = int(data["ptr"].numel() - 1)
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:524: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert x.shape[-1] == self._in1_dim, "Incorrect last dimension for x"
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:525: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert y.shape[-1] == self._in2_dim, "Incorrect last dimension for y"
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:449: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert weight.shape[-1] == self.weight_numel, "Invalid weight shape"
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/modules/utils.py:636: TracerWarning: Converting a tensor to a Python integer might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  num_graphs = int(data["ptr"].numel() - 1)
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:524: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert x.shape[-1] == self._in1_dim, "Incorrect last dimension for x"
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:525: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert y.shape[-1] == self._in2_dim, "Incorrect last dimension for y"
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_tensor_product/_tensor_product.py:449: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert weight.shape[-1] == self.weight_numel, "Invalid weight shape"
+WARNING:pymbar.timeseries:Warning on use of the timeseries module: If the inherent timescales of the system are long compared to those being analyzed, this statistical inefficiency may be an underestimate.  The estimate presumes the use of many statistically independent samples.  Tests should be performed to assess whether this condition is satisfied.   Be cautious in the interpretation of the data.
+WARNING:pymbar.mbar_solvers:
+****** PyMBAR will use 64-bit JAX! *******
+* JAX is currently set to 32-bit bitsize *
+* which is its default.                  *
+*                                        *
+* PyMBAR requires 64-bit mode and WILL   *
+* enable JAX's 64-bit mode when called.  *
+*                                        *
+* This MAY cause problems with other     *
+* Uses of JAX in the same code.          *
+******************************************
+

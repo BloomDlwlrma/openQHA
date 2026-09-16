@@ -1,0 +1,219 @@
+================================================================================================
+                          openQHA branch B -- quasi-harmonic analysis
+                        dsgdb9nsd_000035  (propanal)   tag propanal_t30
+================================================================================================
+
+
+------------------------------------------------------------------------------------------------
+What produced these numbers
+------------------------------------------------------------------------------------------------
+  species................................. dsgdb9nsd_000035
+  engine.................................. MACE-OFF23_medium
+  temperature............................. 298.15 K
+  symmetry number......................... 1
+  * Cs: no proper rotation axis
+  electronic degeneracy................... 1
+  trajectories............................ 3
+  frame spacing fs........................ 1000
+  timestep fs............................. 1
+  * The potential is MACE and the trajectories come from ASE. GROMACS evaluates no energy
+    anywhere in this branch; it only diagonalises the same covariance independently. Reading
+    these numbers as sitting on a classical force field would be wrong.
+
+------------------------------------------------------------------------------------------------
+Per trajectory
+------------------------------------------------------------------------------------------------
+    basin    seed  frames    T*S_QH  T*S_Schlitter  modes  3N-6  last doubling
+                           kcal/mol       kcal/mol               kcal/mol
+  -------  ------  ------  --------  -------------  -----  ----  -------------
+  basin00  seed00       5    1.5612        1.69813      4    24  0
+  basin01  seed00       5   2.93213        3.02048      4    24  0
+  basin02  seed00       5   1.30598        1.45295      4    24  0
+
+------------------------------------------------------------------------------------------------
+Saturation curve (criterion 1)
+------------------------------------------------------------------------------------------------
+  * Quasi-harmonic entropy is a lower bound at any finite length. The increment over the last
+    doubling is the main term of the error bar, so the criterion is written on the trajectory
+    length rather than the length being tuned to pass it.
+
+  basin00 seed00   monotonic = True
+  fraction  frames    T*S_QH  T*S_Schlitter  non-zero modes
+                    kcal/mol       kcal/mol
+  --------  ------  --------  -------------  --------------
+      0.05       5    1.5612        1.69813  4
+       0.1       5    1.5612        1.69813  4
+      0.25       5    1.5612        1.69813  4
+       0.5       5    1.5612        1.69813  4
+         1       5    1.5612        1.69813  4
+
+  basin01 seed00   monotonic = True
+  fraction  frames    T*S_QH  T*S_Schlitter  non-zero modes
+                    kcal/mol       kcal/mol
+  --------  ------  --------  -------------  --------------
+      0.05       5   2.93213        3.02048  4
+       0.1       5   2.93213        3.02048  4
+      0.25       5   2.93213        3.02048  4
+       0.5       5   2.93213        3.02048  4
+         1       5   2.93213        3.02048  4
+
+  basin02 seed00   monotonic = True
+  fraction  frames    T*S_QH  T*S_Schlitter  non-zero modes
+                    kcal/mol       kcal/mol
+  --------  ------  --------  -------------  --------------
+      0.05       5   1.30598        1.45295  4
+       0.1       5   1.30598        1.45295  4
+      0.25       5   1.30598        1.45295  4
+       0.5       5   1.30598        1.45295  4
+         1       5   1.30598        1.45295  4
+
+------------------------------------------------------------------------------------------------
+Blank control -- the noise floor (criterion 5)
+------------------------------------------------------------------------------------------------
+  * Same potential, same basin, different seed. D0-P2-13: the density-of-states route was
+    abandoned because this experiment showed its noise floor exceeded its signal. If that
+    happens here it is reported in the same words.
+    basin  seeds  T*S mean    spread       RMS  standard error
+                  kcal/mol  kcal/mol  kcal/mol  kcal/mol
+  -------  -----  --------  --------  --------  --------------
+  basin00      1    1.5612         0         0  -
+  basin01      1   2.93213         0         0  -
+  basin02      1   1.30598         0         0  -
+
+------------------------------------------------------------------------------------------------
+Assembly: (G - E_el) per basin
+------------------------------------------------------------------------------------------------
+  * Only the vibrational term comes from this branch. Translation, rotation and electronic
+    degeneracy go through thermo.g_minus_eel, the same function the Hessian route uses, with the
+    same declared symmetry number.
+    basin      G - E_el         A_vib     A_rot   A_trans    A_elec  terms match
+               kcal/mol      kcal/mol  kcal/mol  kcal/mol  kcal/mol
+  -------  ------------  ------------  --------  --------  --------  -----------
+  basin00  1.361773e+09  1.361773e+09   -6.3004  -10.4781        -0  yes
+  basin01  2.148806e+08  2.148806e+08   -6.1734  -10.4781        -0  yes
+  basin02  1.280129e+09  1.280129e+09   -6.2762  -10.4781        -0  yes
+
+------------------------------------------------------------------------------------------------
+Criteria
+------------------------------------------------------------------------------------------------
+  [FAIL] 1  the saturation curve is drawn and the increment over the last doubling of trajectory length is below 0.3 kcal/mol on T*S
+         measured: +0.0000 kcal/mol (worst trajectory), longest trajectory 5.00 ps  -- SMOKE LENGTH: a trajectory this short has barely begun to rise, so this pass says nothing about production
+  [PASS] 2  an independent MASS-WEIGHTED implementation reproduces T*S to within 0.05 kcal/mol (gmx covar -mwa, or MDAnalysis fitted our way)
+         measured: gmx: not run (--no-gmx)  MDAnalysis: 6.34e-07
+  [FAIL] 4  exactly the rigid-body modes are removed, and they separate cleanly from the first vibrational mode
+         measured: 1 removed; smallest separation ratio inf
+  [PASS] 5  the blank control (same potential, same basin, different seed) gives a noise floor smaller than the 1.0 kcal/mol target accuracy
+         measured: NOT APPLICABLE: one seed per basin (ruling 2026-09-13), no noise floor measured here; see docs/branchB_seeds_and_length.md
+  [PASS] 6  S_QH <= S_Schlitter for every trajectory (analytic, so a failure is an implementation error)
+         measured: all 3 trajectories
+  [PASS] 7  the translational, rotational and electronic terms are identical to the Hessian route's, so only the vibrational term differs
+         measured: identical
+  [PASS] 8  the symmetry number is read from the declaration, never derived
+         measured: sigma = 1 (Cs: no proper rotation axis)
+  [FAIL] 9  the number of non-zero eigenvalues equals 3N-6
+         measured: 4 of 24 expected  -- SMOKE LENGTH: 5 frames cannot span 24 modes; rank is not measurable here
+  [PASS] 10 the per-batch convergence separates unsettled values from missing modes: the mode COUNT must not still be growing
+         measured: count stable across prefixes
+  [PASS] 11 every trajectory passes the identity assertion (no bias, no constraints, real hydrogen mass, 1 fs, not from CREST or the sampling loop)
+         measured: all 3 trajectories
+
+------------------------------------------------------------------------------------------------
+complete record (expanded automatically)
+------------------------------------------------------------------------------------------------
+    species................................... dsgdb9nsd_000035
+    tag....................................... propanal_t30
+    temperature............................... 298.15 K
+  declaration:
+      name.................................... propanal
+      smiles.................................. CCC=O
+      symmetry number......................... 1
+      symmetry reason......................... Cs: no proper rotation axis
+      electronic degeneracy................... 1
+      experimental entropy cal per............ 72.75 K
+      experimental entropy source............. li2016lbh
+    trajectories: [3 rows]
+        basin    seed                                                                                        path
+                                                                                                                 
+      basin00  seed00  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/_records/md_ase/basin00
+      basin01  seed00  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/_records/md_ase/basin01
+      basin02  seed00  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/_records/md_ase/basin02
+    gromacs_cross_check: [0 items]
+  superposition_cross_check:
+      temperature............................. 298.15 K
+      n frames................................ 5
+    available:
+        mdtraj................................ 1.11.1
+        MDAnalysis............................ 2.10.0
+    ours:
+        implementation........................ openqha.qha.superimpose
+        mass weighted......................... yes
+        iterated.............................. yes
+        reference............................. iterated mean structure
+        TS QH................................. 1.561204 kcal/mol
+        lowest frequency...................... 129.816015 cm^-1
+        n nonzero............................. 4
+      comparisons: [3 items]
+      [0]:
+          implementation...................... mdtraj.Trajectory.superpose
+          version............................. 1.11.1
+          mass weighted....................... no
+          iterated............................ no
+          reference........................... frame 0
+          n frames............................ 5
+          library............................. mdtraj
+          TS QH............................... 1.568357 kcal/mol
+          lowest frequency.................... 128.647784 cm^-1
+          n nonzero........................... 4
+          TS difference....................... 0.007153 kcal/mol
+          note:
+              this difference is the FIT PROTOCOL, not the entropy algorithm: everything after
+              the superposition is openqha.qha, byte for byte
+      [1]:
+          implementation...................... MDAnalysis.analysis.align.alignto(weights='mass')
+          version............................. 2.10.0
+          module path:
+              /home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/MDAnalysis/__init__.py
+          mass weighted....................... yes
+          iterated............................ no
+          n iterations........................ 1
+          reference shift / A: [1 entries]
+            0.038413
+          reference........................... frame 0
+          n frames............................ 5
+          library............................. MDAnalysis
+          TS QH............................... 1.561122 kcal/mol
+          lowest frequency.................... 129.815443 cm^-1
+          n nonzero........................... 4
+          TS difference....................... -8.185440e-05 kcal/mol
+          note:
+              this difference is the FIT PROTOCOL, not the entropy algorithm: everything after
+              the superposition is openqha.qha, byte for byte
+      [2]:
+          implementation...................... MDAnalysis.analysis.align.alignto(weights='mass')
+          version............................. 2.10.0
+          module path:
+              /home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/MDAnalysis/__init__.py
+          mass weighted....................... yes
+          iterated............................ yes
+          n iterations........................ 7
+          reference shift / A: [7 entries]
+            0.038413 4.406773e-05 4.548607e-07 1.289668e-07 2.916594e-08 7.222972e-08 0
+          reference........................... iterated mean structure
+          n frames............................ 5
+          library............................. MDAnalysis (iterated)
+          TS QH............................... 1.561204 kcal/mol
+          lowest frequency.................... 129.816003 cm^-1
+          n nonzero........................... 4
+          TS difference....................... -6.341142e-07 kcal/mol
+          note:
+              this difference is the FIT PROTOCOL, not the entropy algorithm: everything after
+              the superposition is openqha.qha, byte for byte
+      basin................................... basin00
+      seed.................................... seed00
+
+------------------------------------------------------------------------------------------------
+generated 2026-09-16 18:05:52 by openqha.report  (stage 0)
+this file is the Report, laid out for people (numbers truncated to a fixed number of places); what a program reads back, at full float64 precision, is the Property file (.toml) or the .dat tables of the same stem.
+------------------------------------------------------------------------------------------------
+
+openQHA collect terminated normally

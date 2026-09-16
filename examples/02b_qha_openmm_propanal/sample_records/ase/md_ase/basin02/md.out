@@ -1,0 +1,270 @@
+================================================================================================
+                               openQHA branch B -- one trajectory
+                     dsgdb9nsd_000035  basin 2  setting default  route ase
+================================================================================================
+
+
+------------------------------------------------------------------------------------------------
+Provenance
+------------------------------------------------------------------------------------------------
+  engine.................................. MACE-OFF23_medium
+  weights path............................ /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+  bytes................................... 18350596
+  interface............................... mace.calculators.MACECalculator
+  mace torch version...................... 0.3.16
+  torch version........................... 2.12.1
+  dtype................................... float64
+  composite notation...................... RI-MP2/cc-pVTZ // MACE-OFF23_medium
+  protocol source......................... plan_B section 3; dt and friction from D0-C-30, equilibration length measured (Rinaldo & Field needed 26x their first guess)
+  slurm job id............................ -
+
+------------------------------------------------------------------------------------------------
+Identity (what the analysis refuses without)
+------------------------------------------------------------------------------------------------
+  bias potential.......................... -
+  constraints............................. -
+  hydrogen mass........................... 1.008 amu
+  timestep fs............................. 1
+  thermostat.............................. ase.md.nose_hoover_chain.NoseHooverChainNVT
+  thermostat tdamp fs..................... 20
+  thermostat chain length................. 3
+  thermostat fixcm........................ -
+  source.................................. openQHA.branchB.nose_hoover
+  ensemble................................ canonical (Nose-Hoover chain)
+
+------------------------------------------------------------------------------------------------
+Run
+------------------------------------------------------------------------------------------------
+  seed.................................... 2000
+  temperature............................. 298.15 K
+  sample every steps...................... 1000
+  frame spacing fs........................ 1000
+  geometry source......................... branch A basins: /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/mace
+  engine folder........................... /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase/basin02
+  centre of mass pinned to origin......... no
+
+------------------------------------------------------------------------------------------------
+relaxation
+------------------------------------------------------------------------------------------------
+  fmax reached eV per..................... 8.272009e-05 A
+  converged............................... yes
+  n steps................................. 0
+  energy.................................. -5259.152703 eV
+
+------------------------------------------------------------------------------------------------
+equilibration
+------------------------------------------------------------------------------------------------
+  equil ps................................ 1
+  n steps................................. 1000
+  wall.................................... 116.984481 s
+  potential first half.................... -5258.987392 eV
+  potential second half................... -5258.908318 eV
+  potential drift......................... 0.079073 eV
+  temperature second half................. 259.384698 K
+  temperature std......................... 30.678749 K
+  target temperature...................... 298.15 K
+  single sample fluctuation............... 76.981999 K
+  fixcm................................... no
+  degrees of freedom used for temperature.. 30
+
+------------------------------------------------------------------------------------------------
+production
+------------------------------------------------------------------------------------------------
+  resumed................................. no
+  n frames already on disk................ 0
+  resumed from............................ -
+  complete................................ yes
+  stopped on wall budget.................. no
+  n frames................................ 5
+  n target................................ 5
+  chunks this run......................... 4
+  n frames generated this run............. 5
+  wall.................................... 461.541252 s
+  seconds per frame this run.............. 92.30825
+  seconds per ps this run................. 92.30825
+  temperature mean........................ 307.244768 K
+  temperature std......................... 40.638146 K
+  temperature block standard error........ - K
+  temperature deviation................... 9.094768 K
+  temperature within three block errors... -
+  degrees of freedom used for temperature.. 30
+  fixcm................................... no
+
+  segments (one velocity draw each)
+  seed  frames_from  frames_to
+  ----  -----------  ---------
+  2000            0  5
+
+------------------------------------------------------------------------------------------------
+complete record (expanded)
+------------------------------------------------------------------------------------------------
+    bias potential............................ -
+    constraints............................... -
+    hydrogen mass............................. 1.008 amu
+    timestep fs............................... 1
+    thermostat................................ ase.md.nose_hoover_chain.NoseHooverChainNVT
+    thermostat fixcm.......................... -
+    thermostat tdamp fs....................... 20
+    thermostat chain length................... 3
+    centre of mass pinned to origin........... no
+  neighbour_list_patch:
+      applied................................. yes
+      sites: [3 items]
+        [0]................................... mace.data.neighborhood.get_neighborhood
+        [1]................................... mace.data.get_neighborhood
+        [2]................................... mace.data.atomic_data.get_neighborhood
+      error................................... -
+      what.................................... centre atoms before the neighbour search (aperiodic systems only)
+      why:
+          an origin-anchored search box loses neighbours far from the origin; see `installed`
+          for whether the MACE actually loaded has that defect
+    installed:
+        module path:
+            /home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/data/neighborhood.py
+        sha256................................ 310af63c0c5b8f5f22dd931107dee6eab8b2ef79fbd3eb27c901d45d01dfb1b4
+        sizing................................ radial max|positions| (translation invariant)
+        defect present........................ no
+        n edges............................... 12
+        error................................. -
+        probe shift........................... -8 A
+    safe origin radius........................ 5 A
+    pinning reason:
+        insurance: an origin-anchored neighbour search loses pairs once the molecule
+        random-walks away, which the MACE develop tree does and the installed mace_torch 0.3.16
+        does not; see openqha.engine.translation_invariance and the recentre() docstring
+    source.................................... openQHA.branchB.nose_hoover
+    qm9 index................................. dsgdb9nsd_000035
+    basin index............................... 2
+    seed...................................... 2000
+    setting................................... default
+    route..................................... ase
+    engine folder:
+        /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase/basin02
+    slurm job id.............................. -
+    geometry source:
+        branch A basins: /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/mace
+    symbols: [10 items]
+      [0]..................................... C
+      [1]..................................... C
+      [2]..................................... C
+      [3]..................................... O
+      [4]..................................... H
+      [5]..................................... H
+      [6]..................................... H
+      [7]..................................... H
+      [8]..................................... H
+      [9]..................................... H
+    masses / amu: [10 entries]
+      12.011 12.011 12.011 15.999 1.008 1.008 1.008 1.008 1.008 1.008
+    temperature............................... 298.15 K
+    friction per ps........................... 1
+    sample every steps........................ 1000
+    frame spacing fs.......................... 1000
+    ensemble.................................. canonical (Nose-Hoover chain)
+  engine:
+      engine.................................. MACE-OFF23_medium
+      source.................................. https://arxiv.org/abs/2312.15211
+      note:
+          PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family;
+          closest lineage to stage 2 surface.
+      weights path:
+          /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+      bytes................................... 18350596
+      interface............................... mace.calculators.MACECalculator
+      mace torch version...................... 0.3.16
+      mace module path:
+          /home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/__init__.py
+      torch version........................... 2.12.1
+      dtype................................... float64
+    neighbour_list_patch:
+        applied............................... yes
+        sites: [3 items]
+          [0]................................. mace.data.neighborhood.get_neighborhood
+          [1]................................. mace.data.get_neighborhood
+          [2]................................. mace.data.atomic_data.get_neighborhood
+        error................................. -
+        what.................................. centre atoms before the neighbour search (aperiodic systems only)
+        why:
+            an origin-anchored search box loses neighbours far from the origin; see `installed`
+            for whether the MACE actually loaded has that defect
+      installed:
+          module path:
+              /home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/data/neighborhood.py
+          sha256.............................. 310af63c0c5b8f5f22dd931107dee6eab8b2ef79fbd3eb27c901d45d01dfb1b4
+          sizing.............................. radial max|positions| (translation invariant)
+          defect present...................... no
+          n edges............................. 12
+          error............................... -
+          probe shift......................... -8 A
+    engine dtype.............................. float64
+    composite notation........................ RI-MP2/cc-pVTZ // MACE-OFF23_medium
+  relaxation:
+      fmax reached eV per..................... 8.272009e-05 A
+      converged............................... yes
+      n steps................................. 0
+      energy.................................. -5259.152703 eV
+  equilibration:
+      equil ps................................ 1
+      n steps................................. 1000
+      wall.................................... 116.984481 s
+      potential first half.................... -5258.987392 eV
+      potential second half................... -5258.908318 eV
+      potential drift......................... 0.079073 eV
+      temperature second half................. 259.384698 K
+      temperature std......................... 30.678749 K
+      target temperature...................... 298.15 K
+      single sample fluctuation............... 76.981999 K
+      fixcm................................... no
+      degrees of freedom used for temperature.. 30
+  production:
+      resumed................................. no
+      n frames already on disk................ 0
+      resumed from............................ -
+    engine_files:
+        folder:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase/basin02
+        traj:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase/basin02/md.traj
+        log:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase/basin02/md.log
+        frames in traj........................ 5
+      complete................................ yes
+      stopped on wall budget.................. no
+      n frames................................ 5
+      n target................................ 5
+      chunks this run......................... 4
+      n frames generated this run............. 5
+      wall.................................... 461.541252 s
+      seconds per frame this run.............. 92.30825
+      seconds per ps this run................. 92.30825
+      temperature mean........................ 307.244768 K
+      temperature std......................... 40.638146 K
+      temperature block standard error........ - K
+      temperature deviation................... 9.094768 K
+      temperature within three block errors... -
+      degrees of freedom used for temperature.. 30
+      fixcm................................... no
+    integrity:
+        max distance.......................... 4.269084 A
+        min distance.......................... 1.093632 A
+        potential above minimum............... 7.050317 kcal/mol
+        ok.................................... yes
+    segments: [1 items]
+    [0]:
+        seed.................................. 2000
+        frames from........................... 0
+        frames to............................. 5
+    n runs.................................... 1
+    protocol source:
+        plan_B section 3; dt and friction from D0-C-30, equilibration length measured (Rinaldo &
+        Field needed 26x their first guess)
+    prohibitions note:
+        no bias, no constraints, real hydrogen mass -- see the module docstring and
+        configs/mdp/s0_qha_production.mdp
+
+------------------------------------------------------------------------------------------------
+generated 2026-09-15 23:21:57 by openqha.report  (stage 0)
+this file is the Report, laid out for people (numbers truncated to a fixed number of places); what a program reads back, at full float64 precision, is the Property file (.toml) or the .dat tables of the same stem.
+------------------------------------------------------------------------------------------------
+
+openQHA md terminated normally

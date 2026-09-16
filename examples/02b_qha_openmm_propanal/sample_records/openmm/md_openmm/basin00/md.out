@@ -1,0 +1,362 @@
+================================================================================================
+                               openQHA branch B -- one trajectory
+                    dsgdb9nsd_000035  basin 0  setting default  route openmm
+================================================================================================
+
+
+------------------------------------------------------------------------------------------------
+Provenance
+------------------------------------------------------------------------------------------------
+  engine.................................. MACE-OFF23_medium
+  weights path............................ /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+  bytes................................... 18350596
+  interface............................... mace.calculators.MACECalculator
+  mace torch version...................... 0.3.16
+  torch version........................... 2.12.1
+  dtype................................... float64
+  protocol source......................... Rinaldo & Field, Biophysical Journal 2003 (10.1016/S0006-3495(03)70023-0)
+  protocol status......................... published protocol, adopted 2026-09-07 by user ruling
+  slurm job id............................ -
+  platform................................ CPU
+
+------------------------------------------------------------------------------------------------
+Identity (what the analysis refuses without)
+------------------------------------------------------------------------------------------------
+  bias potential.......................... -
+  constraints............................. -
+  hydrogen mass........................... 1.008 amu
+  timestep fs............................. 1
+  thermostat.............................. openmmtools Nose-Hoover chain (openmmtools.integrators.NoseHooverChainVelocityVerletIntegrator)
+  thermostat tdamp fs..................... 20
+  thermostat chain length................. 5
+  source.................................. openQHA.branchB.openmm_nose_hoover
+  ensemble................................ canonical (Nose-Hoover chain, OpenMM)
+
+------------------------------------------------------------------------------------------------
+Run
+------------------------------------------------------------------------------------------------
+  seed.................................... 347651432
+  seed formula............................ drawn at run time (seed0=0; recorded here)
+  temperature............................. 298.15 K
+  sample every steps...................... 1000
+  frame spacing fs........................ 1000
+  geometry source......................... branch A basins: /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/mace
+  engine folder........................... /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00
+  centre of mass pinned to origin......... no
+
+------------------------------------------------------------------------------------------------
+integrator
+------------------------------------------------------------------------------------------------
+  implementation.......................... openmmtools.integrators.NoseHooverChainVelocityVerletIntegrator
+  collision frequency per ps.............. 50
+  chain length............................ 5
+  num mts................................. 5
+  num yoshidasuzuki....................... 5
+
+------------------------------------------------------------------------------------------------
+force
+------------------------------------------------------------------------------------------------
+  model path.............................. /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+  cutoff.................................. 5 A
+  n atoms................................. 10
+  n edges................................. 90
+  neighbour list.......................... complete graph, precomputed and static (no binning, so no origin anchoring; pairs beyond r_max contribute exactly zero)
+  dtype................................... torch.float64
+  traced.................................. yes
+  trace device............................ cpu
+  openmm platform......................... CPU
+  n particles............................. 10
+
+------------------------------------------------------------------------------------------------
+force_check_against_ase
+------------------------------------------------------------------------------------------------
+  model path.............................. /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+  cutoff.................................. 5 A
+  n atoms................................. 10
+  n edges................................. 90
+  neighbour list.......................... complete graph, precomputed and static (no binning, so no origin anchoring; pairs beyond r_max contribute exactly zero)
+  dtype................................... torch.float64
+  traced.................................. no
+  trace device............................ cpu
+  engine.................................. MACE-OFF23_medium
+  energy traced........................... -5259.188956 eV
+  max delta force traced eV per........... 2.945777e-16 A
+  energy openmm........................... -5259.188956 eV
+  energy ase.............................. -5259.188956 eV
+  delta energy............................ 0 eV
+  max delta force eV per.................. 2.134699e-15 A
+  agrees.................................. yes
+
+------------------------------------------------------------------------------------------------
+relaxation
+------------------------------------------------------------------------------------------------
+  energy before kJ........................ -507434.593153
+  energy after kJ......................... -507434.593155
+  energy drop............................. 4.744536e-07 kcal/mol
+
+------------------------------------------------------------------------------------------------
+equilibration
+------------------------------------------------------------------------------------------------
+  ps...................................... 1
+  wall.................................... 110.052163 s
+  potential first half kJ................. -507416.770976
+  potential second half kJ................ -507417.209426
+  temperature second half................. 297.113565 K
+  drift kJ................................ -0.43845
+
+------------------------------------------------------------------------------------------------
+production
+------------------------------------------------------------------------------------------------
+  ps...................................... 5
+  n frames................................ 5
+  n target................................ 5
+  wall.................................... 533.04993 s
+  complete................................ yes
+  stopped on wall budget.................. no
+  resumed................................. no
+  n frames already on disk................ 0
+  n frames generated this run............. 5
+  resumed from............................ -
+  seconds per ps this run................. 106.609986
+  seconds per frame this run.............. 106.609986
+  seconds per ps.......................... 106.609986
+  temperature mean........................ 280.566349 K
+  temperature deviation................... -17.583651 K
+  temperature error....................... -17.583651 K
+  centre of mass drift.................... 20.91231 A
+
+  engine files
+     engine file  path
+  --------------  ---------------------------------------------------------------------------------------------------
+       start.pdb  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/start.pdb
+      system.xml  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/system.xml
+  integrator.xml  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/integrator.xml
+        traj.dcd  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/traj.dcd
+       state.csv  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.csv
+       state.xml  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.xml
+       state.chk  /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.chk
+
+  segments (one velocity draw each)
+       seed  frames_from  frames_to
+  ---------  -----------  ---------
+  347651432            0  5
+
+------------------------------------------------------------------------------------------------
+complete record (expanded)
+------------------------------------------------------------------------------------------------
+    bias potential............................ -
+    constraints............................... -
+    hydrogen mass............................. 1.008 amu
+    timestep fs............................... 1
+    thermostat:
+        openmmtools Nose-Hoover chain
+        (openmmtools.integrators.NoseHooverChainVelocityVerletIntegrator)
+    thermostat tdamp fs....................... 20
+    thermostat chain length................... 5
+    source.................................... openQHA.branchB.openmm_nose_hoover
+    qm9 index................................. dsgdb9nsd_000035
+    basin index............................... 0
+    seed...................................... 347651432
+    setting................................... default
+    engine folder:
+        /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00
+  engine_files:
+      start.pdb:
+          /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/start.pdb
+      system.xml:
+          /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/system.xml
+      integrator.xml:
+          /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/integrator.xml
+      traj.dcd:
+          /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/traj.dcd
+      state.csv:
+          /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.csv
+      state.xml:
+          /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.xml
+      state.chk:
+          /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.chk
+    slurm job id.............................. -
+    seed formula.............................. drawn at run time (seed0=0; recorded here)
+    segments: [1 items]
+    [0]:
+        seed.................................. 347651432
+        frames from........................... 0
+        frames to............................. 5
+    geometry source:
+        branch A basins: /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/mace
+    symbols: [10 items]
+      [0]..................................... C
+      [1]..................................... C
+      [2]..................................... C
+      [3]..................................... O
+      [4]..................................... H
+      [5]..................................... H
+      [6]..................................... H
+      [7]..................................... H
+      [8]..................................... H
+      [9]..................................... H
+    masses / amu: [10 entries]
+      12.011 12.011 12.011 15.999 1.008 1.008 1.008 1.008 1.008 1.008
+    temperature............................... 298.15 K
+    sample every steps........................ 1000
+    frame spacing fs.......................... 1000
+    ensemble.................................. canonical (Nose-Hoover chain, OpenMM)
+  integrator:
+      implementation.......................... openmmtools.integrators.NoseHooverChainVelocityVerletIntegrator
+      collision frequency per ps.............. 50
+      chain length............................ 5
+      num mts................................. 5
+      num yoshidasuzuki....................... 5
+    route..................................... openmm
+    platform.................................. CPU
+    protocol source:
+        Rinaldo & Field, Biophysical Journal 2003 (10.1016/S0006-3495(03)70023-0)
+    protocol status........................... published protocol, adopted 2026-09-07 by user ruling
+  force:
+      model path:
+          /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+      cutoff.................................. 5 A
+      n atoms................................. 10
+      n edges................................. 90
+      neighbour list:
+          complete graph, precomputed and static (no binning, so no origin anchoring; pairs
+          beyond r_max contribute exactly zero)
+      dtype................................... torch.float64
+      traced.................................. yes
+      trace device............................ cpu
+      device_constants: [1 items]
+        [0]................................... cpu
+      device_mismatches: [0 items]
+      openmm platform......................... CPU
+    platform_properties:
+      n particles............................. 10
+  force_check_against_ase:
+      model path:
+          /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+      cutoff.................................. 5 A
+      n atoms................................. 10
+      n edges................................. 90
+      neighbour list:
+          complete graph, precomputed and static (no binning, so no origin anchoring; pairs
+          beyond r_max contribute exactly zero)
+      dtype................................... torch.float64
+      traced.................................. no
+      trace device............................ cpu
+      engine.................................. MACE-OFF23_medium
+      energy traced........................... -5259.188956 eV
+      max delta force traced eV per........... 2.945777e-16 A
+      energy openmm........................... -5259.188956 eV
+      energy ase.............................. -5259.188956 eV
+      delta energy............................ 0 eV
+      max delta force eV per.................. 2.134699e-15 A
+      agrees.................................. yes
+    centre of mass pinned to origin........... no
+  engine:
+      engine.................................. MACE-OFF23_medium
+      source.................................. https://arxiv.org/abs/2312.15211
+      note:
+          PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family;
+          closest lineage to stage 2 surface.
+      weights path:
+          /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+      bytes................................... 18350596
+      interface............................... mace.calculators.MACECalculator
+      mace torch version...................... 0.3.16
+      mace module path:
+          /home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/__init__.py
+      torch version........................... 2.12.1
+      dtype................................... float64
+    neighbour_list_patch:
+        applied............................... yes
+        sites: [3 items]
+          [0]................................. mace.data.neighborhood.get_neighborhood
+          [1]................................. mace.data.get_neighborhood
+          [2]................................. mace.data.atomic_data.get_neighborhood
+        error................................. -
+        what.................................. centre atoms before the neighbour search (aperiodic systems only)
+        why:
+            an origin-anchored search box loses neighbours far from the origin; see `installed`
+            for whether the MACE actually loaded has that defect
+      installed:
+          module path:
+              /home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/data/neighborhood.py
+          sha256.............................. 310af63c0c5b8f5f22dd931107dee6eab8b2ef79fbd3eb27c901d45d01dfb1b4
+          sizing.............................. radial max|positions| (translation invariant)
+          defect present...................... no
+          n edges............................. 12
+          error............................... -
+          probe shift......................... -8 A
+  relaxation:
+      energy before kJ........................ -507434.593153
+      energy after kJ......................... -507434.593155
+      energy drop............................. 4.744536e-07 kcal/mol
+    force_field:
+        model path:
+            /mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/potentials/MACE-OFF23_medium.model
+        cutoff................................ 5 A
+        n atoms............................... 10
+        n edges............................... 90
+        neighbour list:
+            complete graph, precomputed and static (no binning, so no origin anchoring; pairs
+            beyond r_max contribute exactly zero)
+        dtype................................. torch.float64
+        traced................................ yes
+        trace device.......................... cpu
+        device_constants: [1 items]
+          [0]................................. cpu
+        device_mismatches: [0 items]
+        openmm platform....................... CPU
+      platform_properties:
+        n particles........................... 10
+  equilibration:
+      ps...................................... 1
+      wall.................................... 110.052163 s
+      potential first half kJ................. -507416.770976
+      potential second half kJ................ -507417.209426
+      temperature second half................. 297.113565 K
+      drift kJ................................ -0.43845
+  production:
+      ps...................................... 5
+      n frames................................ 5
+      n target................................ 5
+      wall.................................... 533.04993 s
+      complete................................ yes
+      stopped on wall budget.................. no
+      resumed................................. no
+      n frames already on disk................ 0
+      n frames generated this run............. 5
+      resumed from............................ -
+    engine_files:
+        folder:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00
+        frames in dcd......................... 5
+      seconds per ps this run................. 106.609986
+      seconds per frame this run.............. 106.609986
+      seconds per ps.......................... 106.609986
+      temperature mean........................ 280.566349 K
+      temperature deviation................... -17.583651 K
+      temperature error....................... -17.583651 K
+      centre of mass drift.................... 20.91231 A
+    files:
+        start.pdb:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/start.pdb
+        system.xml:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/system.xml
+        integrator.xml:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/integrator.xml
+        traj.dcd:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/traj.dcd
+        state.csv:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.csv
+        state.xml:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.xml
+        state.chk:
+            /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin00/state.chk
+    equilibration done........................ yes
+
+------------------------------------------------------------------------------------------------
+generated 2026-09-15 23:11:45 by openqha.report  (stage 0)
+this file is the Report, laid out for people (numbers truncated to a fixed number of places); what a program reads back, at full float64 precision, is the Property file (.toml) or the .dat tables of the same stem.
+------------------------------------------------------------------------------------------------
+
+openQHA md terminated normally

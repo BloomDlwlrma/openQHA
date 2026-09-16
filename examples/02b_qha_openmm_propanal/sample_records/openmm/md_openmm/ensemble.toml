@@ -1,0 +1,58 @@
+[Calculation_Status]
+PROGNAME = "openQHA ensemble"    # String: the step that wrote this file
+VERSION  = "0.3.0"               # String: openQHA version
+STATUS   = "NORMAL TERMINATION"  # String: the completion marker
+
+[Calculation_Info]
+QM9_INDEX      = "dsgdb9nsd_000035"  # String: the molecule
+TAG            = "propanal_t30"      # String: the tag of this run
+BASIN_TAG      = "propanal"          # String: the tag whose basins were summed
+SETTING        = "default"           # String: the setting name
+ROUTE          = "openmm"            # String: openmm or ase
+TEMPERATURE    = 298.15              # Double, K
+N_BASINS       = 3                   # Integer: basins branch A found
+COLLECT_PASSED = 7                   # Integer: collect's criteria passed
+COLLECT_TOTAL  = 10                  # Integer: collect's criteria checked
+
+[[Result]]
+INDEX                       = 0                 # Integer
+ATOMS                       = "all"             # String: the atom set the entropies were computed over (all or heavy)
+F_CONF                      = -0.08335788966742677  # Double, kcal/mol: conformational free energy relative to the lowest basin alone (<= 0)
+PARTITION_FUNCTION_RELATIVE = 1.1510700581819093  # Double: sum over basins of exp(-dG/kT)
+DELTA_G                     = [1.1809581691556104, 0.0, 2.4956025256163414]  # ArrayOfDoubles, kcal/mol: G of each basin above the lowest
+POPULATIONS                 = [0.11837224869999534, 0.8687568518457328, 0.012870899454271886]  # ArrayOfDoubles: Boltzmann population of each basin
+EFFECTIVE_BASINS            = 1.538562338952557  # Double: exp of the population entropy
+N_WITH_ENTROPY              = 3                 # Integer: basins with a T*S from collect
+N_ELECTRONIC_ONLY           = 0                 # Integer: basins summed on their electronic energy alone (a failure when > 0)
+DISTINCT_CROSSINGS          = 2                 # Integer: trajectories that left their basin
+SYMMETRY_CROSSINGS          = 3                 # Integer: symmetry-equivalent crossings
+
+[[Basin]]
+INDEX              = 0                   # Integer
+ATOMS              = "all"               # String: the atom set
+TS                 = 1.6432667279114774  # Double, kcal/mol: T*S over the seeds of this basin
+SPREAD             = 0.0                 # Double, kcal/mol: spread of T*S over the seeds
+N_SEEDS            = 1                   # Integer
+N_FRAMES           = 5                   # Integer
+DISTINCT_CROSSINGS = 0                   # Integer
+SYMMETRY_CROSSINGS = 1                   # Integer
+
+[[Basin]]
+INDEX              = 1                   # Integer
+ATOMS              = "all"               # String: the atom set
+TS                 = 3.6602372938445416  # Double, kcal/mol: T*S over the seeds of this basin
+SPREAD             = 0.0                 # Double, kcal/mol: spread of T*S over the seeds
+N_SEEDS            = 1                   # Integer
+N_FRAMES           = 5                   # Integer
+DISTINCT_CROSSINGS = 2                   # Integer
+SYMMETRY_CROSSINGS = 2                   # Integer
+
+[[Basin]]
+INDEX              = 2                   # Integer
+ATOMS              = "all"               # String: the atom set
+TS                 = 1.1646347732828006  # Double, kcal/mol: T*S over the seeds of this basin
+SPREAD             = 0.0                 # Double, kcal/mol: spread of T*S over the seeds
+N_SEEDS            = 1                   # Integer
+N_FRAMES           = 5                   # Integer
+DISTINCT_CROSSINGS = 0                   # Integer
+SYMMETRY_CROSSINGS = 0                   # Integer

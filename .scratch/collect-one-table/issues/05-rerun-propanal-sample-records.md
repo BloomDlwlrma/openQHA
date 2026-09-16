@@ -4,8 +4,8 @@
 
 **Blocked by:** 04 (End to end on the ASE chain, and the docs name one Table).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-16
 
-- [ ] `sample_records/openmm/md_openmm/` and `sample_records/ase/md_ase/` each hold `collect.dat` and no other `.dat`
-- [ ] the numbers in the new `collect.dat` equal those of the old four tables (same engine files, same code path for the analysis)
-- [ ] the example README's tree matches the folder
+- [x] `sample_records/openmm/md_openmm/` and `sample_records/ase/md_ase/` each hold `collect.dat` and no other `.dat`
+- [x] the numbers in the new `collect.dat` equal those of the old four tables (same engine files, same code path for the analysis)
+- [x] the example README's tree matches the folder

@@ -1,0 +1,102 @@
+================================================================================================
+                              openQHA -- F_conf over the ensemble
+            dsgdb9nsd_000035  tag propanal_t30  basin tag propanal  setting default
+================================================================================================
+
+
+------------------------------------------------------------------------------------------------
+atoms: all
+------------------------------------------------------------------------------------------------
+  n basins................................ 3
+  n with entropy.......................... 3
+  n electronic only....................... 0
+  temperature............................. 298.15 K
+  warning................................. -
+  F conf.................................. -0.228138 kcal/mol
+  partition function relative............. 1.469693
+  effective basins........................ 2.125763
+  note.................................... F_conf is relative to occupying the lowest basin only, so it is <= 0. sigma and the electronic degeneracy are NOT applied here -- they are already inside each basin's g_minus_eel.
+  distinct crossings...................... 2
+  symmetry crossings...................... 1
+  basin  T*S / kcal  n_frames         source  distinct  symmetry
+  -----  ----------  --------  -------------  --------  --------
+      0      1.5612         5  collect table         0  0
+      1      2.9321         5  collect table         2  1
+      2      1.3060         5  collect table         0  0
+
+------------------------------------------------------------------------------------------------
+msRRHO (Hessian route) beside the trajectory route
+------------------------------------------------------------------------------------------------
+  msRRHO at mace-off23_medium: S_abs = 72.355 cal/mol/K, G_total = -121244.0834 kcal/mol  (/home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/levels/mace-off23_medium/thermo_msrrho.toml)
+  experiment 72.75 cal/mol/K [li2016lbh]: S_abs - experiment = -0.395
+  basin 0 (all atoms): T*S trajectory 1.5612 kcal/mol   T*S_vib msRRHO 2.3403
+  basin 1 (all atoms): T*S trajectory 2.9321 kcal/mol   T*S_vib msRRHO 2.6174
+  basin 2 (all atoms): T*S trajectory 1.3060 kcal/mol   T*S_vib msRRHO 2.6171
+
+------------------------------------------------------------------------------------------------
+complete record (expanded)
+------------------------------------------------------------------------------------------------
+    species................................... dsgdb9nsd_000035
+    tag....................................... propanal_t30
+    basin tag................................. propanal
+    setting................................... default
+    route..................................... ase
+    temperature............................... 298.15 K
+    n basins branch a......................... 3
+  collect_criteria:
+      passed.................................. 7
+      total................................... 10
+  results:
+    all:
+        n basins.............................. 3
+        n with entropy........................ 3
+        n electronic only..................... 0
+        temperature........................... 298.15 K
+        warning............................... -
+        F conf................................ -0.228138 kcal/mol
+        partition function relative........... 1.469693
+        delta G / kcal/mol: [3 entries]
+          0.534914 0 1.626146
+        populations: [3 entries]
+          0.275854 0.680414 0.043732
+        effective basins...................... 2.125763
+        note:
+            F_conf is relative to occupying the lowest basin only, so it is <= 0. sigma and the
+            electronic degeneracy are NOT applied here -- they are already inside each basin's
+            g_minus_eel.
+      per_basin_detail:
+        0:
+            TS................................ 1.561204 kcal/mol
+            spread............................ 0 kcal/mol
+            n seeds........................... 1
+            n frames.......................... 5
+            source............................ collect table
+            distinct crossings................ 0
+            symmetry crossings................ 0
+        1:
+            TS................................ 2.932131 kcal/mol
+            spread............................ 0 kcal/mol
+            n seeds........................... 1
+            n frames.......................... 5
+            source............................ collect table
+            distinct crossings................ 2
+            symmetry crossings................ 1
+        2:
+            TS................................ 1.305985 kcal/mol
+            spread............................ 0 kcal/mol
+            n seeds........................... 1
+            n frames.......................... 5
+            source............................ collect table
+            distinct crossings................ 0
+            symmetry crossings................ 0
+        distinct crossings.................... 2
+        symmetry crossings.................... 1
+    trajectory root:
+        /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase
+
+------------------------------------------------------------------------------------------------
+generated 2026-09-16 18:05:53 by openqha.report  (stage 0)
+this file is the Report, laid out for people (numbers truncated to a fixed number of places); what a program reads back, at full float64 precision, is the Property file (.toml) or the .dat tables of the same stem.
+------------------------------------------------------------------------------------------------
+
+openQHA ensemble terminated normally

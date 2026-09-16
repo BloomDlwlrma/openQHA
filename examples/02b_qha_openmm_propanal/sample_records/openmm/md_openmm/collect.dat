@@ -1,0 +1,47 @@
+[trajectories]
+#   species                        String: the molecule (QM9 index)
+#   basin                          String: the basin folder the trajectory started from (basin00, ...)
+#   seed                           String: the seed folder label (seed00; one seed per basin since 2026-09-13)
+#   n_frames                       Integer: frames the covariance was formed from
+#   TS_QH_kcal                     Double, kcal/mol: T*S from the quasi-harmonic entropy (mode by mode from the mass-weighted covariance)
+#   TS_Schlitter_kcal              Double, kcal/mol: T*S from Schlitter's upper bound on the same covariance
+#   S_QH_kcal_per_K                Double, kcal/(mol K): the quasi-harmonic entropy itself
+#   A_vib_kcal                     Double, kcal/mol: vibrational Helmholtz energy summed over the quasi-harmonic modes
+#   lowest_frequency_cm_inv        Double, cm^-1: the softest quasi-harmonic mode
+#   highest_frequency_cm_inv       Double, cm^-1: the stiffest quasi-harmonic mode
+#   n_nonzero                      Integer: covariance eigenvalues above the rank tolerance (criterion 9)
+#   expected_modes                 Integer: 3N-6, the modes a full-rank covariance has
+#   rigid_ratio                    Double: first vibrational eigenvalue over the largest rigid-body one on the unprojected covariance; inf when the rigid ones vanish (criterion 4's separation)
+#   saturation_last_doubling_kcal  Double, kcal/mol: rise of T*S_QH over the last doubling of trajectory length (criterion 1's increment)
+#   wall_seconds                   Double, s: production wall time of the run that finished the trajectory
+#   seconds_per_ps                 Double, s/ps: that run's cost per picosecond of its own frames
+# species basin seed n_frames TS_QH_kcal TS_Schlitter_kcal S_QH_kcal_per_K A_vib_kcal lowest_frequency_cm_inv highest_frequency_cm_inv n_nonzero expected_modes rigid_ratio saturation_last_doubling_kcal wall_seconds seconds_per_ps
+dsgdb9nsd_000035 basin00 seed00 5 1.6432667279114774 1.7765568866575332 0.005511543611978795 882812342.8083334 110.30012170300284 201844555187.36038 4 24 inf 0.0 533.049929857254 106.60998597145081
+dsgdb9nsd_000035 basin01 seed00 5 3.6602372938445416 3.6998653439106963 0.012276496038385182 467767384.65166426 41.99561229992087 85448999835.0804 4 24 inf 0.0 532.904613494873 106.5809226989746
+dsgdb9nsd_000035 basin02 seed00 5 1.1646347732828006 1.319871480056357 0.0039062041699909466 934527589.7766852 221.80456303687058 138755053483.532 4 24 inf 0.0 532.2318375110626 106.44636750221252
+
+[blank]
+#   species                    String: the molecule (QM9 index)
+#   basin                      String: the basin folder
+#   n_seeds                    Integer: trajectories of this basin
+#   TS_QH_mean_kcal            Double, kcal/mol: mean T*S_QH over the seeds
+#   TS_QH_spread_kcal          Double, kcal/mol: max minus min of T*S_QH over the seeds
+#   TS_QH_rms_about_mean_kcal  Double, kcal/mol: root-mean-square of T*S_QH about its mean over the seeds: the noise floor of criterion 5
+#   standard_error_kcal        Double, kcal/mol: sample standard deviation over sqrt(n_seeds); NA with one seed
+#   note                       String: why the floor is not measured, when it is not
+# species basin n_seeds TS_QH_mean_kcal TS_QH_spread_kcal TS_QH_rms_about_mean_kcal standard_error_kcal note
+dsgdb9nsd_000035 basin00 1 1.6432667279114774 0.0 0.0 NA "one seed per basin (ruling 2026-09-13): no noise floor is measured here; --seeds 2 or more would give one"
+dsgdb9nsd_000035 basin01 1 3.6602372938445416 0.0 0.0 NA "one seed per basin (ruling 2026-09-13): no noise floor is measured here; --seeds 2 or more would give one"
+dsgdb9nsd_000035 basin02 1 1.1646347732828006 0.0 0.0 NA "one seed per basin (ruling 2026-09-13): no noise floor is measured here; --seeds 2 or more would give one"
+
+[assembly]
+#   species                    String: the molecule (QM9 index)
+#   basin                      String: the basin folder
+#   G_minus_Eel_kcal           Double, kcal/mol: G minus E_el assembled from the quasi-harmonic spectrum with the same translational, rotational and electronic terms as the Hessian route
+#   A_vib_kcal                 Double, kcal/mol: the vibrational term of that assembly
+#   S_vib_kcal_per_K           Double, kcal/(mol K): the vibrational entropy of that assembly
+#   terms_match_hessian_route  Boolean: the translational, rotational and electronic terms are identical to the Hessian route's (criterion 7)
+# species basin G_minus_Eel_kcal A_vib_kcal S_vib_kcal_per_K terms_match_hessian_route
+dsgdb9nsd_000035 basin00 882812326.6308346 882812342.8083334 0.005511543611978795 true
+dsgdb9nsd_000035 basin01 467767368.5632099 467767384.65166426 0.012276496038385182 true
+dsgdb9nsd_000035 basin02 934527573.6090671 934527589.7766852 0.0039062041699909466 true

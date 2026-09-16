@@ -1,0 +1,63 @@
+[Calculation_Status]
+PROGNAME = "openQHA md"          # String: the step that wrote this file
+VERSION  = "0.3.0"               # String: openQHA version
+STATUS   = "NORMAL TERMINATION"  # String: the completion marker
+
+[Calculation_Info]
+QM9_INDEX               = "dsgdb9nsd_000035"    # String: the molecule
+BASIN                   = 1                     # Integer: the basin this trajectory started from
+ROUTE                   = "openmm"              # String: openmm or ase
+SETTING                 = "default"             # String: the setting name (default, or a row of a settings array)
+ENGINE                  = "MACE-OFF23_medium"   # String: the potential
+SEED                    = 1633825901            # Integer: velocity seed of the last segment
+SEED_FORMULA            = "drawn at run time (seed0=0; recorded here)"  # String: how the seed was chosen
+THERMOSTAT              = "openmmtools Nose-Hoover chain (openmmtools.integrators.NoseHooverChainVelocityVerletIntegrator)"  # String: the integrator (identity input)
+THERMOSTAT_TDAMP        = 20.0                  # Double, fs: Nose-Hoover coupling time (identity input)
+THERMOSTAT_CHAIN_LENGTH = 5                     # Integer: Nose-Hoover chain length (identity input)
+TIMESTEP                = 1.0                   # Double, fs: integration step (identity input)
+HMASS                   = 1.008                 # Double, amu: hydrogen mass (identity input; the real one)
+SOURCE                  = "openQHA.branchB.openmm_nose_hoover"  # String: which driver produced the trajectory (identity input)
+ENSEMBLE                = "canonical (Nose-Hoover chain, OpenMM)"  # String: the ensemble sampled
+TEMPERATURE             = 298.15                # Double, K: thermostat target
+SAMPLE_EVERY            = 1000                  # Integer, steps: frames are written every this many steps
+FRAME_SPACING           = 1000.0                # Double, fs: time between frames
+PLATFORM                = "CPU"                 # String: OpenMM platform, or the ASE thermostat class
+COM_PINNED              = false                 # Boolean: centre of mass pinned to the origin
+GEOMETRY_SOURCE         = "branch A basins: /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/mace"  # String: where the starting geometry came from
+ENGINE_FOLDER           = "/home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_openmm/basin01"  # String: the engine folder of this trajectory
+
+[Masses]
+SYMBOLS = ["C", "C", "C", "O", "H", "H", "H", "H", "H", "H"]  # ArrayOfStrings: atom order of the trajectory (branch A's)
+MASSES  = [12.011, 12.011, 12.011, 15.999, 1.008, 1.008, 1.008, 1.008, 1.008, 1.008]  # ArrayOfDoubles, amu: the masses the driver integrated with
+
+[Force_Check]
+AGREES          = true                    # Boolean: the engine's force equals ASE's at the start geometry
+DELTA_ENERGY    = 0.0                     # Double, eV: engine minus ASE
+MAX_DELTA_FORCE = 2.1346992099338657e-15  # Double, eV/A: largest force component difference
+
+[Equilibration]
+DONE          = true                 # Boolean: equilibration finished (the resume marker)
+PS            = 1.0                  # Double, ps: length
+WALL          = 109.99681973457336   # Double, s: wall time
+T_SECOND_HALF = 317.79083819872534   # Double, K: mean temperature over the second half
+DRIFT         = -1.2449433313449845  # Double, kJ/mol: potential energy, second half minus first
+
+[Production]
+N_FRAMES                 = 5                    # Integer: frames in the engine file
+N_TARGET                 = 5                    # Integer: frames asked for
+COMPLETE                 = true                 # Boolean: N_FRAMES reached N_TARGET
+PS                       = 5.0                  # Double, ps: length asked for
+WALL                     = 532.904613494873     # Double, s: wall time of this run's production
+SECONDS_PER_PS           = 106.5809226989746    # Double, s/ps: cost of this run (its own frames only)
+T_MEAN                   = 297.84716649733275   # Double, K: mean temperature over production
+T_DEVIATION              = -0.30283350266722664  # Double, K: T_MEAN minus TEMPERATURE
+COM_DRIFT                = 14.305945909950735   # Double, A: centre-of-mass drift over production
+STOPPED_ON_WALL_BUDGET   = false                # Boolean: cut by the wall budget
+RESUMED                  = false                # Boolean: this run appended to frames already on disk
+N_FRAMES_ALREADY_ON_DISK = 0                    # Integer: frames found at the start of this run
+
+[[Segment]]
+INDEX       = 0           # Integer
+SEED        = 1633825901  # Integer: velocity seed of this segment
+FRAMES_FROM = 0           # Integer: first frame index of this segment
+FRAMES_TO   = 5           # Integer: one past its last frame

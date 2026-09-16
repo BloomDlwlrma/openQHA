@@ -1,0 +1,30 @@
+============================================================================================
+Branch B -- quasi-harmonic production trajectories
+============================================================================================
+species        dsgdb9nsd_000035
+geometries     3  (branch A basins: /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/mace)
+engine         MACE-OFF23_medium
+protocol       dt = 1.0 fs, Nose-Hoover chain, tdamp = 20.0 fs, chain = 3 (refused above 20.0 fs -- see THERMOSTAT), T = 298.15 K, frame every 1000.0 fs
+prohibitions   no bias, no constraints, real hydrogen mass
+length         1.0 ps equilibration + 5.0 ps production x 3 seeds
+molecule       /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035
+engine         md_ase/basinNN/   (ASE's own files; records in _records/md_ase/default/)
+frames/traj    5   against 3N-6 = 24  (rank limit is frames-1)
+
+cuequivariance or cuequivariance_torch is not available. Cuequivariance acceleration will be disabled.
+-- basin 1 seed 0 -> /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase/basin01  (records /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/_records/md_ase/basin01)
+   5 frames, complete=True, 580.0 s, T = 272.4515348770874
+
+basin    seed      frames     wall s     T mean K  complete
+1        0              5      580.0       272.45  True
+
+engine files under /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/md_ase  (setting default)
+records under      /home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035/_records/md_ase
+
+----- stderr -----
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/e3nn/o3/_wigner.py:10: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.
+  _Jd, _W3j_flat, _W3j_indices = torch.load(os.path.join(os.path.dirname(__file__), 'constants.pt'))
+/home/ubuntu/anaconda3/envs/openqha/lib/python3.11/site-packages/mace/calculators/mace.py:226: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.
+  torch.load(f=model_path, map_location=device)
+/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/scripts/production/s0_B_qha_trajectory.py:340: DeprecationWarning: Use thermalize_momenta
+  MaxwellBoltzmannDistribution(atoms, temperature_K=temperature_K, rng=rng)
