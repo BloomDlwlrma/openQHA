@@ -1,0 +1,25 @@
+[Calculation_Status]
+PROGNAME = "openQHA collect"     # String: the step that wrote this file
+VERSION  = "0.3.0"               # String: openQHA version
+STATUS   = "NORMAL TERMINATION"  # String: the completion marker
+
+[Calculation_Info]
+QM9_INDEX      = "dsgdb9nsd_000035"   # String: the molecule
+TAG            = "propanal_t30"       # String: the tag of this run
+BASIN_TAG      = "propanal"           # String: the tag whose basins the trajectories started from
+SETTING        = "default"            # String: the setting name
+ROUTE          = "openmm"             # String: openmm or ase
+ENGINE         = "MACE-OFF23_medium"  # String: the potential
+TEMPERATURE    = 298.15               # Double, K: the temperature of the entropies
+SIGMA          = 1                    # Integer: symmetry number declared for the molecule
+G0             = 1                    # Integer: electronic degeneracy declared for the molecule
+N_TRAJECTORIES = 3                    # Integer: trajectories analysed
+N_BASINS       = 3                    # Integer: basins with at least one trajectory
+FRAME_SPACING  = 1000.0               # Double, fs: time between frames
+TIMESTEP       = 1.0                  # Double, fs: integration step of the trajectories
+
+[Criteria]
+N_PASSED   = 7          # Integer: collect's acceptance criteria passed
+N_TOTAL    = 10         # Integer: criteria checked (each with its measure in collect.out)
+ALL_PASSED = false      # Boolean: what the collect Batch and the ensemble report read
+FAILED     = [1, 4, 9]  # ArrayOfIntegers: numbers of the criteria that failed

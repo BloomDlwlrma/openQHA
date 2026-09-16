@@ -1,28 +1,76 @@
 """The Records of collect, the ensemble report and 02d (records redesign ticket 19, 2026-09-15).
 
 All three live in `_records/md_<route>/` with the setting in the stem
-(`collect.out`, `collect_s2.toml`, `collect_s2.trajectories.dat`, `ensemble_s2.toml`):
+(`collect.out`, `collect_s2.toml`, `collect_s2.dat`, `ensemble_s2.toml`):
 
     collect.out              the Report; written before the Property file
     collect.toml             [Calculation_Status] [Calculation_Info] [Criteria]; STATUS is what the
                              collect Batch reads to say a molecule is done
-    collect.trajectories.dat .criteria.dat .assembly.dat .blank.dat   the tables (openqha.store.dat)
+    collect.dat              the Table (openqha.store.dat): sections [trajectories] [blank]
+                             [assembly], every column explained above its header (COLUMNS)
     ensemble.out / .toml     [Calculation_Info] [[Result]] (one per atom set) [[Basin]]
     02d_frequency_identity.out / .toml   [Calculation_Info] [[Basin]] [[Hybrid]]
 
 The Property files hold only what a later step reads (collect's STATUS and verdict count;
 the ensemble's F_conf, populations, per-basin T*S; 02d's per-basin numbers). Every
-detail is in the `.out`.
+detail is in the `.out`. The criteria are not a table (user ruling 2026-09-16, ADR 0003
+amendment): each verdict is a sentence with its measure in `collect.out`, and the counts
+a later step reads are `[Criteria]` in `collect.toml`.
 """
 import re
 from pathlib import Path
 
-from ..store import layout, property as prop
+from ..store import dat, layout, property as prop
 
 COLLECT = "collect"
 ENSEMBLE = "ensemble"
 IDENTITY = "02d_frequency_identity"
-TABLES = ("trajectories", "criteria", "assembly", "blank")
+
+#: The sections of collect's Table, in file order; always all three, empty or not.
+SECTIONS = ("trajectories", "blank", "assembly")
+
+#: The columns of each section, `{column: (Type, unit or None, doc)}` in the Property
+#: file's form; the Table carries one comment line per column from here. The names are
+#: the ones the ensemble and the tests key on and are not changed; the unit in a name
+#: keeps a row readable when its header has scrolled off.
+COLUMNS = {
+    "trajectories": {
+        "species": ("String", None, "the molecule (QM9 index)"),
+        "basin": ("String", None, "the basin folder the trajectory started from (basin00, ...)"),
+        "seed": ("String", None, "the seed folder label (seed00; one seed per basin since 2026-09-13)"),
+        "n_frames": ("Integer", None, "frames the covariance was formed from"),
+        "TS_QH_kcal": ("Double", "kcal/mol", "T*S from the quasi-harmonic entropy (mode by mode from the mass-weighted covariance)"),
+        "TS_Schlitter_kcal": ("Double", "kcal/mol", "T*S from Schlitter's upper bound on the same covariance"),
+        "S_QH_kcal_per_K": ("Double", "kcal/(mol K)", "the quasi-harmonic entropy itself"),
+        "A_vib_kcal": ("Double", "kcal/mol", "vibrational Helmholtz energy summed over the quasi-harmonic modes"),
+        "lowest_frequency_cm_inv": ("Double", "cm^-1", "the softest quasi-harmonic mode"),
+        "highest_frequency_cm_inv": ("Double", "cm^-1", "the stiffest quasi-harmonic mode"),
+        "n_nonzero": ("Integer", None, "covariance eigenvalues above the rank tolerance (criterion 9)"),
+        "expected_modes": ("Integer", None, "3N-6, the modes a full-rank covariance has"),
+        "rigid_ratio": ("Double", None, "first vibrational eigenvalue over the largest rigid-body one on the unprojected covariance; inf when the rigid ones vanish (criterion 4's separation)"),
+        "saturation_last_doubling_kcal": ("Double", "kcal/mol", "rise of T*S_QH over the last doubling of trajectory length (criterion 1's increment)"),
+        "wall_seconds": ("Double", "s", "production wall time of the run that finished the trajectory"),
+        "seconds_per_ps": ("Double", "s/ps", "that run's cost per picosecond of its own frames"),
+    },
+    "blank": {
+        "species": ("String", None, "the molecule (QM9 index)"),
+        "basin": ("String", None, "the basin folder"),
+        "n_seeds": ("Integer", None, "trajectories of this basin"),
+        "TS_QH_mean_kcal": ("Double", "kcal/mol", "mean T*S_QH over the seeds"),
+        "TS_QH_spread_kcal": ("Double", "kcal/mol", "max minus min of T*S_QH over the seeds"),
+        "TS_QH_rms_about_mean_kcal": ("Double", "kcal/mol", "root-mean-square of T*S_QH about its mean over the seeds: the noise floor of criterion 5"),
+        "standard_error_kcal": ("Double", "kcal/mol", "sample standard deviation over sqrt(n_seeds); NA with one seed"),
+        "note": ("String", None, "why the floor is not measured, when it is not"),
+    },
+    "assembly": {
+        "species": ("String", None, "the molecule (QM9 index)"),
+        "basin": ("String", None, "the basin folder"),
+        "G_minus_Eel_kcal": ("Double", "kcal/mol", "G minus E_el assembled from the quasi-harmonic spectrum with the same translational, rotational and electronic terms as the Hessian route"),
+        "A_vib_kcal": ("Double", "kcal/mol", "the vibrational term of that assembly"),
+        "S_vib_kcal_per_K": ("Double", "kcal/(mol K)", "the vibrational entropy of that assembly"),
+        "terms_match_hessian_route": ("Boolean", None, "the translational, rotational and electronic terms are identical to the Hessian route's (criterion 7)"),
+    },
+}
 
 _LEADING_NUMBER = re.compile(r"^\s*(\d+)\b")
 
@@ -33,14 +81,32 @@ def stem(molecule, route, setting, name):
 
 
 def collect_paths(stem_path):
-    """The files of one collect Calculation from its stem (`.../collect_s2`)."""
+    """The files of one collect Calculation from its stem (`.../collect_s2`):
+    `out`, `toml`, `dat`."""
     stem_path = Path(stem_path)
     d, n = stem_path.parent, stem_path.name
-    out = {"out": d / (n + ".out"), "toml": d / (n + ".toml")}
-    for t in TABLES:
-        out[t] = d / "{}.{}.dat".format(n, t)
-    return out
+    return {"out": d / (n + ".out"), "toml": d / (n + ".toml"), "dat": d / (n + ".dat")}
 
+
+def write_collect_table(stem_path, sections):
+    """`collect.dat` from `{section: rows}`: every section of SECTIONS, in order, empty
+    or not, each column commented from COLUMNS. Returns the (section, column) pairs
+    the schema does not know PLUS the schema columns a non-empty section lacks, so the
+    caller refuses a Table whose columns and comments have drifted apart."""
+    body = []
+    drift = []
+    for s in SECTIONS:
+        rows = list(sections.get(s) or [])
+        cols = list(rows[0].keys()) if rows else list(COLUMNS[s])
+        body.append((s, (rows, cols)))
+        drift += [(s, c) for c in COLUMNS[s] if c not in cols]
+    unknown = dat.write_tables(collect_paths(stem_path)["dat"], body, COLUMNS)
+    return unknown + drift
+
+
+def read_collect_table(stem_path):
+    """`{section: rows}` of `collect.dat`; refuses a missing Table by name."""
+    return dat.read_tables(collect_paths(stem_path)["dat"])
 
 def _f(v):
     return None if v is None else float(v)
@@ -70,7 +136,7 @@ COLLECT_SCHEMA = {
     },
     "Criteria": {
         "N_PASSED": ("Integer", None, "collect's acceptance criteria passed"),
-        "N_TOTAL": ("Integer", None, "criteria checked (each with its measure in collect.out and collect.criteria.dat)"),
+        "N_TOTAL": ("Integer", None, "criteria checked (each with its measure in collect.out)"),
         "ALL_PASSED": ("Boolean", None, "what the collect Batch and the ensemble report read"),
         "FAILED": ("ArrayOfIntegers", None, "numbers of the criteria that failed"),
     },

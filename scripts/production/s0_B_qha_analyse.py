@@ -142,6 +142,39 @@ def assembly_consistency(masses, positions, eigenvalues, symmetry_number, degene
                        electronic_degeneracy=int(degeneracy))
 
 
+def table_sections(species, per_traj, blank, assembly):
+    """The rows of collect's Table, `{section: rows}` for `trajectories`, `blank`,
+    `assembly` -- the columns `chain_records.COLUMNS` explains, in that order. A column
+    added here without its explanation is refused by the writer, not written bare."""
+    return dict(
+        trajectories=[dict(
+            species=species, basin=t["basin"], seed=t["seed"],
+            n_frames=t["analysis"]["rank_check"]["n_frames"],
+            TS_QH_kcal=t["analysis"]["entropy"]["TS_QH_kcal"],
+            TS_Schlitter_kcal=t["analysis"]["entropy"]["TS_Schlitter_kcal"],
+            S_QH_kcal_per_K=t["analysis"]["entropy"]["S_QH_kcal_per_K"],
+            A_vib_kcal=t["analysis"]["entropy"]["A_vib_kcal"],
+            lowest_frequency_cm_inv=t["analysis"]["entropy"]["lowest_frequency_cm_inv"],
+            highest_frequency_cm_inv=t["analysis"]["entropy"]["highest_frequency_cm_inv"],
+            n_nonzero=t["analysis"]["spectrum"]["n_nonzero_eigenvalues"],
+            expected_modes=t["analysis"]["spectrum"]["expected_vibrational_modes"],
+            rigid_ratio=t["analysis"]["spectrum"]["rigid_to_first_vibrational_ratio"],
+            saturation_last_doubling_kcal=t["saturation"][
+                "increment_over_last_doubling_kcal"],
+            wall_seconds=t["meta"]["production"].get("wall_seconds"),
+            seconds_per_ps=t["meta"]["production"].get("seconds_per_ps_this_run"),
+        ) for t in per_traj],
+        blank=[dict(species=species, **{k: v for k, v in b.items() if k != "values_kcal"})
+               for b in blank],
+        assembly=[dict(species=species, basin=a["basin"],
+                       G_minus_Eel_kcal=a["G_minus_Eel_kcal"],
+                       A_vib_kcal=a["A_vib_kcal"],
+                       S_vib_kcal_per_K=a["S_vib_kcal_per_K"],
+                       terms_match_hessian_route=a["consistency"]["all_identical"])
+                  for a in assembly],
+    )
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -415,7 +448,7 @@ def main():
     ]
 
     # ---- product ---------------------------------------------------------------------
-    # collect.out, collect.toml and the four .dat tables in _records/md_<route>/, the setting
+    # collect.out, collect.toml and the Table collect.dat in _records/md_<route>/, the setting
     # in the stem (collect_s2.out); no setting level (records redesign, 2026-09-15).
     from openqha.quasi_harmonic import chain_records
     out_stem = Path(args.out) if args.out else chain_records.stem(molecule, route, args.setting, chain_records.COLLECT)
@@ -519,6 +552,10 @@ def main():
     for criterion, measured, passed in verdicts:
         r.verdict(criterion, measured, passed)
 
+    # The dump holds what nothing else holds: the per-trajectory analysis, saturation and
+    # mode batches, the declaration and the cross-checks. The blank control, the assembly
+    # and the criteria are in collect.dat and the Criteria section above (user ruling
+    # 2026-09-16); repeating them here made a 400-column table nobody could read.
     r.json_dump(dict(
         species=args.species, tag=args.tag, temperature_K=temperature,
         declaration=spec,
@@ -527,51 +564,21 @@ def main():
                                  if k not in ("masses_amu", "symbols")},
                            analysis=t["analysis"], saturation=t["saturation"],
                            mode_batches=t["mode_batches"]) for t in per_traj],
-        blank_control=blank, assembly=assembly, gromacs_cross_check=cross,
+        gromacs_cross_check=cross,
         superposition_cross_check=superposition,
-        criteria=[dict(criterion=c, measured=m, passed=p) for c, m, p in verdicts],
     ))
 
-    tables = dict(
-        trajectories=[dict(
-            species=args.species, basin=t["basin"], seed=t["seed"],
-            n_frames=t["analysis"]["rank_check"]["n_frames"],
-            TS_QH_kcal=t["analysis"]["entropy"]["TS_QH_kcal"],
-            TS_Schlitter_kcal=t["analysis"]["entropy"]["TS_Schlitter_kcal"],
-            S_QH_kcal_per_K=t["analysis"]["entropy"]["S_QH_kcal_per_K"],
-            A_vib_kcal=t["analysis"]["entropy"]["A_vib_kcal"],
-            lowest_frequency_cm_inv=t["analysis"]["entropy"]["lowest_frequency_cm_inv"],
-            highest_frequency_cm_inv=t["analysis"]["entropy"]["highest_frequency_cm_inv"],
-            n_nonzero=t["analysis"]["spectrum"]["n_nonzero_eigenvalues"],
-            expected_modes=t["analysis"]["spectrum"]["expected_vibrational_modes"],
-            rigid_ratio=t["analysis"]["spectrum"]["rigid_to_first_vibrational_ratio"],
-            saturation_last_doubling_kcal=t["saturation"][
-                "increment_over_last_doubling_kcal"],
-            wall_seconds=t["meta"]["production"].get("wall_seconds"),
-            seconds_per_ps=t["meta"]["production"].get("seconds_per_ps_this_run"),
-        ) for t in per_traj],
-        blank_control=[dict(species=args.species, **{k: v for k, v in b.items()
-                                                     if k != "values_kcal"})
-                       for b in blank],
-        assembly=[dict(species=args.species, basin=a["basin"],
-                       G_minus_Eel_kcal=a["G_minus_Eel_kcal"],
-                       A_vib_kcal=a["A_vib_kcal"],
-                       S_vib_kcal_per_K=a["S_vib_kcal_per_K"],
-                       terms_match_hessian_route=a["consistency"]["all_identical"])
-                  for a in assembly],
-        criteria=[dict(species=args.species, criterion=c, measured=str(m), passed=p)
-                  for c, m, p in verdicts],
-    )
-    # CREST/ORCA style (step 2, 2026-09-15): the tables as whitespace .dat, then the
-    # report collect.out LAST -- its terminal line is the completion marker the collect
-    # driver looks for, so a kill before this line leaves the molecule to be redone.
-    from openqha.store import dat
-    written = []
-    for name, rows in tables.items():
-        if rows:
-            p = out_stem.parent / "{}.{}.dat".format(out_stem.name, "blank" if name == "blank_control" else name)
-            dat.write_table(p, rows)
-            written.append((p, len(rows)))
+    # The Table (collect.dat, sections trajectories / blank / assembly, every column
+    # commented from chain_records.COLUMNS), then the Report, then the Property file
+    # LAST -- its STATUS is what the collect Batch reads to say this molecule is done,
+    # so a kill before that line leaves the molecule to be redone.
+    sections = table_sections(args.species, per_traj, blank, assembly)
+    drift = chain_records.write_collect_table(out_stem, sections)
+    if drift:
+        raise RuntimeError("collect.dat: columns and their explanations have drifted apart "
+                           "{}; fix openqha.quasi_harmonic.chain_records.COLUMNS".format(drift))
+    written = [(chain_records.collect_paths(out_stem)["dat"],
+                ", ".join("{} {}".format(len(sections[s]), s) for s in chain_records.SECTIONS))]
     out_path = r.write(str(out_stem) + ".out", step="collect")
     # The Property file LAST: its STATUS is what the collect Batch reads to say this molecule
     # is done, so a kill before this line leaves the molecule to be redone.

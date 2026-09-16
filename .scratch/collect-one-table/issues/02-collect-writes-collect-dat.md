@@ -4,10 +4,10 @@
 
 **Blocked by:** 01 (Table module: sections and column comments).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-16
 
-- [ ] after collect, the records folder holds `collect.out`, `collect.toml`, `collect.dat` and no other `.dat`
-- [ ] `collect.dat` has the three sections in order; each header column has a comment; the writer reports no unknown column (unit test over the schema against the columns collect builds)
-- [ ] `collect.out` contains each criterion sentence exactly once
-- [ ] the collect Batch driver still reads STATUS from `collect.toml` and is otherwise untouched
-- [ ] the `N_TOTAL` comment in the collect Property file points at `collect.out` only
+- [x] after collect, the records folder holds `collect.out`, `collect.toml`, `collect.dat` and no other `.dat`
+- [x] `collect.dat` has the three sections in order; each header column has a comment; the writer reports no unknown column (unit test over the schema against the columns collect builds)
+- [x] `collect.out` contains each criterion sentence exactly once
+- [x] the collect Batch driver still reads STATUS from `collect.toml` and is otherwise untouched
+- [x] the `N_TOTAL` comment in the collect Property file points at `collect.out` only
