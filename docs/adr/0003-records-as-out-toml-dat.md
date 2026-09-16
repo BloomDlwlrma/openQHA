@@ -39,3 +39,24 @@ a Record; a Batch (one driver over many Calculations) owns none, its Slurm log l
 Calculation's return code, STATUS and record path. The three JSON batch summaries are
 gone, and so is the `<setting>` level under `_records` (the setting is in the file stem,
 as for engine files). Spec: `.scratch/records-redesign/spec.md`.
+
+## Amendment (2026-09-16): one Table per Calculation, sections named, columns explained
+
+Collect left four `.dat` files (`collect.trajectories.dat`, `.criteria.dat`,
+`.assembly.dat`, `.blank.dat`), each a bare header line over abbreviated column names
+(`TS_QH_rms_about_mean_kcal`, `rigid_ratio`) that nothing on disk explained. The user
+ruled that a Calculation leaves ONE Table, `collect.dat` (`collect_s2.dat` for a setting,
+the stem rule of engine files), with a `[section]` line before each of its tables
+(`trajectories`, `blank`, `assembly`; always all three, empty or not) and one comment line
+per column above the header in the Property file's form, `Type, unit: doc`, generated
+from a column schema so every Table carries the same text and an undocumented column is a
+test failure. Column names are unchanged: the ensemble and the tests key on them, and the
+unit in the name keeps a row readable without its header.
+
+The criteria are not a table. Each verdict is a sentence with its measure, printed once in
+`collect.out`; the counts and the failed numbers a later step reads are `[Criteria]` in
+`collect.toml`, and the ensemble reads them there (the Property file is what a later step
+reads back). The expanded dump at the end of `collect.out` stops repeating the rows the
+Table and the `Criteria` section already hold; the per-trajectory analysis it alone holds
+stays. CONTEXT.md gains **Table**; a Record is a Report, a Property file and, for collect,
+a Table.

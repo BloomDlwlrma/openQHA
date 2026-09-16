@@ -18,8 +18,9 @@ an OpenMM `.dcd`.
 _Avoid_: raw output, native output, product (that word is reserved for the answer)
 
 **Record**:
-What this repository writes about one Calculation: a Report and a Property file, in the
-molecule directory. Nothing is written about a Batch.
+What this repository writes about one Calculation: a Report, a Property file and, when the
+Calculation produces rows, a Table, in the molecule directory. Nothing is written about a
+Batch.
 _Avoid_: metadata, artefact, sidecar, summary
 
 **Report**:
@@ -31,6 +32,12 @@ _Avoid_: log (that is an engine's or Slurm's stdout), summary
 The `.toml` beside a Report holding what a later step reads back, in the form ORCA's
 `.property.txt` takes: a status block, the inputs, and the result blocks; nothing else.
 _Avoid_: metadata file, meta, record file, settings file
+
+**Table**:
+The one whitespace `.dat` beside a Report holding a Calculation's per-row numbers, in the
+form CREST's `crest.energies` takes, with every section named and every column explained
+in a comment above its header. Collect is the one Calculation that leaves one.
+_Avoid_: csv, parquet, dataframe, sidecar, the four tables
 
 **Calculation**:
 One step applied to one molecule or one basin: a CREST run, a MACE relax and Hessian,
