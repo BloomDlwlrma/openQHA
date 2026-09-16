@@ -128,12 +128,18 @@ workers), so the defaults need nothing from this conf.
   crest/                              branch A: CREST's working directory
   mace/basinNN/basin.extxyz, hessian.npy   branch A: the basins
   md_openmm/basinNN/traj.dcd, start.pdb, state.csv, ...   branch B: OpenMM's files
-  _records/basins.json                branch A's record
-  _records/md_openmm/default/            collect tables, ensemble.json  (F_conf, populations, ΔG)
+  _records/branchA.out, branchA.toml  branch A's Record (the Report and the Property file)
+  _records/md_openmm/basinNN/md.out, md.toml, driver.log   one trajectory's Record
+  _records/md_openmm/collect.out, collect.toml, collect.dat   the analysis (the Table: three sections, columns explained)
+  _records/md_openmm/ensemble.out, ensemble.toml   F_conf, populations, dG
 ```
-(since 2026-09-14; `docs/output_inventory.md` section 6. The test chain's TAG is
-`propanal_t30` for its records; its trajectories go into the molecule directory of
-BASIN_TAG `propanal` under `md_openmm/basinNN/`, setting `default`.)
+(since 2026-09-15; `docs/output_inventory.md` section 8. The test chain's TAG is
+`propanal_t30`; its trajectories and Records go into the molecule directory of BASIN_TAG
+`propanal`; another setting keeps the same folders with the setting in the file stem,
+`traj_s2.dcd`, `md_s2.toml`, `collect_s2.out`. `sample_records/openmm/` and
+`sample_records/ase/` beside this README hold the `_records/` of a local run of exactly
+this chain, both routes, at test30 length: open `branchA.toml` and `md_openmm/basin00/md.toml`
+to see the form before running anything.)
 
 Read in this order:
 
@@ -159,4 +165,4 @@ Production is 50 ps equilibration + 500 ps at one frame per 1.0 ps
 **That is a CPU number quoted for a GPU job**, because it is the only measurement that
 exists; this repository's one GPU figure for branch B is 3.5× *slower* than CPU on a T400,
 which does not transfer to an 80 GB card and has not been replaced. Read
-`seconds_per_ps_this_run` out of the first `meta.json` and plan from that.
+`SECONDS_PER_PS` out of the first `md.toml` (`[Production]`) and plan from that.

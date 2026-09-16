@@ -1,5 +1,11 @@
 # Everything this repository writes that is not an engine file, and what reads it
 
+> **Superseded on 2026-09-15** by step 2: the records below became `branchA.out` +
+> `basins.toml`, `md.out` + `md.toml`, `collect.out` + four `.dat` files (one Table `collect.dat` since 2026-09-16), `ensemble.out` +
+> `ensemble.toml` (see `docs/output_inventory.md` section 7), and on the same day by the
+> records redesign (section 8: property-style `.toml`, no setting level, no Batch record).
+> This file is kept as the inventory those decisions were taken from.
+
 Taken from the code on 2026-09-15, after tickets 01-10 of the layout change. This is the
 input to step 2 (the form and home of the records). "Reader" is a program in this
 repository that opens the file; "human" means nothing does.

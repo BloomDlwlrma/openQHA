@@ -166,3 +166,111 @@ Not covered by the change: the ASE-route trajectory driver (`s0_B_qha_trajectory
 CPU cross-check) still writes `frames.npy` + `meta.json` under the old runs root and the
 collect step no longer finds those; the Slurm `.out/.err` and parsl run directories stay
 under the repository's `logs/` until step 2 decides the records.
+
+## 7. Step 2 (2026-09-15): the records, CREST/ORCA style
+
+The five records a program needs later, and everything beside them, took the form CREST
+and ORCA use: a text report per step whose last line says the step terminated normally
+(the completion marker), TOML for what a program reads back (CREST's own settings
+format; Python 3.11 reads it with the standard library), and whitespace tables for
+collect's numbers. Nothing is JSON or parquet any more, and nothing is written twice.
+
+    <molecule>/_records/
+      branchA.out                       branch A's report; last line = the marker
+      basins.toml                       branch A's record (basins, criteria, settings, CREST, census)
+      md_<route>/<setting>/basinNN/md.out      the trajectory's report
+      md_<route>/<setting>/basinNN/md.toml     the trajectory's record (seed, identity inputs, resume)
+      md_<route>/<setting>/collect.trajectories.dat  .criteria.dat  .assembly.dat  .blank.dat
+      md_<route>/<setting>/collect.out          collect's report, written LAST; last line = the marker
+      md_<route>/<setting>/ensemble.out + ensemble.toml              F_conf over the basins
+      md_<route>/<setting>/02d_frequency_identity.out + .toml        02d only
+    <root>/<tag>/_records/
+      branchB_parsl_summary.json  collect_batch.json   (the parsl drivers' batch summaries; still JSON)
+      parsl/<job>.<pid>/                                parsl's own logs
+
+Gone: basins.json, basins.xyz, meta.json, frames.npy, summary.json, progress.json,
+equilibrated.json, collect.log, collect.json, collect.driver.log, the four parquet
+tables, ensemble.json, 02d_frequency_identity.json. The parquet-engine preflight and the
+pandas/pyarrow requirement of the chain went with them.
+
+Readers: `openqha.store.toml_out` (TOML in and out), `openqha.store.dat` (tables),
+`openqha.store.report` (`.out` and `terminated_normally`), `openqha.quasi_harmonic.md_record`.
+(Superseded the same afternoon by section 8.)
+
+## 8. Records redesign (2026-09-15, afternoon): one Record per Calculation, ORCA property style
+
+Two words (CONTEXT.md): a **Calculation** is one step on one molecule or basin and owns a
+**Record**, a **Report** (`.out`) plus a **Property file** (`.toml`); a **Batch** is one
+driver over many Calculations and owns nothing, its Slurm log is the report. The
+`<setting>` level under `_records/` is gone: the setting is in the file stem, as for
+engine files. The Property file takes ORCA's `.property.txt` shape carried into TOML:
+
+    [Calculation_Status]
+    PROGNAME = "openQHA branchA"     # String: the step that wrote this file
+    VERSION  = "0.3.0"               # String: openQHA version
+    STATUS   = "NORMAL TERMINATION"  # String: the completion marker
+    [Calculation_Info]   the inputs (upper-case keys, a "# Type, unit: doc" comment each)
+    ...                  only the result blocks a later step reads; [[Basin]] etc. with INDEX
+
+STATUS is the completion marker for programs (RUNNING while a trajectory driver may still
+be resumed; a file without it never got that far); the Report's last line stays the
+marker for people. Provenance, diagnostics, criterion detail lines, the sigma tolerance
+sweep, the thermochemistry breakdown and every file list are printed in the Report only.
+
+    <molecule>/_records/
+      branchA.out   branchA.toml                     [Calculation_Info] [CREST_Run] [Census] [[Basin]] [Criteria]
+      driver.log                                     the driver's stdout when a Batch ran it
+      md_openmm/basinNN/md.out  md.toml  driver.log  [Calculation_Info] [Masses] [Force_Check] [Equilibration]
+                                                     [Production] [[Segment]]; md_s2.* for setting s2
+      md_openmm/collect.out  collect.toml            [Calculation_Info] [Criteria]; collect_s2.* for setting s2
+      md_openmm/collect.dat                          the Table: [trajectories] [blank] [assembly], every
+                                                     column explained above its header (section 9)
+      md_openmm/ensemble.out  ensemble.toml          [Calculation_Info] [[Result]] [[Basin]]
+      md_openmm/02d_frequency_identity.out  .toml    02d only: [[Basin]] [[Hybrid]]
+      md_ase/...                                     the same for the ASE route
+    <root>/<tag>/_records/parsl/<job>.<pid>/         parsl's own logs; nothing else per tag
+
+The Batch table every parsl driver prints (branch A, branch B, collect), one aligned line
+per Calculation, the common columns first and the driver's own after:
+
+    species  basin  seed  rc  seconds  STATUS  record  ...
+    batch wall 5.9 s   3/3 ran to a record
+    slurm job 7351234
+
+`rc` is the return code, STATUS is read from the Property file after the run (FAILED
+when absent with rc != 0, NO RECORD when absent with rc 0), `record` the absolute path.
+
+Gone: `basins.toml` (now `branchA.toml`), the `_records/md_<route>/<setting>/` level,
+`branchB_parsl_summary.json`, `collect_batch.json`, `analysis/branchE/<tag>/batch.json`,
+`analysis/branchA/<tag>/<qid>/driver.log`. `scripts/tooling/s0_delete_old_layout.py --plan`
+lists these leftovers under an existing root.
+
+Writers and readers: `openqha.store.property` (the shape), `openqha.store.branch_a_property`,
+`openqha.quasi_harmonic.md_record`, `openqha.quasi_harmonic.chain_records`,
+`openqha.store.batch_table`. Sample Records: `examples/02b_qha_openmm_propanal/sample_records/`
+(both routes) and `examples/02d_qha_frequency_identity/sample_records/`.
+
+## 9. One Table per Calculation (2026-09-16): `collect.dat`
+
+Collect's four `.dat` became one Table, `collect.dat` (`collect_s2.dat` for a setting), in
+the form CREST's `crest.energies` takes with two additions: a `[section]` line before each
+of its three tables, and one comment line per column above each header in the Property
+file's form, `Type, unit: doc`, generated from a column schema so an undocumented column is
+a test failure. Column names are unchanged.
+
+    [trajectories]                one row per trajectory: n_frames, TS_QH_kcal, TS_Schlitter_kcal,
+                                  S_QH_kcal_per_K, A_vib_kcal, lowest/highest_frequency_cm_inv,
+                                  n_nonzero, expected_modes, rigid_ratio,
+                                  saturation_last_doubling_kcal, wall_seconds, seconds_per_ps
+    [blank]                       one row per basin: n_seeds, TS_QH_mean/spread/rms_about_mean_kcal,
+                                  standard_error_kcal, note
+    [assembly]                    one row per basin: G_minus_Eel_kcal, A_vib_kcal, S_vib_kcal_per_K,
+                                  terms_match_hessian_route
+
+The criteria are not a table: each verdict is a sentence with its measure in `collect.out`
+(once), and the counts a later step reads are `[Criteria]` in `collect.toml`; the ensemble
+reads them there. The expanded dump at the end of `collect.out` no longer repeats the
+rows the Table and the `Criteria` section hold. Glossary: CONTEXT.md **Table**; decision:
+ADR 0003, amendment of 2026-09-16. Writer and reader: `openqha.store.dat`
+(`write_tables`, `read_tables`), `openqha.quasi_harmonic.chain_records` (`COLUMNS`,
+`write_collect_table`, `read_collect_table`).

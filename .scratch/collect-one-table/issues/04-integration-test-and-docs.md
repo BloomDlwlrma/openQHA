@@ -4,8 +4,8 @@
 
 **Blocked by:** 03 (The ensemble reads the Table and the Property file).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-16
 
-- [ ] integration test green on propanal, ASE route, checking the Record on disk
-- [ ] `grep` for `.trajectories.dat`, `.criteria.dat`, `.assembly.dat`, `.blank.dat` finds nothing outside `_backup/`, `.scratch/` history and `.mem/`
-- [ ] the output inventory's section 8 tree shows `collect.dat` with its three sections
+- [x] integration test green on propanal, ASE route, checking the Record on disk
+- [x] `grep` for `.trajectories.dat`, `.criteria.dat`, `.assembly.dat`, `.blank.dat` finds nothing outside `_backup/`, `.scratch/` history and `.mem/`
+- [x] the output inventory's section 8 tree shows `collect.dat` with its three sections

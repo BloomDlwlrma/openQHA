@@ -338,7 +338,9 @@ files in those folders (since 2026-09-14; `docs/output_inventory.md` sections 6 
                        and a .toml Property file for a program ([Calculation_Status] first)
     branchA.out  branchA.toml
     md_openmm/basinNN/md.out  md.toml  driver.log
-    md_openmm/collect.out  collect.toml  collect.*.dat    ensemble.out  ensemble.toml
+    md_openmm/collect.out  collect.toml  collect.dat      ensemble.out  ensemble.toml
+                       (collect.dat is the Table: sections [trajectories] [blank] [assembly],
+                        one comment per column above each header)
 ```
 
 Another setting of the same basin keeps the same folders and puts the setting in the file

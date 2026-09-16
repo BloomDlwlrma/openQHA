@@ -42,7 +42,7 @@ def main():
              TS_QH_kcal=float("nan"), passed=False, note='say "hi" to  two  spaces', missing=1.5),
     ]
     with tempfile.TemporaryDirectory() as t:
-        p = Path(t) / "collect.trajectories.dat"
+        p = Path(t) / "plain.dat"
         dat.write_table(p, rows)
         text = p.read_text(encoding="utf-8")
         print("A. the file")

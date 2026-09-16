@@ -85,9 +85,10 @@ production                             protocol.production_ps, frame every
       |                                protocol.sampling_interval_ps
       |                                flushed every chunk_frames, .part-then-rename
       v
-openmm/basinKK/ traj.dcd + state.csv   <molecule>/openmm/basinKK/  (since 2026-09-14;
-+ start.pdb, system/integrator.xml,    the record meta.json under _records/md_openmm/<setting>/;
-  state.xml, state.chk                 before: frames.npy + meta.json under $S0_RUNS_ROOT/qha/)
+md_openmm/basinKK/ traj.dcd + state.csv  <molecule>/md_openmm/basinKK/ (the setting in the file
++ start.pdb, system/integrator.xml,    names); the Record md.out + md.toml under
+  state.xml, state.chk                 _records/md_openmm/basinKK/ (before 2026-09-14: frames.npy
+                                       + meta.json under $S0_RUNS_ROOT/qha/)
       |
       v  qha.assert_trajectory_identity(meta)      REFUSES a biased or constrained run,
       |                                            a coupling looser than 20 fs, a chain
@@ -230,13 +231,15 @@ indices — an F_conf that looked multi-basin and was not.
 
 ## 7. Where the answer lands, and the order to read it
 
-Since 2026-09-14 (`docs/output_inventory.md` section 6):
+Since 2026-09-15 (`docs/output_inventory.md` section 8; the setting is in the file stem,
+`md_s2.toml`, never a folder):
 
 ```
-<molecule>/md_openmm/basinNN/traj.dcd  start.pdb  state.csv ...        the trajectory (OpenMM's files)
-<molecule>/_records/md_openmm/<setting>/basinNN/meta.json               protocol + provenance
-<molecule>/_records/md_openmm/<setting>/collect__*.parquet, collect.log  per-molecule analysis
-<molecule>/_records/md_openmm/<setting>/ensemble.json                   F_conf, ΔG, populations
+<molecule>/md_openmm/basinNN/traj.dcd  start.pdb  state.csv ...      the trajectory (OpenMM's files)
+<molecule>/_records/md_openmm/basinNN/md.toml  md.out  driver.log    the trajectory's Record
+<molecule>/_records/md_openmm/collect.toml  collect.out  collect.dat     the analysis (collect); the Table has
+                                                                       sections [trajectories] [blank] [assembly]
+<molecule>/_records/md_openmm/ensemble.toml  ensemble.out             F_conf, dG, populations
 <molecule> = <root>/<tag>/<range>/<chunk>/<species>
 ```
 

@@ -167,7 +167,7 @@ def basin_records_dir(molecule, route, basin):
 
 def record_file_name(name, setting=DEFAULT_SETTING):
     """`md.toml` for the default setting, `md_s2.toml` for setting `s2`;
-    `collect.trajectories.dat` -> `collect_s2.trajectories.dat`. The engine-file rule,
+    `collect.dat` -> `collect_s2.dat`. The engine-file rule,
     applied to Records: a Report and its Property file share a stem."""
     return engine_file_name(name, setting)
 
