@@ -204,3 +204,20 @@ def orca_dir(molecule, basin):
 def records_dir(molecule):
     return Path(molecule) / RECORDS
 
+
+#: The level folder (CONTEXT.md; ADR 0004): every level's results for one molecule, one
+#: sub-folder per level named by the level. Engine files never go here.
+LEVELS = "levels"
+
+_LEVEL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def level_dir(molecule, level):
+    """`<molecule>/levels/<level>/`. The level name must already be in the CONTEXT.md
+    spelling (lower-case, `wb97m-d3bj_def2-tzvppd`, `gfn2`, `mace-off23_medium`); an
+    upper-case or slash-bearing name is refused here rather than spelled two ways."""
+    if not _LEVEL_NAME.match(str(level)):
+        raise ValueError("level name {!r} is not in the CONTEXT.md spelling (lower-case, "
+                         "method first, basis second, joined by '_')".format(level))
+    return Path(molecule) / LEVELS / str(level)
+

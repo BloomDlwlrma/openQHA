@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-16
 
-- [ ] propanal's branch A CREST files give g' = (1, 2, 1) for (cis, gauche, third) with the gauche mirror flag set and the third marked `unsampled`
-- [ ] a rotamer group whose members differ only by methyl rotation gives g' = 1 (the rotor-group exclusion works)
-- [ ] the Property file starts with `[Calculation_Status]` and the Report ends with the terminal line; both live in the level folder, not in `_records/`
-- [ ] a molecule directory without `crest_rotamers.xyz` or `cre_members` fails with a message naming the missing file, never with g' = 1
-- [ ] unit tests on a hand-built rotamer file (one achiral, one chiral pair, one single-member group) run green
+- [x] propanal's branch A CREST files give g' = (1, 2, 1) for (cis, gauche, third) with the gauche mirror flag set and the third marked `unsampled`
+- [x] a rotamer group whose members differ only by methyl rotation gives g' = 1 (the rotor-group exclusion works)
+- [x] the Property file starts with `[Calculation_Status]` and the Report ends with the terminal line; both live in the level folder, not in `_records/`
+- [x] a molecule directory without `crest_rotamers.xyz` or `cre_members` fails with a message naming the missing file, never with g' = 1
+- [x] unit tests on a hand-built rotamer file (one achiral, one chiral pair, one single-member group) run green
