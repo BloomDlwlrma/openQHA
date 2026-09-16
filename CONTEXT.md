@@ -67,3 +67,27 @@ _Avoid_: run name, experiment, label
 **Root**:
 The directory the molecule directories are written under, on the shared filesystem.
 _Avoid_: runs root, scratch, keep dir
+
+**Level**:
+The model chemistry that produced a number: `gfn2`, `wb97m-d3bj_def2-tzvppd`,
+`dlpno-ccsdt_cc-pvtz`, `mace-off23_medium`. Lower-case, method first, basis second,
+joined by `_`, dispersion inside the method token. An engine may run several levels
+(ORCA runs two); a level is run by one engine. The reference level for model error is
+`wb97m-d3bj_def2-tzvppd`, the level MACE-OFF23 was trained to.
+_Avoid_: level of theory (as a folder or key name), method, theory
+
+**Level folder**:
+The one folder in a molecule directory, `levels/`, that holds every level's results for
+that molecule, one sub-folder per level named by the level. Engine files stay in engine
+folders; the level folder holds the Records of the Calculations that turn a level's
+Hessians into thermochemistry, and the merge map of that level's basins. A level that was
+not computed for a molecule has no sub-folder: absence is stated, never a zero.
+_Avoid_: reference folder, benchmark folder, per-level records
+
+**Enantiomer degeneracy**:
+The factor `g'` of a basin in the Gibbs-Shannon sum: 1, or the number of RMSD-distinct
+core structures CREST finds inside the basin's rotamer group (2 for a geometric
+enantiomer pair such as gauche-propanal). Obtained by porting CREST's `intraconfRMSD`
+onto `crest_rotamers.xyz` grouped by `cre_members`; never from a rotamer count (methyl
+wells are one harmonic mode in one well).
+_Avoid_: degeneracy (alone -- that is the electronic `g0`), rotamer number, multiplicity
