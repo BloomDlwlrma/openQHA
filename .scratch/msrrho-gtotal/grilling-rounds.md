@@ -75,3 +75,36 @@ empty. Facts fetched along the way are marked (fact).
 - g' port: route (i) only (CREST rotamer file + cre_members); route (ii) rejected.
 
 Frontier empty. CONTEXT.md +3 terms (Level, Level folder, Enantiomer degeneracy); ADR 0004; spec rewritten.
+
+## Round 4 (2026-09-16, after tickets 25-26; closed)
+
+- Q19 `level_compare` compares S_abs / S_conf / G_total only; the reference `.hess`
+  (`$hessian`, `$normal_modes`, `$dipole_derivatives`) is read for the frequency
+  round-trip and nothing else. Ruling: a `hessian_compare` Calculation, MACE Hessian
+  evaluated **at the reference geometry** only (geometry (b): the pure model error in
+  curvature, the quantity plan C must reduce); thermochemistry compared per basin **at
+  each level's own geometry**; `level_compare` grows to every thermochem quantity.
+  `$dipole_derivatives`: MACE-OFF23 has no charges, so `PRESENT = false` at that level.
+- Q20 `invert_below` was implemented and unit-tested on synthetic numbers but never run
+  on real data; every Calculation uses `refuse`. Measured today with
+  `crest --numhess --gfn2 --sthr 25 --ithr -50` on CREST's own propanal conformers
+  (`~/runs/openQHA/dryrun_25_26/conf3_thermo/nh{1,2,3}`): conformer 3 has -68.42 cm^-1
+  in CREST's own numerical Hessian (ours -68.8), BELOW ithr, and CREST neither inverted
+  nor dropped it -- `thermocalc.f90:209` inverts only modes above ithr; a mode below
+  stays negative, gets S = 0 in `thermo.f90:135-138`, and still enters ZPE and H_vib.
+  Its S_vib is 5.035 vs 8.969 / 8.471 for conformers 1 / 2; H_vib +224 cal/mol. This is
+  the origin of the +0.10 / +0.12 dS_bar residual in the seam. CREST has three regimes
+  (invert / keep-with-S=0 / never refuse), we have two. Ruling: test all policies on
+  real data first; inclination towards CREST's default for production; the decision is
+  taken on the numbers ticket 28 produces.
+- Q21 chirality: the port's mirror test is the Kearsley test (reflect, proper-rotation
+  SVD with the determinant sign fixed), mathematically the `procrustes` library's
+  chirality check (`rotational` vs `orthogonal` error; notebook Chirality_Check reads
+  26.09 vs 4e-8 for CHFClBr; **no atom-permutation handling** in the library). The
+  tolerance point-group label `symmetry_class` is the same kind of label that flipped
+  c1/cs in CREST. Ruling: add `procrustes` (qc-procrustes) as a dependency; replace the
+  label by a continuous self-mirror RMSD with the threshold on record; the
+  equivalence-class permutation stays ours. Tormat: reference still to come.
+
+Tickets 27 (`hessian_compare`), 28 (imaginary policies on real data, `crest_native`),
+29 (continuous chirality with `procrustes`).

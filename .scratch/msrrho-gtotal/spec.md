@@ -104,6 +104,24 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
     computed, so that absence is stated and never a zero.
 21. As a user, I want the Property files to hold only what a later step reads and the
     Reports the tables, conventions and provenance, so that ADR 0003 holds.
+22. As a user, I want the MACE Hessian evaluated at the reference geometry of every
+    kept basin and compared with the reference `.hess` as a matrix, as a spectrum and
+    mode by mode, so that the model error in curvature -- the quantity Hessian learning
+    must reduce -- is a number per basin and not inferred from S_abs.
+23. As a user, I want every thermochemical quantity the assembly produces (per basin:
+    ZPE, thermal enthalpy, S_vib, S_rot, G_i, population, relative energy; ensemble:
+    S'_conf, dS_bar, H_conf, Cp_conf, S_abs, G_total) compared between the MACE and
+    reference levels at each level's own geometry, so that `level_compare` answers the
+    whole thermochemistry question and not one number of it.
+24. As a user, I want the three imaginary-mode policies (`refuse`, `invert_below`,
+    CREST's actual behaviour `crest_native`) run on every real level and their spread
+    written into the record, so that the production policy is chosen on numbers.
+25. As a user, I want the GFN2 seam to reproduce CREST's per-conformer treatment of a
+    sub-ithr mode, so that the Hessian tier of the seam closes to the difference between
+    two Hessians of the same geometry and nothing else.
+26. As a user, I want a conformer's achirality decided by a continuous self-mirror RMSD
+    with the threshold on record, checked against the `procrustes` library, so that
+    g' cannot flip between two runs on a point-group label at the edge of a tolerance.
 
 ## Implementation Decisions
 
@@ -155,6 +173,46 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   conformers, `cre_degen2` and per-conformer frequencies are fed to our assembly;
   `S'_conf`, `dS_bar`, `Cp_conf`, `H_conf` must match CREST's printout term by term,
   and our `g'` must match `cre_degen2`. GFN2's `S_abs` then appears as a level.
+- **`hessian_compare`** (`levels/hessian_compare.out/.toml`). For every MACE basin
+  the merge map marks `kept`: the reference geometry is `$atoms` of `job.hess`; the
+  MACE Hessian is evaluated there by `hessian.hessian(mode="analytic")` and stored as
+  an engine file `mace/basinNN/hessian_at_<level>.npy` (ADR 0001). Both Hessians go
+  through `project_and_diagonalise` (one routine, both sides); ORCA's own
+  `$vibrational_frequencies` remain the round-trip check of the reference side. In the
+  mass-weighted Eckart-projected basis: relative Frobenius error, eigenvalue MAE. Modes
+  paired by `quasi_harmonic.mode_match.match` (block-overlap gate, collisions counted,
+  no Hungarian): frequency MAE / max over all modes and over modes below 300 cm^-1,
+  lowest mode each side, number of collisions, minimum block overlap; the per-mode
+  T*S table of the `crest` preset on both spectra and the summed low-mode difference.
+  Thermochemistry is NOT compared at the reference geometry: per basin the two levels'
+  own `[[Basin]]` rows are set side by side (pairing by the merge map), and the
+  `[Ensemble]` / `[Result]` terms likewise. `$dipole_derivatives` are compared only where
+  both engines produce them; MACE-OFF23 has no charges, so at that level the record
+  states `DIPOLE_DERIVATIVES_PRESENT = false`. `level_compare` grows: `[[Level]]`
+  carries S_REF, S_CONF, DS_BAR, H_CONF, CP_CONF, G_TOTAL, N_BASINS, N_BASINS_90 and
+  `[Tiers]` a MODEL_ERROR_ line for each of them; the Report prints the per-basin table.
+- **Imaginary-mode policies on real data.** A third policy `crest_native` reproduces
+  CREST 3.0.2 (`thermocalc.f90:209`, `thermo.f90:135`): modes in (ithr, 0) inverted,
+  modes below ithr kept negative with zero entropy but present in ZPE, H_vib and Cp.
+  Every `thermo_msrrho` record gains `[Imaginary_Spread]`: S_ABS, G_TOTAL, N_INVERTED,
+  N_KEPT_NEGATIVE, N_EXCLUDED under each of the three policies; `ITHR_POLICY` names the
+  one the `[Result]` block used. The production default stays `refuse` until the ruling
+  is taken on the spread across the four molecules; the seam (`crest_entropy`) uses
+  `crest_native`. A sub-ithr mode is reported per basin with its frequency whatever the
+  policy.
+- **Continuous chirality.** `procrustes` (qc-procrustes; Meng et al., Comput. Phys.
+  Commun. 2022, 276, 108334, key `meng2022procrustes`) becomes a dependency of the
+  `openqha` environment. In `degeneracy.py` the mirror-pair test reports
+  `RMSD_ROT = sqrt(rotational(a, b).error / N)` and `RMSD_ORTHO` from `orthogonal`;
+  a pair is a mirror pair when RMSD_ORTHO < 0.75 RTHR and RMSD_ROT >= 0.75 RTHR. A
+  conformer's achirality is `MIRROR_SELF_RMSD` = min over permutations within its
+  RDKit equivalence classes (rotor atoms excluded as in `intraconfRMSD`) of the
+  rotational-Procrustes RMSD between the core and its own reflection; achiral iff below
+  0.75 RTHR; the threshold and the number are in the record. `symmetry_class` stays in
+  the Report as a diagnostic column and decides nothing. The permutation enumeration is
+  ours (the library has none); above 10^4 candidates the value is `unresolved` and
+  g' falls back to the point-group rule with `G_PRIME_SOURCE = label_fallback`.
+  `kabsch_rmsd` must equal the library's rotational RMSD to 1e-8 on every pair it sees.
 - **Branch B unchanged**; the ensemble report gains one comparison line.
 - **Out of this spec but shaped by it**: the Hessian-learning set reads `N_BASINS_90`
   and the merge map (`.scratch/hessian-learning-set/`).
@@ -180,6 +238,24 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   either way.
 - **Reference-level seam**: the propanal dry run parses `.hess` and passes
   `verify_hess_frequencies`; the merge map lists every MACE basin exactly once.
+- **Hessian-compare seams**: on the propanal fixture (reference `.hess` for basins 0-2,
+  a stored `hessian_at_wb97m-d3bj_def2-tzvppd.npy` per basin) the routine that
+  diagonalises the reference side reproduces ORCA's `$vibrational_frequencies` to
+  0.5 cm^-1; the MACE-at-reference spectrum has 0 imaginary modes or the basin is
+  reported with its lowest mode; every kept basin appears once; the low-mode statistics
+  are on modes below 300 cm^-1 only; `DIPOLE_DERIVATIVES_PRESENT = false` at the MACE
+  level. An integration test evaluates the MACE Hessian at one reference geometry and
+  checks the stored `.npy` is what the engine gives today.
+- **Imaginary-policy seams**: the synthetic checks of ticket 22 extended with a sub-ithr
+  mode under `crest_native` (kept, S = 0, ZPE lowered by |nu|/2); on the GFN2 seam
+  fixture `crest_native` reproduces CREST's S_vib for conformer 3 (5.035 cal/mol/K) to
+  0.02 and the dS_bar tier of the seam closes below 0.03 cal/mol/K; at the MACE and
+  reference levels (0 imaginary) the three policies give the same S_ABS to 1e-9.
+- **Chirality seams**: the library's own CHFClBr pair reproduces rotational error 26.09
+  and orthogonal error 4.4e-8; propanal cis (Cs) gives `MIRROR_SELF_RMSD` below the
+  threshold and gauche above; the two `--entropy` runs (c1 / cs label flip) give the
+  same g' for conformer 3 and the same `MIRROR_SELF_RMSD` to 1e-3; `kabsch_rmsd` equals
+  the library's rotational RMSD to 1e-8.
 - **Records seams**: `t_toml_record_roundtrip.py` for the new blocks; an integration test
   asserts the level folder holds exactly the expected stems and no sub-folder for an
   absent level.
@@ -192,7 +268,11 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
 - DLPNO-CCSD(T) single points and the selection rule for which molecules get them.
 - SPH (`--bhess`) Hessians at any level.
 - Automatic enantiomer detection on basins alone (route ii): rejected; only the port of
-  `intraconfRMSD` on CREST's rotamer file.
+  `intraconfRMSD` on CREST's rotamer file (ticket 29 changes the arithmetic of the
+  mirror test, not its inputs).
+- Comparing thermochemistry at the reference geometry (MACE thermo at DFT minimum):
+  only the Hessian is compared there.
+- Dipole derivatives at the MACE level (no charges in MACE-OFF23).
 - Internal-coordinate / hindered-rotor entropy; any change to branch B.
 
 ## Further Notes
@@ -204,3 +284,9 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
 - Tickets: 22 presets + per-basin term; 23 degeneracy port; 24 `thermo_msrrho` at MACE
   + records + experimental comparison; 25 GFN2 seam via `crest --entropy`; 26 reference
   level on deimos + merge map + `level_compare`.
+- Round 4 tickets: 27 `hessian_compare` + `level_compare` on every quantity; 28 the
+  three imaginary policies on real data (`crest_native`, `[Imaginary_Spread]`); 29
+  continuous chirality with `procrustes`.
+- Measured 2026-09-16: CREST's own numerical Hessian gives -68.42 cm^-1 for propanal's
+  third `--entropy` conformer, below its ithr; CREST keeps the conformer with S = 0 for
+  that mode (S_vib 5.035 vs 8.97 / 8.47), which is the dS_bar residual of the seam.
