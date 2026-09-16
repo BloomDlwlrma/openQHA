@@ -264,7 +264,7 @@ complete record (expanded)
 
 ------------------------------------------------------------------------------------------------
 generated 2026-09-15 23:21:57 by openqha.report  (stage 0)
-this file is the Report, laid out for people (numbers truncated to a fixed number of places); what a program reads back, at full float64 precision, is the Property file (.toml) or the .dat tables of the same stem.
+this file is the Report, laid out for people (numbers truncated to a fixed number of places); what a program reads back, at full float64 precision, is the Property file (.toml) or the Table (.dat) of the same stem.
 ------------------------------------------------------------------------------------------------
 
 openQHA md terminated normally

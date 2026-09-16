@@ -107,6 +107,11 @@ def main():
         check("an empty file is no table at all", dat.read_tables(Path(t) / "none.dat") == {}
               and dat.read_table(Path(t) / "none.dat") == [])
         check("a bad section name is refused", _refuses_name(dat, Path(t) / "bad.dat"))
+        twice = Path(t) / "twice.dat"
+        twice.write_text("\n".join(["[a]", "# x", "1", "[b]", "# x", "2", "[a]", "# x", "3", ""]), encoding="utf-8")
+        check("a section opened twice is refused, not overwritten", _refuses_twice(dat, twice))
+        check("the column comment is the Property file's spelling (Type alone when the doc is empty)",
+              "#   ok       Boolean" in text and "#   ok       Boolean:" not in text, [l for l in lines if "#   ok" in l])
     print("\n{}".format("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL)))
     return 0 if not FAIL else 1
 
@@ -117,6 +122,14 @@ def _refuses_sections(dat, p):
         return False
     except ValueError as exc:
         return "trajectories" in str(exc) and "blank" in str(exc)
+
+
+def _refuses_twice(dat, p):
+    try:
+        dat.read_tables(p)
+        return False
+    except ValueError as exc:
+        return "[a]" in str(exc) and "twice" in str(exc)
 
 
 def _refuses_name(dat, p):

@@ -23,7 +23,7 @@ used to speak of it as if it existed; corrected 2026-09-09.)
 
 `_testlib.py` holds the two helpers the repository-hygiene checks share. It is not a test.
 
-**13 tests: 11 unit, 2 regression.** `integration/` is empty; `extensions/gromacs/` is not
+**13 tests: 11 unit, 2 regression** (the count of 2026-09-09; `python tests/run_tests.py` prints the current one, 34 unit on 2026-09-16). `integration/` holds the engine-folder chains; `extensions/gromacs/` is not
 in `GROUPS` and needs a `gmx` binary.
 
 ---
@@ -57,6 +57,9 @@ in `GROUPS` and needs a `gmx` binary.
 | `unit/t_artifacts_identity.py` | `write_artifact` can **refuse**. Most cases are cases that *must* raise — a filing helper that accepts everything leaves `analysis/` exactly where it was |
 | `unit/t_capabilities.py` | Locally a missing capability **skips**; one declared through `S0_REQUIRE_CAPS` **fails**. Twice, criterion 2 reported "no comparison produced" (GROMACS in a sibling conda environment; `--no-gmx` passed) and went quiet instead of red — nothing distinguished "checked and agreed" from "did not check" |
 | `unit/t_crest_settings_reuse.py` | Defect 57: reusing a scratch directory under different settings mixes two sampling conditions and **nothing in the products shows it**. Compares only the keys that change the *result* (thread count excluded). `tstep` was missing until 2026-09-03 — at 5.0 fs, 29 metadynamics runs aborted; at 2.0 fs, none |
+| `unit/t_dat_table_sections.py` | The Table (`openqha.store.dat`, 2026-09-16): named sections round-trip with the value fidelity of the single table; every column the schema knows gets its `Type, unit: doc` comment and every unknown one is returned; a section-less file still reads; a sectioned file refuses the single-table reader by naming its sections; a `[name]` opened twice is refused |
+| `unit/t_collect_table_columns.py` | Collect's `collect.dat`: the rows the analyse driver builds have exactly the columns `chain_records.COLUMNS` explains, in all three sections, always written; drift (an unexplained column, a missing explained one, in any row) is reported, a section outside `SECTIONS` refused |
+| `unit/t_report_reads_collect.py` | The ensemble sums what collect judged: T*S from the `trajectories` section of `collect.dat`, the verdict from `[Criteria]` in `collect.toml`; no Table, or a Table without `[trajectories]`, is refused by name |
 
 ### Not in `GROUPS`
 

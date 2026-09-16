@@ -130,6 +130,17 @@ def main():
         check("an unexplained column is reported by section and name", ("assembly", "new_column") in drift, drift)
         check("a missing explained column is reported too",
               any(c in ("G_minus_Eel_kcal", "terms_match_hessian_route") for s, c in drift), drift)
+        later = dict(sections)
+        later["blank"] = [dict(sections["blank"][0]), dict(sections["blank"][0], extra=1)]
+        del later["blank"][1]["note"]
+        drift = chain_records.write_collect_table(Path(t) / "l", later)
+        check("drift in a later row (not the first) is reported",
+              ("blank", "extra") in drift and ("blank", "note") in drift, drift)
+        try:
+            chain_records.write_collect_table(Path(t) / "s", dict(sections, blank_control=[]))
+            check("a section key outside SECTIONS is refused", False, "no error")
+        except ValueError as exc:
+            check("a section key outside SECTIONS is refused", "blank_control" in str(exc), str(exc))
     print("\n{}".format("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL)))
     return 0 if not FAIL else 1
 

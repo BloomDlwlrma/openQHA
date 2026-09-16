@@ -49,8 +49,8 @@ COLUMNS = {
         "expected_modes": ("Integer", None, "3N-6, the modes a full-rank covariance has"),
         "rigid_ratio": ("Double", None, "first vibrational eigenvalue over the largest rigid-body one on the unprojected covariance; inf when the rigid ones vanish (criterion 4's separation)"),
         "saturation_last_doubling_kcal": ("Double", "kcal/mol", "rise of T*S_QH over the last doubling of trajectory length (criterion 1's increment)"),
-        "wall_seconds": ("Double", "s", "production wall time of the run that finished the trajectory"),
-        "seconds_per_ps": ("Double", "s/ps", "that run's cost per picosecond of its own frames"),
+        "wall_seconds": ("Double", "s", "production wall time of the last driver invocation on this trajectory (a resumed trajectory had several)"),
+        "seconds_per_ps": ("Double", "s/ps", "that invocation's cost per picosecond of the frames it generated"),
     },
     "blank": {
         "species": ("String", None, "the molecule (QM9 index)"),
@@ -90,18 +90,27 @@ def collect_paths(stem_path):
 
 def write_collect_table(stem_path, sections):
     """`collect.dat` from `{section: rows}`: every section of SECTIONS, in order, empty
-    or not, each column commented from COLUMNS. Returns the (section, column) pairs
-    the schema does not know PLUS the schema columns a non-empty section lacks, so the
-    caller refuses a Table whose columns and comments have drifted apart."""
-    body = []
-    drift = []
+    or not, each column commented from COLUMNS. A section name outside SECTIONS is
+    refused (nothing is dropped silently). Returns the drift between the rows and the
+    schema, as (section, column) pairs: a column in any row the schema does not
+    explain, and a schema column any row of a non-empty section lacks."""
+    stray = sorted(set(sections) - set(SECTIONS))
+    if stray:
+        raise ValueError("collect.dat has no section {}; its sections are {}".format(stray, list(SECTIONS)))
+    body, drift = [], []
     for s in SECTIONS:
         rows = list(sections.get(s) or [])
-        cols = list(rows[0].keys()) if rows else list(COLUMNS[s])
+        known = list(COLUMNS[s])
+        cols = list(rows[0].keys()) if rows else known
         body.append((s, (rows, cols)))
-        drift += [(s, c) for c in COLUMNS[s] if c not in cols]
+        seen = set()
+        for r in rows:
+            seen.update(r.keys())
+            drift += [(s, c) for c in known if c not in r]
+        drift += [(s, c) for c in sorted(seen - set(known)) if c not in cols]
     unknown = dat.write_tables(collect_paths(stem_path)["dat"], body, COLUMNS)
-    return unknown + drift
+    seen_pairs = set()
+    return [d for d in unknown + drift if not (d in seen_pairs or seen_pairs.add(d))]
 
 
 def read_collect_table(stem_path):

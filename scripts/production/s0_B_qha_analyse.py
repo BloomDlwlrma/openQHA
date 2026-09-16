@@ -144,8 +144,10 @@ def assembly_consistency(masses, positions, eigenvalues, symmetry_number, degene
 
 def table_sections(species, per_traj, blank, assembly):
     """The rows of collect's Table, `{section: rows}` for `trajectories`, `blank`,
-    `assembly` -- the columns `chain_records.COLUMNS` explains, in that order. A column
-    added here without its explanation is refused by the writer, not written bare."""
+    `assembly` -- the columns `chain_records.COLUMNS` explains, in that order. The writer
+    reports a column added here without its explanation, and `main` refuses to go on
+    (the rule `md_record` applies to `md.toml` keys): the Table is on disk but no Property
+    file, so the collect Batch redoes the molecule once COLUMNS is fixed."""
     return dict(
         trajectories=[dict(
             species=species, basin=t["basin"], seed=t["seed"],
@@ -569,9 +571,7 @@ def main():
     ))
 
     # The Table (collect.dat, sections trajectories / blank / assembly, every column
-    # commented from chain_records.COLUMNS), then the Report, then the Property file
-    # LAST -- its STATUS is what the collect Batch reads to say this molecule is done,
-    # so a kill before that line leaves the molecule to be redone.
+    # commented from chain_records.COLUMNS), then the Report, then the Property file.
     sections = table_sections(args.species, per_traj, blank, assembly)
     drift = chain_records.write_collect_table(out_stem, sections)
     if drift:

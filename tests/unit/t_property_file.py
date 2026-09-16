@@ -130,8 +130,8 @@ def main():
     check("basin records dir", layout.basin_records_dir(m, "openmm", 1), m / "_records/md_openmm/basin01")
     check("record file name, default", layout.record_file_name("md.toml", "default"), "md.toml")
     check("record file name, s2", layout.record_file_name("md.toml", "s2"), "md_s2.toml")
-    check("record file name, two dots", layout.record_file_name("collect.trajectories.dat", "s2"),
-          "collect_s2.trajectories.dat")
+    check("record file name, two dots", layout.record_file_name("thermo.msrrho.dat", "s2"),
+          "thermo_s2.msrrho.dat")
     check("driver log follows the rule", layout.record_file_name("driver.log", "p1500_s5"), "driver_p1500_s5.log")
     check("report and property file share a stem",
           layout.record_file_name("md.out", "s2")[:-4] == layout.record_file_name("md.toml", "s2")[:-5])

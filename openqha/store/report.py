@@ -113,7 +113,7 @@ class Report:
     #: it with the JSON wording.
     SOURCE_NOTE = ("this file is the Report, laid out for people (numbers truncated to a "
                    "fixed number of places); what a program reads back, at full float64 "
-                   "precision, is the Property file (.toml) or the .dat tables of the same stem.")
+                   "precision, is the Property file (.toml) or the Table (.dat) of the same stem.")
 
     def __init__(self, title, subtitle=None, width=WIDTH, source_note=None):
         self.w = int(width)

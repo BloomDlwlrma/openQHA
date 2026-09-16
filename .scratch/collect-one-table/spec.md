@@ -75,15 +75,22 @@ live in `collect.toml` where the ensemble reads them. The expanded dump at the e
   Report and the `[Criteria]` block of the Property file, both unchanged.
 - **Section syntax.** A bare `[name]` line opens a section (TOML/INI style, the Property
   file's look). It is followed by the column comment lines, the `# col col ...` header
-  line, the rows, and a blank line. A `#` line inside a section that is not the header is
-  a comment; the header is the first `#` line whose tokens are exactly the column names,
-  which the writer guarantees by putting the comments first and the header last.
+  line, the rows, and a blank line. The header is the LAST `#` line before the rows (the
+  writer puts the comments first and the header last); a `#` line after the rows is a
+  comment. (Corrected 2026-09-16 after the code review: the first wording, "the first `#`
+  line whose tokens are the column names", presumed a reader that knows the columns.)
+  A `[name]` that repeats in one file is refused.
 - **Column comments from a schema.** The collect record module holds a column schema of
   the Property-file shape, `{section: {column: (Type, unit or None, doc)}}`, and the
   Table writer takes it. The writer emits one comment per column in the order of the
   header; a column in the rows that the schema does not know is written without a
-  comment and returned by the writer (the `prop.write` rule), and collect's test asserts
-  the returned list is empty. Column names are unchanged.
+  comment and returned by the writer (the `prop.write` rule), together with any schema
+  column a row lacks, judged over every row. Collect's test asserts the returned list is
+  empty, and collect itself refuses to go on when it is not (the rule `md_record` applies
+  to `md.toml` keys): the Table is on disk, no Report or Property file follows, so the
+  collect Batch redoes the molecule once the schema is fixed. A section name outside the
+  three is refused. Column names are unchanged. (Made explicit 2026-09-16 after the code
+  review.)
 - **The column meanings**, as the schema will carry them (the decision-rich content; the
   wording is settled here so the ticket writes it, not invents it):
 

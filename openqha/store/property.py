@@ -56,10 +56,17 @@ STATUS_SCHEMA = {
 _INDEX = ("Integer", None, "")
 
 
-def _comment(entry):
+def describe(entry):
+    """`Type, unit: doc` from a schema entry `(Type, unit or None, doc)`; `Type` alone when
+    the doc is empty. The one spelling of a key's explanation, in a Property file's
+    trailing comment and in a Table's column comment (`openqha.store.dat`)."""
     kind, unit, doc = (tuple(entry) + (None, ""))[:3]
     head = kind if not unit else "{}, {}".format(kind, unit)
-    return "# {}: {}".format(head, doc) if doc else "# {}".format(head)
+    return "{}: {}".format(head, doc) if doc else head
+
+
+def _comment(entry):
+    return "# " + describe(entry)
 
 
 def _emit_table(lines, block, table, schema, missing):

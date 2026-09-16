@@ -83,24 +83,25 @@ def _value(tok):
 
 
 def _comment_lines(cols, schema):
-    """One `#   column   Type, unit: doc` line per column the schema knows; the unknown
-    columns are returned so the caller's test can catch a column added without its doc."""
+    """One `#   column   Type, unit: doc` line per column the schema knows (the text is
+    `property.describe`, the Property file's spelling); the columns the schema does NOT
+    know are returned so the caller can refuse a column added without its explanation."""
+    from . import property as prop
     if not schema:
         return [], list(cols)
     width = max((len(c) for c in cols), default=0)
     lines, unknown = [], []
     for c in cols:
-        spec = schema.get(c)
-        if spec is None:
+        entry = schema.get(c)
+        if entry is None:
             unknown.append(c)
             continue
-        typ, unit, doc = spec
-        head = typ if not unit else "{}, {}".format(typ, unit)
-        lines.append("#   {}  {}: {}".format(c.ljust(width), head, doc).rstrip())
+        lines.append("#   {}  {}".format(c.ljust(width), prop.describe(entry)))
     return lines, unknown
 
 
 def _section_lines(rows, columns, schema):
+    """(lines, unknown columns) of one section body: comments, header, rows."""
     cols = list(columns) if columns is not None else (list(rows[0].keys()) if rows else [])
     comments, unknown = _comment_lines(cols, schema)
     lines = comments + ["# " + " ".join(cols)]
@@ -130,9 +131,9 @@ def write_tables(path, sections, schema=None):
         if not _SECTION.match("[{}]".format(name)):
             raise ValueError("section name {!r} is not a plain word (letters, digits, _ . -)".format(name))
         rows, columns = (body if isinstance(body, tuple) else (body, None))
-        sec, miss = _section_lines(rows, columns, (schema or {}).get(name))
-        lines += ["[{}]".format(name)] + sec + [""]
-        unknown += [(name, c) for c in miss]
+        body_lines, unknown_cols = _section_lines(rows, columns, (schema or {}).get(name))
+        lines += ["[{}]".format(name)] + body_lines + [""]
+        unknown += [(name, c) for c in unknown_cols]
     _write(path, lines[:-1] if lines else lines)
     return unknown
 
@@ -146,20 +147,16 @@ def write_table(path, rows, columns=None, schema=None):
 
 def read_tables(path):
     """`{section: rows}` in file order; a file without `[name]` lines is `{"": rows}`.
-    Refuses a missing file by name."""
+    Refuses a missing file by name, a `[name]` that repeats, and rows before any header."""
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError("no table at {}".format(path))
     out = {}
-    cur = None                                   # [name, comment lines, columns, rows]
+    section = None                               # the section being read, or None before the first line
 
-    def flush(sec):
-        if sec is None:
-            return
-        name, comments, cols, rows = sec
-        if cols is None and not comments and name == "":
-            return                               # an empty file: no table at all
-        out[name] = rows
+    class _Section:
+        def __init__(self, name):
+            self.name, self.comments, self.cols, self.rows = name, [], None, []
 
     with open(path, encoding="utf-8") as fh:
         for line in fh:
@@ -168,22 +165,26 @@ def read_tables(path):
                 continue
             m = _SECTION.match(s)
             if m:
-                flush(cur)
-                cur = [m.group(1), [], None, []]
+                if section is not None:
+                    out[section.name] = section.rows
+                if m.group(1) in out:
+                    raise ValueError("{} opens [{}] twice".format(path, m.group(1)))
+                section = _Section(m.group(1))
                 continue
-            if cur is None:
-                cur = ["", [], None, []]
+            if section is None:
+                section = _Section("")
             if s.startswith("#"):
-                if cur[2] is None:
-                    cur[1].append(s)             # the last of these is the header
+                if section.cols is None:
+                    section.comments.append(s)   # the last of these is the header
                 continue                         # a comment after the rows
-            if cur[2] is None:
-                if not cur[1]:
+            if section.cols is None:
+                if not section.comments:
                     raise ValueError("{} has rows before any header line".format(path))
-                cur[2] = cur[1][-1][1:].split()
+                section.cols = section.comments[-1][1:].split()
             toks = shlex.split(s, posix=True)
-            cur[3].append({c: _value(tok) for c, tok in zip(cur[2], toks)})
-    flush(cur)
+            section.rows.append({c: _value(tok) for c, tok in zip(section.cols, toks)})
+    if section is not None:
+        out[section.name] = section.rows
     return out
 
 
