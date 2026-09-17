@@ -69,3 +69,12 @@ Topology-disagreement points: basins that merge, or become saddles, when re-opti
   (3N <= 60) the full E-F-H loss (Rodriguez 2025) is affordable and is the accuracy
   ceiling PHL approaches; PHL's 24x matters when the set grows. Decide on the measured
   cost of one full-Hessian epoch on the four molecules before choosing.
+
+## Input from round 5 of msrrho-gtotal (2026-09-17): training-set membership
+
+Tickets 30/31 there produce, per molecule, whether MACE-OFF23 saw its conformers
+(SPICE membership at three strictnesses, frame counts, config_type). The judge (Q9)
+must report its thresholds separately for in-distribution and out-of-distribution
+molecules; the held-out set for 7b should contain molecules of both kinds. Open for
+round 2: whether the Hessian-learning set itself should prefer out-of-distribution
+targets, and how the SI states the split.

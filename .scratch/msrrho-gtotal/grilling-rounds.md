@@ -125,3 +125,18 @@ Tickets 27 (`hessian_compare`), 28 (imaginary policies on real data, `crest_nati
   and `hybrid_spectrum` belong to the covariance-vs-Hessian problem and are not used.
   Ticket 27 rewritten with four families plus the mode-resolved curvature
   `D = L_r^T K_m L_r` (the HVP along each DFT mode) and the MACE residual force at x_r.
+
+## Round 5 (2026-09-17): is the molecule in MACE-OFF23's training set?
+
+- Q23 The released MACE-OFF23 data (Apollo doi:10.17863/CAM.107498, held under
+  `hessian-train/SPICE`): 951,005 training frames over 17,132 molecules (~55 conformers
+  each, up to 4,619), 50,195 test frames over 15,542 molecules -- the test split is by
+  frame, not by molecule; energies and forces only; no Hessian. If a target molecule is
+  in it, MACE has seen its conformers and every "model error" tier is an in-distribution
+  number. The SMILES are atom-mapped with explicit H, so membership needs canonical
+  identity at declared strictnesses (isomeric / no stereo / connectivity). Ruling: a
+  two-step check -- step 1 the shipped species, written into `level_compare` as
+  `[Training_Set]`; step 2 every target QM9 molecule (curated QM9 through the branch A
+  gate F0-F7), as a Dataset with the fraction per heavy-atom count for the SI. The judge
+  of the Hessian-learning set reads the table to split in- and out-of-distribution.
+  Tickets 30, 31.

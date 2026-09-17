@@ -1,0 +1,14 @@
+# 31: Is the molecule in MACE-OFF23's training set? Step 2, the whole target QM9 set
+
+**What to build:** the same membership check over every target molecule: each curated QM9 molecule (`openqha.data.curated_qm9`, 133,660 geometries) whose SMILES (`config.qm9_smiles`) passes the branch A gate `filters.screen` with the production gates -- the executable definition of "our target QM9 molecules" (`s0_A_pipeline.gate`). A tooling script `scripts/tooling/s0_training_set_membership.py --set qm9-targets` streams the QM9 index once, screens, queries the ticket-30 index, and writes a Dataset `data/training_sets/qm9_targets_membership.{dat,toml}`: one row per target (QM9_INDEX, SMILES, N_HEAVY, PASSED_GATE, IN_TRAINING, MATCH_LEVEL, N_TRAIN_FRAMES, N_TEST_FRAMES, CONFIG_TYPES) and a `[Summary]` block: N_TARGETS, N_IN_TRAINING at each strictness, the fraction by heavy-atom count (1..9), by config_type, and the number of targets whose frames sit only in the test file. The `.toml` states the SPICE source (Apollo DOI, file names, sizes, mtimes, frame counts) and the gate configuration used, so the SI sentence "x % of the target molecules are in MACE-OFF23's training set" is generated, not typed. The table is what the Hessian-learning judge (parked grilling, Q9) reads to split its held-out set into in-distribution and out-of-distribution molecules; nothing here decides that split yet.
+
+**Blocked by:** 30 (the index and the canonicaliser).
+
+**Status:** ready-for-agent
+
+- [ ] the target set is produced by the same gate `s0_A_pipeline` runs (F0-F7 from `configs/filters.yaml`), and the gate configuration is written into the `[Summary]` of the record
+- [ ] every target has exactly one row; N_TARGETS equals the number of QM9 molecules passing the gate; a molecule failing the gate is absent from the rows and counted (N_FAILED_GATE, by gate)
+- [ ] the summary gives N_IN_TRAINING at the three strictnesses and the fraction per heavy-atom count; the four shipped species' rows agree with ticket 30's answers
+- [ ] the run streams: the QM9 index and the SPICE index are each read once, the whole check on 133,660 molecules finishes in one local run (target: minutes, not hours) and the wall time is in the record
+- [ ] the `.toml` names the SPICE files with sizes, mtimes and frame counts (951,005 train / 50,195 test) and the Apollo DOI, and the `.dat` round-trips through `dat.read_table`
+- [ ] README (Free energy section) gains the SI sentence with the number and the pointer to the Dataset; the note records the fraction and what it means for the tiers

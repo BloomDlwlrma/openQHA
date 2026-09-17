@@ -309,3 +309,9 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   Chirality: propanal cis self-mirror 0.0009 A, gauche 0.459; the c1/cs conformer 0.018 /
   0.016 in the two runs (achiral by the number, g' = 1 in both).
 
+- Round 5 tickets: 30 training-set membership of the shipped species (`[Training_Set]`
+  in `level_compare`, cached SPICE index); 31 the same over every target QM9 molecule
+  (Dataset `data/training_sets/qm9_targets_membership.{dat,toml}`, the SI fraction).
+  Story 27: as a user, I want to know whether a molecule's conformers were in
+  MACE-OFF23's training data, so that a model-error tier is read as in- or
+  out-of-distribution and never mistaken for generalisation.
