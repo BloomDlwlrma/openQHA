@@ -177,13 +177,26 @@ def _cp_ho_kcal_per_K(nu_cm, temperature_K):
     return KB_KCAL * x * x * ex / (1.0 - ex) ** 2
 
 
+#: The three imaginary-mode policies. CREST 3.0.2 has three regimes, not two
+#: (`thermocalc.f90:207-216`, `thermo.f90:135-138`; measured on propanal 2026-09-16):
+#: a mode in (ithr, 0) is inverted; a mode below ithr is KEPT negative, carries zero
+#: entropy, and still enters the zero-point energy (0.5 sum nu), H(T)-H(0) and Cp with
+#: its negative frequency. `refuse` and `invert_below` raise where CREST keeps.
+IMAGINARY_POLICIES = ("refuse", "invert_below", "crest_native")
+
+
 def _apply_imaginary_policy(nu, policy, ithr_cm):
-    """Return (frequencies, n_inverted) or raise. `refuse` raises on any non-positive
-    mode; `invert_below` takes |omega| for modes in (ithr, 0) and raises below ithr."""
+    """Return (frequencies, n_inverted, n_kept_negative) or raise.
+
+    `refuse`        raises on any non-positive mode.
+    `invert_below`  takes |omega| for modes in (ithr, 0); raises below ithr.
+    `crest_native`  takes |omega| for modes in (ithr, 0); KEEPS modes below ithr
+                    negative, line for line as CREST does (see IMAGINARY_POLICIES).
+    """
     nu = np.asarray(nu, dtype=float)
-    if policy not in ("refuse", "invert_below"):
-        raise ValueError("imaginary_policy must be 'refuse' or 'invert_below', "
-                         "received {!r}".format(policy))
+    if policy not in IMAGINARY_POLICIES:
+        raise ValueError("imaginary_policy must be one of {}, received {!r}".format(
+            ", ".join(IMAGINARY_POLICIES), policy))
     tiny = np.abs(nu) < VIBTHR_CM
     if tiny.any():
         raise ValueError("{} projected mode(s) below {} cm^-1 (|omega| = {:.3f}): a "
@@ -191,17 +204,21 @@ def _apply_imaginary_policy(nu, policy, ithr_cm):
                          .format(int(tiny.sum()), VIBTHR_CM, float(np.abs(nu).min())))
     neg = nu < 0.0
     if not neg.any():
-        return nu, 0
+        return nu, 0, 0
     lowest = float(nu.min())
     if policy == "refuse":
         raise ValueError("{} imaginary mode(s), lowest {:.2f} cm^-1: not a minimum, "
                          "refusing under the 'refuse' policy".format(int(neg.sum()), lowest))
     if ithr_cm is None:
-        raise ValueError("this preset defines no ithr; 'invert_below' is not available")
-    if lowest < ithr_cm:
+        raise ValueError("this preset defines no ithr; '{}' is not available".format(policy))
+    invertible = neg & (nu > ithr_cm)
+    below = neg & ~invertible
+    if below.any() and policy == "invert_below":
         raise ValueError("imaginary mode {:.2f} cm^-1 is below ithr = {:.1f}: not "
                          "invertible".format(lowest, ithr_cm))
-    return np.abs(nu), int(neg.sum())
+    out = nu.copy()
+    out[invertible] = np.abs(out[invertible])
+    return out, int(invertible.sum()), int(below.sum())
 
 
 def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_REF,
@@ -218,7 +235,7 @@ def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_RE
             preset, ", ".join(sorted(MSRRHO_PRESETS))))
     p = MSRRHO_PRESETS[preset]
     nu = np.asarray(frequencies_cm, dtype=float) * float(fscal)
-    nu, n_inverted = _apply_imaginary_policy(nu, imaginary_policy, p["ithr_cm"])
+    nu, n_inverted, n_kept = _apply_imaginary_policy(nu, imaginary_policy, p["ithr_cm"])
     nu = np.sort(nu)
     if p["rotor_cap"] == "mean_principal_moment":
         cap = float(np.mean(principal_moments(masses, positions))) * AMU_KG * 1e-20
@@ -227,10 +244,17 @@ def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_RE
     tau = float(p["tau_cm"])
     modes, s_tot, s_ho_tot, cp_tot, h_tot, zpe = [], 0.0, 0.0, 0.0, 0.0, 0.0
     for w_nu in nu:
+        # CREST's switching function takes (tau/omega)^4, the same for a negative omega
         w_ho = 1.0 / (1.0 + (tau / w_nu) ** 4)
-        s_ho = s_mode_kcal_per_K(w_nu, temperature_K)
-        s_fr = _free_rotor_s_kcal_per_K(w_nu, cap, temperature_K)
+        if w_nu > 0.0:
+            s_ho = s_mode_kcal_per_K(w_nu, temperature_K)
+            s_fr = _free_rotor_s_kcal_per_K(w_nu, cap, temperature_K)
+        else:
+            # a kept negative mode (crest_native): `thermo.f90:135-138`, no entropy
+            s_ho = s_fr = 0.0
         s = w_ho * s_ho + (1.0 - w_ho) * s_fr
+        # Cp, H(T)-H(0) and the zero-point energy take the frequency as it is, negative
+        # included, exactly as CREST evaluates them (exp(-beta omega) > 1 for omega < 0)
         cp_ho = _cp_ho_kcal_per_K(w_nu, temperature_K)
         cp = w_ho * cp_ho + (1.0 - w_ho) * 0.5 * KB_KCAL if "Cp" in p["interpolate"] else cp_ho
         h = e_mode_kcal(w_nu, temperature_K) - 0.5 * HC_KCAL * w_nu
@@ -242,11 +266,13 @@ def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_RE
         modes.append(dict(omega_cm=float(w_nu), w_HO=float(w_ho),
                           TS_HO_kcal=float(temperature_K * s_ho),
                           TS_FR_kcal=float(temperature_K * s_fr),
-                          TS_kcal=float(temperature_K * s)))
+                          TS_kcal=float(temperature_K * s),
+                          kept_negative=bool(w_nu < 0.0)))
     return dict(preset=preset, tau_cm=tau, ithr_cm=p["ithr_cm"],
                 rotor_cap_kg_m2=cap, rotor_cap_rule=p["rotor_cap"],
                 interpolated=list(p["interpolate"]), fscal=float(fscal),
                 imaginary_policy=imaginary_policy, n_inverted=n_inverted,
+                n_kept_negative=n_kept,
                 temperature_K=float(temperature_K),
                 S_vib_kcal_per_K=float(s_tot), S_vib_HO_kcal_per_K=float(s_ho_tot),
                 TS_vib_kcal=float(temperature_K * s_tot),
@@ -262,15 +288,26 @@ def preset_spread(frequencies_cm, masses, positions, temperature_K=T_REF,
                   imaginary_policy="refuse", fscal=1.0):
     """T*S_vib under every preset, and the spread: the error-bar line for the choice of
     convention (on acetone 0.19 kcal/mol between `crest` and `grimme2012`)."""
-    ts = {}
+    ts, absent = {}, {}
     for name in MSRRHO_PRESETS:
-        r = msrrho(frequencies_cm, masses, positions, preset=name,
-                   temperature_K=temperature_K, imaginary_policy=imaginary_policy,
-                   fscal=fscal)
+        try:
+            r = msrrho(frequencies_cm, masses, positions, preset=name,
+                       temperature_K=temperature_K, imaginary_policy=imaginary_policy,
+                       fscal=fscal)
+        except ValueError as exc:
+            # a preset without ithr (grimme2012) cannot apply invert_below / crest_native
+            # to an imaginary mode: that preset is absent from the spread, and says why,
+            # rather than the whole record failing after the assembly succeeded
+            absent[name] = str(exc)
+            continue
         ts[name] = r["TS_vib_kcal"]
         ts["HO"] = r["TS_vib_HO_kcal"]      # the same for every preset
+    if not ts:
+        raise ValueError("no preset could evaluate this spectrum under '{}': {}".format(
+            imaginary_policy, "; ".join(absent.values())))
     return dict(TS_vib_kcal=ts, max_minus_min_kcal=float(max(ts.values()) - min(ts.values())),
-                temperature_K=float(temperature_K))
+                temperature_K=float(temperature_K), imaginary_policy=imaginary_policy,
+                presets_absent=absent)
 
 
 # ------------------------------------------------------------------ rotational

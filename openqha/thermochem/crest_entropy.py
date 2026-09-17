@@ -99,7 +99,9 @@ SCHEMA["Seam"] = {
     "S_REF_DELTA": ("Double", "cal/mol/K", "ours - CREST (Hessian implementation)"),
     "DS_BAR_OURS": ("Double", "cal/mol/K", "population average minus reference, our Hessians"),
     "DS_BAR_DELTA": ("Double", "cal/mol/K", "ours - CREST (Hessian implementation)"),
-    "N_CONFORMERS_EXCLUDED": ("Integer", None, "conformers with an imaginary mode in xtb --hess"),
+    "N_CONFORMERS_EXCLUDED": ("Integer", None, "conformers excluded under the seam's imaginary-mode policy"),
+    "N_KEPT_NEGATIVE": ("Integer", None, "modes below ithr kept negative (crest_native), over the included conformers"),
+    "N_INVERTED": ("Integer", None, "modes in (ithr, 0) inverted, over the included conformers"),
     "ALGEBRAIC_TERMS_MATCH": ("Boolean", None, "|S_CONF, H_CONF, CP_CONF deltas| < 1e-4"),
     "G_PRIME_CREST": ("ArrayOfIntegers", None, "CREST enantiofac per conformer (from symmetries + mirror test)"),
     "G_PRIME_OURS": ("ArrayOfIntegers", None, "our g' per conformer (geometric chirality class)"),
@@ -222,7 +224,14 @@ def crest_enantiofac(run_dir, confs):
 
 
 # ====================================================================== the Calculation
-def evaluate_run(molecule, run, temperature_K=298.15, preset="crest", nprocs=4, gfn=2):
+#: The seam reproduces CREST, so it takes CREST's own imaginary-mode regime: modes in
+#: (ithr, 0) inverted, modes below ithr kept with zero entropy (ticket 28; measured on
+#: propanal's third conformer, -68.4 cm^-1 in CREST's numerical Hessian, kept by CREST).
+SEAM_POLICY = "crest_native"
+
+
+def evaluate_run(molecule, run, temperature_K=298.15, preset="crest", nprocs=4, gfn=2,
+                 imaginary_policy=SEAM_POLICY):
     """Everything for one CREST entropy run: CREST's numbers, xtb Hessians at CREST's
     conformers and at the reference structure, our assembly, and the seam deltas."""
     d = layout.crest_entropy_dir(molecule, run)
@@ -249,7 +258,7 @@ def evaluate_run(molecule, run, temperature_K=298.15, preset="crest", nprocs=4, 
         masses = [float(atomic_masses[z]) for z in numbers]
         ops = symmetry.symmetry_operations(numbers, pos)
         rec = me.basin_thermochemistry(k, h, masses, pos, e_eh * HARTREE_TO_EV,
-                                       ops["sigma"], 1, temperature_K, preset)
+                                       ops["sigma"], 1, temperature_K, preset, imaginary_policy)
         rec["g_prime"] = int(confs_deg[k]["g_prime"])
         rec["g_prime_source"] = confs_deg[k]["g_prime_source"]
         rec["g_prime_crest"] = int(e_g[k])
@@ -266,7 +275,8 @@ def evaluate_run(molecule, run, temperature_K=298.15, preset="crest", nprocs=4, 
     ops = symmetry.symmetry_operations(numbers, ref.get_positions())
     ref_rec = me.basin_thermochemistry(99, h, [float(atomic_masses[z]) for z in numbers],
                                        ref.get_positions(), 0.0, ops["sigma"], 1,
-                                       temperature_K, preset)
+                                       temperature_K, preset, imaginary_policy)
+    # (the seam writes PRESET_SPREAD = 0.0: CREST prints one preset; no spread is claimed)
     s_ref_ours = (ref_rec["S_msrrho_cal_per_K"] - CREST_TRANS_OFFSET_CAL
                   if not ref_rec["excluded"] else None)
     # dS_bar the CREST way: populations from G_i with cre_degen2 weights, excluded
@@ -294,6 +304,8 @@ def evaluate_run(molecule, run, temperature_K=298.15, preset="crest", nprocs=4, 
             "H_CONF_G_OURS": h_g_ours, "H_CONF_G_DELTA": h_g_ours - crest_rec.get("H_conf_G", float("nan")),
             "CP_CONF_G_OURS": cp_g_ours, "CP_CONF_G_DELTA": cp_g_ours - crest_rec.get("Cp_conf_G", float("nan")),
             "N_CONFORMERS_EXCLUDED": len(basins) - len(inc),
+            "N_KEPT_NEGATIVE": int(sum(b.get("n_kept_negative", 0) for b in inc)),
+            "N_INVERTED": int(sum(b.get("n_inverted", 0) for b in inc)),
             "G_PRIME_CREST": list(e_g), "G_PRIME_OURS": [int(b["g_prime"]) for b in basins],
             "CRE_DEGEN2": list(degen2),
             "CRE_DEGEN2_OURS": [int(c["cre_degen2_equivalent"]) for c in confs_deg]}
@@ -305,7 +317,9 @@ def evaluate_run(molecule, run, temperature_K=298.15, preset="crest", nprocs=4, 
         abs(seam["S_CONF_DELTA"]) < TOL_ALGEBRAIC_CAL and abs(seam["H_CONF_DELTA"]) < TOL_ALGEBRAIC_CAL
         and abs(seam["CP_CONF_DELTA"]) < TOL_ALGEBRAIC_CAL)
     return dict(run=int(run), crest=crest_rec, basins=basins, ensemble=ens, seam=seam,
-                conformer_degeneracies=confs_deg, e_rel_kcal=e_rel)
+                conformer_degeneracies=confs_deg, e_rel_kcal=e_rel,
+                imaginary_spread=me.imaginary_spread(basins, temperature_K, preset, 1.0),
+                imaginary_policy=imaginary_policy)
 
 
 def _xtb_hessian(workdir, symbols, positions, gfn, nprocs):
@@ -320,7 +334,8 @@ def _xtb_hessian(workdir, symbols, positions, gfn, nprocs):
 
 
 def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, threads=4,
-                    nprocs=4, temperature_K=298.15, preset="crest", gfn=2, level=LEVEL):
+                    nprocs=4, temperature_K=298.15, preset="crest", gfn=2, level=LEVEL,
+                    imaginary_policy=SEAM_POLICY):
     """CREST `--entropy` (each run in `runs` unless its folder is complete), xtb Hessians,
     our assembly, the seam; records in `levels/gfn2/`. Returns the full record."""
     molecule = Path(molecule)
@@ -329,7 +344,8 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
             raise ValueError("run_crest needs the reference structure to start CREST from")
         for r in runs:
             run_crest_entropy(molecule, reference_xyz, r, threads=threads, gfn=gfn)
-    evals = [evaluate_run(molecule, r, temperature_K, preset, nprocs, gfn) for r in runs]
+    evals = [evaluate_run(molecule, r, temperature_K, preset, nprocs, gfn, imaginary_policy)
+             for r in runs]
     if len(evals) < 2:
         raise ValueError("at least two CREST entropy runs are required (the sampling is "
                          "stochastic); {} given".format(len(evals)))
@@ -353,7 +369,7 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
             "ENGINE": "crest+xtb GFN{}-xTB".format(gfn), "PRESET": preset,
             "TAU": float(thermo.MSRRHO_PRESETS[preset]["tau_cm"]),
             "ROTOR_CAP_RULE": str(thermo.MSRRHO_PRESETS[preset]["rotor_cap"]),
-            "ITHR_POLICY": "refuse", "FSCAL": 1.0, "TEMPERATURE": float(temperature_K),
+            "ITHR_POLICY": imaginary_policy, "FSCAL": 1.0, "TEMPERATURE": float(temperature_K),
             "PRESSURE": float(thermo.P_STD), "REFERENCE_BASIN": ens["reference_basin"],
             "PTOT": float(ens["ptot"]), "EXTRAPOLATION": "none"}
     rows = []
@@ -361,11 +377,14 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
         row = {"INDEX": b["index"], "SIGMA": b["sigma"], "G0": b["g0"], "G_PRIME": b["g_prime"],
                "G_PRIME_SOURCE": b["g_prime_source"], "E_EL": b["E_el_kcal"],
                "LOWEST_FREQ": b["lowest_frequency_cm"], "EXCLUDED": bool(b["excluded"]),
+               "N_IMAGINARY": b.get("n_imaginary"), "N_INVERTED": b.get("n_inverted", 0),
+               "N_KEPT_NEGATIVE": b.get("n_kept_negative", 0),
                "POPULATION": b.get("population", 0.0)}
         if not b["excluded"]:
             row.update({"ZPE": b["ZPE_kcal"], "H_THERMAL": b["H_thermal_kcal"],
                         "G_ROT": b["G_rot_kcal"], "G_TRANS": b["G_trans_kcal"],
                         "S_VIB": b["S_vib_cal_per_K"], "S_VIB_HO": b["S_vib_HO_cal_per_K"],
+                        "S_ROT": b["S_rot_cal_per_K"], "S_TRANS": b["S_trans_cal_per_K"],
                         "S_MSRRHO": b["S_msrrho_cal_per_K"], "H_I": b["H_i_kcal"], "G_I": b["G_i_kcal"]})
         rows.append(row)
     blocks = {"Calculation_Info": info, "Basin": rows,
@@ -377,6 +396,7 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
                          "G_TOTAL": ens["G_total_kcal"], "N_BASINS": ens["n_basins"],
                          "N_INCLUDED": ens["n_included"], "N_EXCLUDED": ens["n_excluded"],
                          "N_BASINS_90": ens["basins_90"], "PRESET_SPREAD": 0.0},
+              "Imaginary_Spread": first["imaginary_spread"],
               "Crest": [dict(r, N_RUNS=len(evals),
                              S_CONF_SPREAD=float(np.nanmax(s_confs) - np.nanmin(s_confs)),
                              S_TOTAL_SPREAD=float(np.nanmax(s_tots) - np.nanmin(s_tots)))

@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from ase.io import read
 
 
 def _repo_root():
@@ -29,6 +30,7 @@ def _repo_root():
 ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha import config                                   # noqa: E402
+from openqha.thermochem import hessian as hessian_mod     # noqa: E402
 from openqha.thermochem import msrrho_ensemble as me         # noqa: E402
 from openqha.store import layout, property as prop, report   # noqa: E402
 
@@ -58,7 +60,7 @@ def main():
         check("the Report ends with the terminal line",
               report.terminated_normally(lvl / "thermo_msrrho.out", "thermo_msrrho"))
         check("only the spec's blocks are in the file",
-              set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result"}, set(doc))
+              set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result", "Imaginary_Spread"}, set(doc))
         check("nothing was written under _records/ by this Calculation",
               set(p.name for p in (mol / "_records").iterdir()) == {"branchA.toml"})
         check("degeneracy.toml was produced beside it (run when absent)",
@@ -150,6 +152,71 @@ def main():
         check("a basin with an imaginary mode is EXCLUDED and counted",
               asm["n_excluded"] == 1 and bad[1]["excluded"] is True
               and "-35.74" in bad[1]["excluded_reason"])
+
+        # ---------------------------------------------------------------- ticket 28
+        sp = {r["POLICY"]: r for r in doc["Imaginary_Spread"]}
+        check("[Imaginary_Spread] has one row per policy and names the [Result] policy",
+              set(sp) == {"refuse", "invert_below", "crest_native"}
+              and doc["Calculation_Info"]["ITHR_POLICY"] == "refuse")
+        check("0 imaginary modes at the MACE level: the three policies give one S_ABS to 1e-9",
+              max(abs(sp[k]["S_ABS"] - sp["refuse"]["S_ABS"]) for k in sp) < 1e-9
+              and all(sp[k]["N_EXCLUDED"] == 0 and sp[k]["N_KEPT_NEGATIVE"] == 0 for k in sp))
+        check("every [[Basin]] row carries N_IMAGINARY / N_INVERTED / N_KEPT_NEGATIVE = 0",
+              all(r["N_IMAGINARY"] == 0 and r["N_INVERTED"] == 0 and r["N_KEPT_NEGATIVE"] == 0
+                  for r in doc["Basin"]))
+        # a synthetic sub-ithr basin: refuse and invert_below exclude it, crest_native keeps it
+        deep = copy.deepcopy(basins)
+        deep[1]["frequencies_cm"] = [-61.68] + list(deep[1]["frequencies_cm"][1:])
+        deep[1]["n_imaginary"] = 1
+        rows = {r["POLICY"]: r for r in me.imaginary_spread(deep, temperature_K=298.15)}
+        check("a -61.68 basin: excluded under refuse and invert_below, kept negative under crest_native",
+              rows["refuse"]["N_EXCLUDED"] == 1 and rows["invert_below"]["N_EXCLUDED"] == 1
+              and rows["crest_native"]["N_EXCLUDED"] == 0 and rows["crest_native"]["N_KEPT_NEGATIVE"] == 1)
+        check("crest_native S_ABS differs from refuse (the kept basin enters with S = 0 for that mode)",
+              abs(rows["crest_native"]["S_ABS"] - rows["refuse"]["S_ABS"]) > 1e-3)
+        shallow = copy.deepcopy(basins)
+        shallow[1]["frequencies_cm"] = [-35.74] + list(shallow[1]["frequencies_cm"][1:])
+        shallow[1]["n_imaginary"] = 1
+        rows2 = {r["POLICY"]: r for r in me.imaginary_spread(shallow, temperature_K=298.15)}
+        check("a -35.74 basin: invert_below and crest_native agree to 1e-9, refuse excludes it",
+              rows2["refuse"]["N_EXCLUDED"] == 1 and rows2["invert_below"]["N_INVERTED"] == 1
+              and abs(rows2["invert_below"]["S_ABS"] - rows2["crest_native"]["S_ABS"]) < 1e-9)
+        # the record is written under a non-refuse policy even when the reference basin
+        # (lowest G_i) carries a sub-ithr mode (code-review finding: preset_spread)
+        native = Path(tmp) / "native"
+        shutil.copytree(SRC, native)
+        # push the lowest mode of EVERY basin to -61.68 cm^-1 by rank-one surgery on the
+        # mass-weighted projected matrix (so whichever basin ends up the reference basin
+        # carries a sub-ithr mode), then un-weight it back into hessian.npy
+        for b in (0, 1, 2):
+            hb = np.load(native / "mace" / "basin{:02d}".format(b) / "hessian.npy")
+            ab = read(str(native / "mace" / "basin{:02d}".format(b) / "basin.extxyz"), format="extxyz")
+            m3 = np.repeat(ab.get_masses(), 3)
+            hm = hb / np.sqrt(np.outer(m3, m3))
+            v, _s, _r = hessian_mod.rigid_body_vectors(ab.get_masses(), ab.get_positions())
+            pmat = np.eye(len(m3)) - v @ v.T
+            kmat = pmat @ hm @ pmat
+            lam, vec = np.linalg.eigh(0.5 * (kmat + kmat.T))
+            keep = np.linalg.norm(v.T @ vec, axis=0) ** 2 <= 0.5
+            i0 = np.where(keep)[0][np.argmin(lam[keep])]
+            target = -(61.68 / hessian_mod.CM_INV_PER_SQRT_EV_A2_AMU) ** 2
+            hm2 = hm + (target - lam[i0]) * np.outer(vec[:, i0], vec[:, i0])
+            np.save(native / "mace" / "basin{:02d}".format(b) / "hessian.npy", hm2 * np.sqrt(np.outer(m3, m3)))
+        o_nat = me.run_calculation(native, level=LEVEL, qm9_index="dsgdb9nsd_000035",
+                                   imaginary_policy="crest_native")
+        d_nat = prop.load(layout.level_dir(native, LEVEL) / "thermo_msrrho.toml")
+        ref_row = next(r for r in d_nat["Basin"] if r["INDEX"] == d_nat["Calculation_Info"]["REFERENCE_BASIN"])
+        check("crest_native with a sub-ithr mode on every basin: the record is written, the reference basin kept",
+              d_nat["Calculation_Info"]["ITHR_POLICY"] == "crest_native" and ref_row["N_KEPT_NEGATIVE"] == 1
+              and d_nat["Result"]["N_EXCLUDED"] == 0)
+        check("... and the preset spread names grimme2012 (no ithr) as absent instead of failing the record",
+              set(o_nat["preset_spread"]["presets_absent"]) == {"grimme2012"}
+              and set(o_nat["preset_spread"]["TS_vib_kcal"]) == {"crest", "xtb", "HO"})
+        try:
+            me.run_calculation(native, level=LEVEL, qm9_index="dsgdb9nsd_000035", imaginary_policy="refuse")
+            check("under refuse the same molecule has no basin left and says so", False)
+        except ValueError as exc:
+            check("under refuse the same molecule has no basin left and says so", "no basin survived" in str(exc))
 
         # ---------------------------------------------------------------- config guard
         cfg = copy.deepcopy(config.load())

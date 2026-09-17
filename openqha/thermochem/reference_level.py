@@ -62,10 +62,23 @@ COMPARE_SCHEMA = {
         "N_INCLUDED": ("Integer", None, "basins in the ensemble at this level"),
         "S_REF": ("Double", "cal/mol/K", "S_msRRHO of the reference basin"),
         "S_CONF": ("Double", "cal/mol/K", "S_CONF_PRIME + DS_BAR"),
+        "S_CONF_PRIME": ("Double", "cal/mol/K", "mixing entropy of the populations"),
+        "DS_BAR": ("Double", "cal/mol/K", "population average of S_msRRHO minus the reference"),
+        "H_CONF": ("Double", "kcal/mol", "population average of H_i minus the reference"),
+        "CP_CONF": ("Double", "cal/mol/K", "fluctuation term"),
+        "H_ABS": ("Double", "kcal/mol", "H_ref + H_CONF"),
+        "N_BASINS_90": ("ArrayOfIntegers", None, "basins carrying PTOT of the population"),
+        "ITHR_POLICY": ("String", None, "imaginary-mode policy of the [Result] block"),
     },
     "Tiers": {
         "MODEL_ERROR_S": ("Double", "cal/mol/K", "engine S_ABS - reference S_ABS"),
         "MODEL_ERROR_S_CONF": ("Double", "cal/mol/K", "engine conformational term - reference"),
+        "MODEL_ERROR_S_REF": ("Double", "cal/mol/K", "engine S_REF - reference S_REF (curvature and geometry of the reference basin)"),
+        "MODEL_ERROR_S_CONF_PRIME": ("Double", "cal/mol/K", "engine S_CONF_PRIME - reference"),
+        "MODEL_ERROR_DS_BAR": ("Double", "cal/mol/K", "engine DS_BAR - reference"),
+        "MODEL_ERROR_H_CONF": ("Double", "kcal/mol", "engine H_CONF - reference"),
+        "MODEL_ERROR_CP_CONF": ("Double", "cal/mol/K", "engine CP_CONF - reference"),
+        "MODEL_ERROR_N_BASINS_90": ("Integer", None, "engine len(N_BASINS_90) - reference"),
         "LEVEL_ERROR_S": ("Double", "cal/mol/K", "reference S_ABS - experiment"),
         "TOTAL_ERROR_S": ("Double", "cal/mol/K", "engine S_ABS - experiment"),
         "S_EXPERIMENT": ("Double", "cal/mol/K", "declared experimental S"),
@@ -202,6 +215,9 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=orca.REFERENCE_KEY
     ens = me.assemble(ref_basins, T, ptot)
     ref = next(b for b in ref_basins if b["index"] == ens["reference_basin"])
     spread = thermo.preset_spread(ref["frequencies_cm"], ref["masses"], ref["positions"], temperature_K=T)
+    # the three imaginary-mode policies on the reference basins (a saddle, excluded by the
+    # merge map before any policy, has no spectrum here and stays excluded under all three)
+    imag = me.imaginary_spread(ref_basins, T, preset, 1.0, ptot)
     exp = config.experimental_entropy(qid, cfg) if qid else None
     info = {"MOLECULE_DIR": str(molecule), "QM9_INDEX": qid, "TAG": info_a.get("TAG"),
             "LEVEL": str(level), "ENGINE": "ORCA {} ({})".format(relaxed[0]["orca_version"], keywords),
@@ -209,9 +225,10 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=orca.REFERENCE_KEY
             "ROTOR_CAP_RULE": str(thermo.MSRRHO_PRESETS[preset]["rotor_cap"]),
             "ITHR_POLICY": "refuse", "FSCAL": 1.0, "TEMPERATURE": T, "PRESSURE": float(thermo.P_STD),
             "REFERENCE_BASIN": ens["reference_basin"], "PTOT": float(ptot), "EXTRAPOLATION": "none"}
-    me.write_records(lvl, info, ref_basins, ens, spread, exp)
+    me.write_records(lvl, info, ref_basins, ens, spread, exp, imaginary=imag)
     out = dict(ens)
     out.update(basins=ref_basins, merge_map=merge_rows, info=info, experimental=exp,
+               imaginary_spread=imag,
                record=lvl / "thermo_msrrho.toml", hessian_routes=sorted({x["hessian_route"] for x in relaxed}))
     return out
 
@@ -247,7 +264,11 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
             row.update({"S_ABS": res["S_ABS"], "G_TOTAL": res["G_TOTAL"], "N_BASINS": res["N_BASINS"],
                         "N_INCLUDED": res["N_INCLUDED"],
                         "S_REF": ref_row["S_MSRRHO"] if ref_row else None,
-                        "S_CONF": ens_b["S_CONF_PRIME"] + ens_b["DS_BAR"]})
+                        "S_CONF": ens_b["S_CONF_PRIME"] + ens_b["DS_BAR"],
+                        "S_CONF_PRIME": ens_b["S_CONF_PRIME"], "DS_BAR": ens_b["DS_BAR"],
+                        "H_CONF": ens_b["H_CONF"], "CP_CONF": ens_b["CP_CONF"],
+                        "H_ABS": res.get("H_ABS"), "N_BASINS_90": res.get("N_BASINS_90"),
+                        "ITHR_POLICY": d["Calculation_Info"].get("ITHR_POLICY")})
         rows.append(row)
     by = {r["LEVEL"]: r for r in rows}
     tiers = {}
@@ -257,6 +278,11 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
     if ref and eng:
         tiers["MODEL_ERROR_S"] = eng["S_ABS"] - ref["S_ABS"]
         tiers["MODEL_ERROR_S_CONF"] = eng["S_CONF"] - ref["S_CONF"]
+        for k in ("S_REF", "S_CONF_PRIME", "DS_BAR", "H_CONF", "CP_CONF"):
+            if eng.get(k) is not None and ref.get(k) is not None:
+                tiers["MODEL_ERROR_" + k] = eng[k] - ref[k]
+        if eng.get("N_BASINS_90") is not None and ref.get("N_BASINS_90") is not None:
+            tiers["MODEL_ERROR_N_BASINS_90"] = len(eng["N_BASINS_90"]) - len(ref["N_BASINS_90"])
         g_rel_e = eng["G_TOTAL"] - _g_ref(found[engine_level])
         g_rel_r = ref["G_TOTAL"] - _g_ref(found[reference_level])
         tiers["MODEL_ERROR_G_REL"] = g_rel_e - g_rel_r
@@ -276,10 +302,19 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
     rep = report.Report("openQHA level_compare", "every level of {} beside the reference and "
                         "the experiment".format(qid))
     rep.section("levels")
-    rep.table(["level", "present", "S_abs", "S_conf", "G_total", "basins", "included"],
+    rep.table(["level", "present", "S_abs", "S_ref", "S'_conf", "dS_bar", "H_conf", "Cp_conf", "G_total", "basins", "incl.", "90%", "policy"],
               [[r["LEVEL"], r["PRESENT"], "%.3f" % r["S_ABS"] if r["PRESENT"] else "-",
-                "%.3f" % r["S_CONF"] if r["PRESENT"] else "-", "%.4f" % r["G_TOTAL"] if r["PRESENT"] else "-",
-                r.get("N_BASINS", "-"), r.get("N_INCLUDED", "-")] for r in rows])
+                "%.3f" % r["S_REF"] if r["PRESENT"] and r.get("S_REF") is not None else "-",
+                "%.3f" % r["S_CONF_PRIME"] if r["PRESENT"] else "-",
+                "%.3f" % r["DS_BAR"] if r["PRESENT"] else "-",
+                "%.4f" % r["H_CONF"] if r["PRESENT"] else "-",
+                "%.3f" % r["CP_CONF"] if r["PRESENT"] else "-",
+                "%.4f" % r["G_TOTAL"] if r["PRESENT"] else "-",
+                r.get("N_BASINS", "-"), r.get("N_INCLUDED", "-"),
+                len(r["N_BASINS_90"]) if r.get("N_BASINS_90") is not None else "-",
+                r.get("ITHR_POLICY", "-") if r["PRESENT"] else "-"] for r in rows],
+              title="cal/mol/K; H_conf and G_total in kcal/mol")
+    _per_basin_table(rep, molecule, found, engine_level, reference_level)
     rep.section("tiers (cal/mol/K unless noted)")
     if not tiers:
         rep.text("  no tier can be computed: the reference level or the engine level is absent")
@@ -295,3 +330,33 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
 def _g_ref(doc):
     ref_idx = int(doc["Calculation_Info"]["REFERENCE_BASIN"])
     return next(float(r["G_I"]) for r in doc["Basin"] if int(r["INDEX"]) == ref_idx)
+
+
+def _per_basin_table(rep, molecule, found, engine_level, reference_level):
+    """The engine's and the reference's [[Basin]] rows side by side, paired by the merge
+    map (each at its own geometry), when both records and the map exist."""
+    mm = layout.level_dir(molecule, reference_level) / "merge_map.dat"
+    if not (engine_level in found and reference_level in found and mm.is_file()):
+        return
+    e_rows = {int(r["INDEX"]): r for r in found[engine_level]["Basin"]}
+    r_rows = {int(r["INDEX"]): r for r in found[reference_level]["Basin"]}
+    e_ref = e_rows[int(found[engine_level]["Calculation_Info"]["REFERENCE_BASIN"])]
+    r_ref = r_rows[int(found[reference_level]["Calculation_Info"]["REFERENCE_BASIN"])]
+    lines = []
+    for m in dat.read_table(mm):
+        mb, rb = int(m["mace_basin"]), int(m["reference_basin"])
+        e, r = e_rows.get(mb), r_rows.get(rb) if m["status"] == "kept" else None
+        if e is None or e.get("EXCLUDED"):
+            continue
+        if r is None or r.get("EXCLUDED"):
+            lines.append([mb, m["status"], "%.4f" % (e["E_EL"] - e_ref["E_EL"]), "-", "%.3f" % e["S_VIB"], "-",
+                          "%.4f" % (e["G_I"] - e_ref["G_I"]), "-", "%.4f" % e["POPULATION"], "-"])
+            continue
+        lines.append([mb, "%s %d" % (m["status"], rb),
+                      "%.4f" % (e["E_EL"] - e_ref["E_EL"]), "%.4f" % (r["E_EL"] - r_ref["E_EL"]),
+                      "%.3f" % e["S_VIB"], "%.3f" % r["S_VIB"],
+                      "%.4f" % (e["G_I"] - e_ref["G_I"]), "%.4f" % (r["G_I"] - r_ref["G_I"]),
+                      "%.4f" % e["POPULATION"], "%.4f" % r["POPULATION"]])
+    if lines:
+        rep.table(["mace", "-> ref", "dE_el eng", "dE_el ref", "S_vib eng", "S_vib ref", "dG_i eng", "dG_i ref", "p eng", "p ref"],
+                  lines, title="per basin, each level at its own geometry (kcal/mol, cal/mol/K)")

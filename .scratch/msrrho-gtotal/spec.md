@@ -174,18 +174,27 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   `S'_conf`, `dS_bar`, `Cp_conf`, `H_conf` must match CREST's printout term by term,
   and our `g'` must match `cre_degen2`. GFN2's `S_abs` then appears as a level.
 - **`hessian_compare`** (`levels/hessian_compare.out/.toml`). For every MACE basin
-  the merge map marks `kept`: the reference geometry is `$atoms` of `job.hess`; the
-  MACE Hessian is evaluated there by `hessian.hessian(mode="analytic")` and stored as
-  an engine file `mace/basinNN/hessian_at_<level>.npy` (ADR 0001). Both Hessians go
-  through `project_and_diagonalise` (one routine, both sides); ORCA's own
-  `$vibrational_frequencies` remain the round-trip check of the reference side. In the
-  mass-weighted Eckart-projected basis: relative Frobenius error, eigenvalue MAE. Modes
-  paired by `quasi_harmonic.mode_match.match` (block-overlap gate, collisions counted,
-  no Hungarian): frequency MAE / max over all modes and over modes below 300 cm^-1,
-  lowest mode each side, number of collisions, minimum block overlap; the per-mode
-  T*S table of the `crest` preset on both spectra and the summed low-mode difference.
-  Thermochemistry is NOT compared at the reference geometry: per basin the two levels'
-  own `[[Basin]]` rows are set side by side (pairing by the merge map), and the
+  the merge map marks `kept`: the reference geometry x_r is `$atoms` of `job.hess`; the
+  MACE Hessian and residual force are evaluated there (`hessian.hessian(mode="analytic")`)
+  and stored as engine files `mace/basinNN/hessian_at_<level>.npy` (ADR 0001). Both
+  Hessians are at one point of one space, so no mode assignment is invented; four
+  metric families as the MLIP-Hessian literature reports them: (1) element-wise
+  Cartesian MAE / RMSE in eV/A^2 (HIP, PFT, Rodriguez, PHL); (2) relative Frobenius
+  error of the mass-weighted Eckart-projected `K` (basis-free); (3) sorted-index
+  spectrum: eigenvalue / frequency MAE and max over all modes and over modes < 300
+  cm^-1, softening slope through the origin (Deng et al.), lowest mode and imaginary
+  count of MACE at x_r; (4) mode-resolved on the reference eigenbasis `D = L_r^T K_m
+  L_r`: curvature along each DFT mode (the Hessian-vector product PHL trains on),
+  `MIXING` from the off-diagonal norm, block-aware eigenvector overlap from
+  `mode_match.overlap_matrix` + `degenerate_blocks` (HIP's cosine similarity, made
+  safe on degenerate blocks). `mode_match.match` / `hybrid_spectrum` are not used: the
+  argmax pairing with counted collisions was built for two bases from different
+  estimators (covariance vs Hessian). Curvature in the project's units, still a Hessian
+  metric at x_r: per-mode T*S (`crest` preset) on omega_r and on the curvature along
+  the reference modes -> `TS_LOW_DELTA`, `S_VIB_CURVATURE_DELTA`, `ZPE_CURVATURE_DELTA`.
+  ORCA's own `$vibrational_frequencies` remain the round-trip check of the reference
+  side. Thermochemistry proper is NOT compared at x_r: per basin the two levels' own
+  `[[Basin]]` rows are set side by side (pairing by the merge map), and the
   `[Ensemble]` / `[Result]` terms likewise. `$dipole_derivatives` are compared only where
   both engines produce them; MACE-OFF23 has no charges, so at that level the record
   states `DIPOLE_DERIVATIVES_PRESENT = false`. `level_compare` grows: `[[Level]]`
@@ -241,7 +250,9 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
 - **Hessian-compare seams**: on the propanal fixture (reference `.hess` for basins 0-2,
   a stored `hessian_at_wb97m-d3bj_def2-tzvppd.npy` per basin) the routine that
   diagonalises the reference side reproduces ORCA's `$vibrational_frequencies` to
-  0.5 cm^-1; the MACE-at-reference spectrum has 0 imaginary modes or the basin is
+  0.5 cm^-1; a synthetic pair K_m = K_r gives every error 0, MIXING 0, slope 1, block
+  overlap 1, and K_m = 0.81 K_r gives slope 0.9 and curvature-along-reference 0.9
+  omega_r; the MACE-at-reference spectrum has 0 imaginary modes or the basin is
   reported with its lowest mode; every kept basin appears once; the low-mode statistics
   are on modes below 300 cm^-1 only; `DIPOLE_DERIVATIVES_PRESENT = false` at the MACE
   level. An integration test evaluates the MACE Hessian at one reference geometry and
@@ -290,3 +301,11 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
 - Measured 2026-09-16: CREST's own numerical Hessian gives -68.42 cm^-1 for propanal's
   third `--entropy` conformer, below its ithr; CREST keeps the conformer with S = 0 for
   that mode (S_vib 5.035 vs 8.97 / 8.47), which is the dS_bar residual of the seam.
+- Measured 2026-09-17 (tickets 27-29 done): under `crest_native` the GFN2 seam's dS_bar
+  closes to -0.002 / -0.022 (conformer 3 kept, S_vib 5.036 vs CREST 5.035). MACE at the
+  reference geometry of propanal: Hessian MAE 0.026-0.033 eV/A^2, frequency MAE 2.9-4.7
+  cm^-1, softening slope ~1.000; the +0.16 model error in S_abs is S'_conf (+0.158, a
+  0.13 kcal/mol relative-energy error of the gauche pair), not curvature (S_REF -0.02).
+  Chirality: propanal cis self-mirror 0.0009 A, gauche 0.459; the c1/cs conformer 0.018 /
+  0.016 in the two runs (achiral by the number, g' = 1 in both).
+

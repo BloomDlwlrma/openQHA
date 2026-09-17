@@ -108,3 +108,20 @@ Frontier empty. CONTEXT.md +3 terms (Level, Level folder, Enantiomer degeneracy)
 
 Tickets 27 (`hessian_compare`), 28 (imaginary policies on real data, `crest_native`),
 29 (continuous chirality with `procrustes`).
+
+### Round 4 addendum (2026-09-16): how the literature compares MLIP and QC Hessians
+
+- Q22 is `mode_match.match` the right instrument for ticket 27? No. Read: HIP (arXiv
+  2509.21624, Hessian MAE eV/A^2 + eigenvalue MAE + eigenvector cosine similarity on
+  mass-weighted Eckart-projected Hessians, lowest pair after projection, ZPE error), PFT
+  (Hessian MAE, omega_max / S / F / Cv MAE), Rodriguez 2025 and PHL (element RMSE
+  normalised by 3N; PHL trains the Hessian-vector product v^T H v), Deng 2025 (softening
+  ratio omega_MLIP / omega_DFT), IR benchmark arXiv 2605.22367 (frequency MAE, sorted
+  index, 2.8-7.6 cm^-1), Gonnheimer AD-Hessian (MaxE / MAE vs finite difference, Cv MAE,
+  imaginary-mode exclusion). Nobody assigns modes by argmax overlap; frequency errors
+  are sorted-index (Weyl), eigenvectors by cosine at the same index or, for degenerate
+  blocks, subspace overlap. `match`'s squared-overlap matrix, `degenerate_blocks` and
+  `projected_modes` are correct and reused; its argmax pairing with counted collisions
+  and `hybrid_spectrum` belong to the covariance-vs-Hessian problem and are not used.
+  Ticket 27 rewritten with four families plus the mode-resolved curvature
+  `D = L_r^T K_m L_r` (the HVP along each DFT mode) and the MACE residual force at x_r.

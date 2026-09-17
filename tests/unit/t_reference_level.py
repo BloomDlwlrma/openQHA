@@ -69,7 +69,7 @@ def main():
               all(r["roundtrip_cm"] < 0.5 for r in rows), [r["roundtrip_cm"] for r in rows])
         doc = prop.load(lvl / "thermo_msrrho.toml")
         check("levels/<level>/thermo_msrrho.toml has the ticket-24 blocks and LEVEL = " + LEVEL,
-              set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result"}
+              set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result", "Imaginary_Spread"}
               and doc["Calculation_Info"]["LEVEL"] == LEVEL)
         check("the Report ends with the terminal line",
               report.terminated_normally(lvl / "thermo_msrrho.out", "thermo_msrrho"))
@@ -99,6 +99,19 @@ def main():
               abs(t["TOTAL_ERROR_S"] - (t["MODEL_ERROR_S"] + t["LEVEL_ERROR_S"])) < 1e-9)
         print("      tiers: model %+.3f  level %+.3f  total %+.3f cal/mol/K"
               % (t["MODEL_ERROR_S"], t["LEVEL_ERROR_S"], t["TOTAL_ERROR_S"]))
+        # ticket 27: every ensemble term per level, and a MODEL_ERROR_ line for each
+        for need in ("S_REF", "S_CONF_PRIME", "DS_BAR", "H_CONF", "CP_CONF", "G_TOTAL", "N_BASINS", "N_BASINS_90"):
+            check("[[Level]] carries %s for every present level" % need,
+                  all(need in r for r in cmp1["levels"] if r["PRESENT"]))
+        check("[Tiers] carries MODEL_ERROR_ for S_REF, S_CONF_PRIME, DS_BAR, H_CONF, CP_CONF, N_BASINS_90",
+              all("MODEL_ERROR_" + k in t for k in ("S_REF", "S_CONF_PRIME", "DS_BAR", "H_CONF", "CP_CONF", "N_BASINS_90")))
+        check("MODEL_ERROR_S = MODEL_ERROR_S_REF + MODEL_ERROR_S_CONF_PRIME + MODEL_ERROR_DS_BAR (to 1e-9)",
+              abs(t["MODEL_ERROR_S"] - (t["MODEL_ERROR_S_REF"] + t["MODEL_ERROR_S_CONF_PRIME"] + t["MODEL_ERROR_DS_BAR"])) < 1e-9)
+        print("      model error split: S_ref %+.3f  S'_conf %+.3f  dS_bar %+.3f cal/mol/K"
+              % (t["MODEL_ERROR_S_REF"], t["MODEL_ERROR_S_CONF_PRIME"], t["MODEL_ERROR_DS_BAR"]))
+        rtext = (mol / "levels" / "level_compare.out").read_text(encoding="utf-8")
+        check("the Report prints the per-basin table (each level at its own geometry)",
+              "per basin, each level at its own geometry" in rtext)
         cdoc = prop.load(mol / "levels" / "level_compare.toml")
         check("level_compare.toml starts with [Calculation_Status]; report ends with its terminal line",
               next(iter(cdoc)) == "Calculation_Status"

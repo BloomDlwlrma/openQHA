@@ -4,11 +4,11 @@
 
 **Blocked by:** 25 (seam), 26 (reference level records).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-17 (the four molecules' MACE-level table pending: the user's run)
 
-- [ ] synthetic (ticket 22's acetone literals plus one mode at -61.68): under `crest_native` the mode is kept, its S contribution is 0, ZPE is lowered by 30.84 cm^-1, and `n_kept_negative = 1`; under `invert_below` the same input still raises; a mode at -35.74 is inverted under both
-- [ ] on the GFN2 seam fixture, `crest_native` reproduces CREST's per-conformer S_vib for conformer 3 (5.035 cal/mol/K) to 0.02 and the seam's dS_bar difference falls below 0.03 cal/mol/K for both runs; the algebraic terms stay at 1e-6
-- [ ] at the MACE and reference levels of propanal (0 imaginary modes) the three policies give the same S_ABS to 1e-9 and `[Imaginary_Spread]` says so
-- [ ] `[Imaginary_Spread]` is written by every `thermo_msrrho` Calculation and round-trips through `t_toml_record_roundtrip.py`
-- [ ] the four molecules' MACE-level records carry `[Imaginary_Spread]` (the user's run; the driver re-writes records without recomputing Hessians); the table of S_ABS under the three policies is in the note for the ruling
-- [ ] README and CONTEXT state the three regimes and the measured CREST behaviour with the `thermocalc.f90` / `thermo.f90` lines
+- [x] synthetic (ticket 22's acetone literals plus one mode at -61.68): under `crest_native` the mode is kept, its S contribution is 0, ZPE is lowered by 30.84 cm^-1, and `n_kept_negative = 1`; under `invert_below` the same input still raises; a mode at -35.74 is inverted under both
+- [x] on the GFN2 seam fixture, `crest_native` reproduces CREST's per-conformer S_vib for conformer 3 (5.035 cal/mol/K) to 0.02 and the seam's dS_bar difference falls below 0.03 cal/mol/K for both runs; the algebraic terms stay at 1e-6
+- [x] at the MACE and reference levels of propanal (0 imaginary modes) the three policies give the same S_ABS to 1e-9 and `[Imaginary_Spread]` says so
+- [x] `[Imaginary_Spread]` is written by every `thermo_msrrho` Calculation and round-trips through `t_toml_record_roundtrip.py`
+- [ ] the four molecules' MACE-level records carry `[Imaginary_Spread]` (the user's run; the driver re-writes records without recomputing Hessians); the table of S_ABS under the three policies is in the note for the ruling  <- OPEN: user's run; propanal done (three policies equal at MACE and wB97M, 73.130 vs 73.218 at GFN2)
+- [x] README and CONTEXT state the three regimes and the measured CREST behaviour with the `thermocalc.f90` / `thermo.f90` lines

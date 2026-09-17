@@ -122,6 +122,8 @@ Open items are listed, not hidden: see [`docs/branchA_workflow.md`](docs/branchA
 * **numpy**, **scipy**
 * **ase** — structures, optimisers, xyz I/O
 * **rdkit** — SMILES, automorphism-minimised RMSD
+* **qc-procrustes** — the chirality test behind the enantiomer degeneracy g′ (rotational vs
+  orthogonal Procrustes, `meng2022procrustes`); our Kabsch is asserted equal to it on every pair
 * **torch**, **mace-torch** — the potential
 * **pymsym** — point-group labels (σ itself comes from geometry)
 * **PyYAML**, **pandas**, **pyarrow**
@@ -359,6 +361,7 @@ written to the molecule's level folder (ADR 0004):
 ```bash
 python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step mace
 python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step reference --nprocs 8
+python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step hessian_compare
 python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step compare
 ```
 
@@ -367,9 +370,28 @@ python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag p
   mace-off23_medium/        degeneracy.{out,toml}  thermo_msrrho.{out,toml}
   wb97m-d3bj_def2-tzvppd/   thermo_msrrho.{out,toml}  merge_map.dat
   gfn2/                     thermo_msrrho.{out,toml}   (the CREST --entropy seam, ticket 25)
-  level_compare.{out,toml}  every level beside the reference and the experiment
+  hessian_compare.{out,toml}  the MACE Hessian at the reference geometry vs the reference Hessian
+  level_compare.{out,toml}  every level beside the reference and the experiment, every term
 <molecule>/orca/wb97m-d3bj_def2-tzvppd/basinNN/   job.{inp,out,hess,xyz}   (engine files)
+<molecule>/mace/basinNN/{hessian,forces}_at_wb97m-d3bj_def2-tzvppd.npy      (engine files)
 ```
+
+**Hessian against Hessian, at one geometry.** `hessian_compare` evaluates the MACE
+Hessian at the reference geometry of every kept basin and compares it with the ORCA
+`.hess` as the MLIP-Hessian literature does (HIP `eval_horm.py`, PFT, Rodriguez 2025,
+PHL, Deng 2025): element-wise MAE in eV/A^2, relative Frobenius error of the projected
+matrix, sorted-index eigenvalue / frequency MAE (all modes and below 300 cm^-1), a
+softening slope, HIP's eigenvector cosines and overlap error, and -- with no mode
+assignment at all -- the MACE curvature along each DFT normal mode, `D = L_r^T K_e L_r`
+(PHL's Hessian-vector product with the DFT modes as probes), turned into per-mode T*S.
+Propanal, three basins, 10 s: Hessian MAE 0.026-0.033 eV/A^2, frequency MAE 2.9-4.7
+cm^-1, softening slope 1.0003-1.0016 (none), cos v1 >= 0.992. The model error in S_abs
+(+0.162 cal/mol/K) is not curvature: the curvature-only S_vib deltas are +0.003 / -0.20
+/ -0.05 and `MODEL_ERROR_S_REF` is -0.02, while `MODEL_ERROR_S_CONF_PRIME` is +0.158 --
+MACE puts the gauche pair 0.13 kcal/mol too low relative to cis. Thermochemistry is
+compared at each level's own geometry (never at the reference geometry), and
+`$dipole_derivatives` are not compared at the MACE level (no charges). `mode_match.match`
+is not used here: its argmax pairing was built for covariance-vs-Hessian bases.
 
 **Reference level.** `wb97m-d3bj_def2-tzvppd` is the level MACE-OFF23 was trained to
 (SPICE), so "model error" is the model and not a level difference. ORCA input line:
@@ -382,6 +404,23 @@ Production reference calculations run on deimos with ORCA 6.1.1; a local run is 
 and says so through the ORCA version in the Report. On propanal (three MACE basins) the
 MACE level gives S_abs = 72.355 cal/mol/K against the experimental 72.75 (LBH set, see
 `docs/cite/cite_openQHA.bib`, keys `li2016lbh`, `nist_webbook`, `frenkel1994`).
+
+**Imaginary modes: three regimes, all three written.** CREST 3.0.2 does not have one
+rule for an imaginary mode but three (`src/entropy/thermocalc.f90:207-216` and
+`thermo.f90:135-138`, measured with `crest --numhess` on propanal, 2026-09-16): a mode in
+(ithr, 0) with ithr = -50 cm^-1 is inverted; a mode below ithr is **kept negative**,
+carries zero entropy, and still enters the zero-point energy, H(T)-H(0) and Cp with its
+negative frequency; nothing is ever refused. Propanal's third `--entropy` conformer has
+-68.4 cm^-1 in CREST's own numerical Hessian and went into CREST's dS_bar with
+S_vib = 5.035 cal/mol/K (its neighbours: 8.97, 8.47). openQHA names the three policies
+`refuse` (any imaginary mode excludes the basin), `invert_below` (CREST's inversion, a
+mode below ithr excludes the basin) and `crest_native` (CREST line for line), and every
+`thermo_msrrho` record carries `[Imaginary_Spread]` with S_abs under all three;
+`[Calculation_Info].ITHR_POLICY` names the one the `[Result]` block used. Production
+records use `refuse`; the GFN2 seam uses `crest_native`, which is what closed its Hessian
+tier (dS_bar within 0.03 of CREST instead of 0.1). On propanal the MACE and reference
+levels have no imaginary mode and the three policies agree to 1e-9; at GFN2 they differ
+by 0.09 cal/mol/K, all of it that one conformer.
 
 ```python
 from openqha.store import basins, branch_a_property

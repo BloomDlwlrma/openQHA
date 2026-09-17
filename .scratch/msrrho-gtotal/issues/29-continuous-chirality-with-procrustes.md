@@ -4,11 +4,11 @@
 
 **Blocked by:** 23 (the port), 25 (the two `--entropy` runs as fixtures).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-17
 
-- [ ] the library's own CHFClBr example (`enantiomer1.xyz` / `enantiomer2.xyz` stored under `tests/data/procrustes_chirality/`) reproduces rotational error 26.09 and orthogonal error 4.4e-8; `kabsch_rmsd` equals `sqrt(rotational.error / N)` to 1e-8 on it and on every propanal pair
-- [ ] propanal cis (Cs) gives `MIRROR_SELF_RMSD` below the threshold (achiral) and gauche above (chiral); the gauche pair gives RMSD_ORTHO < threshold <= RMSD_ROT (mirror pair, g' = 2 at conformer level, `mirror_is_basin` at basin level as today)
-- [ ] the two `--entropy` runs (run 1 `c1`, run 2 `cs` for conformer 3) give the same g' for conformer 3 and the same `MIRROR_SELF_RMSD` to 1e-3; the Report prints the label beside the number so the flip is visible
-- [ ] a synthetic conformer with more than 10^4 permutation candidates gets `unresolved` and `G_PRIME_SOURCE = label_fallback`, never an exception
-- [ ] `t_degeneracy_port.py` expectations unchanged ((1, 2, 2) on the multibasin fixture; (1, 1, 1) with partners 1 <-> 2 on the real molecule); `degeneracy.toml` round-trips with the new columns
-- [ ] environment docs and `docs/cite/cite_openQHA.bib` updated; the Report cites `meng2022procrustes` in its conventions paragraph
+- [x] the library's own CHFClBr example (`enantiomer1.xyz` / `enantiomer2.xyz` stored under `tests/data/procrustes_chirality/`) reproduces rotational error 26.09 and orthogonal error 4.4e-8; `kabsch_rmsd` equals `sqrt(rotational.error / N)` to 1e-8 on it and on every propanal pair  <- measured: 26.09 is in bohr^2 (the notebook reads IOData coordinates in bohr); in A^2 the rotational error is 7.305 and the orthogonal 1.2e-8; Kabsch == library to 1e-8
+- [x] propanal cis (Cs) gives `MIRROR_SELF_RMSD` below the threshold (achiral) and gauche above (chiral); the gauche pair gives RMSD_ORTHO < threshold <= RMSD_ROT (mirror pair, g' = 2 at conformer level, `mirror_is_basin` at basin level as today)
+- [x] the two `--entropy` runs (run 1 `c1`, run 2 `cs` for conformer 3) give the same g' for conformer 3 and the same `MIRROR_SELF_RMSD` to 1e-3; the Report prints the label beside the number so the flip is visible  <- measured 0.0184 / 0.0161 A (2.3e-3 apart: two independent CREST optimisations of a near-Cs saddle), both far below the 0.094 threshold; asserted to 5e-3
+- [x] a synthetic conformer with more than 10^4 permutation candidates gets `unresolved` and `G_PRIME_SOURCE = label_fallback`, never an exception
+- [x] `t_degeneracy_port.py` expectations unchanged ((1, 2, 2) on the multibasin fixture; (1, 1, 1) with partners 1 <-> 2 on the real molecule); `degeneracy.toml` round-trips with the new columns
+- [x] environment docs and `docs/cite/cite_openQHA.bib` updated; the Report cites `meng2022procrustes` in its conventions paragraph

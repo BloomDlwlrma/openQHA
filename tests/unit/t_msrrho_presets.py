@@ -119,6 +119,48 @@ def main():
     except ValueError as exc:
         check("-61.68" in str(exc), "invert_below refuses a mode below ithr")
 
+    # --- crest_native (ticket 28): CREST 3.0.2's third regime ------------------------
+    # thermocalc.f90:209 inverts only modes in (ithr, 0); a mode below ithr stays
+    # negative, gets S = 0 (thermo.f90:135-138) and still enters ZPE, H(T)-H(0), Cp.
+    base = thermo.msrrho(ACETONE_OMEGA_CM, preset="crest", **kw)
+    nat = thermo.msrrho([-61.68] + ACETONE_OMEGA_CM[1:], preset="crest",
+                        imaginary_policy="crest_native", **kw)
+    check(nat["n_kept_negative"] == 1 and nat["n_inverted"] == 0,
+          "crest_native keeps a -61.68 mode (below ithr -50) instead of raising")
+    kept = [m for m in nat["modes"] if m["kept_negative"]]
+    check(len(kept) == 1 and kept[0]["omega_cm"] == -61.68 and kept[0]["TS_kcal"] == 0.0
+          and kept[0]["TS_HO_kcal"] == 0.0 and kept[0]["TS_FR_kcal"] == 0.0,
+          "the kept mode carries zero entropy (HO and free rotor both 0)")
+    rest = thermo.msrrho(ACETONE_OMEGA_CM[1:], preset="crest", **kw)
+    check(abs(nat["ZPE_kcal"] - (rest["ZPE_kcal"] - 0.5 * thermo.HC_KCAL * 61.68)) < 1e-12,
+          "ZPE is lowered by |nu|/2 = 30.84 cm^-1 by the kept negative mode")
+    check(abs(nat["S_vib_kcal_per_K"] - rest["S_vib_kcal_per_K"]) < 1e-12,
+          "S_vib equals the spectrum without that mode")
+    check(nat["H_thermal_kcal"] > rest["H_thermal_kcal"]
+          and nat["Cp_vib_kcal_per_K"] > rest["Cp_vib_kcal_per_K"],
+          "H(T)-H(0) and Cp still take the negative frequency (exp(-beta omega) > 1)")
+    nat2 = thermo.msrrho([-35.74] + ACETONE_OMEGA_CM[1:], preset="crest",
+                         imaginary_policy="crest_native", **kw)
+    check(nat2["n_inverted"] == 1 and nat2["n_kept_negative"] == 0
+          and abs(nat2["S_vib_kcal_per_K"] - inv["S_vib_kcal_per_K"]) < 1e-12,
+          "a -35.74 mode is inverted under crest_native exactly as under invert_below")
+    check(abs(base["S_vib_kcal_per_K"]
+              - thermo.msrrho(ACETONE_OMEGA_CM, preset="crest", imaginary_policy="crest_native",
+                              **kw)["S_vib_kcal_per_K"]) < 1e-12,
+          "with no imaginary mode the three policies are the same number")
+
+    # a sub-ithr spectrum under crest_native: grimme2012 (no ithr) is absent from the
+    # spread and says why; the spread itself is still a number (code-review finding)
+    sp2 = thermo.preset_spread([-61.68] + ACETONE_OMEGA_CM[1:], imaginary_policy="crest_native", **kw)
+    check(set(sp2["TS_vib_kcal"]) == {"crest", "xtb", "HO"} and "grimme2012" in sp2["presets_absent"]
+          and "ithr" in sp2["presets_absent"]["grimme2012"],
+          "preset_spread under crest_native: grimme2012 absent with its reason, crest/xtb present")
+    try:
+        thermo.preset_spread([-61.68] + ACETONE_OMEGA_CM[1:], imaginary_policy="refuse", **kw)
+        check(False, "preset_spread under refuse must raise on an imaginary spectrum")
+    except ValueError as exc:
+        check("no preset" in str(exc), "preset_spread under refuse raises when every preset refuses")
+
     # --- level names and the composite notation -------------------------------------
     check(engine.level_name("MACE-OFF23_medium") == "mace-off23_medium",
           "engine name maps to the CONTEXT.md level spelling")

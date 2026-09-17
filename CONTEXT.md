@@ -91,10 +91,22 @@ Hessians into thermochemistry, and the merge map of that level's basins. A level
 not computed for a molecule has no sub-folder: absence is stated, never a zero.
 _Avoid_: reference folder, benchmark folder, per-level records
 
+**Imaginary-mode policy**:
+What a `thermo_msrrho` Calculation does with a negative projected frequency, named in
+every record: `refuse` (the basin is excluded and listed), `invert_below` (a mode in
+(ithr, 0) takes |omega|, a mode below ithr excludes the basin), `crest_native` (CREST
+3.0.2 line for line: inverted in (ithr, 0), kept negative with zero entropy below ithr,
+still in ZPE, H and Cp). Every record carries `[Imaginary_Spread]`, S_abs under all
+three. Production uses `refuse`; the GFN2 seam uses `crest_native`.
+_Avoid_: ithr handling, frequency cleaning, fixing imaginary modes
+
 **Enantiomer degeneracy**:
-The factor `g'` of a basin in the Gibbs-Shannon sum: 1, or the number of RMSD-distinct
-core structures CREST finds inside the basin's rotamer group (2 for a geometric
-enantiomer pair such as gauche-propanal). Obtained by porting CREST's `intraconfRMSD`
-onto `crest_rotamers.xyz` grouped by `cre_members`; never from a rotamer count (methyl
-wells are one harmonic mode in one well).
+The factor `g'` of a basin in the Gibbs-Shannon sum: 2 for a conformer whose rotamer
+group holds a sampled mirror pair, or that is chiral while another chiral conformer
+does (CREST's `enantiofac` rule), 1 otherwise; a basin whose mirror image is itself a
+basin counts once. Obtained by porting CREST's `intraconfRMSD` onto `crest_rotamers.xyz`
+grouped by `cre_members`, with the mirror test and the conformer's chirality as
+Procrustes numbers (rotational vs orthogonal RMSD; self-mirror RMSD against the
+threshold 0.75 RTHR, `meng2022procrustes`) rather than a point-group label; never from a
+rotamer count (methyl wells are one harmonic mode in one well).
 _Avoid_: degeneracy (alone -- that is the electronic `g0`), rotamer number, multiplicity

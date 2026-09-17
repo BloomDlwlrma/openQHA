@@ -51,6 +51,7 @@ scipy>=1.10
 # ---- atomistic ------------------------------------------------------------------------
 ase>=3.22                 # Atoms, optimisers, xyz I/O
 rdkit>=2023.03            # SMILES, ETKDG seed geometries, GetBestRMS over automorphisms
+qc-procrustes>=1.0        # chirality test of g' (rotational vs orthogonal Procrustes)
 
 # ---- the potential --------------------------------------------------------------------
 # float64 is required, not preferred: geometry optimisation converges to fmax = 1e-4

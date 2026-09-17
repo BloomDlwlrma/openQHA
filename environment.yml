@@ -130,6 +130,9 @@ dependencies:
       # exactly only if you need two machines to agree to the last digit; see the note in
       # requirements.txt for where that residual comes from (not the BLAS).
       - mace-torch>=0.3.6
+      # the chirality test of the enantiomer degeneracy (rotational vs orthogonal
+      # Procrustes, Meng et al. CPC 2022); asserted equal to our Kabsch on every pair
+      - qc-procrustes>=1.0
       - pymsym>=0.3.5
       - parsl>=2024.01
 

@@ -11,6 +11,9 @@ What is asserted (spec, Testing Decisions; the ticket's criteria):
   * our cre_degen2 equivalents equal CREST's cre_degen2 (g_rot * cores).
   * S_ref from xtb's analytic Hessian at CREST's reference geometry is within 0.05 of
     CREST's numerical one (measured +0.011).
+  * ticket 28: under `crest_native` (CREST's own regime: a mode below ithr is kept with
+    zero entropy) the third conformer is kept and dS_bar closes to 0.03 (measured
+    -0.002 / -0.022; it was +0.10 / +0.12 while `refuse` dropped that conformer).
   * two runs are recorded with their spread; a single run is refused.
   * the records live in levels/gfn2/ and nowhere else.
 """
@@ -68,8 +71,9 @@ def main():
                   s["CRE_DEGEN2_OURS"] == s["CRE_DEGEN2"])
             check("run {}: S_ref within 0.05 of CREST's ({:+.4f})".format(e["run"], s.get("S_REF_DELTA", 9)),
                   abs(s.get("S_REF_DELTA", 9)) < ce.TOL_S_REF_CAL)
-            check("run {}: dS_bar delta is reported ({:+.4f}, Hessian implementation)".format(
-                e["run"], s.get("DS_BAR_DELTA", float("nan"))), "DS_BAR_DELTA" in s)
+            check("run {}: dS_bar within 0.03 of CREST's under crest_native ({:+.4f}; was +0.10/+0.12 under refuse)"
+                  .format(e["run"], s.get("DS_BAR_DELTA", float("nan"))),
+                  abs(s.get("DS_BAR_DELTA", 9)) < 0.03)
         g1 = out["runs"][0]["seam"]["G_PRIME_CREST"]
         g2 = out["runs"][1]["seam"]["G_PRIME_CREST"]
         check("CREST's own g' differs between the runs ([2,1,2] vs [2,1,1]): the label flip is reproduced",
@@ -78,8 +82,24 @@ def main():
               abs(out["S_conf_spread"] - 0.4296) < 0.01, out["S_conf_spread"])
         check("our own g' is the same in both runs (geometric chirality class)",
               out["runs"][0]["seam"]["G_PRIME_OURS"] == out["runs"][1]["seam"]["G_PRIME_OURS"])
-        check("the third conformer is excluded by xtb --hess (imaginary mode), counted",
-              all(e["seam"]["N_CONFORMERS_EXCLUDED"] == 1 for e in out["runs"]))
+        # ticket 28: the third conformer (-68.8 cm^-1 in xtb, -68.42 in CREST's own numerical
+        # Hessian, below ithr = -50) is KEPT with zero entropy for that mode, as CREST keeps it
+        third = [b for b in out["runs"][0]["basins"] if b["index"] == 2][0]
+        check("the third conformer is kept negative under crest_native (0 excluded, 1 kept)",
+              all(e["seam"]["N_CONFORMERS_EXCLUDED"] == 0 and e["seam"]["N_KEPT_NEGATIVE"] == 1
+                  for e in out["runs"])
+              and third["n_kept_negative"] == 1 and third["lowest_frequency_cm"] < -50.0)
+        print("      conformer 3: lowest mode %.2f cm^-1, S_vib %.3f cal/mol/K (CREST --numhess: 5.035)"
+              % (third["lowest_frequency_cm"], third["S_vib_cal_per_K"]))
+        check("its S_vib reproduces CREST's --numhess printout (5.035 cal/mol/K) to 0.02",
+              abs(third["S_vib_cal_per_K"] - 5.035) < 0.02, third["S_vib_cal_per_K"])
+        check("[Calculation_Info].ITHR_POLICY = crest_native and [Imaginary_Spread] has three rows",
+              doc["Calculation_Info"]["ITHR_POLICY"] == "crest_native"
+              and {r["POLICY"] for r in doc["Imaginary_Spread"]} == {"refuse", "invert_below", "crest_native"})
+        sp = {r["POLICY"]: r for r in doc["Imaginary_Spread"]}
+        check("under refuse and invert_below that conformer is excluded (spread rows say so)",
+              sp["refuse"]["N_EXCLUDED"] == 1 and sp["invert_below"]["N_EXCLUDED"] == 1
+              and sp["crest_native"]["N_EXCLUDED"] == 0)
         try:
             ce.run_calculation(mol, run_crest=False, runs=(1,))
             check("a single run is refused", False)
