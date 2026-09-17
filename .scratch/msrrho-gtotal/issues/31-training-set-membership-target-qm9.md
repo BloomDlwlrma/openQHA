@@ -4,11 +4,11 @@
 
 **Blocked by:** 30 (the index and the canonicaliser).
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-17
 
-- [ ] the target set is produced by the same gate `s0_A_pipeline` runs (F0-F7 from `configs/filters.yaml`), and the gate configuration is written into the `[Summary]` of the record
-- [ ] every target has exactly one row; N_TARGETS equals the number of QM9 molecules passing the gate; a molecule failing the gate is absent from the rows and counted (N_FAILED_GATE, by gate)
-- [ ] the summary gives N_IN_TRAINING at the three strictnesses and the fraction per heavy-atom count; the four shipped species' rows agree with ticket 30's answers
-- [ ] the run streams: the QM9 index and the SPICE index are each read once, the whole check on 133,660 molecules finishes in one local run (target: minutes, not hours) and the wall time is in the record
-- [ ] the `.toml` names the SPICE files with sizes, mtimes and frame counts (951,005 train / 50,195 test) and the Apollo DOI, and the `.dat` round-trips through `dat.read_table`
-- [ ] README (Free energy section) gains the SI sentence with the number and the pointer to the Dataset; the note records the fraction and what it means for the tiers
+- [x] the target set is produced by the same gate `s0_A_pipeline` runs (F0-F7 from `configs/filters.yaml`), and the gate configuration is written into the `[Summary]` of the record
+- [x] every target has exactly one row; N_TARGETS equals the number of QM9 molecules passing the gate; a molecule failing the gate is absent from the rows and counted (N_FAILED_GATE, by gate)
+- [x] the summary gives N_IN_TRAINING at the three strictnesses and the fraction per heavy-atom count; the four shipped species' rows agree with ticket 30's answers  <- 176 of 119,451 targets in training (0.15 %): isomeric 156 / no_stereo 163 / connectivity 176; by heavy atoms in/targets [3/3, 5/5, 7/9, 14/31, 29/124, 32/588, 28/2971, 35/16622, 23/99098]; gate failures F0 755, F4 11826, F5 139, F7 1490
+- [x] the run streams: the QM9 index and the SPICE index are each read once, the whole check on 133,660 molecules finishes in one local run (target: minutes, not hours) and the wall time is in the record  <- measured 1461 s (24 min) while CREST ran beside it; 22 s per 2,000 molecules alone
+- [x] the `.toml` names the SPICE files with sizes, mtimes and frame counts (951,005 train / 50,195 test) and the Apollo DOI, and the `.dat` round-trips through `dat.read_table`
+- [x] README (Free energy section) gains the SI sentence with the number and the pointer to the Dataset; the note records the fraction and what it means for the tiers

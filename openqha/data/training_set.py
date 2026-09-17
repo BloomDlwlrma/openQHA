@@ -296,3 +296,182 @@ def sentence(rec):
                 "out from training, but drawn from the same distribution".format(rec["N_TEST_FRAMES"], rec["MATCH_LEVEL"]))
     return ("this molecule is NOT in MACE-OFF23's training or test data at any strictness: the "
             "model-error tiers are out-of-distribution numbers")
+
+
+# ====================================================================== ticket 31: every target
+TARGETS_STEM = "qm9_targets_membership"
+TARGETS_PROGNAME = "openQHA training_set_membership"
+
+TARGETS_SCHEMA = {
+    "Calculation_Info": {
+        "SOURCE": ("String", None, "the training data checked"),
+        "DOI": ("String", None, "its DOI"),
+        "INDEX_PATH": ("String", None, "the cached index the answers came from"),
+        "TRAIN_FILE": ("String", None, "training file as recorded in the index"),
+        "TRAIN_SIZE": ("Integer", "bytes", "its size when indexed"),
+        "TRAIN_MTIME": ("Double", "s", "its mtime when indexed"),
+        "TRAIN_FRAMES": ("Integer", None, "frames in the training file"),
+        "TEST_FILE": ("String", None, "test file as recorded in the index"),
+        "TEST_SIZE": ("Integer", "bytes", "its size when indexed"),
+        "TEST_MTIME": ("Double", "s", "its mtime when indexed"),
+        "TEST_FRAMES": ("Integer", None, "frames in the test file"),
+        "QM9_ROOT": ("String", None, "the curated QM9 directory screened"),
+        "SMILES_SOURCE": ("String", None, "which SMILES of the QM9 file was used: relaxed (parsed back from the geometry)"),
+        "GATES": ("ArrayOfStrings", None, "the branch A gates applied, in order (configs/filters.yaml)"),
+        "F7_MODE": ("String", None, "the F7 mode of the configuration"),
+        "LIMIT": ("Integer", None, "molecules considered (0: all)"),
+        "SECONDS": ("Double", "s", "wall time of the run"),
+    },
+    "Summary": {
+        "N_CONSIDERED": ("Integer", None, "QM9 molecules read"),
+        "N_TARGETS": ("Integer", None, "molecules passing every gate"),
+        "N_FAILED_GATE": ("Integer", None, "molecules failing a gate"),
+        "N_UNREADABLE": ("Integer", None, "QM9 files without a usable SMILES line"),
+        "N_IN_TRAINING": ("Integer", None, "targets with frames in the training file, at the strictest matching level"),
+        "N_IN_TRAINING_ISOMERIC": ("Integer", None, "targets matched at canonical isomeric SMILES"),
+        "N_IN_TRAINING_NO_STEREO": ("Integer", None, "targets matched with stereo removed (isomeric or looser)"),
+        "N_IN_TRAINING_CONNECTIVITY": ("Integer", None, "targets matched at the InChIKey connectivity block (any level)"),
+        "N_IN_TEST_ONLY": ("Integer", None, "targets with frames in the test file only"),
+        "N_MONOMER_ONLY": ("Integer", None, "targets in training whose frames are monomers only"),
+        "N_DIMER_ONLY": ("Integer", None, "targets in training whose frames are dimers only"),
+        "FRACTION_IN_TRAINING": ("Double", None, "N_IN_TRAINING / N_TARGETS"),
+        "TARGETS_BY_HEAVY": ("ArrayOfIntegers", None, "targets with 1..9 heavy atoms"),
+        "IN_TRAINING_BY_HEAVY": ("ArrayOfIntegers", None, "of those, in the training file"),
+    },
+    "Failed_Gate": {
+        "GATE": ("String", None, "the gate"),
+        "N": ("Integer", None, "molecules it refused"),
+    },
+    "Config_Type": {
+        "CONFIG_TYPE": ("String", None, "a config_type tag of the matched frames"),
+        "N_TARGETS": ("Integer", None, "targets with at least one frame under it"),
+    },
+}
+
+TARGET_ROW_SCHEMA = {
+    "qm9_index": ("String", None, "the molecule"),
+    "smiles": ("String", None, "relaxed SMILES of the QM9 file"),
+    "n_heavy": ("Integer", None, "heavy atoms"),
+    "in_training": ("Boolean", None, "frames in the training file"),
+    "in_test_only": ("Boolean", None, "frames in the test file only"),
+    "match_level": ("String", None, "isomeric, no_stereo, connectivity or none"),
+    "n_train_frames": ("Integer", None, "monomer frames, training file"),
+    "n_test_frames": ("Integer", None, "monomer frames, test file"),
+    "n_train_dimer_frames": ("Integer", None, "dimer frames, training file"),
+    "n_test_dimer_frames": ("Integer", None, "dimer frames, test file"),
+    "config_types": ("String", None, "config_type tags, ';'-joined"),
+}
+
+
+def applied_gates(cfg=None):
+    """The gates `filters.screen` actually applies: the enabled ones, minus F7 when the
+    F7 mode is off (screen drops it silently; the record must not list it)."""
+    from ..conformer_search import filters
+    cfg = cfg or config.load()
+    gates = tuple(filters.enabled_gates(cfg))
+    if "F7" in gates and filters.f7_mode(cfg) == "off":
+        gates = tuple(g for g in gates if g != "F7")
+    return gates
+
+
+def qm9_targets(cfg=None, limit=None, progress=None):
+    """Every curated QM9 molecule through the branch A gate. Yields
+    (qm9_index, smiles, passed, failed_gate); a file without a usable SMILES line is
+    yielded with smiles None. The SMILES is the file's own relaxed one (parsed back
+    from the deposited geometry), which is what branch A computes on."""
+    from ..conformer_search import filters
+    from . import curated_qm9
+    cfg = cfg or config.load()
+    gates = applied_gates(cfg)
+    index = curated_qm9._index(cfg)
+    for k, n in enumerate(sorted(index)):
+        if limit and k >= limit:
+            return
+        qid = "dsgdb9nsd_{:06d}".format(n)
+        path = index[n][1]
+        try:
+            _gdb, relaxed = config.qm9_smiles_from_xyz(path)
+        except (ValueError, IndexError):
+            yield qid, None, False, "unreadable"
+            continue
+        passed, failed, _reason = filters.screen(relaxed, cfg=cfg, gates=gates, identifier=qid)
+        if progress and k % 5000 == 0:
+            progress(k, qid)
+        yield qid, relaxed, bool(passed), failed
+
+
+def qm9_targets_membership(cfg=None, limit=None, out_dir=None, progress=None):
+    """Ticket 31: the Dataset `qm9_targets_membership.{dat,toml}` -- one row per target
+    (every curated QM9 molecule passing the gate), the summary for the SI, the SPICE
+    provenance and the gate configuration. Returns the record dict."""
+    from ..conformer_search import filters
+    from ..store import property as prop
+    from . import curated_qm9
+    cfg = cfg or config.load()
+    s = settings(cfg)
+    out_dir = Path(out_dir or s["cache"])
+    ix = load_index(cfg)
+    src = {r["FILE"]: r for r in ix["sources"]}
+    t0 = time.time()
+    rows, failed, n_unreadable, n_considered = [], {}, 0, 0
+    by_heavy = [0] * 10
+    in_by_heavy = [0] * 10
+    ctype_count = {}
+    for qid, smiles, passed, gate in qm9_targets(cfg, limit, progress):
+        n_considered += 1
+        if smiles is None:
+            n_unreadable += 1
+            continue
+        if not passed:
+            failed[gate] = failed.get(gate, 0) + 1
+            continue
+        r = membership(smiles, cfg)
+        row = {"qm9_index": qid, "smiles": smiles, "n_heavy": r["N_HEAVY_ATOMS"],
+               "in_training": r["IN_TRAINING"], "in_test_only": r["IN_TEST_ONLY"],
+               "match_level": r["MATCH_LEVEL"], "n_train_frames": r["N_TRAIN_FRAMES"],
+               "n_test_frames": r["N_TEST_FRAMES"], "n_train_dimer_frames": r["N_TRAIN_DIMER_FRAMES"],
+               "n_test_dimer_frames": r["N_TEST_DIMER_FRAMES"], "config_types": ";".join(r["CONFIG_TYPES"]),
+               "_match": {k: r[k] for k in ("MATCH_ISOMERIC", "MATCH_NO_STEREO", "MATCH_CONNECTIVITY")}}
+        rows.append(row)
+        h = min(max(row["n_heavy"], 0), 9)
+        by_heavy[h] += 1
+        if row["in_training"]:
+            in_by_heavy[h] += 1
+            for c in r["CONFIG_TYPES"]:
+                ctype_count[c] = ctype_count.get(c, 0) + 1
+    n_targets = len(rows)
+    n_in = sum(1 for r in rows if r["in_training"])
+    summary = {
+        "N_CONSIDERED": n_considered, "N_TARGETS": n_targets,
+        "N_FAILED_GATE": int(sum(failed.values())), "N_UNREADABLE": n_unreadable,
+        "N_IN_TRAINING": n_in,
+        "N_IN_TRAINING_ISOMERIC": sum(1 for r in rows if r["in_training"] and r["_match"]["MATCH_ISOMERIC"]),
+        "N_IN_TRAINING_NO_STEREO": sum(1 for r in rows if r["in_training"] and r["_match"]["MATCH_NO_STEREO"]),
+        "N_IN_TRAINING_CONNECTIVITY": sum(1 for r in rows if r["in_training"] and r["_match"]["MATCH_CONNECTIVITY"]),
+        "N_IN_TEST_ONLY": sum(1 for r in rows if r["in_test_only"]),
+        "N_MONOMER_ONLY": sum(1 for r in rows if r["in_training"] and r["n_train_frames"] > 0 and r["n_train_dimer_frames"] == 0),
+        "N_DIMER_ONLY": sum(1 for r in rows if r["in_training"] and r["n_train_frames"] == 0 and r["n_train_dimer_frames"] > 0),
+        "FRACTION_IN_TRAINING": (n_in / n_targets) if n_targets else 0.0,
+        "TARGETS_BY_HEAVY": by_heavy[1:], "IN_TRAINING_BY_HEAVY": in_by_heavy[1:],
+    }
+    info = {"SOURCE": SOURCE_NAME, "DOI": s["doi"], "INDEX_PATH": str(ix["path"]),
+            "TRAIN_FILE": src.get("train", {}).get("PATH"), "TRAIN_SIZE": src.get("train", {}).get("SIZE"),
+            "TRAIN_MTIME": src.get("train", {}).get("MTIME"), "TRAIN_FRAMES": src.get("train", {}).get("N_FRAMES_TOTAL"),
+            "TEST_FILE": src.get("test", {}).get("PATH"), "TEST_SIZE": src.get("test", {}).get("SIZE"),
+            "TEST_MTIME": src.get("test", {}).get("MTIME"), "TEST_FRAMES": src.get("test", {}).get("N_FRAMES_TOTAL"),
+            "QM9_ROOT": str(curated_qm9.root(cfg)), "SMILES_SOURCE": "relaxed",
+            "GATES": list(applied_gates(cfg)), "F7_MODE": str(filters.f7_mode(cfg)),
+            "LIMIT": int(limit or 0), "SECONDS": float(time.time() - t0)}
+    blocks = {"Calculation_Info": info, "Summary": summary,
+              "Failed_Gate": [{"GATE": g, "N": n} for g, n in sorted(failed.items())],
+              "Config_Type": [{"CONFIG_TYPE": c, "N_TARGETS": n} for c, n in sorted(ctype_count.items())]}
+    out_dir.mkdir(parents=True, exist_ok=True)
+    missing = prop.write(out_dir / (TARGETS_STEM + ".toml"), blocks, TARGETS_SCHEMA,
+                         prop.NORMAL_TERMINATION, TARGETS_PROGNAME)
+    if missing:
+        raise RuntimeError("{}.toml keys outside the schema: {}".format(TARGETS_STEM, missing))
+    dat.write_table(out_dir / (TARGETS_STEM + ".dat"),
+                    [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows],
+                    columns=list(TARGET_ROW_SCHEMA), schema=TARGET_ROW_SCHEMA)
+    return dict(info=info, summary=summary, failed=failed, config_types=ctype_count, rows=rows,
+                record=out_dir / (TARGETS_STEM + ".toml"), table=out_dir / (TARGETS_STEM + ".dat"))

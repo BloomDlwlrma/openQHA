@@ -319,4 +319,8 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   MACE-OFF23's training data (DES370K monomers, 48-49 conformers each, plus thousands of
   dimer frames); the three ring species are not. Propanal's model-error tiers are
   in-distribution numbers. Index: data/training_sets/mace-off23_spice_index.dat.
+- Measured 2026-09-17 (ticket 31 done): 176 of 119,451 QM9 targets (0.15 %) are in
+  MACE-OFF23's training data, all at the small end (1-5 heavy atoms: 58 of 172; 9 heavy
+  atoms: 23 of 99,098). The shipped 4-heavy-atom molecules are the exception; the bulk of
+  the target set is out-of-distribution for MACE-OFF23 by construction.
 

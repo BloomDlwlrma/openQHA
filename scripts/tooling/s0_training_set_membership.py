@@ -5,6 +5,8 @@ TOOLING. Builds (once) the index of the released MACE-OFF23 training and test fi
 
     --set shipped      every species declared in configs/edges_testset.yaml
                        -> data/training_sets/shipped_species_membership.dat
+    --set qm9-targets  every curated QM9 molecule passing the branch A gate (ticket 31)
+                       -> data/training_sets/qm9_targets_membership.{dat,toml}
     --smiles S [S...]  ad hoc SMILES, printed
     --build-index      (re)build the index and stop
 
@@ -63,7 +65,8 @@ def row_for(qid, name, smiles, cfg):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--set", choices=("shipped",), default=None)
+    ap.add_argument("--set", choices=("shipped", "qm9-targets"), default=None)
+    ap.add_argument("--limit", type=int, default=None, help="qm9-targets: consider only the first N molecules")
     ap.add_argument("--smiles", nargs="*", default=None)
     ap.add_argument("--build-index", action="store_true")
     args = ap.parse_args()
@@ -101,6 +104,23 @@ def main():
         dat.write_table(out, rows, schema=ROW_SCHEMA)
         n_in = sum(1 for r in rows if r["in_training"])
         print("{} of {} declared species are in MACE-OFF23's training file; table {}".format(n_in, len(rows), out))
+    if args.set == "qm9-targets":
+        def progress(k, qid):
+            print("  ... {} molecules screened (at {})".format(k, qid), flush=True)
+        out = ts.qm9_targets_membership(cfg, limit=args.limit, progress=progress)
+        sm = out["summary"]
+        print("targets {} of {} QM9 molecules considered ({} failed a gate: {}; {} unreadable)".format(
+            sm["N_TARGETS"], sm["N_CONSIDERED"], sm["N_FAILED_GATE"],
+            ", ".join("{} {}".format(g, n) for g, n in sorted(out["failed"].items())), sm["N_UNREADABLE"]))
+        print("in MACE-OFF23's training file: {} ({:.1%}); isomeric {} / no_stereo {} / connectivity {}; "
+              "test only {}; monomer-only {}, dimer-only {}".format(
+                  sm["N_IN_TRAINING"], sm["FRACTION_IN_TRAINING"], sm["N_IN_TRAINING_ISOMERIC"],
+                  sm["N_IN_TRAINING_NO_STEREO"], sm["N_IN_TRAINING_CONNECTIVITY"], sm["N_IN_TEST_ONLY"],
+                  sm["N_MONOMER_ONLY"], sm["N_DIMER_ONLY"]))
+        print("by heavy atoms (1..9): targets {}  in training {}".format(sm["TARGETS_BY_HEAVY"], sm["IN_TRAINING_BY_HEAVY"]))
+        for c, n in sorted(out["config_types"].items()):
+            print("  config_type {:28s} {} targets".format(c, n))
+        print("record  {}  table {}  ({:.0f} s)".format(out["record"], out["table"], out["info"]["SECONDS"]))
     return 0
 
 

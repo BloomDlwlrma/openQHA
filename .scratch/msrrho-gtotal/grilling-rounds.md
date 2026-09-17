@@ -140,3 +140,18 @@ Tickets 27 (`hessian_compare`), 28 (imaginary policies on real data, `crest_nati
   gate F0-F7), as a Dataset with the fraction per heavy-atom count for the SI. The judge
   of the Hessian-learning set reads the table to split in- and out-of-distribution.
   Tickets 30, 31.
+
+### Round 5 rulings (2026-09-17, user)
+
+| concept | meaning | treatment |
+|---|---|---|
+| targets | every molecule that passes the gate | kept, in SPICE or not |
+| held-out set | molecules the model never saw | `IN_TRAINING = false`; the generalisation test |
+| active learning | choosing new structures to label | a different thing; may add only from outside the held-out set |
+
+MACE-OFF23's published test error is interpolation (split by frame); since we use
+MACE-OFF23 our in-distribution tiers correspond to it. The MACE-vs-DFT Hessian argument
+is made on molecules / conformers SPICE never saw: first the three ring species
+(2-methyloxirane, cyclopropanol, oxetane: zero frames at any strictness). ORCA
+calculations keep their FULL `.out` files (never only the single-point line) -- in the
+run directory and in the fixtures.

@@ -1,0 +1,71 @@
+[Calculation_Status]
+PROGNAME = "openQHA training_set_membership"  # String: the step that wrote this file
+VERSION  = "0.3.0"                            # String: openQHA version
+STATUS   = "NORMAL TERMINATION"               # String: the completion marker
+
+[Calculation_Info]
+SOURCE        = "mace-off23_spice"              # String: the training data checked
+DOI           = "10.17863/CAM.107498"           # String: its DOI
+INDEX_PATH    = "/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/training_sets/mace-off23_spice_index.dat"  # String: the cached index the answers came from
+TRAIN_FILE    = "/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/source-code/final-workflow-design/hessian-train/SPICE/train_large_neut_no_bad_clean.xyz"  # String: training file as recorded in the index
+TRAIN_SIZE    = 4959843849                      # Integer, bytes: its size when indexed
+TRAIN_MTIME   = 1699221833.0                    # Double, s: its mtime when indexed
+TRAIN_FRAMES  = 951005                          # Integer: frames in the training file
+TEST_FILE     = "/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/source-code/final-workflow-design/hessian-train/SPICE/test_large_neut_all.xyz"  # String: test file as recorded in the index
+TEST_SIZE     = 261583315                       # Integer, bytes: its size when indexed
+TEST_MTIME    = 1684849816.0                    # Double, s: its mtime when indexed
+TEST_FRAMES   = 50195                           # Integer: frames in the test file
+QM9_ROOT      = "/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA/data/qm9/133660_curatedQM9_outof_133885"  # String: the curated QM9 directory screened
+SMILES_SOURCE = "relaxed"                       # String: which SMILES of the QM9 file was used: relaxed (parsed back from the geometry)
+GATES         = ["F0", "F1", "F3", "F4", "F5", "F7"]  # ArrayOfStrings: the branch A gates applied, in order (configs/filters.yaml)
+F7_MODE       = "drop_all"                      # String: the F7 mode of the configuration
+LIMIT         = 0                               # Integer: molecules considered (0: all)
+SECONDS       = 1461.1891102790833              # Double, s: wall time of the run
+
+[Summary]
+N_CONSIDERED               = 133661             # Integer: QM9 molecules read
+N_TARGETS                  = 119451             # Integer: molecules passing every gate
+N_FAILED_GATE              = 14210              # Integer: molecules failing a gate
+N_UNREADABLE               = 0                  # Integer: QM9 files without a usable SMILES line
+N_IN_TRAINING              = 176                # Integer: targets with frames in the training file, at the strictest matching level
+N_IN_TRAINING_ISOMERIC     = 156                # Integer: targets matched at canonical isomeric SMILES
+N_IN_TRAINING_NO_STEREO    = 163                # Integer: targets matched with stereo removed (isomeric or looser)
+N_IN_TRAINING_CONNECTIVITY = 176                # Integer: targets matched at the InChIKey connectivity block (any level)
+N_IN_TEST_ONLY             = 0                  # Integer: targets with frames in the test file only
+N_MONOMER_ONLY             = 44                 # Integer: targets in training whose frames are monomers only
+N_DIMER_ONLY               = 1                  # Integer: targets in training whose frames are dimers only
+FRACTION_IN_TRAINING       = 0.001473407506006647  # Double: N_IN_TRAINING / N_TARGETS
+TARGETS_BY_HEAVY           = [3, 5, 9, 31, 124, 588, 2971, 16622, 99098]  # ArrayOfIntegers: targets with 1..9 heavy atoms
+IN_TRAINING_BY_HEAVY       = [3, 5, 7, 14, 29, 32, 28, 35, 23]  # ArrayOfIntegers: of those, in the training file
+
+[[Failed_Gate]]
+GATE = "F0"  # String: the gate
+N    = 755   # Integer: molecules it refused
+
+[[Failed_Gate]]
+GATE = "F4"   # String: the gate
+N    = 11826  # Integer: molecules it refused
+
+[[Failed_Gate]]
+GATE = "F5"  # String: the gate
+N    = 139   # Integer: molecules it refused
+
+[[Failed_Gate]]
+GATE = "F7"  # String: the gate
+N    = 1490  # Integer: molecules it refused
+
+[[Config_Type]]
+CONFIG_TYPE = "DES370K Dimers"  # String: a config_type tag of the matched frames
+N_TARGETS   = 132               # Integer: targets with at least one frame under it
+
+[[Config_Type]]
+CONFIG_TYPE = "DES370K Monomers"  # String: a config_type tag of the matched frames
+N_TARGETS   = 135                 # Integer: targets with at least one frame under it
+
+[[Config_Type]]
+CONFIG_TYPE = "Solvated Amino Acids"  # String: a config_type tag of the matched frames
+N_TARGETS   = 2                       # Integer: targets with at least one frame under it
+
+[[Config_Type]]
+CONFIG_TYPE = "untagged"  # String: a config_type tag of the matched frames
+N_TARGETS   = 40          # Integer: targets with at least one frame under it

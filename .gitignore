@@ -27,6 +27,11 @@ source-code/
 analysis/
 runs/
 *.parquet
+# the training-set membership index (ticket 30) ships with the repository whatever its
+# format: it is what answers "is this molecule in MACE-OFF23's training set" without
+# the 5.2 GB source files
+!data/training_sets/*.parquet
+!data/training_sets/*.dat
 *.h5
 *.zip
 

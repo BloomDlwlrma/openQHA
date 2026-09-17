@@ -167,6 +167,12 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
     Batch can be resumed. Returns the relaxed geometry (A), energy (Eh, the last FINAL
     SINGLE POINT ENERGY of the `.out`), the parsed Hessian record (`parse_hess`), whether the
     Hessian was analytic or numerical, the wall time, and ORCA's version.
+
+    The FULL `<stem>.out` is the engine record and is kept as ORCA wrote it -- in the run
+    directory and in every fixture copied from one (user ruling 2026-09-17). Never trim it
+    to the lines a parser happens to read: the optimisation trajectory, SCF convergence,
+    the Hessian route and the thermochemistry block are what a reader needs when a number
+    looks wrong, and none of them can be recovered from a single-point line.
     """
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)

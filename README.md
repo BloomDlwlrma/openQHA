@@ -411,6 +411,31 @@ are in-distribution numbers; the three ring species (2-methyloxirane, cyclopropa
 oxetane) are not, at any strictness (`data/training_sets/shipped_species_membership.dat`;
 `scripts/tooling/s0_training_set_membership.py`).
 
+**And the whole target set is not.** The same check over every curated QM9 molecule
+that passes the branch A gate (`--set qm9-targets`, 133,661 read, 119,451 targets, 24 min;
+Dataset `data/training_sets/qm9_targets_membership.{dat,toml}` with the SPICE provenance
+and the gate configuration) finds **176 targets (0.15 %) in MACE-OFF23's training data**
+-- 156 at the strictest identity, 176 at connectivity -- and none in the test file only.
+The overlap is the DES370K monomer set showing through, and it lives at the small end:
+by heavy-atom count 1..9 the targets are [3, 5, 9, 31, 124, 588, 2971, 16622, 99098] and
+those in training [3, 5, 7, 14, 29, 32, 28, 35, 23]. So the four shipped molecules
+(4 heavy atoms: 14 of 31 in training) are the exception; for the 8-9 heavy-atom bulk of
+QM9 the model-error tiers are out-of-distribution numbers by construction. The SI
+sentence is generated from `[Summary]`, never typed.
+
+**What out-of-distribution looks like.** The three ring species run through the whole
+chain (branch A, MACE msRRHO, the wB97M reference with the analytic Hessian, 156-223 s
+per basin, `hessian_compare`, `level_compare`; tag `rings`): Hessian MAE 0.053-0.074
+eV/A^2 against propanal's 0.026-0.033, frequency MAE 4.8-10.2 cm^-1 against 2.9-4.7,
+and the low modes (< 300 cm^-1) off by 13 / 57 / 66 cm^-1 against 4-8.5 -- the mode
+shapes are right (cos v1 >= 0.997, softening slope ~1), the curvatures are not. Oxetane's
+ring-puckering mode is the largest single number in the project: 16.7 cm^-1 at wB97M
+(the near-barrierless double well, planar geometry) against 82.6 at MACE, a 1.39
+cal/mol/K error in S_abs from one mode, entirely in S_ref; for the rings the model error
+is curvature, for propanal it was relative energy. That mode is also where the harmonic
+model itself fails, so it is both the first label site for Hessian learning and the place
+where the judge must separate model error from approximation error.
+
 **Reference level.** `wb97m-d3bj_def2-tzvppd` is the level MACE-OFF23 was trained to
 (SPICE), so "model error" is the model and not a level difference. ORCA input line:
 `! wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF`. **The analytic Hessian works** for this
