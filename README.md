@@ -393,6 +393,24 @@ compared at each level's own geometry (never at the reference geometry), and
 `$dipole_derivatives` are not compared at the MACE level (no charges). `mode_match.match`
 is not used here: its argmax pairing was built for covariance-vs-Hessian bases.
 
+**Is the molecule in MACE-OFF23's training set?** Before a model-error tier is read as
+generalisation, `level_compare` checks the molecule against the released MACE-OFF23
+training data (Moore et al., Apollo doi:10.17863/CAM.107498: 951,005 SPICE-derived
+training frames over 17,132 molecules, ~55 conformers each, and a 50,195-frame test file
+split by frame, not by molecule; energies and forces only). Identity is canonical, not a
+string match (the files' SMILES are atom-mapped with explicit H), at three declared
+strictnesses -- isomeric, stereo removed, InChIKey connectivity -- and monomer frames are
+counted apart from dimer frames. The index built from the two files is in the repository
+(`data/training_sets/mace-off23_spice_index.dat`, 4.8 MB, 78 s to build), so the question
+is answered without the 5.2 GB sources; the `[Training_Set]` block of `level_compare.toml`
+and one sentence in the Report carry the answer, and both are absent (and say so) when
+no index is available -- never a silent false. **All four shipped molecules with basins
+are in it** (acetone, acetamide, propanal, N-methylformamide: 48-49 monomer conformers
+each under `DES370K Monomers`, plus 2,000-5,300 dimer frames), so their model-error tiers
+are in-distribution numbers; the three ring species (2-methyloxirane, cyclopropanol,
+oxetane) are not, at any strictness (`data/training_sets/shipped_species_membership.dat`;
+`scripts/tooling/s0_training_set_membership.py`).
+
 **Reference level.** `wb97m-d3bj_def2-tzvppd` is the level MACE-OFF23 was trained to
 (SPICE), so "model error" is the model and not a level difference. ORCA input line:
 `! wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF`. **The analytic Hessian works** for this

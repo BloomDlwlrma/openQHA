@@ -34,6 +34,7 @@ import numpy as np
 
 from .. import config
 from ..conformer_search import conformers, degeneracy, symmetry
+from ..data import training_set
 from ..potentials import engine
 from ..qm_interfaces import orca
 from ..store import basins as basins_mod
@@ -84,6 +85,22 @@ COMPARE_SCHEMA = {
         "S_EXPERIMENT": ("Double", "cal/mol/K", "declared experimental S"),
         "S_EXPERIMENT_SOURCE": ("String", None, "BibTeX key"),
         "MODEL_ERROR_G_REL": ("Double", "kcal/mol", "engine (G_total - G_ref) - reference (G_total - G_ref)"),
+    },
+    "Training_Set": {
+        "SOURCE": ("String", None, "the training data checked: mace-off23_spice (Apollo doi:10.17863/CAM.107498)"),
+        "SMILES_CANONICAL": ("String", None, "the molecule's canonical isomeric SMILES"),
+        "N_HEAVY_ATOMS": ("Integer", None, "heavy atoms"),
+        "IN_TRAINING": ("Boolean", None, "the molecule has frames in the training file (monomer or dimer)"),
+        "IN_TEST_ONLY": ("Boolean", None, "frames in the test file only"),
+        "MATCH_LEVEL": ("String", None, "strictest identity with a match: isomeric, no_stereo, connectivity or none"),
+        "MATCH_ISOMERIC": ("Boolean", None, "match at canonical isomeric SMILES"),
+        "MATCH_NO_STEREO": ("Boolean", None, "match with stereo removed"),
+        "MATCH_CONNECTIVITY": ("Boolean", None, "match at the InChIKey connectivity block"),
+        "N_TRAIN_FRAMES": ("Integer", None, "monomer frames in the training file"),
+        "N_TEST_FRAMES": ("Integer", None, "monomer frames in the test file"),
+        "N_TRAIN_DIMER_FRAMES": ("Integer", None, "dimer frames holding the molecule as one fragment, training file"),
+        "N_TEST_DIMER_FRAMES": ("Integer", None, "the same, test file"),
+        "CONFIG_TYPES": ("ArrayOfStrings", None, "config_type tags of the matched frames"),
     },
 }
 
@@ -295,6 +312,11 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
     info = {"MOLECULE_DIR": str(molecule), "QM9_INDEX": qid, "REFERENCE_LEVEL": reference_level,
             "ENGINE_LEVEL": engine_level, "TEMPERATURE": float(info_a.get("TEMPERATURE", thermo.T_REF))}
     blocks = {"Calculation_Info": info, "Level": rows, "Tiers": tiers}
+    # ticket 30: is the molecule in the potential's training set? Written when the index
+    # (or the files to build it) is available; otherwise absent and said so, never false.
+    membership = _training_set_membership(info_a.get("SMILES"), qid, cfg)
+    if membership is not None:
+        blocks["Training_Set"] = {k: v for k, v in membership.items() if k in COMPARE_SCHEMA["Training_Set"]}
     missing = prop.write(levels_dir / "level_compare.toml", blocks, COMPARE_SCHEMA,
                          prop.NORMAL_TERMINATION, COMPARE_PROGNAME)
     if missing:
@@ -323,8 +345,26 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
     rep.note("model error = engine level minus reference level (the level MACE-OFF23 was trained "
              "to); level error = reference minus experiment; total = engine minus experiment. An "
              "absent level is stated, never zero.")
+    rep.section("training-set membership")
+    rep.text("  " + training_set.sentence(membership))
     rep.write(levels_dir / "level_compare.out", step=COMPARE_STEP)
-    return dict(levels=rows, tiers=tiers, record=levels_dir / "level_compare.toml")
+    return dict(levels=rows, tiers=tiers, training_set=membership,
+                record=levels_dir / "level_compare.toml")
+
+
+def _training_set_membership(smiles, qid, cfg):
+    """The ticket-30 answer, or None when it cannot be given here (no SMILES, or neither
+    the index nor the files to build it)."""
+    if not smiles and qid:
+        try:
+            smiles = config.qm9_smiles(qid, cfg)
+        except Exception:                                    # noqa: BLE001 -- no QM9 data here
+            smiles = None
+    if not smiles:
+        return None
+    if training_set.index_is_current(cfg) is None and not training_set.index_path(cfg).is_file():
+        return None
+    return training_set.membership(smiles, cfg)
 
 
 def _g_ref(doc):

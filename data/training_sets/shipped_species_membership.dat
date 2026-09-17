@@ -1,0 +1,20 @@
+#   qm9_index             String: the molecule
+#   name                  String: declared name
+#   smiles                String: declared SMILES
+#   n_heavy               Integer: heavy atoms
+#   in_training           Boolean: frames in the training file
+#   in_test_only          Boolean: frames in the test file only
+#   match_level           String: isomeric, no_stereo, connectivity or none
+#   n_train_frames        Integer: monomer frames, training file
+#   n_test_frames         Integer: monomer frames, test file
+#   n_train_dimer_frames  Integer: dimer frames, training file
+#   n_test_dimer_frames   Integer: dimer frames, test file
+#   config_types          String: config_type tags of the matched frames, ';'-joined
+# qm9_index name smiles n_heavy in_training in_test_only match_level n_train_frames n_test_frames n_train_dimer_frames n_test_dimer_frames config_types
+dsgdb9nsd_000018 acetone CC(=O)C 4 true false isomeric 49 1 5291 279 "DES370K Dimers;DES370K Monomers"
+dsgdb9nsd_000019 acetamide CC(=O)N 4 true false isomeric 48 2 5244 291 "DES370K Dimers;DES370K Monomers"
+dsgdb9nsd_000035 propanal CCC=O 4 true false isomeric 49 1 1976 84 "DES370K Dimers;DES370K Monomers"
+dsgdb9nsd_000036 N-methylformamide CNC=O 4 true false isomeric 49 1 2418 104 "DES370K Dimers;DES370K Monomers"
+dsgdb9nsd_000044 2-methyloxirane C[C@H]1CO1 4 false false none 0 0 0 0 ""
+dsgdb9nsd_000046 cyclopropanol OC1CC1 4 false false none 0 0 0 0 ""
+dsgdb9nsd_000048 oxetane C1COC1 4 false false none 0 0 0 0 ""

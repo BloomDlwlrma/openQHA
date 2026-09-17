@@ -117,6 +117,18 @@ data:
   # A lookup assuming one pattern would silently miss most of the repairs.
   curated_qm9_dir: "133660_curatedQM9_outof_133885"
   vendored_reference_geometries: "data/reference-geometries"   # the 7 distributed with the repository
+  # The released MACE-OFF23 training data (ticket 30): is a molecule in the potential's
+  # training set? The two SPICE-derived extxyz files (5.2 GB) are NOT in git; declare
+  # where they are (or set S0_TRAINING_SETS_ROOT). The index built from them
+  # (data/training_sets/mace-off23_spice_index.dat, ~3 MB) is in the repository, so the
+  # question can be answered without the files.
+  training_sets:
+    mace_off23:
+      root: "data/training_sets/mace-off23_spice"     # holds the two files below; S0_TRAINING_SETS_ROOT overrides
+      train_file: "train_large_neut_no_bad_clean.xyz"  # 951,005 frames, 17,132 molecules
+      test_file: "test_large_neut_all.xyz"             # 50,195 frames; split by frame, not by molecule
+      doi: "10.17863/CAM.107498"                       # Moore et al., Apollo, research data supporting MACE-OFF23
+      cache_dir: "data/training_sets"
   upstream:
     dataset: "QM9 (GDB-9), Ramakrishnan et al., Sci. Data 2014, 1, 140022"
     note: >

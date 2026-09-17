@@ -315,3 +315,8 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   Story 27: as a user, I want to know whether a molecule's conformers were in
   MACE-OFF23's training data, so that a model-error tier is read as in- or
   out-of-distribution and never mistaken for generalisation.
+- Measured 2026-09-17 (ticket 30 done): all four shipped molecules with basins are in
+  MACE-OFF23's training data (DES370K monomers, 48-49 conformers each, plus thousands of
+  dimer frames); the three ring species are not. Propanal's model-error tiers are
+  in-distribution numbers. Index: data/training_sets/mace-off23_spice_index.dat.
+
