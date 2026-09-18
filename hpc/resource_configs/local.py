@@ -168,6 +168,15 @@ def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
                 cpu_affinity="none",
                 provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1),
             ),
+            # labels (workflows/hessian_learning/03_labels.py): one 4-rank ORCA job per
+            # worker, the same division of the cores as crest.
+            HighThroughputExecutor(
+                label=_labels.label("labels"),
+                max_workers_per_node=workers,
+                cores_per_worker=float(threads_per_job),
+                cpu_affinity="none",
+                provider=LocalProvider(init_blocks=1, min_blocks=1, max_blocks=1),
+            ),
         ],
         run_dir=run_dir or os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
             os.environ.get("S0_RUNS_ROOT",
@@ -191,7 +200,8 @@ def describe():
         threads_per_job=THREADS_PER_JOB,
         qha_max_workers=QHA_MAX_WORKERS,
         qha_threads_per_job=QHA_THREADS_PER_JOB,
-        executors=["openqha_crest", "openqha_qha", "openqha_qha_openmm"],
+        executors=["openqha_crest", "openqha_qha", "openqha_qha_openmm", "openqha_collect", "openqha_labels"],
+        maxcore_mb=3000,
         openmm_env=OPENMM_ENV,
         openmm_max_workers=OPENMM_MAX_WORKERS,
         openmm_threads_per_job=OPENMM_THREADS_PER_JOB,

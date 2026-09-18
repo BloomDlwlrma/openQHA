@@ -86,6 +86,7 @@ specification guarantees that one of them is wasted.
 | quasi-harmonic trajectories — unbiased MACE MD | B | basin × seed | **GPU** (TianheXY-A) | **1 card**, 8/node | user ruling 2026-09-07. **Cost UNMEASURED there** — see below |
 | collection — quasi-harmonic analysis of finished trajectories | B | molecules | **CPU** (TianheXY-C) | **1 core**, 64 on **one** node | small, serial, float64; its real cost is Lustre metadata |
 | QM labels — `xtb --hess`, ORCA RI-MP2 | C | structures | CPU | xtb 1 core; ORCA 4 processes | `NumFreq` parallelises over displacements; ORCA 1.85 GB/process measured |
+| reference E-F-H labels per frame — ORCA wB97M-D3BJ single point + EnGrad + analytic Hessian (`workflows/hessian_learning/03_labels.py`, role `labels`) | Hessian learning | frames | **CPU** (TianheXY-C, `sbatch`) | **4 ranks**, 16/node, `%maxcore 6000` | user ruling 2026-09-18; 1 node smoke / 12 nodes draw; ORCA 6.1.1 from conda env `orca611` via `hpc/env/orca.sh` |
 | training — MACE + PHL loss | C | data-parallel | **GPU** | 1 card | the first workload here that batches naturally |
 
 Three things follow directly, and only one of them is a preference:
@@ -105,7 +106,7 @@ Three things follow directly, and only one of them is a preference:
    dressed up: **a T400 is a 2 GB entry-level card and 80 GB HBM2e is not, so D0-C-5
    does not transfer — but nothing has replaced it either, and no batched force
    interface exists yet (`D0-54` criterion (ii)).** Run the 30-minute `temp` smoke test
-   and read `seconds_per_ps_this_run` out of `meta.json` before sizing a campaign. The
+   and read `SECONDS_PER_PS` out of `md.toml` before sizing a campaign. The
    CPU route is kept as `--route ase`, which is also the independent implementation pair
    that makes the OpenMM numbers checkable.
 

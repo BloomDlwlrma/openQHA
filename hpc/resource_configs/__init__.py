@@ -17,7 +17,8 @@ from . import local          # noqa: F401
 SITES = {
     "local": "this workstation. Step 0: prove the chain here before any cluster.",
     "deimos": "the group's own Slurm cluster.",
-    "tianhe_cpu": "TianheXY-C. Branch A (crest) and branch B collection (collect).",
+    "tianhe_cpu": "TianheXY-C. Branch A (crest), branch B collection (collect), "
+                  "Hessian-learning labels (labels).",
     "tianhe_a": "TianheXY-A. Branch B trajectories (qha) and branch C training "
                 "(train), one card per task, 8 per allocation. Preferred GPU site.",
     "tianhe_ai": "TianheXY-AI. Branch C training, one card per allocation.",

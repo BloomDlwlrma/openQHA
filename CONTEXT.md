@@ -138,8 +138,13 @@ _Avoid_: conformation (SPICE's word; collides with CREST's conformer), sample, s
 **Frame set**:
 One molecule's Frames, one file per generator and per Level, engine-independent,
 under the molecule directory's `frames/` folder; identical positions across the Levels
-of one generator, checked. A Frame set has a Record like any Calculation (what was
-generated, what was dropped and why, the seeds, the engine identity).
+of one generator, checked (a reference label whose `.hess` geometry differs in shape by more than 1e-7 A
+from the engine file is refused). A Frame set has a Record like any Calculation (what
+was generated, what was dropped and why, the seeds, the engine identity) and one Record
+per reference Level labelled (`labels.<level>`: what was labelled, reused or refused,
+ORCA's wall time and memory per frame, the noise floor of every Hessian). A reference
+label is a single point at the frame's fixed geometry -- energy, gradient and analytic
+Hessian -- never an optimisation.
 _Avoid_: trajectory, ensemble (that is a thermodynamic average), training file
 
 **Dataset**:

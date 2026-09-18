@@ -74,7 +74,16 @@ TIANHE_COMMANDS = dict(
 #: in the list at all.
 TIANHE_CONFIRMED = ("submit", "launcher", "status", "status_fallback", "cancel")
 
-COMMANDS = {"slurm": SLURM_COMMANDS, "tianhe": TIANHE_COMMANDS}
+#: TianheXY-CN, the CPU cluster (`deimos`, `debug`): STOCK SLURM. `sbatch`, not `yhbatch`
+#: -- measured by the user 2026-09-09 (S0-G-74): the yh* wrappers are the GPU clusters',
+#: and the CPU login node submits with the plain names. Until 2026-09-18 tianhe_cpu.py
+#: built `TianheSlurmProvider`, whose map would have sent every block through `yhbatch`;
+#: it had never submitted (the CPU chain went through examples/run_chain.sh, which reads
+#: the partition table), and the labels Batch of the Hessian-learning set is the first
+#: driver to submit its own blocks there.
+TIANHE_CN_COMMANDS = dict(SLURM_COMMANDS)
+
+COMMANDS = {"slurm": SLURM_COMMANDS, "tianhe": TIANHE_COMMANDS, "tianhe_cn": TIANHE_CN_COMMANDS}
 
 #: What `preflight` looks for, in preference order.
 CANDIDATES = dict(
@@ -266,6 +275,13 @@ if SlurmProvider is not None:
             self._write_submit_script(template_string, str(path), job_name, job_config)
             return pathlib.Path(str(path)).read_text(encoding="utf-8")
 
+    class TianheCNSlurmProvider(TianheSlurmProvider):
+        """The CPU cluster's provider: the same class, the stock Slurm command names
+        (`TIANHE_CN_COMMANDS`, S0-G-74). The map is then the identity and `_swap` leaves
+        every command alone; the loud status check and `render_only` are inherited."""
+
+        site = "tianhe_cn"
+
 
 else:  # pragma: no cover
 
@@ -276,6 +292,9 @@ else:  # pragma: no cover
                 "    pip install parsl\n"
                 "Branch E step 0 is to get the local chain running first; the "
                 "cluster providers are step 1.")
+
+    class TianheCNSlurmProvider(TianheSlurmProvider):
+        pass
 
 
 def describe():

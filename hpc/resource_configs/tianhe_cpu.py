@@ -33,6 +33,13 @@ WHAT RUNS HERE, AFTER THE 2026-09-07 RULING
                                  KEPT, not deleted: it is the implementation pair that
                                  makes the OpenMM route checkable. Not the production
                                  route.
+    labels     16 x 4 ranks      Hessian-learning set: one ORCA single point + analytic
+                                 Hessian per frame (workflows/hessian_learning/03_labels.py),
+                                 `%pal nprocs 4`, `%maxcore 6000`; 1 node for the 7-molecule
+                                 smoke set, 12 nodes for the 200-molecule draw (user ruling
+                                 2026-09-18). ORCA 6.1.1 from the conda env `orca611`
+                                 (`~/env_orca611.sh`), located by hpc/env/orca.sh without
+                                 activating it in the worker. deimos: 7 days, 512 GB.
 
 Branch A belongs here and cannot move: its cost is ~1e5 GFN2-xTB gradient calls and xtb
 has no GPU path at all.
@@ -70,7 +77,8 @@ import labels as _labels  # noqa: E402
 ACCOUNT = None                 #: scheduler account; None lets the site choose
 
 #: Production partition and its walltime. User ruling 2026-09-07: production is deimos,
-#: 3 days, and nothing else.
+#: 3 days, and nothing else. (deimos allows 7 days -- user 2026-09-18; 3 days is kept as
+#: the default, a labels Batch that needs more passes `--walltime`.)
 PARTITION = "deimos"
 WALLTIME = "3-00:00:00"
 
@@ -131,6 +139,13 @@ HESSIAN_MODE = "analytic"
 #: Per-task budget for branch B tasks, at 90% of the walltime so a task stops and flushes
 #: rather than being killed mid-chunk.
 QHA_WALL_BUDGET_S = int(0.90 * 3 * 24 * 3600)
+
+#: Hessian-learning labels (ticket 03): 4 ORCA ranks per frame, 16 frames per node, the
+#: same division of the node as CREST; `%maxcore` per rank at the 75 % rule on deimos's
+#: 512 GB: 512 x 1024 x 0.75 / 64 = 6144 -> 6000 MB. 16 x 4 x 6 GB = 384 GB per node.
+LABELS_RANKS_PER_JOB = 4
+LABELS_WORKERS_PER_NODE = CORES_PER_NODE // LABELS_RANKS_PER_JOB      # 16
+LABELS_MAXCORE_MB = 6000
 # =========================================================================================
 
 #: role -> (workers per node, cores per worker, max blocks)
@@ -138,6 +153,7 @@ _LAYOUT = {
     "crest":   (WORKERS_PER_NODE, THREADS_PER_JOB, MAX_BLOCKS),
     "qha":     (QHA_WORKERS_PER_NODE, QHA_THREADS_PER_JOB, MAX_BLOCKS),
     "collect": (QHA_WORKERS_PER_NODE, QHA_THREADS_PER_JOB, COLLECT_MAX_BLOCKS),
+    "labels":  (LABELS_WORKERS_PER_NODE, LABELS_RANKS_PER_JOB, MAX_BLOCKS),
 }
 
 
@@ -151,7 +167,7 @@ def layout(role):
     return _LAYOUT[role]
 
 
-def _worker_init(here):
+def _worker_init(here, role="crest"):
     """What every worker runs first. Three of these are not optional.
 
     * `module load` -- compute nodes are a minimal environment (the manual says only sh
@@ -167,18 +183,31 @@ def _worker_init(here):
     computes nothing; `2>/dev/null || true` would turn that into an unexplained
     ModuleNotFoundError several minutes later, in a worker log nobody is reading.
     """
-    return "; ".join([
+    lines = [
         "mkdir -p ${S0_RUNS_ROOT:-$HOME/HDD_POOL/runs/openQHA}/logs",
         "module purge 2>/dev/null || true",
-        "module load anaconda3/2023.09 || "
-        "echo 'openQHA: module load anaconda3/2023.09 FAILED -- conda will not be on "
-        "PATH and every task in this block will fail' >&2",
+        # the site's module carries no dot: anaconda3/202309 (measured 2026-09-09,
+        # docs/tianhe_runbook.md 5c); the dotted name is tried second, and a failure is
+        # survivable because hpc/env/tianhe.sh sources ~/init_conda.sh afterwards
+        "module load anaconda3/202309 2>/dev/null || module load anaconda3/2023.09 2>/dev/null || "
+        "echo 'openQHA: no anaconda3 module loaded -- relying on ~/init_conda.sh from "
+        "hpc/env/tianhe.sh' >&2",
         "for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM)_'); do "
         "unset $v; done",
         "source {0}/env/common.sh".format(here),
         "source {0}/env/tianhe.sh".format(here),
         "openqha_report_env",
-    ])
+    ]
+    if role == "labels":
+        # ORCA from its own conda env, located without activating it here (hpc/env/orca.sh).
+        # Loud on failure, for the same reason the module load is: a block whose workers
+        # have no ORCA computes nothing.
+        lines += [
+            "source {0}/env/orca.sh".format(here),
+            "openqha_find_orca || echo 'openQHA: ORCA NOT FOUND -- every labels task in "
+            "this block will fail (hpc/env/orca.sh)' >&2",
+        ]
+    return "; ".join(lines)
 
 
 def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
@@ -191,6 +220,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         crest    16 workers x 4 threads   CREST is internally parallel
         collect  64 workers x 1 core      one molecule per core, one node
         qha      64 workers x 1 core      the CPU fallback route for trajectories
+        labels   16 workers x 4 ranks     one ORCA frame label per worker
 
     `debug=True` swaps in DEBUG_PARTITION and DEBUG_WALLTIME and caps the run at one
     allocation. That is the smoke test: real modules, real conda activation, real
@@ -200,7 +230,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
     from parsl.executors import HighThroughputExecutor
     from parsl.launchers import SimpleLauncher
 
-    from providers import TianheSlurmProvider
+    from providers import TianheCNSlurmProvider
 
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     workers, cores, role_blocks = layout(role)
@@ -218,7 +248,9 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                 label=_labels.label(role),
                 max_workers_per_node=int(max_workers or workers),
                 cores_per_worker=float(cores),
-                provider=TianheSlurmProvider(
+                # TianheXY-CN is stock Slurm: `sbatch`, not the GPU clusters' `yhbatch`
+                # (S0-G-74). The CN provider maps nothing.
+                provider=TianheCNSlurmProvider(
                     partition or PARTITION,
                     account=account if account is not None else ACCOUNT,
                     nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
@@ -234,7 +266,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                     # banned outright. Two policies; that is why they are separate files.
                     exclusive=True,
                     launcher=SimpleLauncher(),
-                    worker_init=worker_init or _worker_init(here),
+                    worker_init=worker_init or _worker_init(here, role),
                     walltime=walltime or WALLTIME,
                     cmd_timeout=60,
                 ),
@@ -254,8 +286,8 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
 def describe():
     try:
         import providers
-        commands = dict(providers.COMMANDS["tianhe"])
-        confirmed = list(providers.TIANHE_CONFIRMED)
+        commands = dict(providers.COMMANDS["tianhe_cn"])
+        confirmed = ["submit"]           # sbatch on the CPU cluster: user 2026-09-09 (S0-G-74)
     except Exception:                                    # pragma: no cover
         commands, confirmed = {}, []
     return dict(
@@ -276,6 +308,9 @@ def describe():
         labels=[_labels.label(r) for r in sorted(_LAYOUT)],
         tag=TAG, timeout_s=TIMEOUT_S, hessian_mode=HESSIAN_MODE,
         qha_wall_budget_s=QHA_WALL_BUDGET_S,
+        labels_ranks_per_job=LABELS_RANKS_PER_JOB, labels_workers_per_node=LABELS_WORKERS_PER_NODE,
+        maxcore_mb=LABELS_MAXCORE_MB,
+        orca_env="conda env orca611 via ~/env_orca611.sh (hpc/env/orca.sh); ORCA 6.1.1 verified on the login node 2026-09-18",
         scheduler_commands=commands, scheduler_commands_confirmed=confirmed,
         notes=[
             "Production uses `deimos` only, at 3 days; `debug` at 30 minutes is the "
@@ -288,6 +323,9 @@ def describe():
             "Normal partitions allocate a whole node (manual 1.1); `e9` is the "
             "fine-grained per-CPU partition if that were ever wasteful.",
             "Home is 100 GB and for configuration only -- run out of HDD_POOL.",
+            "Hessian-learning labels: 16 x 4-rank ORCA jobs per node, %maxcore 6000, "
+            "node-local scratch (S0_SCRATCH); 1 node for the 7-molecule smoke set, 12 for "
+            "the 200-molecule draw (user ruling 2026-09-18).",
             "XYFS01 has no backup: a deleted file cannot be recovered.",
         ],
         assumptions=[

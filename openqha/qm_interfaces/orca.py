@@ -113,7 +113,7 @@ def run_single_point(symbols, positions, workdir, keywords, nprocs=8, maxcore=30
         t0 = time.time()
         with open(out, "w") as fh:
             rc = subprocess.call([orca_binary(), str(inp)], stdout=fh, stderr=subprocess.STDOUT,
-                                 cwd=str(workdir), timeout=timeout_s)
+                                 cwd=str(workdir), env=subprocess_env(), timeout=timeout_s)
         seconds = time.time() - t0
         text = out.read_text(encoding="utf-8", errors="replace")
         if "****ORCA TERMINATED NORMALLY****" not in text:
@@ -131,6 +131,20 @@ def orca_binary():
         raise FileNotFoundError(
             "ORCA not found: {}\nSet S0_ORCA_BIN to the executable.".format(p))
     return p
+
+
+def subprocess_env():
+    """The environment an ORCA subprocess runs in. `S0_ORCA_PATH` and `S0_ORCA_LIB`, when
+    set, are prepended to PATH and LD_LIBRARY_PATH FOR THE SUBPROCESS ONLY: on tianhe ORCA
+    6.1.1 and its OpenMPI live in the conda env `orca611` (`~/env_orca611.sh`), which a
+    worker running in the `openqha` env must not activate -- its libraries would shadow
+    the worker's own (hpc/env/orca.sh records the two paths without activating)."""
+    env = dict(os.environ)
+    if env.get("S0_ORCA_PATH"):
+        env["PATH"] = env["S0_ORCA_PATH"] + os.pathsep + env.get("PATH", "")
+    if env.get("S0_ORCA_LIB"):
+        env["LD_LIBRARY_PATH"] = env["S0_ORCA_LIB"] + os.pathsep + env.get("LD_LIBRARY_PATH", "")
+    return env
 
 
 def _write_input(path, symbols, positions, method, basis, nprocs, maxcore,
@@ -280,7 +294,7 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
         t0 = time.time()
         with open(out, "w") as fh:
             rc = subprocess.call([orca_binary(), str(inp)], stdout=fh, stderr=subprocess.STDOUT,
-                                 cwd=str(workdir), timeout=timeout_s)
+                                 cwd=str(workdir), env=subprocess_env(), timeout=timeout_s)
         seconds = time.time() - t0
         text = out.read_text(encoding="utf-8", errors="replace")
         if "****ORCA TERMINATED NORMALLY****" not in text:

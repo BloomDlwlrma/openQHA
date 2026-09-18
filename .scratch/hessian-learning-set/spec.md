@@ -81,11 +81,11 @@ Four numbered drivers under `workflows/hessian_learning/` that call `openqha/` c
 - MACE filter at generation (Q8): |F|max, bond graph vs the basin's SMILES (RDKit).
 - Reproducibility: seeds hashed from (qm9_index, basin, generator, k); ORCA and MACE
   versions and the fingerprint in the Records.
-- tianhe layout for `03_labels`: one Slurm job per node, `xargs -P 16` over a frame
-  list, `%pal nprocs 4`, `%maxcore` from the node memory / 64 x 0.75; ORCA path and
-  scratch (`$TMPDIR`) from `configs/cluster_tianhe.yaml`; the ORCA binary on
-  TianheXY-CN is a fact to verify before the smoke set (`hpc/README.md` plans it, no run
-  has used it).
+- tianhe layout for `03_labels`: Parsl role `labels` in `hpc/resource_configs/tianhe_cpu.py`
+  (16 workers x 4 cores per node, 1 node smoke / 12 nodes draw), partition `deimos`
+  (64 cores, 512 GB, 7 days), `%pal nprocs 4`, `%maxcore 6000`, `$TMPDIR` scratch,
+  ORCA 6.1.1 from `~/env_orca611.sh` (conda env `orca611`; verified on the login node
+  2026-09-18); the tianhe `openqha` env needs `qc-procrustes` added.
 
 ## Testing decisions
 
