@@ -6,7 +6,9 @@
 
 **Delivers:** the first Dataset from the smoke set; the workflow folder.
 
-- [ ] two fake molecules with frames at two levels: valid frames come only from train molecules, test holds whole molecules, pool = frames lacking the level; fractions honoured; the split never changes on rebuild with the same seed
-- [ ] `index.dat` round-trips through `dat.read_table`; every extxyz frame is findable from its row
-- [ ] `--export openreact` writes a group per molecule with `coordinates/energies/forces/hessian/species` in Eh and Eh/bohr^2; read back equals the extxyz to 1e-10
-- [ ] `run.sh --tag rings --limit 7` runs 01 -> 02 -> 04 locally (03 skipped) and produces a Dataset with a non-empty pool
+- [x] two fake molecules with frames at two levels: valid frames come only from train molecules, test holds whole molecules, pool = frames lacking the level; fractions honoured; the split never changes on rebuild with the same seed (`tests/unit/t_dataset.py`, 12 checks)
+- [x] `index.dat` round-trips through `dat.read_table`; every extxyz frame is findable from its row
+- [x] `--export openreact` writes a group per molecule with `coordinates/energies/forces/hessian/species`; read back equals the extxyz to 1e-10. **Units corrected while building:** OpenREACT's file is Å / Eh / Eh/Å / **Eh/Å²**, not Eh/bohr² as this ticket (and note 2 section 1) said -- measured on `molecules-RTP.h5`: with Eh/Å² the C-H stretches project to 3156-3183 cm^-1, with Eh/bohr^2 to ~6000; torchani's convention, which PHL's `sqrt_mhessian2invcm` assumes
+- [x] `run.sh --tag rings --tag propanal --name smoke` ran 01 -> 02 -> 04 locally (03 skipped): 4 molecules (all pinned -> test), 35 frames, test 5 (oxetane's local labels) + pool 30; `molecules-smoke.h5` exported
+
+**Closing (2026-09-18):** `openqha/data/dataset.py` (`select`: branch-A-done molecules under the tags, RDKit stratum `r<rings>_<hetero>`, SPICE membership from `qm9_targets_membership.dat`, `PINNED` = the seven; `build`: per-stratum test draw + by-frame valid draw from one seeded generator over sorted inputs, four files, `index.dat`, Record; `export_openreact`), `01_select.py` (`--tag` repeatable, `--limit --stratify` keep the pinned), `04_dataset.py` (`--level --valid-fraction --test-fraction --seed --export openreact`), `05_train.py` / `06_judge.py` stubs (exit 2, "round 2 open"), `run.sh`, README section. Design choices not in the ticket: the Dataset takes several tags (the smoke molecules sit under `rings`, `propanal`, `02d_prod`) and lives under the first; `pool` rows carry `molecule_split` so a later label step knows where a frame lands; `index.dat` also names the molecule's engine-level file (the MACE E-F-H of the same frame stays there, not duplicated into the split files). Decision S0-C-48.

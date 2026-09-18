@@ -7,9 +7,15 @@ touches; the Slurm log is the Batch's report.
 
 | step | driver | Calculation | writes |
 |---|---|---|---|
+| 01 | `01_select.py` | `openqha.data.dataset.select` | `<root>/<tag>/_datasets/<name>/select.{out,toml,dat}` — the molecule list with stratum, SPICE membership, pin status |
 | 02 | `02_frames.py` | `openqha.data.frames.generate` | `<molecule>/frames/<generator>.<mace level>.extxyz`, `frames/frames.{out,toml}` |
 | 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.*`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
-| 01, 04 | selection; the Dataset split and index | ticket 04 | |
+| 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz`, `index.dat`, `dataset.{out,toml}`, `molecules-<name>.h5` |
+| 05, 06 | `05_train.py`, `06_judge.py` | stubs: refuse until round 2 is ruled | |
+
+`run.sh --tag T [--tag T2] --name NAME [--limit N] [--stratify] [--with-labels]` runs
+01 → 02 → (03 with `--with-labels`, else skipped) → 04 here; the Dataset lives under the
+first tag's `_datasets/<name>/`.
 
 ## The frame recipe (rounds 3–4, rulings 2026‑09‑18)
 
@@ -67,6 +73,24 @@ from what is on disk. Environment check on the login node before step 1:
 `source ~/env_orca611.sh && which orca && orca --version | head -3` (expect 6.1.1), and
 `conda activate openqha && python -c "import procrustes"` (branch A needs
 `qc-procrustes`; `pip install qc-procrustes` if it fails).
+
+## Step 04: the Dataset (rounds 3–4, Q3/Q6 (b))
+
+`test` = whole molecules the model never sees: the pinned seven (acetone 000018,
+acetamide 000019, propanal 000035, N‑methylformamide 000036, 2‑methyloxirane 000044,
+cyclopropanol 000046, oxetane 000048) plus `TEST_FRACTION` (0.1) of the others drawn per
+stratum (ring count × heteroatom pattern) with `--seed`; `valid` = `VALID_FRACTION` (0.1)
+of the training molecules' labelled frames, drawn **by frame** (early stopping sees
+interpolation, as SPICE); `train` = the rest; `pool` = frames without a label at the
+level yet, whatever their molecule's split (`molecule_split` in the index). The split is
+set at write time and never recomputed; `index.dat` is the record (one row per frame:
+molecule, tag, basin, generator, k, split, levels, seed, engine fingerprint, ORCA
+version, SPICE membership, stratum, file + row, engine file). `train/valid/test` files
+carry the **reference** E‑F‑H under `energy` / `forces` / `hessian`; `pool` carries the
+engine's. `--export openreact` writes `molecules-<name>.h5` in OpenREACT's layout —
+**Å, Eh, Eh/Å, Eh/Å²** (read off `molecules-RTP.h5`: with Eh/Å² its C–H stretches
+project to 3156–3183 cm⁻¹; Eh/bohr² would give ~6000) — with our `split`, `generator`,
+`basin`, `k` datasets beside the standard ones.
 
 ## Registering the fine‑tuned weights
 
