@@ -19,10 +19,16 @@ digest, compares it against anything, or can refuse it.
 A MISSING weight file raises and never falls back to another potential -- that is the one
 rule, and it is about the file being absent, not about what is inside it.
 
-The identity of a run's potential is therefore **the engine name and the path**, both of
-which go into every product's provenance record. Keeping a level consistent across
-products (D0-4) is the operator's job: point the runs at the same engine and the same
-directory.
+The identity of a run's potential is **the engine name, the path, and the parameter
+fingerprint** (`parameter_fingerprint`: a SHA-256 over the sorted state_dict -- tensor
+name, dtype, shape, raw bytes -- so it is blind to how the file was serialised and
+sensitive to any changed number; S0-G-73). All three go into every product's provenance
+record. A registry entry MAY carry `params_sha256`; when it does, a mismatch is
+CLASSIFIED and REPORTED in the record, never refused (a fine-tuned model has the same
+architecture and nearly the same byte count as its base, so the filename alone would no
+longer tell them apart -- ticket 01 of the Hessian-learning set, 2026-09-18). Keeping a
+level consistent across products (D0-4) is the operator's job: point the runs at the
+same engine and the same directory; the fingerprint is how a product proves it.
 
 WHAT CHANGING THE DEFAULT COSTS -- read before relying on any older number
 --------------------------------------------------------------------------
@@ -120,10 +126,20 @@ def model_root():
 
 #: Registry of selectable potentials.
 #:
-#: **A name and a filename. That is the whole entry.**
-#: `source` is the paper to cite; `note` is why the entry exists. Nothing here inspects,
-#: verifies or gates the file -- put the file in the directory under the right name and it
-#: is used.
+#: **A name and a filename; optionally a parameter fingerprint.**
+#: `source` is the paper to cite (for a fine-tuned potential: the Dataset index it was
+#: trained on and the training config's hash); `note` is why the entry exists;
+#: `params_sha256`, when present, is what `s0_check_weights.py --pin` printed for the
+#: file that was meant. Nothing here gates the file -- put the file in the directory
+#: under the right name and it is used -- but `provenance()` reports whether the numbers
+#: in it are the pinned ones.
+#:
+#: REGISTERING A FINE-TUNED POTENTIAL (Hessian-learning workflow, step 05):
+#:   1. copy `<name>.model` into `data/potentials/` (flat, keep the name);
+#:   2. `python scripts/tooling/s0_check_weights.py --pin data/potentials/<name>.model`
+#:      prints the entry: filename, params_sha256, n_tensors, bytes;
+#:   3. add it here with `source` = the Dataset index path + training config SHA;
+#:   4. select it with `S0_ENGINE=<name>`; every Record then carries its fingerprint.
 ENGINES = {
     "MACE-OFF24_medium": dict(
         filename="MACE-OFF24_medium.model",
@@ -134,6 +150,7 @@ ENGINES = {
         filename="MACE-OFF23_medium.model",
         source="https://arxiv.org/abs/2312.15211",
         note="PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family; closest lineage to stage 2 surface.",
+        params_sha256="e986a6cffd75c3a54b8f5d1f6511c6af00523872a173c5d2e0e8083751a5d7df",   # 79 tensors, 18 350 596 bytes; s0_check_weights.py 2026-09-18
     ),
     "MACE-OFF23_small": dict(
         filename="MACE-OFF23_small.model",
@@ -251,12 +268,31 @@ def provenance(name=None):
 
     import mace
     import torch
+    fp = parameter_fingerprint(path=p)
+    pin = entry.get("params_sha256")
+    if pin is None:
+        pin_status = "unpinned"
+    elif pin == fp["params_sha256"]:
+        pin_status = "matches"
+    else:
+        # The numbers are not the ones the registry meant. Said out loud, in the record
+        # and on stderr, and NOT refused: the operator may be running the file they
+        # intend (a fine-tuned copy under the base name); what they may not do is not
+        # know it (S0-G-73).
+        pin_status = "differs from the registry pin {}...".format(pin[:12])
+        print("WARNING: engine {} at {} has params_sha256 {}... but the registry pins {}...; "
+              "the numbers in this file are not the ones registered under that name."
+              .format(name, p, fp["params_sha256"][:12], pin[:12]), file=sys.stderr)
     return dict(
         engine=name,
         source=entry["source"],
         note=entry["note"],
         weights_path=str(p),
         bytes=p.stat().st_size,
+        params_sha256=fp["params_sha256"],
+        n_tensors=fp["n_tensors"],
+        params_bytes=fp["params_bytes"],
+        params_pin_status=pin_status,
         interface="mace.calculators.MACECalculator",
         mace_torch_version=mace.__version__,
         # A version string is not an implementation. Two MACE trees in this workspace both
@@ -274,6 +310,48 @@ def provenance(name=None):
         # openqha/mace_patch.py for the measurement that made this necessary.
         neighbour_list_patch=_patch_state(),
     )
+
+
+def fingerprint_state_dict(state_dict):
+    """SHA-256 over a mapping of name -> tensor, sorted by name: for each tensor the
+    name, dtype, shape and raw little-endian bytes. Blind to the container (pickle
+    protocol, zip layout, file order, `torch.save` version), sensitive to any changed
+    number, dtype or shape. Returns params_sha256, n_tensors, params_bytes."""
+    import hashlib
+    import numpy as np
+    h = hashlib.sha256()
+    n, nbytes = 0, 0
+    for key in sorted(state_dict):
+        v = state_dict[key]
+        arr = v.detach().cpu().contiguous().numpy() if hasattr(v, "detach") else np.asarray(v)
+        arr = np.ascontiguousarray(arr)
+        h.update(key.encode("utf-8")); h.update(b"\0")
+        h.update(str(arr.dtype).encode("ascii")); h.update(b"\0")
+        h.update(",".join(str(s) for s in arr.shape).encode("ascii")); h.update(b"\0")
+        h.update(arr.astype(arr.dtype.newbyteorder("<"), copy=False).tobytes())
+        n += 1
+        nbytes += arr.nbytes
+    return dict(params_sha256=h.hexdigest(), n_tensors=n, params_bytes=nbytes)
+
+
+_FINGERPRINTS = {}
+
+
+def parameter_fingerprint(name=None, path=None):
+    """The parameter fingerprint of a registered potential (by name) or of one weight
+    file (by path): `fingerprint_state_dict` of the module's `state_dict()` (a MACE
+    `.model` is a pickled module) or of the mapping itself when the file holds a plain
+    state_dict. Cached per path within a process; the file is read once."""
+    import torch
+    p = Path(path) if path is not None else model_path(name)
+    key = str(p.resolve())
+    if key not in _FINGERPRINTS:
+        obj = torch.load(str(p), map_location="cpu", weights_only=False)
+        sd = obj.state_dict() if hasattr(obj, "state_dict") else obj
+        if not hasattr(sd, "keys"):
+            raise TypeError("{} holds a {}, not a module or a state_dict".format(p, type(obj).__name__))
+        _FINGERPRINTS[key] = fingerprint_state_dict(sd)
+    return dict(_FINGERPRINTS[key])
 
 
 def _patch_state():

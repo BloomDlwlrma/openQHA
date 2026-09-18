@@ -174,9 +174,30 @@ beside the run. `bash install_dependency.sh` downloads them for you into
 
 Loading one is three steps and there is no fourth: `openqha/potentials/engine.py` maps an
 engine **name** to a **filename**, looks for that filename in that one directory, and uses
-the file it finds. **The filename is the whole identity check.** Every product records the
-engine name and the path it loaded, which is what makes it reproducible for someone
-holding the same weights.
+the file it finds. Nothing can refuse a file for what it contains (beyond the physical
+ceiling on its numbers). What every product records is the engine name, the path, and
+the **parameter fingerprint**: a SHA-256 over the model's `state_dict` sorted by tensor
+name (name, dtype, shape, raw bytes). A file hash would answer "the same bytes?"; the
+fingerprint answers "the same numbers?" -- a `torch.save`/`load` round trip changes the
+byte count and the file hash and leaves the fingerprint alone, while one changed
+parameter changes it (`tests/unit/t_engine_fingerprint.py`). The registry may pin a
+fingerprint (`params_sha256`; the production default is pinned); `provenance()` then
+writes `params_pin_status` = matches / differs / unpinned into the record and warns on
+stderr -- reported, never enforced.
+
+**Registering a fine-tuned potential** (the Hessian-learning workflow produces one):
+
+```bash
+cp <run>/<name>.model data/potentials/                      # flat, keep the name
+python scripts/tooling/s0_check_weights.py --pin data/potentials/<name>.model
+```
+
+paste the printed entry into `engine.ENGINES` with `source` = the Dataset index it was
+trained on plus the training config's SHA, and select it with `S0_ENGINE=<name>`. Every
+Record made with it then carries its fingerprint, so a frame's MACE labels are tied to
+the exact numbers that produced them. `s0_check_weights.py` with no arguments prints the
+three lines (bytes, file hash, fingerprint) for every registered file present;
+`--json` + `--compare` settle in one command whether two machines hold the same numbers.
 
 Verify what you have:
 
@@ -464,6 +485,37 @@ records use `refuse`; the GFN2 seam uses `crest_native`, which is what closed it
 tier (dS_bar within 0.03 of CREST instead of 0.1). On propanal the MACE and reference
 levels have no imaginary mode and the three policies agree to 1e-9; at GFN2 they differ
 by 0.09 cal/mol/K, all of it that one conformer.
+
+**A numerical reference level, and what the dry run found (ticket 32, 2026-09-17).**
+`dlpno-ccsdt_cc-pvtz` is declared in `orca.LEVELS` with the hkuhpc keywords (`! DLPNO-CCSD(T)
+cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C TightPNO TightSCF Opt NumGrad NumFreq`, `%mdci TCutPairs
+1e-6`, `%loc AHFB`); ORCA 6 has no analytic gradient for any coupled-cluster method, so the
+route is numerical end to end and `s0_thermo_msrrho.py --step write_jobs` writes the hkuhpc
+bundle (`orca_jobs.py`: inputs, `worker.sh`, `run.sbatch`, README with the (6N)^2 point
+count and the wall time at the measured 93 s per point). Before such a Batch is submitted,
+`--step mode_curvature` measures the higher level's curvature along chosen reference modes
+from a line of single points (`mode_curvature.py`; rise 1e-5 Eh at k = 1, half-step points
+for the delta_q error bar, a 7-point wide profile below 30 cm^-1), with the reference and
+the engine evaluated on the same points as self-checks. The dry run on propanal and the
+three rings refuted the Batch as designed and taught three things that are now in the
+records: (1) DLPNO energies carry ~5e-6 Eh of PNO noise between distinct geometries
+(mirror-image points differ by that much), so a NumFreq at that level is noise on every
+low mode -- canonical CCSD(T)/cc-pVTZ is smooth, refuses RIJK, and costs ~6 min a point
+for 10 atoms; (2) the curvature of a level at a *foreign* geometry contains a gradient
+term: RI-MP2/cc-pVTZ gives 136.2 cm^-1 for propanal's aldehyde torsion at its own minimum
+(experiment 135.1) but 93 at the wB97M geometry 0.009 A away, canonical CCSD(T) -65 there;
+a straight displacement along a torsion lengthens C=O at second order and a level whose
+bond wants to be longer gains g dr, the same order as the harmonic rise -- so the Cartesian
+Hessian at a fixed geometry (the Hessian-learning target, what `hessian_compare` measures at
+x_r) and the harmonic frequency at each level's own minimum (what thermochemistry uses) are
+two quantities, and both are reported; (3) the analytic wB97M Hessian's softest mode moves
+131.3 -> 137.2 cm^-1 between ORCA's DefGrid2 and DefGrid3 at the same geometry (the
+energies' finite-difference curvature says 140.8), i.e. ~10 cm^-1 of label noise with the
+default grid. Every Hessian record carries `NOISE_FLOOR_CM`, the largest |eigenvalue| of
+the rigid-body block of the *unprojected* mass-weighted Hessian: 5-30 cm^-1 for an analytic
+Hessian at a tight minimum (the rotational block feels the residual gradient), the
+finite-difference noise on top for a numerical one; a low-mode difference below the larger
+floor of the two Hessians compared is unresolved, not model error.
 
 ```python
 from openqha.store import basins, branch_a_property
