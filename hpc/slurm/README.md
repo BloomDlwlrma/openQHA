@@ -71,4 +71,4 @@ never once for the whole script. Setting it once is the version that was written
 for the Parsl config, and it puts all eight workers on card 0: the job runs, the numbers
 are correct, and it is **8× slower** — which reads as "the GPU is slow" rather than as a
 placement bug. The table the script prints at the end, and the `platform` field in each
-`meta.json`, are what make it visible.
+`md.toml`, are what make it visible.

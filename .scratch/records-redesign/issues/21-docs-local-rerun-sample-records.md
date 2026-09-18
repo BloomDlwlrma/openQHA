@@ -4,9 +4,9 @@
 
 **Blocked by:** 19, 20.
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-15 (also: the branch A driver.log moved to _records/driver.log, the finding from ticket 20, approved by the user)
 
-- [ ] no document describes `md_<route>/<setting>/`, `basins.toml`, `meta.json` or a JSON batch summary as current
-- [ ] the delete-old-layout plan lists the step-2 leftovers under a given root (unit test)
-- [ ] `examples/02b_.../sample_records/openmm/`, `.../ase/` and `examples/02d_.../sample_records/openmm/` exist, each with `branchA.toml`, `md_<route>/basinNN/md.toml`, `collect.toml`, `ensemble.toml` and the `.out` files, every `.toml` starting with `[Calculation_Status]`
-- [ ] the suite passes with `--all`
+- [x] no document describes `md_<route>/<setting>/`, `basins.toml`, `meta.json` or a JSON batch summary as current
+- [x] the delete-old-layout plan lists the step-2 leftovers under a given root (unit test)
+- [x] `examples/02b_.../sample_records/openmm/`, `.../ase/` and `examples/02d_.../sample_records/openmm/` exist, each with `branchA.toml`, `md_<route>/basinNN/md.toml`, `collect.toml`, `ensemble.toml` and the `.out` files, every `.toml` starting with `[Calculation_Status]`
+- [x] the suite passes with `--all`

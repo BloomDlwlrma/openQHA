@@ -155,3 +155,29 @@ is made on molecules / conformers SPICE never saw: first the three ring species
 (2-methyloxirane, cyclopropanol, oxetane: zero frames at any strictness). ORCA
 calculations keep their FULL `.out` files (never only the single-point line) -- in the
 run directory and in the fixtures.
+
+## Round 6 (2026-09-17): the CCSD(T) level for the out-of-SPICE rings
+
+- Q24 "Compare the MACE Hessian error at CCSD(T)" -- with what? ORCA has analytic
+  Hessians for HF, DFT and MP2 only, and no analytic gradient for (DLPNO-)CCSD(T); a
+  NumFreq there is NumGrad inside NumFreq, (6N)^2 = 3,600 DLPNO-CCSD(T)/cc-pVTZ points
+  per 10-atom ring, doubly numerical, noisiest in the low modes. Proposed instead: the
+  CCSD(T) curvature along each wB97M normal mode from 4-6 energies per mode (family 4's
+  D_ii at the higher level), all modes ~100-150 points per ring, low modes ~15; the
+  same displaced points evaluated at wB97M and MACE give model and level curvature
+  errors mode by mode on one footing, and oxetane's puckering mode gets a 7-point
+  profile (the double well the harmonic model cannot hold). hkuhpc keywords
+  (`DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C`, TCutPairs 1e-6, AHFB) plus
+  TightPNO, because PNO truncation noise between displaced geometries is the error
+  source; a delta-convergence check bounds it. One full NumFreq on oxetane (hkuhpc) as
+  the independent check. Tickets 32 (mode curvature) and 33 (CCSD(T) energies as a
+  composite level in level_compare; the NumFreq job file). Rulings needed: DLPNO
+  TightPNO vs canonical CCSD(T) for the ~15 low-mode points (canonical on 10 atoms /
+  cc-pVTZ is affordable and PNO-noise-free); low modes only or all modes locally.
+- Round 6 rulings (user, 2026-09-17): model error at CCSD(T) is measured as at wB97M --
+  MACE Hessian at the DLPNO-CCSD(T)/cc-pVTZ geometry vs the DLPNO-CCSD(T) Hessian
+  (numerical: Opt NumGrad + NumFreq NumGrad, ~4,000 points per ring on hkuhpc); wB97M /
+  CCSD(T) / experiment differences are level errors of the thermochemistry only. DLPNO
+  with TightPNO. "Low / all modes" was the along-mode workaround; it stays as the local
+  dry run and the cross-check of the returned NumFreq. Ticket 32 rewritten
+  (`32-ccsdt-reference-level-for-the-rings.md`), 33 rewritten (thermochem tiers only).

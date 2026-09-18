@@ -117,7 +117,7 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
       * the command line that produced a result is recorded literally, which is the
         thing that was missing in defect 57.
 
-    The full record is written by the driver itself under analysis/branchA/<tag>/.
+    The Record is written by the driver itself into the molecule directory (_records/).
     What comes back here is only enough to build the summary table.
     """
     import json as _json
@@ -216,11 +216,15 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
                             else "no branchA.toml was written")
         summary["stdout_tail"] = "\n".join(proc.stdout.splitlines()[-25:])
         summary["stderr_tail"] = "\n".join(proc.stderr.splitlines()[-25:])
-    # The driver's own log, kept per molecule.
-    log = repo_root / "analysis" / "branchA" / tag / qm9_index / "driver.log"
+    # The Calculation's stdout, beside its Record: _records/driver.log next to branchA.out
+    # (user ruling 2026-09-15, ticket 21). Until then it went into the repository
+    # checkout, analysis/branchA/<tag>/<qid>/driver.log, a Batch writing where no run
+    # output belongs.
+    log = out.parent / "driver.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(proc.stdout + "\n----- stderr -----\n" + proc.stderr,
                    encoding="utf-8")
+    summary["driver_log"] = str(log)
     return summary
 
 

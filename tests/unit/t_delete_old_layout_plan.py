@@ -57,6 +57,16 @@ def build(tmp):
     touch(home / "HDD_POOL" / "runs" / "openQHA" / "logs" / "b.log", 3)
     touch(new / "02d_prod" / "1_16000" / "1_1000" / "m" / "crest" / "crest.out", 4)
     touch(new / "analysis" / "trap.txt", 4)                          # under the new root: stays
+    # Step-2 leftovers inside the new root (records redesign, 2026-09-15): listed by name.
+    mol = new / "02d_prod" / "1_16000" / "1_1000" / "dsgdb9nsd_000018"
+    touch(mol / "_records" / "basins.toml", 6)
+    touch(mol / "_records" / "branchA.toml", 6)                      # the replacement: stays
+    touch(mol / "_records" / "md_openmm" / "default" / "basin00" / "md.toml", 6)
+    touch(mol / "_records" / "md_openmm" / "s2" / "collect.out", 6)
+    touch(mol / "_records" / "md_openmm" / "basin00" / "md.toml", 6)  # the new form: stays
+    touch(new / "02d_prod" / "_records" / "branchB_parsl_summary.json", 6)
+    touch(new / "02d_prod" / "_records" / "collect_batch.json", 6)
+    touch(new / "02d_prod" / "_records" / "parsl" / "1.2" / "parsl.log", 6)   # parsl's own: stays
     return repo, home, new
 
 
@@ -83,8 +93,15 @@ def main():
         old = [repo / "analysis", repo / "data" / "basins", repo / "logs" / "node_local",
                repo / "runs", home / "runs" / "openQHA", home / "runs" / "247785",
                home / "runs" / "247790_card0_row1", home / "HDD_POOL" / "runs" / "openQHA"]
+        mol = new / "02d_prod" / "1_16000" / "1_1000" / "dsgdb9nsd_000018"
+        old += [mol / "_records" / "basins.toml", mol / "_records" / "md_openmm" / "default",
+                mol / "_records" / "md_openmm" / "s2",
+                new / "02d_prod" / "_records" / "branchB_parsl_summary.json",
+                new / "02d_prod" / "_records" / "collect_batch.json"]
         stays = [repo / "logs" / "openqha_247785.out", home / "runs" / "notes.txt",
-                 new / "02d_prod", new / "analysis" / "trap.txt"]
+                 new / "02d_prod" / "1_16000" / "1_1000" / "m", new / "analysis" / "trap.txt",
+                 mol / "_records" / "branchA.toml", mol / "_records" / "md_openmm" / "basin00" / "md.toml",
+                 new / "02d_prod" / "_records" / "parsl" / "1.2" / "parsl.log"]
 
         print("A. --plan lists every old tree with size and file count, removes nothing:")
         rc, out = run([], repo, home, new)

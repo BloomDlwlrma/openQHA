@@ -8,7 +8,7 @@ the arithmetic at the end is spelled out so it can be redone when a number chang
 
 **One trajectory per (molecule, basin), everywhere: examples and campaign alike.** The
 velocity seed follows OpenMM's own convention for `randomNumberSeed=0` -- a fresh seed
-per run -- with one addition: the number drawn is written to `meta.json`
+per run -- with one addition: the number drawn is written to `md.toml` (`SEED`)
 (`seed`, `seed_formula`, `segments`), so every trajectory stays re-derivable.
 
 What this changes in the code (`--seeds 1`, `--seed0 0` are the defaults; 2+ seeds still
@@ -69,7 +69,7 @@ rotor" is the dominant systematic of this branch, ahead of anything in this docu
   input is the initial velocity draw, and it is given an explicit seed:
   `seed = seed0 + 1000*basin + seed_index`, `seed0 = 20260903`
   (`scripts/production/s0_B_qha_trajectory_openmm.py`). The seed is recorded in
-  `meta.json`.
+  `md.toml`.
 
 So the codes' defaults ("different every run") are the right thing for interactive work
 and the wrong thing for a campaign of 133 885 molecules, where every trajectory must be

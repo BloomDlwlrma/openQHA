@@ -1,6 +1,6 @@
 # Records redesign: one Record per Calculation, ORCA property style, no Batch records
 
-Status: ready-for-agent
+Status: done 2026-09-15 (tickets 16-21)
 Date: 2026-09-15
 Vocabulary: CONTEXT.md (Calculation, Batch, Record, Report, Property file). Decisions:
 docs/adr/0003 (amended today). Facts this spec was written from:

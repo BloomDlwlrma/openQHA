@@ -41,8 +41,8 @@ PYTHON_DEPS = [
     # when an113's openqha-gpu turned out to have no pyarrow and the first complete
     # branch B analysis on a card died on its final line. `import openqha` survives
     # without them; no chain does.
-    ("pandas", "1.5", "every chain's last step", "no product tables; collect/report exit non-zero"),
-    ("pyarrow", "10.0", "every chain's last step", "no parquet engine; collect/report exit non-zero"),
+    # pandas and pyarrow left the chain on 2026-09-15 (collect's tables are whitespace
+    # .dat, the records TOML); they remain optional for the parquet writers outside it.
     ("parsl", None, "branch E", "no fan-out; one molecule at a time still works"),
     ("matplotlib", "3.5", "tutorials", "no plots"),
     ("h5py", "3.8", "branch C", "no Hessian dataset export"),

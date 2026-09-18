@@ -34,6 +34,7 @@ def _repo_root():
 
 ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
+from openqha.thermochem import hessian as hessian_mod       # noqa: E402
 from openqha.thermochem import hessian_compare as hc         # noqa: E402
 from openqha.thermochem import msrrho_ensemble as me         # noqa: E402
 from openqha.thermochem import reference_level as rl         # noqa: E402
@@ -70,6 +71,22 @@ def main():
     check("K_e = K_r: T*S / S_vib / ZPE curvature deltas are 0",
           abs(same["TS_LOW_DELTA"]) < 1e-12 and abs(same["S_VIB_CURVATURE_DELTA"]) < 1e-12
           and abs(same["ZPE_CURVATURE_DELTA"]) < 1e-12)
+    check("noise floors (ticket 32): the analytic propanal Hessian's rigid block sits at 5-40 cm^-1 (rotations feel the residual "
+          "gradient; translations are ~0), read from the UNPROJECTED matrix, the same on both sides",
+          5.0 < same["REF_NOISE_FLOOR_CM"] < 40.0 and same["REF_NOISE_FLOOR_CM"] == same["ENGINE_NOISE_FLOOR_CM"],
+          (same["REF_NOISE_FLOOR_CM"], same["ENGINE_NOISE_FLOOR_CM"]))
+    # a numerical Hessian's noise lands on the rigid block: eps V V^T in mass-weighted
+    # coordinates (eps * sqrt(m_i m_j) (V V^T)_ij in eV/A^2) adds eps to every rigid
+    # eigenvalue and nothing to the vibrational ones (P V = 0: the projection removes it)
+    eps = (300.0 / hessian_mod.CM_INV_PER_SQRT_EV_A2_AMU) ** 2                     # a 300 cm^-1 floor
+    m3 = np.repeat(np.asarray(masses, dtype=float), 3)
+    v_rig, _s, _r = hessian_mod.rigid_body_vectors(masses, pos)
+    noisy = hc.compare_hessians(h_r, h_r + eps * np.sqrt(np.outer(m3, m3)) * (v_rig @ v_rig.T), masses, pos)
+    check("eps on the rigid block: REF_NOISE_FLOOR_CM = 300 cm^-1 (engine side unchanged); the vibrational metrics do not see it "
+          "(freq MAE %.2e)" % noisy["FREQ_MAE_CM"],
+          abs(noisy["REF_NOISE_FLOOR_CM"] - 300.0) < 3.0 and noisy["ENGINE_NOISE_FLOOR_CM"] == same["ENGINE_NOISE_FLOOR_CM"]
+          and abs(noisy["FREQ_MAE_CM"]) < 1.0,
+          (noisy["REF_NOISE_FLOOR_CM"], noisy["ENGINE_NOISE_FLOOR_CM"], noisy["FREQ_MAE_CM"]))
     soft = hc.compare_hessians(0.81 * h_r, h_r, masses, pos)
     check("K_e = 0.81 K_r: softening slope 0.9 to 1e-9 (all and low modes)",
           abs(soft["SOFTENING_SLOPE"] - 0.9) < 1e-9 and abs(soft["SOFTENING_SLOPE_LOW"] - 0.9) < 1e-9)
@@ -93,9 +110,23 @@ def main():
     lam0 = pr["lam"].copy(); lam0[0] = 1e-12
     k0 = pr["vec"] @ np.diag(lam0) @ pr["vec"].T
     zero = hc.compare_hessians(k0 * np.sqrt(np.outer(m3, m3)), h_r, masses, pos)
-    check("a near-zero curvature along a reference mode: N_NEAR_ZERO_ALONG_REF = 1, deltas finite",
-          zero["N_NEAR_ZERO_ALONG_REF"] == 1 and np.isfinite(zero["S_VIB_CURVATURE_DELTA"])
+    check("a near-zero curvature along a reference mode: N_NONPOSITIVE_ALONG_REF = 1, deltas finite",
+          zero["N_NONPOSITIVE_ALONG_REF"] == 1 and np.isfinite(zero["S_VIB_CURVATURE_DELTA"])
           and zero["S_VIB_CURVATURE_DELTA"] < 0)
+    # a NEGATIVE curvature along a reference mode carries no entropy under every preset,
+    # grimme2012 (no ithr) included, and the deltas do not jump at ithr: -30 and -70 give
+    # the same contribution (0), and the same as the near-zero case (code-review finding)
+    lam_n = pr["lam"].copy(); lam_n[0] = -(30.0 / hessian_mod.CM_INV_PER_SQRT_EV_A2_AMU) ** 2
+    lam_m = pr["lam"].copy(); lam_m[0] = -(70.0 / hessian_mod.CM_INV_PER_SQRT_EV_A2_AMU) ** 2
+    neg30 = hc.compare_hessians(pr["vec"] @ np.diag(lam_n) @ pr["vec"].T * np.sqrt(np.outer(m3, m3)), h_r, masses, pos)
+    neg70 = hc.compare_hessians(pr["vec"] @ np.diag(lam_m) @ pr["vec"].T * np.sqrt(np.outer(m3, m3)), h_r, masses, pos)
+    check("a negative curvature along a reference mode contributes no entropy; -30 and -70 cm^-1 give the same deltas (no jump at ithr)",
+          neg30["N_NONPOSITIVE_ALONG_REF"] == 1 and neg70["N_NONPOSITIVE_ALONG_REF"] == 1
+          and abs(neg30["S_VIB_CURVATURE_DELTA"] - neg70["S_VIB_CURVATURE_DELTA"]) < 1e-12
+          and abs(neg30["S_VIB_CURVATURE_DELTA"] - zero["S_VIB_CURVATURE_DELTA"]) < 1e-12)
+    g12 = hc.compare_hessians(pr["vec"] @ np.diag(lam_m) @ pr["vec"].T * np.sqrt(np.outer(m3, m3)), h_r, masses, pos,
+                              preset="grimme2012")
+    check("... and under grimme2012 (no ithr) the comparison still returns", g12["N_NONPOSITIVE_ALONG_REF"] == 1)
 
     # ---- the Calculation on the fixture ------------------------------------------------
     with tempfile.TemporaryDirectory(prefix="hessian_compare_") as tmp:
@@ -111,6 +142,28 @@ def main():
         out = hc.run_calculation(mol, qm9_index="dsgdb9nsd_000035")
         check("no engine was run: the stored hessian_at / forces_at files were reused",
               out["n_computed_now"] == 0)
+        meta = prop.load(mol / "mace" / "basin00" / "hessian_at_{}.meta.toml".format(LEVEL))["Engine_Hessian"]
+        check("the engine files carry their geometry, engine and asymmetry (meta.toml); ASYMMETRY_MAX read from it",
+              meta["ENGINE"] and len(meta["POSITIONS"]) == 10 and meta["ASYMMETRY_MAX"] < 1e-10
+              and abs(next(r for r in out["basins"] if r["MACE_BASIN"] == 0)["ASYMMETRY_MAX"] - meta["ASYMMETRY_MAX"]) < 1e-30)
+        # a stored Hessian taken at another geometry is not reused: the reuse rule compares
+        # positions to 1e-8 A (code-review finding). Shifting the stored positions makes the
+        # Calculation want the engine, which this unit test does not have -> it must refuse
+        # loudly rather than compare Hessians at two different points
+        import copy as _copy
+        shifted = _copy.deepcopy(meta); shifted["POSITIONS"][0][0] += 1e-3
+        prop.write(mol / "mace" / "basin00" / "hessian_at_{}.meta.toml".format(LEVEL),
+                   {"Engine_Hessian": shifted}, hc.META_SCHEMA, prop.NORMAL_TERMINATION, hc.PROGNAME)
+        try:
+            hc.run_calculation(mol, qm9_index="dsgdb9nsd_000035", basins=[0], engine_name="no-such-engine")
+            reused_stale = True
+        except Exception:                                   # noqa: BLE001 -- any engine failure
+            reused_stale = False
+        check("a stored engine Hessian at a different geometry is NOT reused (the engine is asked for)",
+              reused_stale is False)
+        prop.write(mol / "mace" / "basin00" / "hessian_at_{}.meta.toml".format(LEVEL),
+                   {"Engine_Hessian": meta}, hc.META_SCHEMA, prop.NORMAL_TERMINATION, hc.PROGNAME)
+        out = hc.run_calculation(mol, qm9_index="dsgdb9nsd_000035")
         doc = prop.load(mol / "levels" / "hessian_compare.toml")
         rows = {int(r["MACE_BASIN"]): r for r in doc["Basin"]}
         merge = dat.read_table(layout.level_dir(mol, LEVEL) / "merge_map.dat")
@@ -118,7 +171,7 @@ def main():
         check("every kept MACE basin appears exactly once in [[Basin]] (%s)" % kept, sorted(rows) == kept)
         check("the reference round-trip against ORCA's frequencies is below 0.5 cm^-1",
               all(r["ROUNDTRIP_CM"] < 0.5 for r in rows.values()))
-        need = ("HESSIAN_MAE", "HESSIAN_RMSE", "ASYMMETRY_MAE", "HESS_REL_FROBENIUS", "EIGVAL_MAE_ECKART",
+        need = ("HESSIAN_MAE", "HESSIAN_RMSE", "ASYMMETRY_MAX", "HESS_REL_FROBENIUS", "EIGVAL_MAE_ECKART",
                 "FREQ_MAE_CM", "FREQ_MAX_CM", "FREQ_MAE_LOW_CM", "FREQ_MAX_LOW_CM", "N_LOW", "SOFTENING_SLOPE",
                 "LOWEST_ENGINE_CM", "LOWEST_REF_CM", "N_IMAGINARY_ENGINE_AT_REF", "NEG_NUM_AGREE",
                 "EIGVEC1_COS_ECKART", "EIGVEC2_COS_ECKART", "EIGVEC_OVERLAP_ERROR", "MIN_BLOCK_OVERLAP",

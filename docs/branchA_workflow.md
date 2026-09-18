@@ -69,7 +69,7 @@ is why.
   │ 6. ANALYTIC HESSIAN → reject imaginary → σ per basin → RRHO → w_i  │
   └─────┬──────────────────────────────────────────────────────────────┘
         │
-   basins.json + basins.xyz
+   branchA.out + branchA.toml  (the Record; mace/basinNN/ holds the geometries)
 ```
 
 ### Why steps 4–6 exist at all
@@ -246,9 +246,9 @@ python scripts/production/s0_A_pipeline.py --smiles "OCCO" --label ethyleneglyco
 ```
 
 Products land in the molecule directory (`<root>/<tag>/_label/<label>/` for a SMILES
-molecule; since 2026-09-14, `docs/output_inventory.md` section 6): `mace/confNN/`,
-`mace/basinNN/`, and under `_records/`: `basins.json`, `basins.xyz`,
-`driver.log`. Scratch stays under `$S0_RUNS_ROOT/branchA/<tag>/<label>/`.
+molecule; since 2026-09-14, `docs/output_inventory.md` sections 6 and 8): `mace/confNN/`,
+`mace/basinNN/`, and under `_records/`: `branchA.out`, `branchA.toml` (and `driver.log`
+when a Batch ran it). CREST runs node-local and its directory is moved once into `crest/`.
 
 ### The SMILES path, and what it costs
 

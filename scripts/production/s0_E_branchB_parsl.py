@@ -151,10 +151,10 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
     the driver's stdout is captured verbatim per trajectory; and the command line that
     produced a result is recorded literally, which is what defect 57 was missing.
 
-    `route` picks which of the two production drivers runs. They write the same
-    `frames.npy` + `meta.json` contract, so the analysis reads either without knowing
-    which produced it -- that is what makes them an implementation pair rather than a
-    fork.
+    `route` picks which of the two production drivers runs. They write the same Record
+    (md.out + md.toml beside their engine files), so the analysis reads either without
+    knowing which produced it -- that is what makes them an implementation pair rather
+    than a fork.
     """
     import json as _json
     import os as _os
@@ -592,6 +592,7 @@ def main():
             # Measured an104 2026-09-13, six rows of "F".
             tail = [l for l in str(r["error"]).strip().splitlines() if l.strip()]
             r["error_line"] = tail[-1] if tail else "(no error text captured)"
+        r["frames"] = r.get("n_frames")
         r["T_mean"] = None if r.get("temperature_mean_K") is None else round(r["temperature_mean_K"], 2)
         r["card"] = r.get("cuda_visible_devices") or "-"
     _bt.print_table(results, extra=(("frames", 6, ">"), ("T_mean", 8, ">"), ("card", 4, ">"), ("complete", 8, "<")))

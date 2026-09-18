@@ -129,11 +129,11 @@ basins                      conformers.py
       +--> thermo.py        q_rot, q_vib, and the conformational correction
       |
       v
-PRODUCT  (since 2026-09-14; docs/output_inventory.md section 6)
+PRODUCT  (since 2026-09-14; docs/output_inventory.md sections 6 and 8)
    <molecule>/crest/                          CREST's working directory, verbatim
    <molecule>/mace/confNN/                    opt.traj opt.log conf.extxyz  every relaxation
    <molecule>/mace/basinNN/                   basin.extxyz hessian.npy      every basin
-   <molecule>/_records/basins.json, basins.xyz   the record (driver.log beside it via parsl)
+   <molecule>/_records/branchA.out, branchA.toml   the Record (driver.log beside it via parsl)
    <molecule> = <root>/<tag>/<range>/<chunk>/<qid>
 ```
 
@@ -523,36 +523,41 @@ count as done.
 ### The full record
 
 ```
-<molecule>/_records/basins.json              everything: census, criteria, provenance
-<molecule>/_records/basins.xyz               the basins as one multi-frame xyz
-analysis/branchE/<tag>/batch.json            the Parsl batch: plan + per-task results (step 2 will move it)
+<molecule>/_records/branchA.toml             the Property file: status, inputs, CREST run, census,
+                                             one [[Basin]] block per basin, the criteria count
+<molecule>/_records/branchA.out              the Report: provenance, settings, gate, CREST, census,
+                                             per-basin symmetry and thermochemistry, criteria, the
+                                             full record expanded; last line = terminal line
+<molecule>/_records/driver.log               the driver's stdout, when a Batch ran it
 ```
-(before 2026-09-14: `analysis/branchA/<tag>/<qid>/basins.json` and `driver.log`)
+(records redesign 2026-09-15, `docs/output_inventory.md` section 8; before 2026-09-14:
+`analysis/branchA/<tag>/<qid>/basins.json`. A Batch leaves no record: the Slurm log is its
+report, one aligned line per molecule with rc, STATUS and the path of `branchA.toml`.)
 
-`batch.json` carries the plan, including `settings_source` (which value came from the
-command line, which from the resource config, which from a built-in default) and
-`submission` (which partition and walltime this run actually used). Without the latter a
-`--debug` run and a production run record the same `resource` block and become
-indistinguishable afterwards.
+The Slurm log carries the plan the driver printed before the batch, including
+`settings_source` (which value came from the command line, which from the resource
+config, which from a built-in default) and `submission` (which partition and walltime
+this run actually used). Without the latter a `--debug` run and a production run print
+the same `resource` block and become indistinguishable afterwards.
 
 ### Reading it
 
 ```python
-from openqha import basin_store
+from openqha.store import basins, branch_a_property
 
 # how far has the campaign got?
-c = basin_store.census(tag="prod")
+c = basins.census(tag="prod")
 print(c["total"], "molecules;", len(c["chunks"]), "chunks")
 
-# one molecule
-rec = basin_store.read("dsgdb9nsd_000018", tag="prod")
-print(rec["census"]["n_basins"], "basins")
-print(rec["all_criteria_passed"])
-for b in rec["basins"]:
-    print(b["symmetry"]["sigma"], b["energy_kcal"])
+# one molecule: branchA.toml as blocks
+rec = basins.read_record("dsgdb9nsd_000018", tag="prod")
+print(rec["Census"]["N_BASINS"], "basins")
+print(rec["Criteria"]["ALL_PASSED"], basins.status("dsgdb9nsd_000018", tag="prod"))
+for b in branch_a_property.basin_rows(rec):
+    print(b["SIGMA"], b["ENERGY"], b["RELATIVE"], b["G_MINUS_EEL"])
 
 # where is it on disk?
-print(basin_store.paths_for("dsgdb9nsd_000018", tag="prod"))
+print(basins.molecule_for("dsgdb9nsd_000018", tag="prod"))
 ```
 
 ```bash
@@ -642,13 +647,13 @@ came from, and it has been withdrawn. `openmm_mace.platform_properties_for()` no
 the matching property so the mismatch cannot be reached by leaving an argument out.
 
 `D0-C-5` (3.5x slower on a T400) is not contradicted by this: it is a different card and
-was never re-run. Still read `seconds_per_ps_this_run` out of `meta.json` before sizing a
+was never re-run. Still read `SECONDS_PER_PS` out of `md.toml` (`[Production]`) before sizing a
 campaign.
 
 The CPU route is kept, not deprecated: `--route ase --resource tianhe_cpu` is the
 independent implementation pair that makes the OpenMM numbers checkable. Both write the
-same `frames.npy` + `meta.json` contract, so the analysis reads either without knowing
-which produced it.
+same Record (`md.out` + `md.toml`, `docs/output_inventory.md` section 8) beside their own
+engine files, so the analysis reads either without knowing which produced it.
 
 ---
 

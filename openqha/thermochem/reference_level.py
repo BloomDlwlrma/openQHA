@@ -39,6 +39,7 @@ from ..potentials import engine
 from ..qm_interfaces import orca
 from ..store import basins as basins_mod
 from ..store import branch_a_property, dat, layout, property as prop, report
+from . import hessian as hessian_mod
 from . import msrrho_ensemble as me
 from . import thermo
 
@@ -125,14 +126,32 @@ def _mol_with_conformers(smiles, symbols, geometries):
     return mol, cids
 
 
-def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=orca.REFERENCE_KEYWORDS,
+def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
                     nprocs=8, maxcore=3000, basins=None, qm9_index=None, cfg=None,
-                    preset="crest", temperature_K=None, ptot=me.PTOT):
+                    preset="crest", temperature_K=None, ptot=me.PTOT, blocks=None,
+                    start_from=None):
     """Re-optimise and Hessian every branch A basin (or the subset `basins`) at `level`,
     re-deduplicate, assemble, write the merge map and the level's thermo_msrrho record.
-    ORCA is skipped for a basin whose engine folder already holds a finished job."""
+    ORCA is skipped for a basin whose engine folder already holds a finished job.
+    `keywords` / `blocks` default to `orca.LEVELS[level]`; `start_from` names another
+    level whose relaxed geometries are the starting points (a numerical optimisation
+    starts better from the wB97M minimum than from the MACE one; the MACE basin index is
+    still the key of every row)."""
     from ase.io import read
     molecule = Path(molecule)
+    spec = orca.level_spec(level) if level in orca.LEVELS else None
+    if keywords is None:
+        if spec is None:
+            raise KeyError("no keywords given and no ORCA specification for level {!r}".format(level))
+        keywords = spec["keywords"]
+    if blocks is None:
+        blocks = spec["blocks"] if spec else ""
+    starts = {}
+    if start_from:
+        for r in dat.read_table(layout.level_dir(molecule, start_from) / "merge_map.dat"):
+            if r["status"] == "kept":
+                p = orca.parse_hess(layout.orca_level_dir(molecule, start_from, int(r["mace_basin"])) / "job.hess")
+                starts[int(r["mace_basin"])] = np.asarray(p["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
     doc = prop.load(layout.records_dir(molecule) / "branchA.toml")
     info_a = doc.get("Calculation_Info") or {}
     T = float(temperature_K if temperature_K is not None else info_a.get("TEMPERATURE", thermo.T_REF))
@@ -156,11 +175,16 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=orca.REFERENCE_KEY
     for b in wanted:
         atoms = read(str(files[b]), format="extxyz")
         wd = layout.orca_level_dir(molecule, level, b)
-        r = orca.optimise_and_hessian(atoms.get_chemical_symbols(), atoms.get_positions(), wd,
-                                      keywords=keywords, nprocs=nprocs, maxcore=maxcore)
+        start = starts.get(b, atoms.get_positions())
+        r = orca.optimise_and_hessian(atoms.get_chemical_symbols(), start, wd,
+                                      keywords=keywords, nprocs=nprocs, maxcore=maxcore, blocks=blocks)
         rt = orca.verify_hess_frequencies(r["hess"])
         pos_mace = atoms.get_positions()
         pos_ref = np.asarray(r["positions_A"])
+        # the noise floor of the Hessian: the rigid-body block of the unprojected matrix,
+        # ~0 for an analytic Hessian, the finite-difference noise for a numerical one
+        noise_floor = hessian_mod.rigid_block_floor_cm(
+            orca.hessian_to_ev_per_angstrom2(r["hess"]["hessian_eh_bohr2"]), atoms.get_masses(), pos_ref)
         relaxed.append(dict(mace_basin=b, symbols=atoms.get_chemical_symbols(),
                             masses=[float(m) for m in atoms.get_masses()],
                             positions=pos_ref, energy_eh=r["energy_eh"],
@@ -168,6 +192,8 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=orca.REFERENCE_KEY
                             hessian=orca.hessian_to_ev_per_angstrom2(r["hess"]["hessian_eh_bohr2"]),
                             n_imaginary=r["n_imaginary"], hessian_route=r["hessian_route"],
                             roundtrip_cm=float(rt["max_deviation_cm_inv"]),
+                            noise_floor_cm=noise_floor, opt_grad_rms=r.get("opt_grad_rms"),
+                            n_single_points=r.get("n_single_points"),
                             rmsd_displacement=degeneracy.kabsch_rmsd(pos_mace, pos_ref),
                             sigma_mace=int(rows[b]["SIGMA"]), g0=int(rows[b]["G0"]),
                             orca_version=r["orca_version"], seconds=r["seconds"]))
@@ -205,7 +231,9 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=orca.REFERENCE_KEY
                                rmsd_displacement_A=x["rmsd_displacement"],
                                rmsd_to_representative_A=rmsd_after, energy_eh=x["energy_eh"],
                                n_imaginary=x["n_imaginary"], hessian_route=x["hessian_route"],
-                               roundtrip_cm=x["roundtrip_cm"], seconds=x["seconds"]))
+                               roundtrip_cm=x["roundtrip_cm"], noise_floor_cm=x["noise_floor_cm"],
+                               opt_grad_rms=x["opt_grad_rms"], n_single_points=x["n_single_points"],
+                               seconds=x["seconds"]))
     lvl = layout.level_dir(molecule, level)
     lvl.mkdir(parents=True, exist_ok=True)
     dat.write_table(lvl / "merge_map.dat", merge_rows)
@@ -221,6 +249,10 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=orca.REFERENCE_KEY
         rec["g_prime"], rec["g_prime_source"] = gp
         rec["mace_basin"] = x["mace_basin"]
         rec["sigma_mace"] = x["sigma_mace"]
+        rec["hessian_route"] = x["hessian_route"]
+        rec["noise_floor_cm"] = x["noise_floor_cm"]
+        rec["opt_grad_rms"] = x["opt_grad_rms"]
+        rec["n_single_points"] = x["n_single_points"]
         ref_basins.append(rec)
     for x in saddles:
         rec = dict(index=len(ref_basins) + saddles.index(x) + 100, excluded=True,

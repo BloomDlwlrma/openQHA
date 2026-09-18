@@ -11,6 +11,11 @@ machines (the reference level needs ORCA; the other two need nothing but the fil
     hessian_compare  mace/basinNN/{hessian,forces}_at_<level>.npy  levels/hessian_compare.*
                      (the MACE Hessian at the reference geometry, ticket 27; needs MACE)
     compare          levels/level_compare.*                                      (ticket 26/27)
+    mode_curvature   orca/<level>/basinNN/modeII_k*/  levels/<level>/mode_curvature_dryrun.*
+                     (the higher level's curvature along the wB97M modes from energies,
+                     the dry run before a numerical Hessian; ticket 32)
+    write_jobs       <jobs-dir>/<species>_<level>/{*.inp,worker.sh,run.sbatch,README.md}
+                     (the hkuhpc bundle of a numerical reference level; not submitted here)
 
 The reference level is `wb97m-d3bj_def2-tzvppd` (`! wB97M-D3BJ def2-TZVPPD TightOpt Freq
 TightSCF`, the analytic Hessian; ORCA 6.0.1 measured 226 s for propanal basin 0 on 8
@@ -45,10 +50,18 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--species", required=True)
     ap.add_argument("--tag", default="prod")
-    ap.add_argument("--step", required=True, choices=("mace", "reference", "hessian_compare", "compare"))
+    ap.add_argument("--step", required=True,
+                    choices=("mace", "reference", "hessian_compare", "compare", "mode_curvature", "write_jobs"))
     ap.add_argument("--level", default=engine.REFERENCE_LEVEL,
                     help="reference level name (CONTEXT.md spelling)")
-    ap.add_argument("--keywords", default=None, help="ORCA keyword line for the reference level")
+    ap.add_argument("--keywords", default=None,
+                    help="ORCA keyword line for the reference level (default: orca.LEVELS[--level])")
+    ap.add_argument("--start-from", default=None,
+                    help="reference: start the optimisation from this level's relaxed geometries "
+                         "(e.g. wb97m-d3bj_def2-tzvppd for a numerical CCSD(T) optimisation)")
+    ap.add_argument("--modes", default="lowest",
+                    help="mode_curvature: lowest, low, all, or comma-separated mode indices")
+    ap.add_argument("--jobs-dir", default=None, help="write_jobs: where the hkuhpc bundle goes")
     ap.add_argument("--nprocs", type=int, default=8)
     ap.add_argument("--maxcore", type=int, default=3000)
     ap.add_argument("--basins", default=None,
@@ -86,10 +99,9 @@ def main():
         from openqha.qm_interfaces import orca
         from openqha.thermochem import reference_level as rl
         basins = [int(x) for x in args.basins.split(",")] if args.basins else None
-        out = rl.run_calculation(molecule, level=args.level,
-                                 keywords=args.keywords or orca.REFERENCE_KEYWORDS,
+        out = rl.run_calculation(molecule, level=args.level, keywords=args.keywords,
                                  nprocs=args.nprocs, maxcore=args.maxcore, basins=basins,
-                                 qm9_index=args.species, preset=args.preset)
+                                 qm9_index=args.species, preset=args.preset, start_from=args.start_from)
         print("level {}: S_abs = {:.3f} cal/mol/K  G_total = {:.4f} kcal/mol  reference basins {} "
               "(excluded {})  Hessian route {}".format(
                   args.level, out["S_abs_cal_per_K"], out["G_total_kcal"], out["n_basins"],
@@ -99,6 +111,46 @@ def main():
                 r["mace_basin"], r["status"], r["reference_basin"], r["rmsd_displacement_A"],
                 r["n_imaginary"], r["seconds"] or 0))
         print("record  {}".format(out["record"]))
+    elif args.step == "mode_curvature":
+        from openqha.thermochem import mode_curvature as mc
+        basins = [int(x) for x in args.basins.split(",")] if args.basins else None
+        out = mc.run_calculation(molecule, level=args.level, qm9_index=args.species, modes=args.modes,
+                                 basins=basins, nprocs=args.nprocs, maxcore=args.maxcore, preset=args.preset)
+        for r in out["modes"]:
+            if r["COMPLETE"]:
+                print("  basin {} mode {} ({:.1f} cm^-1): {} {:.2f} (dq err {:.2f}, anharm {:.2f})  wB97M fd {:.2f}  "
+                      "MACE fd {:.2f}  model {:+.2f}  level {:+.2f}  {:.0f} s/pt".format(
+                          r["BASIN"], r["MODE"], r["OMEGA_R"], args.level, r["OMEGA_HIGHER_5PT"],
+                          r["DELTA_CONVERGENCE_CM"], r["FD_ERROR_CM"], r["OMEGA_REF_FD"], r["OMEGA_ENGINE_FD"],
+                          r["MODEL_ERROR_CM"], r["LEVEL_ERROR_CM"], r.get("SECONDS_PER_POINT") or 0))
+                if "WELL_DEPTH_HIGHER_CM" in r:
+                    print("    wide profile well depth (cm^-1): {} {:+.1f}  wB97M {:+.1f}  MACE {:+.1f}".format(
+                        args.level, r["WELL_DEPTH_HIGHER_CM"], r["WELL_DEPTH_REF_CM"], r["WELL_DEPTH_ENGINE_CM"]))
+            else:
+                print("  basin {} mode {}: INCOMPLETE".format(r["BASIN"], r["MODE"]))
+        print("record  {}".format(out["record"]))
+    elif args.step == "write_jobs":
+        from openqha.qm_interfaces import orca_jobs
+        from openqha.qm_interfaces import orca as _orca
+        from openqha.store import dat as _dat, layout as _layout
+        from ase.io import read as _read
+        import numpy as _np
+        start = args.start_from or engine.REFERENCE_LEVEL
+        jobs = []
+        rows = _dat.read_table(_layout.level_dir(molecule, start) / "merge_map.dat")
+        for r in rows:
+            if r["status"] != "kept":
+                continue
+            b = int(r["mace_basin"])
+            parsed = _orca.parse_hess(_layout.orca_level_dir(molecule, start, b) / "job.hess")
+            jobs.append(dict(name="{}_basin{:02d}".format(args.species, b), symbols=list(parsed["symbols"]),
+                             positions=(_np.asarray(parsed["positions_bohr"]) / _orca.BOHR_PER_ANGSTROM).tolist()))
+        out_dir = Path(args.jobs_dir or (Path(molecule) / "jobs")) / "{}_{}".format(args.species, args.level)
+        out = orca_jobs.write_bundle(out_dir, jobs, args.level, nprocs=args.nprocs)
+        print("bundle  {}  ({} jobs, {} ranks each, {} concurrent, maxcore {} MB)".format(
+            out["dir"], len(jobs), args.nprocs, out["concurrent"], out["maxcore"]))
+        for name, n, e in out["estimates"]:
+            print("  {}: {} atoms  ~{} opt + {} NumFreq = {} single points".format(name, n, e["opt"], e["numfreq"], e["total"]))
     elif args.step == "hessian_compare":
         from openqha.thermochem import hessian_compare as hc
         basins = [int(x) for x in args.basins.split(",")] if args.basins else None

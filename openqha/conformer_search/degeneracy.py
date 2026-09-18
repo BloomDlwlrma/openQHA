@@ -172,22 +172,29 @@ def _class_permutations(classes, cap=PERMUTATION_CAP):
     return perms
 
 
-def self_mirror_rmsd(positions, classes, cap=PERMUTATION_CAP):
+def self_mirror_rmsd(positions, classes, cap=PERMUTATION_CAP, perms=None):
     """Distance of a structure from achirality: the smallest rotational-Procrustes RMSD
     between the structure and its own reflection (x -> -x), over every permutation of
     chemically equivalent atoms (the library has no permutation search; `classes` are
-    RDKit's canonical ranks). None when the permutation count exceeds `cap`."""
+    RDKit's canonical ranks). None when the permutation count exceeds `cap`.
+
+    The search runs on `kabsch_rmsd` (the same SVD, 16x cheaper than the library call)
+    and the winning permutation is then evaluated by the library and asserted equal, so
+    the reported number is the library's. `perms` may be passed in when the same
+    molecule is scored many times (one enumeration per molecule, not per conformer)."""
     xyz = np.asarray(positions, dtype=float)
-    perms = _class_permutations(classes, cap)
+    if perms is None:
+        perms = _class_permutations(classes, cap)
     if perms is None:
         return None
     mirrored = xyz.copy()
     mirrored[:, 0] *= -1.0
-    best = float("inf")
+    best, best_perm = float("inf"), None
     for perm in perms:
-        r, _ = procrustes_rmsds(xyz, mirrored[perm])
-        best = min(best, r)
-    return float(best)
+        r = kabsch_rmsd(xyz, mirrored[perm])
+        if r < best:
+            best, best_perm = r, perm
+    return checked_rmsd(xyz, mirrored[best_perm])
 
 
 def equivalence_classes(symbols, positions):
@@ -334,6 +341,7 @@ def conformer_degeneracies(crest_dir, rthr=RTHR_A, mirror_factor=MIRROR_FACTOR,
         core_ok = True
     numbers = [atomic_numbers[s] for s in symbols]
     core_classes = [classes[i] for i in core]
+    core_perms = _class_permutations(core_classes, cap) if core_ok else None
     g_rot = rotor_factor(classes, adj)
     thr = mirror_factor * rthr
     out = []
@@ -344,7 +352,8 @@ def conformer_degeneracies(crest_dir, rthr=RTHR_A, mirror_factor=MIRROR_FACTOR,
                              "crest_rotamers.xyz".format(n_rot, lo, hi, len(frames)))
         # the continuous chirality of the conformer: its core against its own reflection
         # (ticket 29); the point-group label is kept beside it as a diagnostic
-        self_rmsd = self_mirror_rmsd(xyz[idx[0]][core], core_classes, cap) if core_ok else None
+        self_rmsd = (self_mirror_rmsd(xyz[idx[0]][core], core_classes, cap, perms=core_perms)
+                     if core_ok and core_perms is not None else None)
         if self_rmsd is None:
             chirality = "unresolved"
         else:

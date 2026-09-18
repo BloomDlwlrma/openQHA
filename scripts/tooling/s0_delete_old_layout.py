@@ -18,10 +18,19 @@ What counts as the old layout, by period:
     <home>/runs/<jobid>[_cardK_rowJ]       Tianhe per-job scratch, 2026-09-12 .. 2026-09-14
     <home>/HDD_POOL/runs/openQHA           the tianhe_cpu default
 
-Anything under the NEW root (S0_RUNS_ROOT, or --new-root) is never listed, whatever it is
-called: a directory named `analysis` inside the molecule tree is not the old layout.
-Slurm output beside `logs/node_local` stays -- it keeps its place until step 2 of the
-layout change decides otherwise.
+Anything under the NEW root (S0_RUNS_ROOT, or --new-root) is never listed as an old tree,
+whatever it is called: a directory named `analysis` inside the molecule tree is not the
+old layout. Slurm output beside `logs/node_local` stays.
+
+Step-2 leftovers INSIDE the new root (records redesign, user ruling 2026-09-15): the
+records of 2026-09-15 morning, which the redesign replaced, are listed by name and
+nothing else under the root is:
+
+    <molecule>/_records/basins.toml                 replaced by branchA.toml
+    <molecule>/_records/md_<route>/<setting>/       the setting LEVEL (default/, s2/); now the
+                                                    setting is in the file stem
+    <root>/<tag>/_records/branchB_parsl_summary.json, collect_batch.json
+                                                    a Batch leaves no record
 
 Run it on each machine that ran the old layout (the XYFS02 checkout, the XYAIFS00
 checkout, this workstation); nothing here reaches across a filesystem it cannot see.
@@ -64,6 +73,35 @@ def old_trees(repo, home):
     return out
 
 
+LEFTOVER_FILES = ("branchB_parsl_summary.json", "collect_batch.json")
+BASIN_DIR = re.compile(r"^basin\d+$")
+
+
+def leftovers(new_root):
+    """The step-2 leftovers inside the new root, by name (see the module docstring)."""
+    out = []
+    root = Path(new_root) if new_root else None
+    if root is None or not root.is_dir():
+        return out
+    for tag in sorted(root.iterdir()):
+        if not tag.is_dir():
+            continue
+        for name in LEFTOVER_FILES:
+            p = tag / "_records" / name
+            if p.is_file():
+                out.append(p)
+        for rec in sorted(tag.glob("*/*/*/_records")) + sorted(tag.glob("_label/*/_records")):
+            if (rec / "basins.toml").is_file():
+                out.append(rec / "basins.toml")
+            for md in ("md_openmm", "md_ase"):
+                d = rec / md
+                if d.is_dir():
+                    for sub in sorted(d.iterdir()):
+                        if sub.is_dir() and not BASIN_DIR.match(sub.name):
+                            out.append(sub)
+    return out
+
+
 def under(p, root):
     if root is None:
         return False
@@ -75,6 +113,8 @@ def under(p, root):
 
 
 def measure(p):
+    if Path(p).is_file():
+        return 1, os.lstat(p).st_size
     n, size = 0, 0
     for dirpath, _dirs, files in os.walk(p):
         for f in files:
@@ -110,15 +150,15 @@ def main(argv=None):
     home = Path(args.home) if args.home else Path(os.path.expanduser("~"))
     new_root = args.new_root or os.environ.get("S0_RUNS_ROOT")
 
-    trees = [p for p in old_trees(repo, home) if not under(p, new_root)]
+    trees = [p for p in old_trees(repo, home) if not under(p, new_root)] + leftovers(new_root)
     mode = "delete" if args.delete else "plan"
     print("old layout on this machine   ({})".format(mode))
     print("  repo      {}".format(repo))
     print("  home      {}".format(home))
-    print("  new root  {}   (never listed)".format(new_root or "unset"))
+    print("  new root  {}   (only the step-2 leftovers are listed under it)".format(new_root or "unset"))
     print()
     if not trees:
-        print("nothing to do: no tree of the old layout exists here.")
+        print("nothing to do: no tree of the old layout and no step-2 leftover exists here.")
         return 0
 
     total_n, total_b = 0, 0
@@ -137,7 +177,10 @@ def main(argv=None):
     removed = 0
     for p in trees:
         try:
-            shutil.rmtree(p)
+            if p.is_file():
+                p.unlink()
+            else:
+                shutil.rmtree(p)
             removed += 1
             print("  removed  {}".format(p))
         except OSError as exc:

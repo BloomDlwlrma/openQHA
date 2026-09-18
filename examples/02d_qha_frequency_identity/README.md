@@ -320,10 +320,11 @@ stage 2 says none of those three can be made to work.
 ## Output
 
 ```
-<molecule>/_records/md_openmm/<setting>/02d_frequency_identity.json
+<molecule>/_records/md_openmm/02d_frequency_identity.toml + .out   (setting in the stem: 02d_frequency_identity_<setting>.toml)
 ```
 (`<molecule>` is the molecule directory of the BASIN tag; since 2026-09-14, before that
-`analysis/qha/<tag>/<species>_02d_frequency_identity.json`)
+`analysis/qha/<tag>/<species>_02d_frequency_identity.json`. `sample_records/openmm/` beside
+this README holds the `_records/` of a local run of this example at test30 length.)
 
 Read in this order:
 

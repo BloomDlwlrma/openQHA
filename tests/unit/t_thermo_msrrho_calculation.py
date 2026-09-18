@@ -181,6 +181,22 @@ def main():
         check("a -35.74 basin: invert_below and crest_native agree to 1e-9, refuse excludes it",
               rows2["refuse"]["N_EXCLUDED"] == 1 and rows2["invert_below"]["N_INVERTED"] == 1
               and abs(rows2["invert_below"]["S_ABS"] - rows2["crest_native"]["S_ABS"]) < 1e-9)
+        # under grimme2012 (no ithr) the two non-refuse policies cannot be applied to an
+        # imaginary spectrum: the rows say AVAILABLE = false instead of repeating refuse
+        rows3 = {r["POLICY"]: r for r in me.imaginary_spread(shallow, temperature_K=298.15, preset="grimme2012")}
+        check("grimme2012 with an imaginary basin: invert_below / crest_native rows are AVAILABLE = false",
+              rows3["refuse"]["AVAILABLE"] is True and rows3["invert_below"]["AVAILABLE"] is False
+              and rows3["crest_native"]["AVAILABLE"] is False and "S_ABS" not in rows3["crest_native"])
+        rows4 = {r["POLICY"]: r for r in me.imaginary_spread(basins, temperature_K=298.15, preset="grimme2012")}
+        check("grimme2012 without an imaginary basin: all three rows available and equal",
+              all(rows4[k]["AVAILABLE"] for k in rows4)
+              and max(abs(rows4[k]["S_ABS"] - rows4["refuse"]["S_ABS"]) for k in rows4) < 1e-9)
+        try:
+            me.run_calculation(mol, level=LEVEL, qm9_index="dsgdb9nsd_000035", preset="grimme2012",
+                               imaginary_policy="crest_native")
+            check("run_calculation refuses a non-refuse policy with a preset that has no ithr", False)
+        except ValueError as exc:
+            check("run_calculation refuses a non-refuse policy with a preset that has no ithr", "no ithr" in str(exc))
         # the record is written under a non-refuse policy even when the reference basin
         # (lowest G_i) carries a sub-ithr mode (code-review finding: preset_spread)
         native = Path(tmp) / "native"

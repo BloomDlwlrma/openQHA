@@ -470,7 +470,7 @@ python -u scripts/production/s0_E_branchB_parsl.py --species dsgdb9nsd_000018 \
 bash hpc/slurm/submit_branchB_tianhe_a.sh a_debug temp
 ```
 
-**Read `seconds_per_ps_this_run` out of `meta.json` before sizing anything.** Branch B
+**Read `SECONDS_PER_PS` out of `md.toml` (`[Production]`) before sizing anything.** Branch B
 on a card is now measured here (an45, 2026-09-12, MACE-OFF23_medium, 10 atoms, 200 steps,
 one trajectory at a time):
 
@@ -492,7 +492,7 @@ per-worker layout gets.
 An earlier revision of this file said the card was slower. That was the mismatched row
 read as though it were the card's speed; it has been withdrawn.
 
-Also check the `platform` field in every `meta.json`. **If it is not `CUDA`, the job ran
+Also check `PLATFORM` in every `md.toml` (`[Calculation_Info]`). **If it is not `CUDA`, the job ran
 on the CPU** and the timings mean something else entirely.
 
 ### Production

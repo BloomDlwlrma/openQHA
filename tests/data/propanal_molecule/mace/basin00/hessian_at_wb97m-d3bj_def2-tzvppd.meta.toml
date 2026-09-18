@@ -1,0 +1,10 @@
+[Calculation_Status]
+PROGNAME = "openQHA hessian_compare"  # String: the step that wrote this file
+VERSION  = "0.3.0"                    # String: openQHA version
+STATUS   = "NORMAL TERMINATION"       # String: the completion marker
+
+[Engine_Hessian]
+ENGINE        = "MACE-OFF23_medium"             # String: the potential that produced hessian_at_<level>.npy
+LEVEL         = "wb97m-d3bj_def2-tzvppd"        # String: the level whose geometry the Hessian was taken at
+ASYMMETRY_MAX = 1.4210854715202004e-14          # Double, eV/A^2: max |H - H^T| of the Hessian as produced, before symmetrisation
+POSITIONS     = [[-1.4786663081029063, -0.5781609644425936, -0.0008913397714356973], [-0.6780738750641738, 0.7119229597529233, -0.0001538437947232025], [0.8110432818440909, 0.5059254679205604, 0.0006327134495411499], [1.353017185781532, -0.5672934312432698, 0.0004435584538293837], [-1.2440187185989975, -1.1782977170815978, 0.8750012861289366], [-2.5458975372279147, -0.36839616774301875, -0.0013845682863267536], [-1.243122774645566, -1.1778696123179193, -0.8768351230849062], [-0.9101965812684221, 1.3360994484499749, -0.8679263107164822], [-0.9111786770905707, 1.3357193072000664, 0.8676236542830728], [1.414179692071108, 1.4345319295836292, 0.001395751030071795]]  # ArrayOfDoubles, A: the geometry the Hessian was taken at, row per atom

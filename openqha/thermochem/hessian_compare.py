@@ -12,8 +12,9 @@ FOUR FAMILIES, AS THE MLIP-HESSIAN LITERATURE REPORTS THEM
 ---------------------------------------------------------
 1. Element-wise, Cartesian (HIP `scripts/eval_horm.py`, PFT, Rodriguez 2025, PHL):
    `HESSIAN_MAE`, `HESSIAN_RMSE` in eV/A^2 over the raw 3N x 3N matrices, and
-   `ASYMMETRY_MAE` of the engine matrix (0 for an AD Hessian; HIP's metric for a direct
-   Hessian head, kept so the record reads against its tables).
+   `ASYMMETRY_MAX` of the engine matrix as produced (max |H - H^T|, ~1e-14 for an AD
+   Hessian; HIP reports the mean for its direct Hessian head -- the same quantity in
+   spirit, kept so the record reads against its tables).
 2. Basis-free, projected: `K = P M^-1/2 H M^-1/2 P` with the Eckart projector P (the same
    `rigid_body_vectors` every spectrum in this package uses), `HESS_REL_FROBENIUS =
    ||K_e - K_r||_F / ||K_r||_F`.
@@ -35,9 +36,13 @@ FOUR FAMILIES, AS THE MLIP-HESSIAN LITERATURE REPORTS THEM
    counted collisions was built for two bases from different estimators (covariance vs
    Hessian); here the bases are exact eigenbases of two matrices at one point.
 
-Curvature in the project's units, still a Hessian metric at x_r: the `crest`-preset
+Curvature in the project's units, still a Hessian metric at x_r: the preset's
 per-mode T*S on omega_r and on the curvature along the reference modes ->
 `TS_LOW_DELTA` (sum over the low modes), `S_VIB_CURVATURE_DELTA`, `ZPE_CURVATURE_DELTA`.
+A curvature along a reference mode that is not positive (negative, or inside CREST's
+vibthr of 1 cm^-1) has no harmonic entropy and contributes nothing; it is counted in
+`N_NONPOSITIVE_ALONG_REF`. No imaginary-mode policy is involved: inverting such a
+curvature would hand it the entropy of |omega| and make the deltas jump at ithr.
 The engine's residual force at x_r is recorded (`MAX_FORCE_ENGINE_AT_REF_EV_A`): the
 projected Hessian at a non-stationary point is the standard treatment, not an exact one.
 
@@ -72,10 +77,6 @@ PROGNAME = "openQHA hessian_compare"
 #: Reference modes below this carry the entropy; the low-mode statistics are on them.
 LOW_CM = 300.0
 GAP_CM = mode_match.DEFAULT_DEGENERACY_GAP_CM
-#: Per-mode T*S is evaluated with CREST's regime so that a curvature that comes out
-#: negative along a reference mode still yields a number (kept, zero entropy) and is
-#: reported, never refused.
-CURVATURE_POLICY = "crest_native"
 
 SCHEMA = {
     "Calculation_Info": {
@@ -101,8 +102,10 @@ SCHEMA = {
         "ROUNDTRIP_CM": ("Double", "cm^-1", "our diagonalisation of the .hess against ORCA's own frequencies"),
         "HESSIAN_MAE": ("Double", "eV/A^2", "element-wise MAE of the Cartesian Hessians (HIP hessian_mae)"),
         "HESSIAN_RMSE": ("Double", "eV/A^2", "element-wise RMSE of the Cartesian Hessians"),
-        "ASYMMETRY_MAE": ("Double", "eV/A^2", "mean |H - H^T| of the engine Hessian (HIP asymmetry_mae)"),
+        "ASYMMETRY_MAX": ("Double", "eV/A^2", "max |H - H^T| of the engine Hessian as produced, before symmetrisation (HIP reports the mean; ~1e-14 for an AD Hessian)"),
         "HESS_REL_FROBENIUS": ("Double", None, "||K_e - K_r||_F / ||K_r||_F, mass-weighted Eckart-projected"),
+        "REF_NOISE_FLOOR_CM": ("Double", "cm^-1", "largest |eigenvalue| of the rigid-body block of the unprojected reference Hessian: 5-30 cm^-1 for an analytic Hessian at a tight minimum (the rotational block feels the residual gradient), the finite-difference noise on top for a numerical one; a low-mode difference below the larger of the two floors is unresolved, not model error"),
+        "ENGINE_NOISE_FLOOR_CM": ("Double", "cm^-1", "the same for the engine Hessian"),
         "EIGVAL_MAE_ECKART": ("Double", "eV/A^2/amu", "sorted-index MAE of the projected eigenvalues (HIP eigval_mae_eckart)"),
         "EIGVAL1_MAE_ECKART": ("Double", "eV/A^2/amu", "error of the lowest projected eigenvalue"),
         "FREQ_MAE_CM": ("Double", "cm^-1", "sorted-index MAE of the frequencies, all modes"),
@@ -125,7 +128,7 @@ SCHEMA = {
         "OMEGA_REF_CM": ("ArrayOfDoubles", "cm^-1", "reference frequencies, ascending"),
         "OMEGA_ENGINE_CM": ("ArrayOfDoubles", "cm^-1", "engine frequencies at the reference geometry, ascending"),
         "OMEGA_ALONG_REF_CM": ("ArrayOfDoubles", "cm^-1", "engine curvature along each reference mode, sign sqrt|D_ii|"),
-        "N_NEAR_ZERO_ALONG_REF": ("Integer", None, "reference modes along which the engine curvature is inside +-1 cm^-1 (dropped from the T*S terms, as CREST's vibthr drops them)"),
+        "N_NONPOSITIVE_ALONG_REF": ("Integer", None, "reference modes along which the engine curvature is not positive (below 1 cm^-1): no entropy, counted"),
         "TS_LOW_DELTA": ("Double", "kcal/mol", "sum over low modes of T*S(omega along ref) - T*S(omega_r)"),
         "S_VIB_CURVATURE_DELTA": ("Double", "cal/mol/K", "S_vib from the curvature along the reference modes minus S_vib(omega_r)"),
         "ZPE_CURVATURE_DELTA": ("Double", "kcal/mol", "ZPE from the curvature along the reference modes minus ZPE(omega_r)"),
@@ -167,26 +170,33 @@ def projected(hessian_eV_A2, masses, positions):
     k = 0.5 * (k + k.T)
     lam, vec = np.linalg.eigh(k)
     keep = np.linalg.norm(v.T @ vec, axis=0) ** 2 <= 0.5
+    rigid = lam[~keep]
     lam, vec = lam[keep], vec[:, keep]
     order = np.argsort(lam)
     lam, vec = lam[order], vec[:, order]
-    return dict(K=k, lam=lam, vec=vec, freq=hessian_mod.eigenvalues_to_cm_inv(lam), rank=rank)
+    # the noise floor is read from the rigid block of the UNPROJECTED matrix (after
+    # P H P that block is in the kernel by construction): ~0 for an analytic Hessian,
+    # the finite-difference noise for a numerical one, in the units of the modes
+    del rigid
+    return dict(K=k, lam=lam, vec=vec, freq=hessian_mod.eigenvalues_to_cm_inv(lam), rank=rank,
+                noise_floor_cm=hessian_mod.rigid_block_floor_cm(hessian_eV_A2, masses, positions))
 
 
 def _ts_per_mode(freqs_cm, masses, positions, preset, temperature_K):
     """T*S (kcal/mol), S (cal/mol/K) and ZPE (kcal/mol) contribution of each frequency
-    in the given order, under the preset and CURVATURE_POLICY (one call per mode: the
-    per-mode terms are separable, only the rotor cap is molecular)."""
+    in the given order under the preset, and how many were non-positive (one call per
+    mode: the per-mode terms are separable, only the rotor cap is molecular)."""
     ts, s, zpe, n_dropped = [], [], [], 0
     for f in freqs_cm:
-        if abs(float(f)) < thermo.VIBTHR_CM:
-            # the engine's curvature along this reference mode crosses zero: CREST's
-            # vibthr drops such a mode; it is counted here (N_NEAR_ZERO_ALONG_REF) and
-            # contributes nothing, so the comparison is reported rather than refused
+        if float(f) < thermo.VIBTHR_CM:
+            # a non-positive curvature along this reference mode (negative, or inside
+            # CREST's vibthr) has no harmonic entropy: it contributes nothing and is
+            # counted (N_NONPOSITIVE_ALONG_REF). Inverting it would give it the entropy
+            # of |omega| and make the deltas jump at ithr; refusing would lose the record.
             ts.append(0.0); s.append(0.0); zpe.append(0.0); n_dropped += 1
             continue
         r = thermo.msrrho([float(f)], masses, positions, preset=preset,
-                          temperature_K=temperature_K, imaginary_policy=CURVATURE_POLICY)
+                          temperature_K=temperature_K, imaginary_policy="refuse")
         ts.append(r["modes"][0]["TS_kcal"])
         s.append(r["S_vib_kcal_per_K"] * 1000.0)
         zpe.append(r["ZPE_kcal"])
@@ -197,7 +207,7 @@ def compare_hessians(h_engine, h_ref, masses, positions, preset="crest",
                      temperature_K=thermo.T_REF, low_cm=LOW_CM, gap_cm=GAP_CM,
                      asymmetry_engine=None):
     """Every metric of the four families for two Cartesian Hessians (eV/A^2) at one
-    geometry. `asymmetry_engine` is mean |H - H^T| of the engine matrix as produced
+    geometry. `asymmetry_engine` is max |H - H^T| of the engine matrix as produced
     (the stored matrix is symmetrised); None -> computed from `h_engine`."""
     he = np.asarray(h_engine, dtype=float)
     hr = np.asarray(h_ref, dtype=float)
@@ -205,13 +215,15 @@ def compare_hessians(h_engine, h_ref, masses, positions, preset="crest",
         raise ValueError("Hessians of different shape: {} vs {}".format(he.shape, hr.shape))
     d = he - hr
     out = dict(HESSIAN_MAE=float(np.abs(d).mean()), HESSIAN_RMSE=float(np.sqrt((d ** 2).mean())),
-               ASYMMETRY_MAE=float(asymmetry_engine if asymmetry_engine is not None
-                                   else np.abs(he - he.T).mean()))
+               ASYMMETRY_MAX=float(asymmetry_engine if asymmetry_engine is not None
+                                   else np.abs(he - he.T).max()))
     pe, pr = projected(he, masses, positions), projected(hr, masses, positions)
     if pe["lam"].size != pr["lam"].size:
         raise ValueError("different vibrational mode counts at one geometry: {} vs {}".format(
             pe["lam"].size, pr["lam"].size))
     out["HESS_REL_FROBENIUS"] = float(np.linalg.norm(pe["K"] - pr["K"]) / np.linalg.norm(pr["K"]))
+    out["REF_NOISE_FLOOR_CM"] = pr["noise_floor_cm"]
+    out["ENGINE_NOISE_FLOOR_CM"] = pe["noise_floor_cm"]
 
     fe, fr = pe["freq"], pr["freq"]
     dl = np.abs(pe["lam"] - pr["lam"])
@@ -250,7 +262,7 @@ def compare_hessians(h_engine, h_ref, masses, positions, preset="crest",
 
     ts_r, s_r, zpe_r, _n0 = _ts_per_mode(fr, masses, positions, preset, temperature_K)
     ts_a, s_a, zpe_a, n_zero = _ts_per_mode(out["OMEGA_ALONG_REF_CM"], masses, positions, preset, temperature_K)
-    out.update(N_NEAR_ZERO_ALONG_REF=int(n_zero),
+    out.update(N_NONPOSITIVE_ALONG_REF=int(n_zero),
                TS_LOW_DELTA=float((ts_a[low] - ts_r[low]).sum()) if low.any() else 0.0,
                S_VIB_CURVATURE_DELTA=float((s_a - s_r).sum()),
                ZPE_CURVATURE_DELTA=float((zpe_a - zpe_r).sum()),
@@ -260,25 +272,57 @@ def compare_hessians(h_engine, h_ref, masses, positions, preset="crest",
 
 
 # ====================================================================== engine at x_r
+#: A stored engine Hessian is reused only when it was taken at this geometry (to this
+#: tolerance) by this engine; otherwise it is recomputed and the files replaced.
+REUSE_GEOMETRY_TOL_A = 1e-8
+
+
 def engine_hessian_at(molecule, basin, symbols, positions, level, engine_name=None):
-    """The engine's Hessian (eV/A^2) and forces (eV/A) at `positions`, from the engine
-    files `mace/basinNN/{hessian,forces}_at_<level>.npy` when present, computed and stored
-    otherwise. Returns (hessian, forces, asymmetry_max, computed_now)."""
+    """The engine's Hessian (eV/A^2) and forces (eV/A) at `positions`.
+
+    Engine files under `mace/basinNN/`: `hessian_at_<level>.npy` (symmetrised),
+    `forces_at_<level>.npy`, and `hessian_at_<level>.meta.toml` holding the positions the
+    Hessian was taken at, the engine name and max |H - H^T| as produced. The files are
+    reused only when the stored positions equal `positions` to REUSE_GEOMETRY_TOL_A and
+    the engine name matches -- a re-run reference step that moved x_r, or a different
+    engine, recomputes rather than comparing Hessians at two different points.
+    Returns (hessian, forces, asymmetry_max, computed_now)."""
     from ase import Atoms
     bdir = layout.mace_basin_dir(molecule, basin)
     hp = bdir / "hessian_at_{}.npy".format(level)
     fp = bdir / "forces_at_{}.npy".format(level)
-    if hp.is_file() and fp.is_file():
-        return np.load(hp), np.load(fp), None, False
-    calc, _name, _prov = engine.calculator(name=engine_name)
-    atoms = Atoms(symbols=symbols, positions=np.asarray(positions, dtype=float))
+    mp = bdir / "hessian_at_{}.meta.toml".format(level)
+    name = engine_name or engine.engine_name()
+    pos = np.asarray(positions, dtype=float)
+    if hp.is_file() and fp.is_file() and mp.is_file():
+        meta = prop.load(mp).get("Engine_Hessian") or {}
+        stored = np.asarray(meta.get("POSITIONS", []), dtype=float).reshape(-1, 3)
+        if (meta.get("ENGINE") == name and stored.shape == pos.shape
+                and np.abs(stored - pos).max() <= REUSE_GEOMETRY_TOL_A):
+            return np.load(hp), np.load(fp), float(meta["ASYMMETRY_MAX"]), False
+    calc, name, _prov = engine.calculator(name=engine_name)
+    atoms = Atoms(symbols=symbols, positions=pos)
     h, asym = hessian_mod.hessian(atoms, calc, mode="analytic")
     atoms.calc = calc
     forces = np.asarray(atoms.get_forces(), dtype=float)
     bdir.mkdir(parents=True, exist_ok=True)
     np.save(hp, h)
     np.save(fp, forces)
+    prop.write(mp, {"Engine_Hessian": {"ENGINE": name, "LEVEL": str(level),
+                                       "ASYMMETRY_MAX": float(asym),
+                                       "POSITIONS": [[float(x) for x in r] for r in pos]}},
+               META_SCHEMA, prop.NORMAL_TERMINATION, PROGNAME)
     return h, forces, float(asym), True
+
+
+META_SCHEMA = {
+    "Engine_Hessian": {
+        "ENGINE": ("String", None, "the potential that produced hessian_at_<level>.npy"),
+        "LEVEL": ("String", None, "the level whose geometry the Hessian was taken at"),
+        "ASYMMETRY_MAX": ("Double", "eV/A^2", "max |H - H^T| of the Hessian as produced, before symmetrisation"),
+        "POSITIONS": ("ArrayOfDoubles", "A", "the geometry the Hessian was taken at, row per atom"),
+    },
+}
 
 
 # ====================================================================== the Calculation
@@ -418,6 +462,10 @@ def _write_report(path, info, rows, ens):
     for k in ("ENGINE_LEVEL", "REFERENCE_LEVEL", "GEOMETRY", "PRESET", "TEMPERATURE", "LOW_CUTOFF",
               "DEGENERACY_GAP", "N_BASINS_COMPARED", "N_MERGED", "N_SADDLE", "DIPOLE_DERIVATIVES_PRESENT"):
         rep.kv(k, info[k])
+    floors = ["  noise floors (largest rigid-body eigenvalue, cm^-1) -- reference: {}; engine: {}".format(
+        ", ".join("%.2f" % r["REF_NOISE_FLOOR_CM"] for r in rows),
+        ", ".join("%.2f" % r["ENGINE_NOISE_FLOOR_CM"] for r in rows))]
+    rep.text(floors[0])
     rep.section("family 1-3 per basin: Cartesian, projected, sorted spectrum")
     rep.table(["mace", "ref", "|F| max", "H MAE", "H RMSE", "rel Frob", "eig MAE", "freq MAE", "freq max",
                "low MAE", "low max", "n low", "slope", "slope low", "lowest e", "lowest r", "imag e/r"],

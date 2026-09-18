@@ -88,6 +88,10 @@ SCHEMA = {
         "N_INVERTED": ("Integer", None, "modes in (ithr, 0) inverted under the policy"),
         "N_KEPT_NEGATIVE": ("Integer", None, "modes below ithr kept negative (crest_native only)"),
         "EXCLUDED": ("Boolean", None, "left out of the ensemble under the imaginary-mode policy"),
+        "HESSIAN_ROUTE": ("String", None, "analytic or numerical (reference levels)"),
+        "NOISE_FLOOR_CM": ("Double", "cm^-1", "largest |eigenvalue| of the rigid-body block of the unprojected Hessian: 5-30 cm^-1 analytic at a tight minimum (residual gradient in the rotational block), plus the finite-difference noise of a numerical one"),
+        "OPT_GRAD_RMS": ("Double", "Eh/bohr", "final RMS gradient of the optimisation (numerical gradient for a numerical level)"),
+        "N_SINGLE_POINTS": ("Integer", None, "energy evaluations the ORCA job spent"),
     },
     "Imaginary_Spread": {
         "POLICY": ("String", None, "refuse, invert_below or crest_native"),
@@ -97,6 +101,7 @@ SCHEMA = {
         "N_EXCLUDED": ("Integer", None, "basins refused under this policy"),
         "N_INVERTED": ("Integer", None, "modes inverted over the included basins"),
         "N_KEPT_NEGATIVE": ("Integer", None, "modes kept negative over the included basins"),
+        "AVAILABLE": ("Boolean", None, "false when the preset defines no ithr and a basin has an imaginary mode: the policy cannot be applied"),
     },
     "Ensemble": {
         "S_CONF_PRIME": ("Double", "cal/mol/K", "mixing entropy of the populations (exact at one level)"),
@@ -246,7 +251,15 @@ def imaginary_spread(basins, temperature_K=thermo.T_REF, preset="crest", fscal=1
     excluded under every policy. One row per policy, `[Imaginary_Spread]` of the record;
     S_ABS is absent when no basin survives a policy."""
     rows = []
+    no_ithr = thermo.MSRRHO_PRESETS[preset]["ithr_cm"] is None
+    any_imag = any(b.get("n_imaginary", 0) > 0 or min(b.get("frequencies_cm", [1.0])) < 0
+                   for b in basins if "frequencies_cm" in b)
     for policy in thermo.IMAGINARY_POLICIES:
+        if policy != "refuse" and no_ithr and any_imag:
+            # the preset cannot apply this policy; saying so beats a row that silently
+            # repeats the refuse numbers under another name
+            rows.append({"POLICY": policy, "AVAILABLE": False})
+            continue
         recs = []
         for b in basins:
             if "frequencies_cm" not in b:
@@ -259,7 +272,8 @@ def imaginary_spread(basins, temperature_K=thermo.T_REF, preset="crest", fscal=1
             r["g_prime"] = b.get("g_prime", 1)
             recs.append(r)
         inc = [r for r in recs if not r.get("excluded")]
-        row = {"POLICY": policy, "N_INCLUDED": len(inc), "N_EXCLUDED": len(recs) - len(inc),
+        row = {"POLICY": policy, "AVAILABLE": True, "N_INCLUDED": len(inc),
+               "N_EXCLUDED": len(recs) - len(inc),
                "N_INVERTED": int(sum(r.get("n_inverted", 0) for r in inc)),
                "N_KEPT_NEGATIVE": int(sum(r.get("n_kept_negative", 0) for r in inc))}
         if inc:
@@ -306,6 +320,9 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
     T = float(temperature_K if temperature_K is not None else info_a.get("TEMPERATURE", thermo.T_REF))
     qid = qm9_index if qm9_index is not None else info_a.get("QM9_INDEX")
     lvl = layout.level_dir(molecule, level)
+    if imaginary_policy != "refuse" and thermo.MSRRHO_PRESETS[preset]["ithr_cm"] is None:
+        raise ValueError("preset '{}' defines no ithr: the '{}' policy cannot be applied; use "
+                         "'refuse' or a preset with ithr (crest, xtb)".format(preset, imaginary_policy))
 
     # g' per basin: the degeneracy Calculation, run here when its record is absent
     deg_path = lvl / "degeneracy.toml"
@@ -358,7 +375,9 @@ def write_records(lvl, info, basins, ens, spread, exp, extra_blocks=None, schema
                "E_EL": b["E_el_kcal"], "LOWEST_FREQ": b["lowest_frequency_cm"],
                "N_IMAGINARY": b.get("n_imaginary"), "N_INVERTED": b.get("n_inverted", 0),
                "N_KEPT_NEGATIVE": b.get("n_kept_negative", 0),
-               "EXCLUDED": bool(b["excluded"]), "POPULATION": b.get("population", 0.0)}
+               "EXCLUDED": bool(b["excluded"]), "POPULATION": b.get("population", 0.0),
+               "HESSIAN_ROUTE": b.get("hessian_route"), "NOISE_FLOOR_CM": b.get("noise_floor_cm"),
+               "OPT_GRAD_RMS": b.get("opt_grad_rms"), "N_SINGLE_POINTS": b.get("n_single_points")}
         if not b["excluded"]:
             row.update({"ZPE": b["ZPE_kcal"], "H_THERMAL": b["H_thermal_kcal"],
                         "G_ROT": b["G_rot_kcal"], "G_TRANS": b["G_trans_kcal"],
@@ -452,7 +471,10 @@ def _write_report(path, info, basins, ens, spread, exp, imaginary=None):
         rep.table(["policy", "S_abs", "G_total", "included", "excluded", "inverted", "kept negative"],
                   [[r["POLICY"], "%.4f" % r["S_ABS"] if r.get("S_ABS") is not None else "-",
                     "%.4f" % r["G_TOTAL"] if r.get("G_TOTAL") is not None else "-",
-                    r["N_INCLUDED"], r["N_EXCLUDED"], r["N_INVERTED"], r["N_KEPT_NEGATIVE"]]
+                    r.get("N_INCLUDED", "n/a"), r.get("N_EXCLUDED", "n/a"),
+                    r.get("N_INVERTED", "n/a"), r.get("N_KEPT_NEGATIVE", "n/a")]
+                   if r.get("AVAILABLE", True) else
+                   [r["POLICY"], "not available: preset has no ithr", "", "", "", "", ""]
                    for r in imaginary])
         rep.note("refuse: a basin with any imaginary mode is excluded. invert_below: modes in "
                  "(ithr, 0) take |omega|, a mode below ithr excludes the basin. crest_native: "

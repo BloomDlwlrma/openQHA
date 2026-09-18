@@ -120,3 +120,15 @@ the user intends to change that style later and this spec keeps to it for now.
 - An OpenMM checkpoint is bound to the platform and hardware that wrote it; the XML state is the portable resume and is written as well.
 - CREST's directory is the only engine output that goes through node-local disk; the reason is the small-file I/O measured on 2026-09-12, recorded in the runbook.
 - The user tracks the work on GitHub; every step ends with the commit message to use.
+
+## Step 2 (user ruling 2026-09-15): the records, CREST/ORCA style
+
+Q1 (a): a `.out` text report per step whose last line is `openQHA <step> terminated normally`
+(the completion marker), TOML for the fields a program reads back, whitespace `.dat` tables
+for collect's numbers. Q2: `_records/branchA.out` + `basins.toml`;
+`_records/md_<route>/<setting>/basinNN/md.out` + `md.toml`; `.../collect.out` +
+`collect.{trajectories,criteria,assembly,blank}.dat`; `.../ensemble.out` + `ensemble.toml`;
+the duplicates (`basins.xyz`, `frames.npy`, `summary.json`, `progress.json`,
+`equilibrated.json`) removed. Q3: pandas and pyarrow leave the chain; the parquet writers in
+`report.py` stay for use outside it. Tickets 11-14. `docs/output_inventory.md` section 7 is
+the description.

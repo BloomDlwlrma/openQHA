@@ -4,7 +4,7 @@
 
 **Blocked by:** 17, 18.
 
-**Status:** done 2026-09-15 (the branch A driver.log finding below is still open for the user)
+**Status:** done 2026-09-15 (the driver.log finding below was approved and done in ticket 21)
 
 - [x] the branch B parsl driver on the local resource config with one basin prints the header and one line whose `record` is the absolute path of an existing `md.toml` with STATUS NORMAL TERMINATION, and nothing is written under `<root>/<tag>/_records/` except `parsl/` (new integration test)
 - [x] the branch A and collect drivers print the same first seven columns (unit test on the line formatter)

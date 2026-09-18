@@ -1,0 +1,59 @@
+[Calculation_Status]
+PROGNAME = "openQHA 02d"         # String: the step that wrote this file
+VERSION  = "0.3.0"               # String: openQHA version
+STATUS   = "NORMAL TERMINATION"  # String: the completion marker
+
+[Calculation_Info]
+QM9_INDEX         = "dsgdb9nsd_000018"          # String: the molecule
+TAG               = "02d_prod"                  # String
+SETTING           = "default"                   # String
+ROUTE             = "openmm"                    # String: openmm or ase
+ENGINE            = "MACE-OFF23_medium"         # String: the potential
+TEMPERATURE       = 298.15                      # Double, K
+NU_CUTS           = [25.0, 50.0, 100.0, 150.0]  # ArrayOfDoubles, cm^-1: the hybrid cut-offs tried in stage 4
+MIN_BLOCK_OVERLAP = 0.7                         # Double: the mode-block overlap a splice needs
+WALL              = 2.6486682891845703          # Double, s
+
+[[Basin]]
+INDEX                     = 0                   # Integer
+SIGMA                     = 2                   # Integer: symmetry number
+G0                        = 1                   # Integer: electronic degeneracy
+HESSIAN_ASYMMETRY         = 2.842170943040401e-14  # Double, eV/A^2: stage 1: the Hessian's asymmetry
+PROJECTION_AGREEMENT      = 0.0                 # Double, cm^-1: stage 1: projected against diagonalised modes
+REAL_TRAJECTORY           = "/home/ubuntu/runs/openQHA/02d_prod/1_16000/1_1000/dsgdb9nsd_000018/md_openmm/basin00"  # String: stage 2: the trajectory folder, or absent when skipped
+G_MINUS_EEL_HESSIAN       = 35.50904946657186   # Double, kcal/mol: stage 3: G - E_el from the Hessian's omega
+G_MINUS_EEL_QHA           = 23.293923750177086  # Double, kcal/mol: stage 3: G - E_el from the quasi-harmonic nu
+VIBRATIONAL_ONLY_DELTA    = -12.267901314447034  # Double, kcal/mol: stage 3: everything the spectrum can touch, QHA minus Hessian
+ROTATIONAL_GEOMETRY_SHIFT = 0.05277559805226417  # Double, kcal/mol: stage 3: G_rot moved by the geometry, not the spectrum
+
+[[Hybrid]]
+INDEX                 = 0                  # Integer
+BASIN                 = 0                  # Integer
+NU_CUT                = 25.0               # Double, cm^-1: stage 4: modes below this come from QHA
+G_MINUS_EEL           = 35.50904946657186  # Double, kcal/mol: stage 4: the spliced G - E_el
+N_FROM_QHA            = 0                  # Integer: modes taken from QHA
+N_REJECTED_BY_OVERLAP = 0                  # Integer: modes refused on block overlap
+
+[[Hybrid]]
+INDEX                 = 1                  # Integer
+BASIN                 = 0                  # Integer
+NU_CUT                = 50.0               # Double, cm^-1: stage 4: modes below this come from QHA
+G_MINUS_EEL           = 35.50904946657186  # Double, kcal/mol: stage 4: the spliced G - E_el
+N_FROM_QHA            = 0                  # Integer: modes taken from QHA
+N_REJECTED_BY_OVERLAP = 0                  # Integer: modes refused on block overlap
+
+[[Hybrid]]
+INDEX                 = 2                  # Integer
+BASIN                 = 0                  # Integer
+NU_CUT                = 100.0              # Double, cm^-1: stage 4: modes below this come from QHA
+G_MINUS_EEL           = 35.58544129000918  # Double, kcal/mol: stage 4: the spliced G - E_el
+N_FROM_QHA            = 1                  # Integer: modes taken from QHA
+N_REJECTED_BY_OVERLAP = 3                  # Integer: modes refused on block overlap
+
+[[Hybrid]]
+INDEX                 = 3                  # Integer
+BASIN                 = 0                  # Integer
+NU_CUT                = 150.0              # Double, cm^-1: stage 4: modes below this come from QHA
+G_MINUS_EEL           = 35.58544129000918  # Double, kcal/mol: stage 4: the spliced G - E_el
+N_FROM_QHA            = 1                  # Integer: modes taken from QHA
+N_REJECTED_BY_OVERLAP = 3                  # Integer: modes refused on block overlap
