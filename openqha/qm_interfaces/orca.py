@@ -45,6 +45,84 @@ BOHR_PER_ANGSTROM = 1.0 / 0.529177210903
 DEFAULT_BIN = "/home/ubuntu/packages/orca_6_0_1/orca"   # local testing; production runs
                                                         # on deimos
 
+#: The reference levels ORCA runs, by level name (CONTEXT.md spelling). `keywords` is
+#: the `!` line of the Opt + Hessian job, `blocks` the extra `%` input, `route` what the
+#: Hessian is. wB97M: the analytic Hessian works in ORCA 6.0.1 (ticket 26). DLPNO-CCSD(T):
+#: ORCA has no analytic gradient for it, so geometry and Hessian are numerical end to end
+#: (Opt NumGrad + NumFreq, (6N)^2 single points for the Hessian; ticket 32); keywords are
+#: the hkuhpc convention (`core-bind/orca.md`) plus TightPNO, because the PNO truncation
+#: noise between displaced geometries is the error source of a numerical curvature.
+LEVELS = {
+    "wb97m-d3bj_def2-tzvppd": dict(
+        keywords="wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF", blocks="", route="analytic",
+        single_point="wB97M-D3BJ def2-TZVPPD TightSCF"),
+    # the wavefunction ladder at its own minima (2026-09-18): HF has an analytic Hessian
+    # (not with RIJK -- ORCA refuses; exact integrals), RI-MP2 an analytic gradient (NumFreq =
+    # second differences of analytic gradients, the "semi-numerical" route; its noise floor
+    # is read like a numerical one)
+    "hf_cc-pvtz": dict(
+        keywords="RHF cc-pVTZ TightOpt Freq TightSCF", blocks="", route="analytic",
+        single_point="RHF cc-pVTZ TightSCF"),
+    "ri-mp2_cc-pvtz": dict(
+        keywords="RI-MP2 cc-pVTZ cc-pVTZ/C cc-pVTZ/JK RIJK TightOpt NumFreq TightSCF", blocks="",
+        route="numerical", single_point="RI-MP2 cc-pVTZ cc-pVTZ/C cc-pVTZ/JK RIJK TightSCF"),
+    "ri-mp2_aug-cc-pvtz": dict(
+        keywords="RI-MP2 aug-cc-pVTZ aug-cc-pVTZ/C cc-pVTZ/JK RIJK TightOpt NumFreq TightSCF", blocks="",
+        route="numerical", single_point="RI-MP2 aug-cc-pVTZ aug-cc-pVTZ/C cc-pVTZ/JK RIJK TightSCF"),
+    "dlpno-ccsdt_cc-pvtz": dict(
+        keywords="DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C TightPNO TightSCF Opt NumGrad NumFreq",
+        blocks="%mdci\n   TCutPairs 1e-6\nend\n%loc\n   LocMet AHFB\n   OCC true\nend",
+        route="numerical",
+        single_point="DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C TightPNO TightSCF"),
+}
+
+
+def level_spec(level):
+    """The ORCA specification of a reference level, or a KeyError naming the known ones."""
+    if level not in LEVELS:
+        raise KeyError("no ORCA specification for level {!r}; known: {}".format(
+            level, ", ".join(sorted(LEVELS))))
+    return dict(LEVELS[level])
+
+
+def input_text(symbols, positions, keywords, nprocs, maxcore, charge=0, mult=1, blocks=""):
+    """One ORCA input: the `!` line, `%pal`, `%maxcore`, any extra `%` blocks, the geometry."""
+    lines = ["! {}".format(keywords), "%pal nprocs {} end".format(int(nprocs)),
+             "%maxcore {}".format(int(maxcore))]
+    if blocks:
+        lines += [blocks.rstrip("\n")]
+    lines.append("* xyz {} {}".format(int(charge), int(mult)))
+    for s, r in zip(symbols, positions):
+        lines.append("{:2s} {:18.10f} {:18.10f} {:18.10f}".format(s, *r))
+    lines.append("*")
+    return "\n".join(lines) + "\n"
+
+
+def run_single_point(symbols, positions, workdir, keywords, nprocs=8, maxcore=3000,
+                     blocks="", charge=0, mult=1, stem="job", timeout_s=None):
+    """A single-point energy at any keyword line, in `workdir` (an engine folder), skipped
+    when a normally terminated `.out` is there. Returns energy_eh, seconds (None when
+    reused), the path of the full `.out`."""
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    inp, out = workdir / (stem + ".inp"), workdir / (stem + ".out")
+    seconds = None
+    if not (out.is_file() and "****ORCA TERMINATED NORMALLY****" in out.read_text(encoding="utf-8", errors="replace")):
+        inp.write_text(input_text(symbols, positions, keywords, nprocs, maxcore, charge, mult, blocks),
+                       encoding="utf-8")
+        t0 = time.time()
+        with open(out, "w") as fh:
+            rc = subprocess.call([orca_binary(), str(inp)], stdout=fh, stderr=subprocess.STDOUT,
+                                 cwd=str(workdir), timeout=timeout_s)
+        seconds = time.time() - t0
+        text = out.read_text(encoding="utf-8", errors="replace")
+        if "****ORCA TERMINATED NORMALLY****" not in text:
+            raise RuntimeError("ORCA did not finish normally in {} (rc {}). Tail:\n{}".format(
+                workdir, rc, "\n".join(text.split("\n")[-25:])))
+    text = out.read_text(encoding="utf-8", errors="replace")
+    return dict(energy_eh=final_energy_from_out(text), seconds=seconds, out=str(out),
+                keywords=keywords)
+
 
 def orca_binary():
     """The ORCA executable. The environment variable S0_ORCA_BIN takes precedence."""
@@ -158,9 +236,23 @@ def hessian_route(out_text):
     return "unknown"
 
 
+def final_rms_gradient(out_text):
+    """The last `RMS gradient` of ORCA's geometry-convergence table (Eh/bohr), or None
+    when the output holds no optimisation. For a numerical-gradient optimisation this is
+    the figure that says how well the minimum is defined."""
+    vals = re.findall(r"RMS gradient\s+([-+]?\d+\.\d+)", out_text)
+    return float(vals[-1]) if vals else None
+
+
+def n_single_points(out_text):
+    """How many `FINAL SINGLE POINT ENERGY` lines the output holds -- the count of energy
+    evaluations a numerical route spent (an analytic Freq has one per optimisation step)."""
+    return len(re.findall(r"FINAL SINGLE POINT ENERGY", out_text))
+
+
 def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORDS,
                          nprocs=8, maxcore=3000, charge=0, mult=1, stem="job",
-                         timeout_s=None):
+                         timeout_s=None, blocks=""):
     """Geometry optimisation plus Hessian at one level, in `workdir` (an engine folder).
 
     Skips ORCA when `workdir/<stem>.hess` exists and the `.out` terminated normally, so a
@@ -183,12 +275,8 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
         "****ORCA TERMINATED NORMALLY****" in out.read_text(encoding="utf-8", errors="replace")
     seconds = None
     if not done:
-        lines = ["! {}".format(keywords), "%pal nprocs {} end".format(int(nprocs)),
-                 "%maxcore {}".format(int(maxcore)), "* xyz {} {}".format(int(charge), int(mult))]
-        for s, r in zip(symbols, positions):
-            lines.append("{:2s} {:18.10f} {:18.10f} {:18.10f}".format(s, *r))
-        lines.append("*")
-        inp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        inp.write_text(input_text(symbols, positions, keywords, nprocs, maxcore, charge, mult, blocks),
+                       encoding="utf-8")
         t0 = time.time()
         with open(out, "w") as fh:
             rc = subprocess.call([orca_binary(), str(inp)], stdout=fh, stderr=subprocess.STDOUT,
@@ -205,6 +293,7 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
             workdir, list(symbols), parsed["symbols"]))
     m = re.search(r"Program Version\s+(\S+)", text)
     return dict(keywords=keywords, workdir=str(workdir), stem=stem,
+                opt_grad_rms=final_rms_gradient(text), n_single_points=n_single_points(text),
                 positions_A=(np.asarray(parsed["positions_bohr"]) / BOHR_PER_ANGSTROM).tolist(),
                 energy_eh=final_energy_from_out(text), hess=parsed,
                 hessian_route=hessian_route(text), seconds=seconds,
