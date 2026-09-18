@@ -143,5 +143,19 @@ Q13 Two curvature quantities, both reported. The Cartesian Hessian at a fixed ge
     Recommended (a); the rings' lowest-mode errors at x_r (-13 / -57 / +66) are -10 / -29 / +76
     at the engine's own minimum, and a reader must see both.
 
+Q14 The displaced frames' distribution (measured while building ticket 02, 2026-09-18).
+    `thermal_displacements` draws from the harmonic QUANTUM distribution
+    (<q^2> = hbar/2 omega coth(hbar omega / 2 kT)), so at 298 K every C-H stretch carries
+    its zero-point amplitude and a frame sits 12-42 kcal/mol above its basin at 0.1 A
+    RMS (Rodriguez NMS test frames: 39 mean; SPICE 500 K classical MD: ~0.6 kcal/mol
+    per mode). (a) keep the quantum draw -- it is where the nuclei actually are (Wigner),
+    and the Hessian label there is what a zero-point-averaged curvature needs; (b) a
+    classical draw at 298 K (kT/omega^2: soft modes displaced, stretches nearly frozen,
+    frames ~1-5 kcal/mol up); (c) both as two generators (`displaced` = quantum,
+    `displaced_cl` = classical), labelled, and let the judge on the held-out rings say
+    which helps the low modes.
+    Recommended (c) for the smoke set (it costs 4 more Hessians per basin, minutes), then
+    one of (a)/(b) for the 200-molecule draw on the measured answer.
+
 Round 3 waits on Q1, Q2, Q4 (set size and loss fix the code), Q9 (CONTEXT wording),
-Q11-Q12 (they rewrite ticket 32 and the reference records).
+Q11-Q12 (they rewrite ticket 32 and the reference records), Q14 (the frame distribution).

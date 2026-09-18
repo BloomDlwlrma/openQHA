@@ -4,9 +4,15 @@
 
 **Blocked by:** 01 (the fingerprint in the Record).
 
+**Status:** done 2026-09-18
+
 **Delivers:** the frames of the smoke set on disk; the propanal fixture's frames.
 
-- [ ] propanal fixture: 3 basins -> 3 basin + 12 displaced (+ merged if any) frames, RMS <= 0.15 A, keys and seeds present; same seed -> same positions to 1e-12
-- [ ] a frame with a broken bond graph is dropped and counted in the Record; |F|max filter likewise
-- [ ] the basin frame's Hessian equals `hessian_at_<level>.npy` to 0 (integration, engine)
-- [ ] CONTEXT.md Frame / Frame set entries match what the code writes (keys, folder)
+- [x] propanal fixture: 3 basins -> 3 basin + 12 displaced (+ merged if any) frames, RMS <= 0.15 A, keys and seeds present; same seed -> same positions to 1e-12
+- [x] a frame with a broken bond graph is dropped and counted in the Record; |F|max filter likewise
+- [x] the basin frame's Hessian equals `hessian_at_<level>.npy` to 0 (integration, engine)
+- [x] CONTEXT.md Frame / Frame set entries match what the code writes (keys, folder)
+
+**Closing:** `openqha/data/frames.py` (`generate`, `frame_seed`, `bond_change`, `read_frames`, SCHEMA), `layout.frames_dir / frames_file / orca_frame_dir`, `hessian.thermal_displacements(hessian=, seeds=)` (per-sample generators), branch-A Property `DUPLICATE_MAP` + `SADDLE_CONFORMER_IDS` (new records; old ones give no merged/saddle frames and say so), `workflows/hessian_learning/02_frames.py` (`--species | --all`, skip-if-Record, `--force`). Frame sets built with the real engine: propanal 3 + 12, oxetane 1 + 4, 2-methyloxirane 1 + 4, cyclopropanol 2 + 8 (no merged/saddle: those runs predate the map). `tests/unit/t_frames.py` (harmonic surrogate, 11 checks) and `tests/integration/t_frames_engine.py` (basin frame = hessian.npy to 0; displaced file H vs engine 2.5e-6 eV/A^2 from the file's 8-decimal positions).
+
+**Two things measured that the rulings did not foresee:** (1) the bond-graph filter at a single 1.2 x covalent cutoff dropped 2 of 12 propanal frames for a 0.2 A C-H stretch at 0.12 A RMS -- replaced by an asymmetric test (broken > 1.35 x, formed < 0.95 x); (2) the harmonic QUANTUM draw at 298 K puts the zero-point energy into every stretch: displaced frames sit 12-42 kcal/mol above their basins at 0.08-0.15 A RMS (propanal mean 30, rings 12-40; Rodriguez's NMS test frames: mean 39). A classical draw (kT/omega^2) would give ~0.6 kcal/mol per mode. Recorded per frame as `ENERGY_ABOVE_BASIN`; which distribution the training should see is a round-2 question (added there as Q14).

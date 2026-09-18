@@ -72,6 +72,8 @@ SCHEMA = {
         "N_SADDLES_REJECTED": ("Integer", None, "frames rejected for imaginary modes"),
         "N_BASINS": ("Integer", None, "after tightening and deduplication"),
         "BASIN_CONFORMER_IDS": ("ArrayOfIntegers", None, "the input frame each basin came from"),
+        "DUPLICATE_MAP": ("ArrayOfIntegers", None, "per input frame j (index = j): the input frame it was merged into by the deduplication, or j itself when it survived (ticket 02 of the Hessian-learning set)"),
+        "SADDLE_CONFORMER_IDS": ("ArrayOfIntegers", None, "input frames that survived the deduplication and were then rejected for imaginary modes"),
         "MAX_RESIDUAL_FORCE": ("Double", "eV/A", "largest residual force after tightening"),
     },
     "Basin": {
@@ -155,6 +157,8 @@ def blocks_from_record(record):
         "N_SADDLES_REJECTED": _i(cv.get("n_saddles_rejected")),
         "N_BASINS": _i(cv.get("n_basins")),
         "BASIN_CONFORMER_IDS": [int(x) for x in (cv.get("basin_conformer_ids") or [])],
+        "DUPLICATE_MAP": _duplicate_map(cv),
+        "SADDLE_CONFORMER_IDS": [int(s["conformer_id"]) for s in (cv.get("saddles") or []) if "conformer_id" in s],
         "MAX_RESIDUAL_FORCE": _f(cv.get("max_residual_force_eV_A")),
     }
     basins = []
@@ -193,6 +197,17 @@ def write(path, record):
 
 
 # ---- what readers ask -------------------------------------------------------------------
+def _duplicate_map(cv):
+    """The census's `duplicate_map` {j: kept} as one array indexed by input frame: the
+    frame j merged into, or j itself. Empty when the census did not record it (records
+    written before 2026-09-18)."""
+    dm = cv.get("duplicate_map")
+    n = cv.get("n_frames_in") or cv.get("n_input_frames_total")
+    if not isinstance(dm, dict) or not n:
+        return []
+    return [int(dm.get(j, dm.get(str(j), j))) for j in range(int(n))]
+
+
 def basin_rows(doc):
     """The `[[Basin]]` tables of a loaded `branchA.toml`, in INDEX order."""
     rows = doc.get("Basin") or []

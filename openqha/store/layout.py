@@ -228,6 +228,28 @@ def orca_level_dir(molecule, level, basin):
     return Path(molecule) / "orca" / str(level) / "basin{:02d}".format(int(basin))
 
 
+#: The Frame set folder (CONTEXT.md "Frame set"): one molecule's frames, one extxyz per
+#: generator and per level, engine-independent; its Record beside them.
+FRAMES = "frames"
+
+
+def frames_dir(molecule):
+    """`<molecule>/frames/`."""
+    return Path(molecule) / FRAMES
+
+
+def frames_file(molecule, generator, level):
+    """`<molecule>/frames/<generator>.<level>.extxyz` (level in the CONTEXT.md spelling)."""
+    if not _LEVEL_NAME.match(str(level)):
+        raise ValueError("level name {!r} is not in the CONTEXT.md spelling".format(level))
+    return frames_dir(molecule) / "{}.{}.extxyz".format(generator, level)
+
+
+def orca_frame_dir(molecule, level, generator, basin, k):
+    """`orca/<level>/frames/<generator>_bBB_kK/`: ORCA's engine files for one frame's label."""
+    return Path(molecule) / "orca" / str(level) / "frames" / "{}_b{:02d}_k{}".format(generator, int(basin), int(k))
+
+
 def level_dir(molecule, level):
     """`<molecule>/levels/<level>/`. The level name must already be in the CONTEXT.md
     spelling (lower-case, `wb97m-d3bj_def2-tzvppd`, `gfn2`, `mace-off23_medium`); an

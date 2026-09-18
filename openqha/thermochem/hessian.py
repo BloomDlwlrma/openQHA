@@ -223,6 +223,23 @@ def rigid_body_vectors(masses, positions):
     return u[:, :rank], s, rank
 
 
+def rigid_block_floor_cm(hessian_eV_A2, masses, positions):
+    """The noise floor of a Hessian in cm^-1: the largest |eigenvalue| of the rigid-body
+    block V^T M^-1/2 H M^-1/2 V of the UNPROJECTED mass-weighted Hessian (V: the
+    orthonormal translation / rotation vectors). Translational and rotational invariance
+    put this block at zero for an exact Hessian; an analytic ORCA Hessian leaves a few
+    cm^-1 there, a numerical one (NumFreq of numerical gradients) the size of its
+    finite-difference noise. It must be read BEFORE projection: after P H P the block is
+    in the kernel by construction and says nothing (ticket 32 review)."""
+    m = np.repeat(np.asarray(masses, dtype=float), 3)
+    hm = np.asarray(hessian_eV_A2, dtype=float) / np.sqrt(np.outer(m, m))
+    v, _sing, _rank = rigid_body_vectors(masses, positions)
+    block = v.T @ hm @ v
+    block = 0.5 * (block + block.T)
+    lam = np.linalg.eigvalsh(block)
+    return float(np.abs(eigenvalues_to_cm_inv(lam)).max()) if lam.size else 0.0
+
+
 def project_and_diagonalise(hessian_eV_A2, masses, positions):
     """Eckart projection -> diagonalisation -> frequencies. Returns a full record dict.
 
@@ -324,10 +341,11 @@ MAX_RMS_DISPLACEMENT_A = 0.15   # a convention that may be changed; its conseque
                                 # documented in thermal_displacements
 
 
-def thermal_displacements(atoms, calc, temperature_K=298.15, n_samples=4,
+def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
                           seed=0, delta=DELTA_A,
                           max_rms_displacement_A=MAX_RMS_DISPLACEMENT_A,
-                          max_draws_per_sample=50, return_hessian=False):
+                          max_draws_per_sample=50, return_hessian=False, hessian=None,
+                          seeds=None):
     """Sample displacements along the normal modes from the harmonic quantum
     distribution, returning n_samples structures away from the minimum.
 
@@ -353,13 +371,29 @@ def thermal_displacements(atoms, calc, temperature_K=298.15, n_samples=4,
     of 2026-08-29, "change it so that it can produce something"; the other half is
     `openqha.orca.composite_hessian`, which swaps the source of the forces for the
     composite reference.
+
+    `hessian=` (3N x 3N, eV/A^2, raw Cartesian) skips that computation and samples on
+    the modes of the given matrix -- the Frame set (ticket 02) hands in the basin's
+    stored `hessian.npy` so the frames are drawn along exactly the modes the basin
+    record holds. `seeds=` gives one integer per sample (then `seed` is unused): each
+    sample has its own generator, so a frame is reproducible from its own seed alone.
+    The record's `seeds` lists what each sample was drawn from.
     """
     from ase import Atoms
     atoms = atoms.copy()
     m = atoms.get_masses()
     x0 = atoms.get_positions()
 
-    h, asym = finite_difference_hessian(atoms, calc, delta=delta)
+    if hessian is not None:
+        h = np.asarray(hessian, dtype=float)
+        if h.shape != (3 * len(atoms), 3 * len(atoms)):
+            raise ValueError("hessian= has shape {}, expected {}".format(h.shape, (3 * len(atoms),) * 2))
+        asym = float(np.abs(h - h.T).max())
+        h = 0.5 * (h + h.T)
+    else:
+        if calc is None:
+            raise ValueError("thermal_displacements needs a calculator or hessian=")
+        h, asym = finite_difference_hessian(atoms, calc, delta=delta)
     mrep = np.repeat(np.asarray(m, dtype=float), 3)
     hm = h / np.sqrt(np.outer(mrep, mrep))
     v, sing, rank = rigid_body_vectors(m, x0)
@@ -376,9 +410,18 @@ def thermal_displacements(atoms, calc, temperature_K=298.15, n_samples=4,
     q2_si = (HBAR_SI / (2.0 * omega)) / np.tanh(x)          # kg·m²
     sigma_q = np.sqrt(q2_si) / (np.sqrt(AMU_KG_) * 1.0e-10)  # amu^½·Å
 
+    per_sample = seeds is not None
+    if per_sample:
+        seeds = [int(s) for s in seeds]
+        if len(seeds) != int(n_samples):
+            raise ValueError("seeds= has {} entries for n_samples = {}".format(len(seeds), n_samples))
+    else:
+        seeds = [int(seed)] * int(n_samples)
     rng = np.random.default_rng(seed)
     out, rejected = [], 0
-    for _ in range(int(n_samples)):
+    for i_sample in range(int(n_samples)):
+        if per_sample:
+            rng = np.random.default_rng(seeds[i_sample])       # one generator per frame
         for _draw in range(int(max_draws_per_sample)):
             q = rng.normal(0.0, sigma_q)
             dq = vec_v @ q                                   # mass-weighted displacement
@@ -394,7 +437,8 @@ def thermal_displacements(atoms, calc, temperature_K=298.15, n_samples=4,
                 "mode".format(max_draws_per_sample, max_rms_displacement_A))
         out.append(Atoms(numbers=atoms.numbers, positions=x0 + dx))
     rec = dict(temperature_K=float(temperature_K), n_samples=int(n_samples),
-               seed=int(seed), n_modes_sampled=int(keep.sum()),
+               seed=int(seed), seeds=list(seeds), n_modes_sampled=int(keep.sum()),
+               hessian_source="given" if hessian is not None else "finite_difference",
                hessian_asymmetry_eV_A2=float(asym),
                frequencies_cm_inv=[float(t) for t in nu_cm],
                sigma_q_amu_half_A=[float(t) for t in sigma_q],
