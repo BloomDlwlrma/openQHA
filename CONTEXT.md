@@ -91,6 +91,19 @@ Hessians into thermochemistry, and the merge map of that level's basins. A level
 not computed for a molecule has no sub-folder: absence is stated, never a zero.
 _Avoid_: reference folder, benchmark folder, per-level records
 
+**Numerical reference level**:
+A reference level whose geometry and Hessian ORCA can only produce from energies
+(`Opt NumGrad` + `NumFreq`), because the method has no analytic gradient:
+`dlpno-ccsdt_cc-pvtz` is one. Its records carry what an analytic level does not need:
+the noise floor of the Hessian (the largest rigid-body eigenvalue of the unprojected
+Hessian, in cm^-1: 5-30 for an analytic Hessian at a tight minimum, where the rotational
+block feels the residual gradient, plus the finite-difference noise for a numerical one)
+and the final numerical-gradient RMS; a low-mode difference below the larger floor of
+the two Hessians compared is unresolved, not model error. Before its (6N)^2 single points are spent, the curvature along a chosen
+reference mode is measured from a line of energies (`mode_curvature`), which is also
+what the returned Hessian must reproduce.
+_Avoid_: CCSD(T) Hessian (as if it were analytic), NumFreq level, high level
+
 **Imaginary-mode policy**:
 What a `thermo_msrrho` Calculation does with a negative projected frequency, named in
 every record: `refuse` (the basin is excluded and listed), `invert_below` (a mode in
@@ -110,3 +123,36 @@ Procrustes numbers (rotational vs orthogonal RMSD; self-mirror RMSD against the
 threshold 0.75 RTHR, `meng2022procrustes`) rather than a point-group label; never from a
 rotamer count (methyl wells are one harmonic mode in one well).
 _Avoid_: degeneracy (alone -- that is the electronic `g0`), rotamer number, multiplicity
+
+**Frame**:
+One geometry of one molecule, born from one Basin by one named generator -- `basin`
+(the minimum itself), `displaced` (a harmonic-quantum draw along the basin's modes at
+the target temperature, within a stated RMS displacement), `merged` (a CREST conformer
+branch A merged into a basin), `saddle` (a merged conformer that re-optimised to a
+saddle at the reference) -- carrying, per Level that has been run on it, the energy,
+forces and Cartesian Hessian at that geometry. A frame's Hessian is the raw Cartesian
+matrix at a fixed geometry, gradient term included; it is not a frequency.
+_Avoid_: conformation (SPICE's word; collides with CREST's conformer), sample, structure
+
+**Frame set**:
+One molecule's Frames, one file per generator and per Level, engine-independent,
+under the molecule directory's `frames/` folder; identical positions across the Levels
+of one generator, checked. A Frame set has a Record like any Calculation (what was
+generated, what was dropped and why, the seeds, the engine identity).
+_Avoid_: trajectory, ensemble (that is a thermodynamic average), training file
+
+**Dataset**:
+A split of Frame sets over many molecules -- `train`, `valid`, `test`, and `pool` for
+frames that exist but carry no reference label yet -- written under the root as one
+file per split and one index naming every contributing Frame set, its molecule, basin,
+generator, split and the Levels present. The split is set when the Dataset is written
+and never recomputed: `valid` is drawn by frame from the training molecules, `test` is
+whole molecules the model has never seen.
+_Avoid_: training set (alone -- that is one split), benchmark, corpus
+
+**Workflow**:
+An ordered set of Batches that turns a molecule list into one deliverable, kept as
+numbered drivers in one folder under `workflows/`, each step writing Records into the
+molecule directories it touches. The per-Calculation drivers it calls stay where they
+are.
+_Avoid_: pipeline (that word is branch A's own driver), DAG, chain
