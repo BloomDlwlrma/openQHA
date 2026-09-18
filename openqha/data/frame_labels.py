@@ -193,6 +193,16 @@ def max_memory_mb(out_text):
     return max(vals) if vals else None
 
 
+def first_energy_from_out(out_text):
+    """The FIRST `FINAL SINGLE POINT ENERGY` of a label job (Eh): the energy at the frame's
+    geometry. There is no optimisation here, so the first single point is the frame;
+    a NumFreq level prints one more per displacement afterwards."""
+    vals = re.findall(r"FINAL SINGLE POINT ENERGY\s+([-+]?\d+\.\d+)", out_text)
+    if not vals:
+        raise ValueError("no FINAL SINGLE POINT ENERGY in the ORCA output")
+    return float(vals[0])
+
+
 def gradient_from_out(out_text, natoms):
     """The last CARTESIAN GRADIENT block of an ORCA output (Eh/bohr), the fallback when no
     `.engrad` was written."""
@@ -240,8 +250,10 @@ def parse_label(workdir, atoms, stem=STEM):
     if engrad.is_file():
         e_eh, grad = orca._parse_engrad(engrad, len(symbols))
     else:
-        e_eh, grad = orca.final_energy_from_out(text), gradient_from_out(text, len(symbols))
-    e_out = orca.final_energy_from_out(text)
+        e_eh, grad = first_energy_from_out(text), gradient_from_out(text, len(symbols))
+    # the FIRST single point is the frame's: a NumFreq level prints one more per displaced
+    # geometry, and the last of those is not the label (review 2026-09-18)
+    e_out = first_energy_from_out(text)
     forces = -np.asarray(grad, dtype=float) * orca.EV_PER_HARTREE * orca.BOHR_PER_ANGSTROM
     h = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
     masses = atoms.get_masses()

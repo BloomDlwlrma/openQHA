@@ -125,9 +125,42 @@ def main():
         # --- reproducibility --------------------------------------------------------------
         key = lambda rows_: [(r["qm9_index"], r["generator"], r["basin"], r["k"], r["split"]) for r in rows_]   # noqa: E731
         again = dataset.build(root, [TAG], "t", level=LEVEL, valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned)
-        other = dataset.build(root, [TAG], "t", level=LEVEL, valid_fraction=0.2, test_fraction=0.0, seed=8, pinned=pinned)
+        other = dataset.build(root, [TAG], "t", level=LEVEL, valid_fraction=0.2, test_fraction=0.0, seed=8, pinned=pinned,
+                              keep_previous=False)
         same, diff = key(again["index"]) == key(idx), key(other["index"]) != key(idx)
-        check("the split is identical on a rebuild with the same seed and differs with another", same and diff, (same, diff))
+        check("the split is identical on a rebuild with the same seed and differs with another seed (previous index not kept)",
+              same and diff and again["info"]["KEPT_PREVIOUS"], (same, diff))
+        # a rebuild after MORE frames get labelled keeps every earlier decision (review 2026-09-18)
+        before = dataset.build(root, [TAG], "t", level=LEVEL, valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned,
+                               keep_previous=False)
+        prev = {(r["qm9_index"], r["generator"], r["basin"], r["k"]): r["split"] for r in before["index"] if r["split"] != "pool"}
+        fake_labels(mol_a, frames.GENERATORS, mace_level)                         # propanal: now 15 of 15
+        after = dataset.build(root, [TAG], "t", level=LEVEL, valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned)
+        now = {(r["qm9_index"], r["generator"], r["basin"], r["k"]): r["split"] for r in after["index"]}
+        kept = all(now[k] == s for k, s in prev.items())
+        check("after more frames are labelled, a rebuild keeps every earlier frame's split and the molecule sides; the new labels of the test molecule are test",
+              kept and after["info"]["KEPT_PREVIOUS"] and after["info"]["N_POOL"] == 0 and after["info"]["N_TEST"] == 15
+              and after["info"]["N_VALID"] == 3, (kept, {k: after["info"][k] for k in ("N_POOL", "N_TEST", "N_VALID", "N_TRAIN")}))
+        # a stale label file (other coordinates) is ignored, counted, and the frame goes to pool
+        stale_path = layout.frames_file(mol_b, "basin", LEVEL)
+        stale = []
+        for a in frames.read_frames(stale_path):
+            e, f = float(a.get_potential_energy()), np.array(a.get_forces())      # before the move: ASE drops them
+            a.positions[0, 0] += 0.01
+            stale.append(dict(atoms=a, energy=e, forces=f, hessian=a.info["hessian"], info=dict(a.info)))
+        frames._write_frames(stale_path, stale)
+        st = dataset.build(root, [TAG], "t", level=LEVEL, valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned)
+        check("a label file whose geometry differs from the engine file's is stale: ignored, counted (3), its frames pool",
+              st["info"]["N_STALE"] == 3 and st["info"]["N_POOL"] == 3
+              and all(r["split"] == "pool" for r in st["index"] if r["qm9_index"] == "dsgdb9nsd_000036" and r["generator"] == "basin"),
+              (st["info"]["N_STALE"], st["info"]["N_POOL"]))
+        fake_labels(mol_b, ("basin",), mace_level)                                # restore for the checks below
+        fake_labels(mol_a, frames.GENERATORS, mace_level, only_basin_frames=True)
+        for g in ("displaced",):
+            layout.frames_file(mol_a, g, LEVEL).unlink()
+        out = dataset.build(root, [TAG], "t", level=LEVEL, valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned,
+                            keep_previous=False)
+        idx = out["index"]
 
         # --- the index and the files ------------------------------------------------------
         back = dat.read_table(d / "index.dat")

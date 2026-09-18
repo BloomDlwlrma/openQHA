@@ -121,7 +121,8 @@ def main():
         mace = frames.read_frames(layout.frames_file(mol, "basin", mlevel))
         a = labelled[0]
         text = (FIX / "job.out").read_text(encoding="utf-8", errors="replace")
-        e_ev = orca.final_energy_from_out(text) * orca.EV_PER_HARTREE
+        # the fixture .out is an optimisation (several single points); a label takes the FIRST
+        e_ev = frame_labels.first_energy_from_out(text) * orca.EV_PER_HARTREE
         grad = frame_labels.gradient_from_out(text, len(a))
         f_ev = -grad * orca.EV_PER_HARTREE * orca.BOHR_PER_ANGSTROM
         check("the labelled file: positions == the MACE file's to 0, energy = the .out's in eV, forces = -gradient in eV/A (file precision 1e-6)",

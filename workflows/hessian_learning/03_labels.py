@@ -18,11 +18,11 @@ printed, nothing else is written outside the molecule trees.
     # tianhe: one frame on the debug queue, then the smoke set on one node, then the draw
     python workflows/hessian_learning/03_labels.py --tag rings --all --resource tianhe_cpu --debug --limit-frames 1
     python workflows/hessian_learning/03_labels.py --tag smoke --all --resource tianhe_cpu --max-blocks 1
-    python workflows/hessian_learning/03_labels.py --tag draw --all --resource tianhe_cpu --limit 200 --stratify
+    python workflows/hessian_learning/03_labels.py --tag draw --name draw200 --resource tianhe_cpu
 
-`--limit N` takes N molecules; with `--stratify` they are spread evenly over the sorted
-index list (QM9 is ordered by heavy-atom count, so this spans the sizes) instead of the
-first N.
+`--name` labels exactly the molecules 01_select chose (select.dat); `--limit N` without
+it applies the same rule as 01 (pinned always, then the first N or, with `--stratify`,
+N spread evenly over the sorted index list -- QM9 is ordered by heavy-atom count).
 """
 import argparse
 import json
@@ -54,7 +54,7 @@ def _hpc_root(repo):
 sys.path.insert(0, str(_hpc_root(ROOT)))
 
 from openqha import config                                   # noqa: E402
-from openqha.data import frame_labels, frames                # noqa: E402
+from openqha.data import dataset, frame_labels, frames       # noqa: E402
 from openqha.store import basins as basin_reader, layout     # noqa: E402
 
 COMPLETION = "<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.out carries ****ORCA TERMINATED NORMALLY**** and job.hess exists"
@@ -101,12 +101,11 @@ def molecules_under(tag, cfg=None):
 
 
 def choose(mols, limit, stratify):
-    if not limit or limit >= len(mols):
-        return list(mols)
-    if not stratify:
-        return list(mols[:limit])
-    idx = [round(i * (len(mols) - 1) / max(1, limit - 1)) for i in range(limit)]
-    return [mols[i] for i in sorted(set(idx))]
+    """`dataset.apply_limit` on molecule directories: the pinned molecules always, the
+    rest first-N or spread -- the same draw 01_select makes, so `--limit` here labels the
+    molecules 01 selected. With `--name` the selection itself is read instead."""
+    rows = [dict(qm9_index=m.name, pinned=m.name in dataset.PINNED, molecule_dir=m) for m in mols]
+    return [r["molecule_dir"] for r in dataset.apply_limit(rows, limit, stratify)]
 
 
 def pending(mols, level, generators):
@@ -131,6 +130,7 @@ def main():
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--species", nargs="*", help="QM9 indices")
     g.add_argument("--all", action="store_true", help="every molecule under the tag with a Frame set")
+    g.add_argument("--name", help="the Dataset name of 01_select: label exactly its molecules (select.dat under --tag)")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="reference level (orca.LEVELS)")
     ap.add_argument("--generators", nargs="*", default=None, help="subset of {}".format(", ".join(frames.GENERATORS)))
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules")
@@ -153,10 +153,13 @@ def main():
     cfg = config.load()
     if args.species:
         mols = [basin_reader.molecule_for(q, args.tag) for q in args.species]
+    elif args.name:
+        mols = [Path(r["molecule_dir"]) for r in dataset.read_selection(config.runs_root(cfg), args.tag, args.name)]
     else:
         mols = molecules_under(args.tag, cfg)
     mols = [m for m in mols if (layout.frames_dir(m) / (frames.STEP + ".toml")).is_file()]
-    mols = choose(mols, args.limit, args.stratify)
+    if not args.name:
+        mols = choose(mols, args.limit, args.stratify)
     if not mols:
         raise SystemExit("no molecule with a Frame set under tag {!r} (run 02_frames first)".format(args.tag))
     todo, counts = pending(mols, args.level, args.generators)
@@ -177,7 +180,9 @@ def main():
         args.resource, args.nprocs, maxcore,
         described.get("layouts", {}).get("labels", {}).get("workers_per_node") or described.get("max_workers"),
         args.max_blocks or described.get("layouts", {}).get("labels", {}).get("max_blocks", 1)))
-    print("molecules    {} ({})".format(len(mols), "given" if args.species else "every Frame set under tag {!r}".format(args.tag)))
+    print("molecules    {} ({})".format(len(mols), "given" if args.species else
+                                         "selection {!r}".format(args.name) if args.name else
+                                         "every Frame set under tag {!r}".format(args.tag)))
     print("frames       {} to label, {} finished already   ({})".format(
         len(todo), sum(d for _a, d in counts.values()), COMPLETION))
     print("resume       finished frames are skipped; the Record per molecule is rewritten by assemble")
@@ -270,11 +275,15 @@ def main():
     print()
     print("wall_seconds_for_the_whole_batch  {:.1f}".format(wall))
     print("single_task_seconds_median        {:.1f}".format(single[len(single) // 2] if single else float("nan")))
-    n_unl = sum(i["N_UNLABELLED"] + i["N_REFUSED"] for i in summaries)
     for l in _bt.footer(wall, len(ok), len(results), what="frames labelled in this Batch"):
         print(l)
-    print("molecules fully labelled          {}/{}".format(sum(1 for i in summaries if i["N_LABELLED"] == i["N_FRAMES"]), len(mols)))
-    return 0 if (len(ok) == len(results) and n_unl == 0) else 1
+    print("molecules fully labelled          {}/{}  ({} frames still unlabelled or refused over the chosen molecules)".format(
+        sum(1 for i in summaries if i["N_LABELLED"] == i["N_FRAMES"]), len(mols),
+        sum(i["N_UNLABELLED"] + i["N_REFUSED"] for i in summaries)))
+    # the exit status is THIS Batch's: every frame it attempted labelled (a --limit-frames
+    # debug job that labelled its one frame is a success; the rest of the molecule is
+    # information, printed above)
+    return 0 if len(ok) == len(results) else 1
 
 
 if __name__ == "__main__":

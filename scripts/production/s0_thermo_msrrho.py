@@ -52,8 +52,10 @@ def main():
     ap.add_argument("--tag", default="prod")
     ap.add_argument("--step", required=True,
                     choices=("mace", "reference", "hessian_compare", "compare", "mode_curvature", "write_jobs"))
-    ap.add_argument("--level", default=engine.REFERENCE_LEVEL,
-                    help="reference level name (CONTEXT.md spelling)")
+    ap.add_argument("--level", default=None,
+                    help="level name (CONTEXT.md spelling). For reference / hessian_compare / compare: the reference "
+                         "level (default {}); for mode_curvature / write_jobs: the HIGHER level probed at the "
+                         "reference geometry (default dlpno-ccsdt_cc-pvtz)".format(engine.REFERENCE_LEVEL))
     ap.add_argument("--keywords", default=None,
                     help="ORCA keyword line for the reference level (default: orca.LEVELS[--level])")
     ap.add_argument("--start-from", default=None,
@@ -72,6 +74,10 @@ def main():
                     help="imaginary-mode policy of the [Result] block at the MACE level; every "
                          "record carries [Imaginary_Spread] with all three (ticket 28)")
     args = ap.parse_args()
+    if args.level is None:
+        # the two families of steps mean different things by --level: probing the reference
+        # against itself (LEVEL_ERROR_CM identically 0) was the failure a shared default gave
+        args.level = "dlpno-ccsdt_cc-pvtz" if args.step in ("mode_curvature", "write_jobs") else engine.REFERENCE_LEVEL
 
     molecule = basin_reader.molecule_for(args.species, args.tag)
     rec = basin_reader.read_record(args.species, tag=args.tag)
@@ -91,9 +97,12 @@ def main():
                 out["experimental"][0], out["experimental"][1],
                 out["S_abs_cal_per_K"] - out["experimental"][0]))
         for r in out["imaginary_spread"]:
+            if r.get("AVAILABLE") is False:            # a preset without an ithr: the policy has no answer
+                print("  policy {:13s} not available for this preset".format(r["POLICY"]))
+                continue
             print("  policy {:13s} S_abs {}  included {} excluded {} inverted {} kept negative {}".format(
                 r["POLICY"], "{:.4f}".format(r["S_ABS"]) if r.get("S_ABS") is not None else "-",
-                r["N_INCLUDED"], r["N_EXCLUDED"], r["N_INVERTED"], r["N_KEPT_NEGATIVE"]))
+                r.get("N_INCLUDED", "-"), r.get("N_EXCLUDED", "-"), r.get("N_INVERTED", "-"), r.get("N_KEPT_NEGATIVE", "-")))
         print("record  {}".format(out["record"]))
     elif args.step == "reference":
         from openqha.qm_interfaces import orca

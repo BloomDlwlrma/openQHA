@@ -97,6 +97,9 @@ def write_bundle(out_dir, jobs, level, nprocs=None, cfg=None, **overrides):
         """).format(level=level, partition=s["partition"], time=s["time"], cpus=s["cpus_per_node"],
                     mem=s["mem_gb"], concurrent=concurrent, ranks=ranks, orca_bin_dir=s["orca_bin_dir"])
     (out_dir / "run.sbatch").write_text(sbatch, encoding="utf-8")
+    # Slurm opens --output BEFORE the script runs (hpc skill rule 6): the mkdir inside the
+    # script is too late, so the bundle ships with the directory
+    (out_dir / "logs").mkdir(exist_ok=True)
     lines = ["# {} on hkuhpc".format(level), "",
              "Keywords: `! {}`".format(spec["keywords"]), "",
              "Blocks: `{}`".format(spec["blocks"].replace("\n", " ")), "",

@@ -148,9 +148,14 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
         blocks = spec["blocks"] if spec else ""
     starts = {}
     if start_from:
+        # every MACE basin the start level optimised has a job.hess there -- kept, merged and
+        # saddle alike (merge_map.dat lists them all); a merged basin's relaxed geometry is
+        # as good a start as a kept one's, and starting it from the MACE geometry instead
+        # was a full numerical optimisation for nothing (review 2026-09-18)
         for r in dat.read_table(layout.level_dir(molecule, start_from) / "merge_map.dat"):
-            if r["status"] == "kept":
-                p = orca.parse_hess(layout.orca_level_dir(molecule, start_from, int(r["mace_basin"])) / "job.hess")
+            hess = layout.orca_level_dir(molecule, start_from, int(r["mace_basin"])) / "job.hess"
+            if hess.is_file():
+                p = orca.parse_hess(hess)
                 starts[int(r["mace_basin"])] = np.asarray(p["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
     doc = prop.load(layout.records_dir(molecule) / "branchA.toml")
     info_a = doc.get("Calculation_Info") or {}

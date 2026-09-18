@@ -61,10 +61,11 @@ node‑local `S0_SCRATCH`; `job.{inp,out,hess,engrad,xyz,property.txt}` come bac
 ```bash
 # 1. one frame on the debug queue (30 min): modules, conda, ORCA, sbatch, status query
 python -u workflows/hessian_learning/03_labels.py --tag smoke --all --resource tianhe_cpu --debug --limit-frames 1
-# 2. the smoke set (7 molecules, ~80 frames) on one node
-python -u workflows/hessian_learning/03_labels.py --tag smoke --all --resource tianhe_cpu --max-blocks 1
+# 2. the smoke set (7 molecules, ~80 frames) on one node -- the molecules 01_select chose
+python -u workflows/hessian_learning/03_labels.py --tag smoke --name smoke --resource tianhe_cpu --max-blocks 1
 # 3. the 200-molecule draw on 12 nodes (7-day walltime allowed on deimos)
-python -u workflows/hessian_learning/03_labels.py --tag draw --all --resource tianhe_cpu --limit 200 --stratify --walltime 7-00:00:00
+python -u workflows/hessian_learning/01_select.py --tag draw --name draw200 --limit 200 --stratify
+python -u workflows/hessian_learning/03_labels.py --tag draw --name draw200 --resource tianhe_cpu --walltime 7-00:00:00
 ```
 
 A resubmission skips every frame whose `job.out` carries the terminal line and whose

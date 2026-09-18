@@ -32,10 +32,13 @@ echo "== 02 frames"
 for t in "${tags[@]}"; do
     python -u "$here/02_frames.py" --tag "$t" --all || { echo "02 failed for tag $t" >&2; exit 1; }
 done
+# select.dat snapshots has_frames / n_frames; refresh it now that 02 has run (04 re-reads
+# the Frame-set Records from disk anyway, so this is for the record, not for correctness)
+python -u "$here/01_select.py" "${tagargs[@]}" --name "$name" ${limit:+--limit "$limit"} $stratify > /dev/null || { echo "01 (refresh) failed" >&2; exit 1; }
 if [ "$labels" = 1 ]; then
     echo "== 03 labels (local, in process)"
     for t in "${tags[@]}"; do
-        python -u "$here/03_labels.py" --tag "$t" --all --local "${lvl[@]}" || echo "03: not every frame labelled under $t (see the Batch table); continuing" >&2
+        python -u "$here/03_labels.py" --tag "$t" --name "$name" --local "${lvl[@]}" || echo "03: a frame failed under $t (see the Batch table); continuing" >&2
     done
 else
     echo "== 03 labels: skipped (--with-labels to run here; tianhe Batch in production)"

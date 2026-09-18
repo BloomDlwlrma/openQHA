@@ -68,6 +68,8 @@ PINNED = ("dsgdb9nsd_000018", "dsgdb9nsd_000019", "dsgdb9nsd_000035", "dsgdb9nsd
 VALID_FRACTION = 0.1
 TEST_FRACTION = 0.1
 SEED = 0
+#: a label file whose positions differ from the engine file's by more than this is stale
+STALE_TOL_A = 1e-6
 DATASETS = "_datasets"
 MEMBERSHIP_FILE = Path(__file__).resolve().parents[2] / "data" / "training_sets" / "qm9_targets_membership.dat"
 
@@ -148,6 +150,8 @@ SCHEMA = {
         "N_VALID": ("Integer", None, "frames in valid"),
         "N_TEST": ("Integer", None, "frames in test"),
         "N_POOL": ("Integer", None, "frames in pool (unlabelled)"),
+        "N_STALE": ("Integer", None, "label frames ignored because their geometry differs from the engine file's (a rerun of branch A / 02 after 03)"),
+        "KEPT_PREVIOUS": ("Boolean", None, "a previous index.dat existed and its splits were kept"),
         "ENGINE_PARAMS_SHA256": ("ArrayOfStrings", None, "engine fingerprints seen (one, unless Frame sets were built by different weights)"),
         "ORCA_VERSIONS": ("ArrayOfStrings", None, "ORCA versions of the labels seen"),
         "SECONDS": ("Double", "s", "wall time"),
@@ -166,6 +170,7 @@ SCHEMA = {
         "PINNED": ("Boolean", None, "always test"),
         "N_FRAMES": ("Integer", None, "frames of its Frame set"),
         "N_LABELLED": ("Integer", None, "of those, labelled at LEVEL"),
+        "N_STALE": ("Integer", None, "label files at other coordinates than the engine file (ignored, treated as unlabelled)"),
         "N_TRAIN": ("Integer", None, "frames in train"),
         "N_VALID": ("Integer", None, "frames in valid"),
         "N_TEST": ("Integer", None, "frames in test"),
@@ -233,6 +238,25 @@ def _smiles_of(mol, qid, tag, root):
 
 
 # ====================================================================== selection
+def apply_limit(rows, limit, stratify=False):
+    """At most `limit` rows (dicts with `qm9_index` and `pinned`): the pinned ones always,
+    the others the first N or, with `stratify`, spread evenly over the sorted index list
+    (QM9 is ordered by heavy-atom count). One function for 01_select and 03_labels, so
+    the two draw the same molecules."""
+    rows = sorted(rows, key=lambda r: r["qm9_index"])
+    if not limit or limit >= len(rows):
+        return rows
+    keep = [r for r in rows if r.get("pinned")]
+    rest = [r for r in rows if not r.get("pinned")]
+    n = max(0, int(limit) - len(keep))
+    if stratify and n:
+        idx = sorted({round(i * (len(rest) - 1) / max(1, n - 1)) for i in range(n)})
+        keep += [rest[i] for i in idx]
+    else:
+        keep += rest[:n]
+    return sorted(keep, key=lambda r: r["qm9_index"])
+
+
 def select(root, tags, name, limit=None, stratify=False, membership_file=MEMBERSHIP_FILE, pinned=PINNED):
     """The molecule list: every branch-A-finished molecule under `tags`, with the
     stratification keys, SPICE membership, pin status and Frame-set status. Writes
@@ -260,17 +284,7 @@ def select(root, tags, name, limit=None, stratify=False, membership_file=MEMBERS
                              match_level=m["match_level"] if m else "unknown",
                              pinned=qid in pinned, n_basins=len(basins_mod.basin_files(mol)),
                              has_frames=fr.is_file(), n_frames=n_frames))
-    rows.sort(key=lambda r: r["qm9_index"])
-    if limit and limit < len(rows):
-        keep = [r for r in rows if r["pinned"]]
-        rest = [r for r in rows if not r["pinned"]]
-        n = max(0, int(limit) - len(keep))
-        if stratify and n:
-            idx = sorted({round(i * (len(rest) - 1) / max(1, n - 1)) for i in range(n)})
-            keep += [rest[i] for i in idx]
-        else:
-            keep += rest[:n]
-        rows = sorted(keep, key=lambda r: r["qm9_index"])
+    rows = apply_limit(rows, limit, stratify)
     strata = {}
     for r in rows:
         s = strata.setdefault(r["stratum"], dict(STRATUM=r["stratum"], N_MOLECULES=0, N_PINNED=0))
@@ -315,7 +329,10 @@ def read_selection(root, tag, name):
 
 # ====================================================================== the split
 def _frames_of(mol, level, mace_level):
-    """Every kept frame of a molecule: (key, engine atoms, label atoms or None, engine file)."""
+    """Every kept frame of a molecule: (key, engine atoms, label atoms or None, engine file,
+    stale). A label is paired by (generator, basin, k) AND by geometry: a label file left
+    behind by an earlier branch A / 02_frames run sits at other coordinates and is not a
+    label of this frame -- it counts as `stale` (unlabelled, and named in the Record)."""
     out = []
     for g in frames_mod.GENERATORS:
         ef = layout.frames_file(mol, g, mace_level)
@@ -328,37 +345,74 @@ def _frames_of(mol, level, mace_level):
                 labels[(int(a.info["basin"]), int(a.info["k"]))] = a
         for a in frames_mod.read_frames(ef):
             key = (g, int(a.info["basin"]), int(a.info["k"]))
-            out.append((key, a, labels.get((key[1], key[2])), ef))
+            lab = labels.get((key[1], key[2]))
+            stale = False
+            if lab is not None and (len(lab) != len(a) or np.abs(lab.get_positions() - a.get_positions()).max() > STALE_TOL_A):
+                lab, stale = None, True
+            out.append((key, a, lab, ef, stale))
     return out
 
 
+def _previous_split(dataset_dir):
+    """`{(qm9_index, generator, basin, k): split}` of the labelled frames of the last
+    `index.dat`, and `{qm9_index: molecule_split}` -- what a rebuild keeps."""
+    p = Path(dataset_dir) / "index.dat"
+    frames_prev, mols_prev = {}, {}
+    if p.is_file():
+        for r in dat.read_table(p):
+            mols_prev[r["qm9_index"]] = r["molecule_split"]
+            if r["split"] != "pool":
+                frames_prev[(r["qm9_index"], r["generator"], int(r["basin"]), int(r["k"]))] = r["split"]
+    return frames_prev, mols_prev
+
+
+def _rng(seed, *parts):
+    """A generator seeded from `seed` and the names of what it draws for -- so a draw for
+    one molecule (or stratum) does not move when another molecule is added or labelled."""
+    import hashlib
+    h = hashlib.sha256("|".join([str(seed)] + [str(x) for x in parts]).encode()).digest()
+    return np.random.default_rng(int.from_bytes(h[:8], "little"))
+
+
 def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, valid_fraction=VALID_FRACTION,
-          test_fraction=TEST_FRACTION, seed=SEED, mace_level=None, selection=None, pinned=PINNED):
+          test_fraction=TEST_FRACTION, seed=SEED, mace_level=None, selection=None, pinned=PINNED,
+          keep_previous=True):
     """The Dataset: split every Frame set of the selected molecules, write the four
     files, `index.dat` and the Record. `selection`: rows as `select` returns them
-    (default: read `select.dat` under the first tag; run `select` first)."""
+    (default: read `select.dat` under the first tag; run `select` first).
+
+    A rebuild KEEPS the previous `index.dat`'s decisions (`keep_previous`): a molecule's
+    train/test side and every already-labelled frame's split stay what they were; only
+    new molecules and newly labelled frames are drawn, each with a generator seeded from
+    `seed` and its own name, so nothing moves because something else was added. That is
+    what "set at write time, never recomputed" means across the label Batches that fill
+    the pool."""
     t0 = time.time()
     root = Path(root)
     tags = [tags] if isinstance(tags, str) else list(tags)
     rows_sel = selection if selection is not None else read_selection(root, tags[0], name)
-    mols = [r for r in sorted(rows_sel, key=lambda r: r["qm9_index"]) if r["has_frames"]]
+    # has_frames is re-read from disk, not taken from select.dat: 01 may have run before 02
+    mols = [r for r in sorted(rows_sel, key=lambda r: r["qm9_index"])
+            if (layout.frames_dir(r["molecule_dir"]) / (frames_mod.STEP + ".toml")).is_file()]
     if not mols:
         raise RuntimeError("no selected molecule has a Frame set (run 02_frames first)")
     if mace_level is None:
         mace_level = frame_labels.mace_level(mols[0]["molecule_dir"])
-    rng = np.random.default_rng(int(seed))
+    d = datasets_dir(root, tags[0], name)
+    prev_frames, prev_mols = _previous_split(d) if keep_previous else ({}, {})
 
-    # ---- test molecules: pinned + a per-stratum draw ---------------------------------
+    # ---- test molecules: pinned + the previous index's + a per-stratum draw of the NEW ones
     test_mols = {r["qm9_index"] for r in mols if r["qm9_index"] in pinned}
+    test_mols.update(q for q, s in prev_mols.items() if s == "test")
     by_stratum = {}
     for r in mols:
-        if r["qm9_index"] not in test_mols:
+        if r["qm9_index"] not in test_mols and r["qm9_index"] not in prev_mols:
             by_stratum.setdefault(r["stratum"], []).append(r["qm9_index"])
     for s in sorted(by_stratum):
         ids = sorted(by_stratum[s])
         n = int(round(float(test_fraction) * len(ids)))
         if n:
-            test_mols.update(rng.choice(ids, size=n, replace=False).tolist())
+            test_mols.update(_rng(seed, "test", s, *ids).choice(ids, size=n, replace=False).tolist())
 
     # ---- frames ------------------------------------------------------------------------
     index, per_mol, split_frames = [], [], {s: [] for s in SPLITS}
@@ -367,15 +421,19 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, valid_fraction=VAL
         qid, mol = r["qm9_index"], Path(r["molecule_dir"])
         msplit = "test" if qid in test_mols else "train"
         frames_here = _frames_of(mol, level, mace_level)
-        labelled = [(key, a, lab, ef) for key, a, lab, ef in frames_here if lab is not None]
-        valid_keys = set()
+        labelled = [(key, a, lab, ef) for key, a, lab, ef, _st in frames_here if lab is not None]
+        n_stale = sum(1 for _k, _a, _l, _e, st in frames_here if st)
+        # valid: frames the previous index already placed keep their split; the NEW labelled
+        # frames are drawn (per-molecule generator) so the molecule reaches the fraction
+        valid_keys = {key for key, _a, _l, _e in labelled if prev_frames.get((qid,) + key) == "valid"}
         if msplit == "train" and labelled:
-            n_valid = int(round(float(valid_fraction) * len(labelled)))
-            if n_valid:
-                pick = rng.choice(len(labelled), size=n_valid, replace=False)
-                valid_keys = {labelled[i][0] for i in pick}
+            new = [key for key, _a, _l, _e in labelled if (qid,) + key not in prev_frames]
+            want = int(round(float(valid_fraction) * len(labelled))) - len(valid_keys)
+            if new and want > 0:
+                pick = _rng(seed, "valid", qid).choice(len(new), size=min(want, len(new)), replace=False)
+                valid_keys.update(new[i] for i in pick)
         counts = dict(train=0, valid=0, test=0, pool=0)
-        for key, a, lab, ef in frames_here:
+        for key, a, lab, ef, _st in frames_here:
             if lab is None:
                 split, atoms, levels, ver = "pool", a, [mace_level], "-"
             else:
@@ -392,11 +450,10 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, valid_fraction=VAL
                               stratum=r["stratum"], file="{}.{}.extxyz".format(split, level),
                               row=len(split_frames[split]) - 1, engine_file=str(ef)))
         per_mol.append(dict(QM9_INDEX=qid, TAG=r["tag"], STRATUM=r["stratum"], MOLECULE_SPLIT=msplit,
-                            PINNED=qid in pinned, N_FRAMES=len(frames_here), N_LABELLED=len(labelled),
+                            PINNED=qid in pinned, N_FRAMES=len(frames_here), N_LABELLED=len(labelled), N_STALE=n_stale,
                             N_TRAIN=counts["train"], N_VALID=counts["valid"], N_TEST=counts["test"], N_POOL=counts["pool"]))
 
     # ---- files -------------------------------------------------------------------------
-    d = datasets_dir(root, tags[0], name)
     d.mkdir(parents=True, exist_ok=True)
     split_rows = []
     for s in SPLITS:
@@ -414,6 +471,7 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, valid_fraction=VAL
                 N_FRAMES=len(index), N_LABELLED=sum(1 for row in index if row["split"] != "pool"),
                 N_TRAIN=len(split_frames["train"]), N_VALID=len(split_frames["valid"]),
                 N_TEST=len(split_frames["test"]), N_POOL=len(split_frames["pool"]),
+                N_STALE=sum(m["N_STALE"] for m in per_mol), KEPT_PREVIOUS=bool(prev_frames or prev_mols),
                 ENGINE_PARAMS_SHA256=sorted(fingerprints), ORCA_VERSIONS=sorted(versions), SECONDS=time.time() - t0)
     missing = prop.write(d / (STEP + ".toml"), {"Calculation_Info": info, "Split": split_rows, "Molecule": per_mol},
                          SCHEMA, prop.NORMAL_TERMINATION, PROGNAME)
@@ -444,19 +502,21 @@ def _write_report(path, info, split_rows, per_mol):
     rep = report.Report(PROGNAME, "Dataset {!r} at {}".format(info["NAME"], info["LEVEL"]))
     rep.section("conventions")
     for k in ("TAGS", "LEVEL", "MACE_LEVEL", "SEED", "VALID_FRACTION", "TEST_FRACTION", "N_MOLECULES", "N_TEST_MOLECULES",
-              "N_TRAIN_MOLECULES", "N_FRAMES", "N_LABELLED", "ENGINE_PARAMS_SHA256", "ORCA_VERSIONS"):
+              "N_TRAIN_MOLECULES", "N_FRAMES", "N_LABELLED", "N_STALE", "KEPT_PREVIOUS", "ENGINE_PARAMS_SHA256", "ORCA_VERSIONS"):
         rep.kv(k, info[k])
     rep.section("per split")
     rep.table(["split", "frames", "molecules", "file"],
               [[r["SPLIT"], r["N_FRAMES"], r["N_MOLECULES"], Path(r["FILE"]).name if r["FILE"] else "-"] for r in split_rows])
     rep.section("per molecule")
-    rep.table(["qm9_index", "tag", "stratum", "split", "pinned", "frames", "labelled", "train", "valid", "test", "pool"],
+    rep.table(["qm9_index", "tag", "stratum", "split", "pinned", "frames", "labelled", "stale", "train", "valid", "test", "pool"],
               [[m["QM9_INDEX"], m["TAG"], m["STRATUM"], m["MOLECULE_SPLIT"], "yes" if m["PINNED"] else "-", m["N_FRAMES"],
-                m["N_LABELLED"], m["N_TRAIN"], m["N_VALID"], m["N_TEST"], m["N_POOL"]] for m in per_mol])
+                m["N_LABELLED"], m["N_STALE"], m["N_TRAIN"], m["N_VALID"], m["N_TEST"], m["N_POOL"]] for m in per_mol])
     rep.note("test = whole molecules (the pinned seven + a per-stratum draw of TEST_FRACTION); valid = VALID_FRACTION of "
              "the training molecules' labelled frames, drawn by frame; train = the rest; pool = frames without a label "
-             "at LEVEL yet, whatever their molecule's split. The split is set here and never recomputed: index.dat is "
-             "the record. train/valid/test files carry the REFERENCE E-F-H; pool carries the engine's.")
+             "at LEVEL yet, whatever their molecule's split. The split is set here and never recomputed: a rebuild keeps "
+             "every decision of the previous index.dat and draws only the new molecules and newly labelled frames, each "
+             "with its own seeded generator. A label file whose geometry differs from the engine file's (stale) is "
+             "ignored. train/valid/test files carry the REFERENCE E-F-H; pool carries the engine's.")
     rep.write(path, step=STEP)
 
 
