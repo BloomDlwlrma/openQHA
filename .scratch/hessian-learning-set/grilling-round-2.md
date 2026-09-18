@@ -154,8 +154,17 @@ Q14 The displaced frames' distribution (measured while building ticket 02, 2026-
     frames ~1-5 kcal/mol up); (c) both as two generators (`displaced` = quantum,
     `displaced_cl` = classical), labelled, and let the judge on the held-out rings say
     which helps the low modes.
-    Recommended (c) for the smoke set (it costs 4 more Hessians per basin, minutes), then
-    one of (a)/(b) for the 200-molecule draw on the measured answer.
+    Recommended -- revised 2026-09-18 after the band-resolved measurement (note 3 §5) --
+    (b), the classical 298 K draw: below 300 cm^-1 the quantum and classical amplitudes
+    agree to 1-6 % (the entropy-carrying modes are sampled identically), 88 % of the
+    quantum frame's extra 20 kcal/mol sits in C-H stretches (2.7x zero-point amplitude)
+    that neither branch B's classical MD nor msRRHO ever visits, and ANI-1 at its own
+    setting for 8-heavy-atom molecules (450 K) gives 6.7 kcal/mol per frame -- the
+    classical 298 K draw's 7.1, not the quantum 27. Implemented as
+    `distribution="quantum"|"classical"`.
+    RULED (b) by the user, 2026-09-18 (S0-C-46): `DISTRIBUTION = "classical"`; the four
+    Frame sets rebuilt (displaced dE 4-16 kcal/mol, means 6-10; 0 dropped, 0 bond
+    changes); the quantum draw stays under its own name.
 
 Round 3 waits on Q1, Q2, Q4 (set size and loss fix the code), Q9 (CONTEXT wording),
-Q11-Q12 (they rewrite ticket 32 and the reference records), Q14 (the frame distribution).
+Q11-Q12 (they rewrite ticket 32 and the reference records). Q14 is ruled (b).

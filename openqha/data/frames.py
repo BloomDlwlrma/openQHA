@@ -13,10 +13,10 @@ GENERATORS (rounds 3-4, rulings 2026-09-18)
     basin      the MACE basin itself (branch A: CREST on GFN2 with `refine = "sp"`,
                then MACE tightening to fmax 1e-4 and the MACE analytic Hessian). Its
                Hessian is the basin's stored `hessian.npy`, reused, not recomputed.
-    displaced  n draws per basin from the harmonic quantum distribution along the
+    displaced  n draws per basin from the harmonic CLASSICAL distribution along the
                basin's modes at the target temperature (`hessian.thermal_displacements`
-               with `hessian=` the stored matrix), RMS displacement <= MAX_RMS_A; the
-               engine's Hessian is computed at each.
+               with `hessian=` the stored matrix, `distribution=DISTRIBUTION`), RMS
+               displacement <= MAX_RMS_A; the engine's Hessian is computed at each.
     merged     every input conformer branch A's deduplication merged into a basin
                (`DUPLICATE_MAP` of the branch-A Property; geometry = the tightened
                `mace/confNN/conf.extxyz`), one frame each, no displacement.
@@ -50,14 +50,20 @@ recorded likewise. The MACE E-F-H of a kept frame is written at generation time 
 it is the very quantity the loss compares to the label, and with it on disk the judge
 needs no engine.
 
-ENERGY OF A DISPLACED FRAME
----------------------------
-The harmonic QUANTUM draw at 298 K puts ~hbar omega / 2 into every stretch (the
-zero-point motion), so a displaced frame sits 0.5-1.8 eV (14-42 kcal/mol) above its
-basin at only 0.09-0.15 A RMS -- the Wigner-like distribution of the vibrational
-ground state, not a 298 K classical thermal energy (SPICE's 500 K MD is classical:
-~0.03 eV per mode). Both are stated per frame (`ENERGY_ABOVE_BASIN`); which one the
-training should see is round-2 territory, this module reports it.
+ENERGY OF A DISPLACED FRAME (round-2 Q14, ruled (b) 2026-09-18)
+----------------------------------------------------------------
+The default draw is CLASSICAL at 298.15 K, <q_k^2> = k_B T / omega_k^2 (equipartition):
+a displaced frame sits ~7 kcal/mol (3-13) above its basin for a 10-atom molecule -- the
+distribution a classical 298 K trajectory (branch B) samples, and ANI-1's own regime
+for 8-heavy-atom molecules (450 K normal-mode sampling, mean 3/4 N_a kT = 6.7
+kcal/mol). The harmonic QUANTUM draw (`distribution="quantum"`) puts hbar omega / 2
+into every stretch: ~27 kcal/mol per frame, 88 % of it in modes above 1000 cm^-1
+(C-H zero-point amplitude 2.7x classical), while below 300 cm^-1 -- the modes that
+carry the entropy error -- the two draws agree to 1-6 % in amplitude (propanal and
+oxetane, MACE Hessians, measured 2026-09-18). The classical draw therefore loses no
+low-mode information and keeps the frames near the minima the Hessian-learning
+papers (Rodriguez, PFT, PEFT) train on; the quantum draw stays available under its
+own name. The draw is recorded per Frame set (`DISTRIBUTION`).
 
 FILES
 -----
@@ -84,8 +90,13 @@ PROGNAME = "openQHA frames"
 GENERATORS = ("basin", "displaced", "merged", "saddle")
 #: displaced frames per basin (round 4, Q2)
 N_DISPLACED = 4
-#: the target temperature of the harmonic quantum draw
+#: the target temperature of the harmonic draw
 TEMPERATURE_K = 298.15
+#: the harmonic distribution of the displaced generator: "classical" (equipartition,
+#: ~7 kcal/mol per frame for a 10-atom molecule; what branch B's 298 K trajectories and
+#: ANI-1's 450 K NMS for 8-heavy-atom molecules sample) or "quantum" (zero-point motion in
+#: every mode, ~27 kcal/mol). Below 300 cm^-1 the two coincide. Round-2 Q14, ruled (b).
+DISTRIBUTION = "classical"
 #: RMS displacement ceiling of a displaced frame (hessian.MAX_RMS_DISPLACEMENT_A)
 MAX_RMS_A = hessian_mod.MAX_RMS_DISPLACEMENT_A
 #: ANI-1's window: a frame this far above its basin (kcal/mol) is dropped -- the only filter
@@ -106,7 +117,8 @@ SCHEMA = {
         "LEVEL": ("String", None, "the engine's level name (the file suffix)"),
         "ENGINE_PARAMS_SHA256": ("String", None, "parameter fingerprint of the weights (engine.parameter_fingerprint)"),
         "ENGINE_PIN_STATUS": ("String", None, "matches / differs / unpinned against the registry"),
-        "TEMPERATURE": ("Double", "K", "temperature of the harmonic quantum draw"),
+        "TEMPERATURE": ("Double", "K", "temperature of the harmonic draw"),
+        "DISTRIBUTION": ("String", None, "classical (equipartition; the default, Q14) or quantum (zero-point amplitude in every mode) draw of the displaced frames"),
         "N_DISPLACED_PER_BASIN": ("Integer", None, "displaced frames drawn per basin"),
         "MAX_RMS_A": ("Double", "A", "RMS displacement ceiling of a displaced frame (over the 3N coordinates)"),
         "ENERGY_WINDOW_KCAL": ("Double", "kcal/mol", "the only filter: a frame further above its basin is dropped (ANI-1's 275; SPICE cuts at 2390)"),
@@ -223,7 +235,8 @@ def read_frames(path):
 
 # ====================================================================== the Calculation
 def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max_rms_A=MAX_RMS_A,
-             engine_name=None, energy_window=ENERGY_WINDOW_KCAL, qm9_index=None, calc=None):
+             engine_name=None, energy_window=ENERGY_WINDOW_KCAL, qm9_index=None, calc=None,
+             distribution=DISTRIBUTION):
     """Build the Frame set of one molecule directory at the engine level: one extxyz per
     generator under `frames/` and the Record `frames/frames.{out,toml}`. Returns a dict
     with the rows and paths. `calc=` injects a calculator (tests); otherwise the
@@ -292,7 +305,7 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
         if n_displaced > 0:
             disp, drec = hessian_mod.thermal_displacements(
                 atoms, None, temperature_K=temperature_K, n_samples=int(n_displaced),
-                max_rms_displacement_A=max_rms_A, hessian=h_b, seeds=seeds)
+                max_rms_displacement_A=max_rms_A, hessian=h_b, seeds=seeds, distribution=distribution)
             for k, (a, rms) in enumerate(zip(disp, drec["rms_displacement_A"])):
                 consider("displaced", b, k, a, seeds[k], -1, rms)
 
@@ -329,7 +342,8 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
         gen_rows.append(dict(GENERATOR=g, N_FRAMES=n_k, N_DROPPED=n_d, FILE=str(path) if n_k else None))
     info = dict(MOLECULE_DIR=str(molecule), QM9_INDEX=str(qid), SMILES=smiles, ENGINE=ename, LEVEL=level,
                 ENGINE_PARAMS_SHA256=prov.get("params_sha256"), ENGINE_PIN_STATUS=prov.get("params_pin_status"),
-                TEMPERATURE=float(temperature_K), N_DISPLACED_PER_BASIN=int(n_displaced), MAX_RMS_A=float(max_rms_A),
+                TEMPERATURE=float(temperature_K), DISTRIBUTION=str(distribution),
+                N_DISPLACED_PER_BASIN=int(n_displaced), MAX_RMS_A=float(max_rms_A),
                 ENERGY_WINDOW_KCAL=float(energy_window), BOND_CUTOFF_MULT=BOND_CUTOFF_MULT,
                 BOND_BREAK_MULT=BOND_BREAK_MULT, BOND_FORM_MULT=BOND_FORM_MULT,
                 N_BOND_CHANGED=sum(1 for r in rows if r["STATUS"] == "kept" and r["BOND_CHANGE"] != "-"),
@@ -349,7 +363,7 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
 def _write_report(path, info, gen_rows, rows):
     rep = report.Report("openQHA frames", "the Frame set of {} at {}".format(info["QM9_INDEX"], info["LEVEL"]))
     rep.section("conventions")
-    for k in ("ENGINE", "LEVEL", "ENGINE_PARAMS_SHA256", "ENGINE_PIN_STATUS", "TEMPERATURE", "N_DISPLACED_PER_BASIN",
+    for k in ("ENGINE", "LEVEL", "ENGINE_PARAMS_SHA256", "ENGINE_PIN_STATUS", "TEMPERATURE", "DISTRIBUTION", "N_DISPLACED_PER_BASIN",
               "MAX_RMS_A", "ENERGY_WINDOW_KCAL", "BOND_CUTOFF_MULT", "BOND_BREAK_MULT", "BOND_FORM_MULT",
               "N_BOND_CHANGED", "N_BASINS", "N_FRAMES", "N_DROPPED"):
         rep.kv(k, info[k])
@@ -365,9 +379,9 @@ def _write_report(path, info, gen_rows, rows):
     rep.note("a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term "
              "included -- the Hessian-learning target, not a frequency; 'lowest' at a displaced frame is a "
              "curvature. The basin frame reuses the basin's stored hessian.npy. dE of a displaced frame is "
-             "the harmonic QUANTUM draw's energy (zero-point motion in every stretch), tens of kcal/mol at "
-             "0.1 A RMS -- not a classical 298 K energy, but the same range ANI-1's normal-mode sampling at "
-             "600-2000 K trained on (mean ~3/4 N_a kT). The only filter is the energy window (ANI-1's 275 "
+             "the harmonic draw's energy: classical 298 K (equipartition, ~3/4 N_a kT = 7 kcal/mol for 10 "
+             "atoms, ANI-1's regime for 8-heavy-atom molecules at 450 K) unless DISTRIBUTION says quantum "
+             "(zero-point motion in every stretch, ~4x more). The only filter is the energy window (ANI-1's 275 "
              "kcal/mol; SPICE cuts at 2390), as the published sets do; 'bonds' reports a broken or formed "
              "bond at perception tolerances (RDKit 1.3 / Open Babel ~1.4) and never drops a frame. Hot-MD, "
              "cooled and hot normal-mode frames (SPICE, OpenREACT) were considered and not built (rulings "

@@ -44,6 +44,8 @@ def main():
     ap.add_argument("--n-displaced", type=int, default=frames.N_DISPLACED)
     ap.add_argument("--temperature", type=float, default=frames.TEMPERATURE_K)
     ap.add_argument("--max-rms", type=float, default=frames.MAX_RMS_A)
+    ap.add_argument("--distribution", default=frames.DISTRIBUTION, choices=("quantum", "classical"),
+                    help="harmonic draw of the displaced frames (round-2 Q14, ruled classical 2026-09-18)")
     ap.add_argument("--engine", default=None, help="registered engine name (default: the production default)")
     ap.add_argument("--force", action="store_true", help="rebuild a Frame set whose Record exists")
     args = ap.parse_args()
@@ -59,7 +61,7 @@ def main():
             continue
         try:
             out = frames.generate(mol, n_displaced=args.n_displaced, temperature_K=args.temperature,
-                                  max_rms_A=args.max_rms, engine_name=args.engine)
+                                  max_rms_A=args.max_rms, engine_name=args.engine, distribution=args.distribution)
         except Exception as exc:                                 # one molecule must not stop the Batch
             failed += 1
             print("FAILED  {}  {}: {}".format(mol.name, type(exc).__name__, str(exc)[:200]), flush=True)

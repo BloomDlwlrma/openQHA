@@ -126,9 +126,10 @@ _Avoid_: degeneracy (alone -- that is the electronic `g0`), rotamer number, mult
 
 **Frame**:
 One geometry of one molecule, born from one Basin by one named generator -- `basin`
-(the minimum itself), `displaced` (a harmonic-quantum draw along the basin's modes at
-the target temperature, within a stated RMS displacement), `merged` (a CREST conformer
-branch A merged into a basin), `saddle` (a merged conformer that re-optimised to a
+(the minimum itself), `displaced` (a harmonic classical draw along the basin's modes at
+the target temperature -- equipartition, the distribution branch B's 298 K MD samples;
+the quantum draw is available by name -- within a stated RMS displacement), `merged`
+(a CREST conformer branch A merged into a basin), `saddle` (a merged conformer that re-optimised to a
 saddle at the reference) -- carrying, per Level that has been run on it, the energy,
 forces and Cartesian Hessian at that geometry. A frame's Hessian is the raw Cartesian
 matrix at a fixed geometry, gradient term included; it is not a frequency.

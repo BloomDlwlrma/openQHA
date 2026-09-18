@@ -124,14 +124,16 @@ def main():
         # reproducibility: redraw basin 0's displacements from the recorded seeds
         seeds = [a.info["seed"] for a in fd if a.info["basin"] == 0]
         a0 = read(str(mol / "mace" / "basin00" / "basin.extxyz"), format="extxyz")
+        # the draw the Record declares (round-2 Q14: classical by default), not thermal_displacements' own default
+        dist = out["info"]["DISTRIBUTION"]
         again, _ = hessian_mod.thermal_displacements(a0, None, n_samples=4, hessian=h0, seeds=seeds,
-                                                     max_rms_displacement_A=frames.MAX_RMS_A)
+                                                     max_rms_displacement_A=frames.MAX_RMS_A, distribution=dist)
         same = max(np.abs(again[i].get_positions() - [a for a in fd if a.info["basin"] == 0][i].get_positions()).max() for i in range(4))
         other, _ = hessian_mod.thermal_displacements(a0, None, n_samples=4, hessian=h0, seeds=[s + 1 for s in seeds],
-                                                     max_rms_displacement_A=frames.MAX_RMS_A)
+                                                     max_rms_displacement_A=frames.MAX_RMS_A, distribution=dist)
         diff = np.abs(other[0].get_positions() - again[0].get_positions()).max()
         again2, _ = hessian_mod.thermal_displacements(a0, None, n_samples=4, hessian=h0, seeds=seeds,
-                                                      max_rms_displacement_A=frames.MAX_RMS_A)
+                                                      max_rms_displacement_A=frames.MAX_RMS_A, distribution=dist)
         exact = max(np.abs(again2[i].get_positions() - again[i].get_positions()).max() for i in range(4))
         check("the same seeds reproduce the same positions: to 1e-12 in memory, to the file's 8 decimals (1e-7) on disk; shifted seeds do not",
               exact < 1e-12 and same < 1e-7 and diff > 1e-3, (exact, same, diff))

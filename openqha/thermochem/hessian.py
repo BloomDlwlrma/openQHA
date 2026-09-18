@@ -345,7 +345,7 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
                           seed=0, delta=DELTA_A,
                           max_rms_displacement_A=MAX_RMS_DISPLACEMENT_A,
                           max_draws_per_sample=50, return_hessian=False, hessian=None,
-                          seeds=None):
+                          seeds=None, distribution="quantum"):
     """Sample displacements along the normal modes from the harmonic quantum
     distribution, returning n_samples structures away from the minimum.
 
@@ -371,6 +371,13 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     of 2026-08-29, "change it so that it can produce something"; the other half is
     `openqha.orca.composite_hessian`, which swaps the source of the forces for the
     composite reference.
+
+    `distribution="classical"` replaces the quantum fluctuation by equipartition,
+    <q_k^2> = k_B T / omega_k^2 -- the distribution a classical 298 K trajectory (branch
+    B) samples. Below 300 cm^-1 the two agree to 1-6 % in amplitude at 298 K; above
+    1000 cm^-1 the quantum draw is 1.6-2.8x wider (zero-point motion) and carries 88 % of
+    a quantum frame's ~27 kcal/mol (propanal), against ~7 kcal/mol classical -- measured
+    2026-09-18, Hessian-learning note 4.
 
     `hessian=` (3N x 3N, eV/A^2, raw Cartesian) skips that computation and samples on
     the modes of the given matrix -- the Frame set (ticket 02) hands in the basin's
@@ -407,7 +414,12 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     nu_cm = eigenvalues_to_cm_inv(lam_v)
     omega = 2.0 * np.pi * C_CM_S * nu_cm          # rad/s
     x = HBAR_SI * omega / (2.0 * KB_SI_ * temperature_K)
-    q2_si = (HBAR_SI / (2.0 * omega)) / np.tanh(x)          # kg·m²
+    if distribution == "quantum":
+        q2_si = (HBAR_SI / (2.0 * omega)) / np.tanh(x)      # kg·m²
+    elif distribution == "classical":
+        q2_si = KB_SI_ * temperature_K / omega ** 2         # equipartition
+    else:
+        raise ValueError("distribution must be 'quantum' or 'classical', not {!r}".format(distribution))
     sigma_q = np.sqrt(q2_si) / (np.sqrt(AMU_KG_) * 1.0e-10)  # amu^½·Å
 
     per_sample = seeds is not None
@@ -439,6 +451,7 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     rec = dict(temperature_K=float(temperature_K), n_samples=int(n_samples),
                seed=int(seed), seeds=list(seeds), n_modes_sampled=int(keep.sum()),
                hessian_source="given" if hessian is not None else "finite_difference",
+               distribution=distribution,
                hessian_asymmetry_eV_A2=float(asym),
                frequencies_cm_inv=[float(t) for t in nu_cm],
                sigma_q_amu_half_A=[float(t) for t in sigma_q],
