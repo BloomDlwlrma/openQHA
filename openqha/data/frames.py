@@ -32,17 +32,23 @@ Every displaced frame is drawn from its own generator seeded by
 `frame_seed(qm9_index, basin, generator, k)` (SHA-256 of that tuple, 8 bytes), so one
 frame is reproducible from its own row of the Record without the others.
 
-FILTER
-------
-A frame whose engine |F|max exceeds FMAX_FILTER_EV_A, or whose bond graph differs from
-its basin's, is dropped and counted with its reason. The bond test is asymmetric on
-purpose: a basin bond is BROKEN when its length in the frame exceeds BOND_BREAK_MULT x
-(r_i + r_j) (covalent radii), a bond is FORMED when a non-bonded pair comes within
-BOND_FORM_MULT x (r_i + r_j). A single cutoff on both sides (ASE natural cutoffs at
-1.2) flagged 2 of 12 propanal frames whose C-H bond was stretched by 0.2 A at 0.12 A RMS
--- the zero-point stretch, not a reaction (measured 2026-09-18). The MACE E-F-H of a
-kept frame is written at generation time (Q8): it is the very quantity the loss
-compares to the label, and with it on disk the judge needs no engine.
+FILTER (user ruling 2026-09-18: the energy window only, as ANI-1 and SPICE)
+---------------------------------------------------------------------------
+A frame whose engine energy above its basin exceeds ENERGY_WINDOW_KCAL is dropped and
+counted. That is the whole filter. What the published sets do (read 2026-09-18): ANI-1
+(Smith, Isayev, Roitberg, Sci. Data 2017) applies an ENERGY window only, 275 kcal/mol
+above the lowest conformer, which removed 10.7 % of its normal-mode-sampled frames;
+SPICE (Eastman 2023) an energy cut only, 1e4 kJ/mol; OpenREACT / HORM / Transition1x /
+PFT none. No published set applies a bond-graph test to displaced frames -- OpenFF
+QCSubmit's `ConnectivityFilter` (covalent-radius guess, tolerance 1.2) is for
+OPTIMISED geometries -- and a 1.2 cutoff tried here flagged 2 of 12 propanal frames
+whose C-H was stretched by 0.2 A at 0.12 A RMS: the zero-point stretch, not a reaction.
+The bond graph is therefore NOT a filter; `bond_change` is still evaluated and written
+per frame (`BOND_CHANGE`, at the perception tolerances RDKit 1.3 / Open Babel ~1.4:
+broken > 1.35 x, formed < 0.95 x) so that a reader can see it, and the engine |F|max is
+recorded likewise. The MACE E-F-H of a kept frame is written at generation time (Q8):
+it is the very quantity the loss compares to the label, and with it on disk the judge
+needs no engine.
 
 ENERGY OF A DISPLACED FRAME
 ---------------------------
@@ -82,11 +88,11 @@ N_DISPLACED = 4
 TEMPERATURE_K = 298.15
 #: RMS displacement ceiling of a displaced frame (hessian.MAX_RMS_DISPLACEMENT_A)
 MAX_RMS_A = hessian_mod.MAX_RMS_DISPLACEMENT_A
-#: a frame with a larger engine force is not a geometry 298 K visits; dropped
-FMAX_FILTER_EV_A = 10.0
-#: a basin bond is broken in a frame when its length exceeds this x (r_i + r_j)
+#: ANI-1's window: a frame this far above its basin (kcal/mol) is dropped -- the only filter
+ENERGY_WINDOW_KCAL = 275.0
+#: reported, not filtered: a basin bond counts as broken when its length exceeds this x (r_i + r_j)
 BOND_BREAK_MULT = 1.35
-#: a bond is formed in a frame when a non-bonded pair comes within this x (r_i + r_j)
+#: reported, not filtered: a bond counts as formed when a non-bonded pair comes within this x (r_i + r_j)
 BOND_FORM_MULT = 0.95
 #: covalent-radius multiplier that defines the BASIN's bond graph (ASE natural cutoffs)
 BOND_CUTOFF_MULT = 1.2
@@ -103,10 +109,11 @@ SCHEMA = {
         "TEMPERATURE": ("Double", "K", "temperature of the harmonic quantum draw"),
         "N_DISPLACED_PER_BASIN": ("Integer", None, "displaced frames drawn per basin"),
         "MAX_RMS_A": ("Double", "A", "RMS displacement ceiling of a displaced frame (over the 3N coordinates)"),
-        "FMAX_FILTER_EV_A": ("Double", "eV/A", "a frame with a larger engine |F|max is dropped"),
-        "BOND_CUTOFF_MULT": ("Double", None, "covalent-radius multiplier defining the basin's bond graph"),
-        "BOND_BREAK_MULT": ("Double", None, "a basin bond longer than this x (r_i + r_j) in a frame is broken"),
-        "BOND_FORM_MULT": ("Double", None, "a non-bonded pair closer than this x (r_i + r_j) in a frame is a formed bond"),
+        "ENERGY_WINDOW_KCAL": ("Double", "kcal/mol", "the only filter: a frame further above its basin is dropped (ANI-1's 275; SPICE cuts at 2390)"),
+        "BOND_CUTOFF_MULT": ("Double", None, "covalent-radius multiplier defining the basin's bond graph (reported, not filtered)"),
+        "BOND_BREAK_MULT": ("Double", None, "a basin bond longer than this x (r_i + r_j) is reported as broken (RDKit perceives at 1.3, Open Babel ~1.4)"),
+        "BOND_FORM_MULT": ("Double", None, "a non-bonded pair closer than this x (r_i + r_j) is reported as formed"),
+        "N_BOND_CHANGED": ("Integer", None, "kept frames whose bond graph differs from the basin's (information, not a filter)"),
         "N_BASINS": ("Integer", None, "basins of the molecule"),
         "N_FRAMES": ("Integer", None, "frames kept, all generators"),
         "N_DROPPED": ("Integer", None, "frames dropped, all generators"),
@@ -129,8 +136,9 @@ SCHEMA = {
         "ENERGY_ABOVE_BASIN": ("Double", "kcal/mol", "engine energy above the frame's basin"),
         "MAX_FORCE": ("Double", "eV/A", "engine |F|max"),
         "LOWEST_FREQ": ("Double", "cm^-1", "lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); at a displaced frame this is a curvature, not a mode"),
+        "BOND_CHANGE": ("String", None, "broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)"),
         "STATUS": ("String", None, "kept / dropped"),
-        "REASON": ("String", None, "why dropped, or -"),
+        "REASON": ("String", None, "why dropped (the energy window), or -"),
     },
 }
 
@@ -215,7 +223,7 @@ def read_frames(path):
 
 # ====================================================================== the Calculation
 def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max_rms_A=MAX_RMS_A,
-             engine_name=None, fmax_filter=FMAX_FILTER_EV_A, qm9_index=None, calc=None):
+             engine_name=None, energy_window=ENERGY_WINDOW_KCAL, qm9_index=None, calc=None):
     """Build the Frame set of one molecule directory at the engine level: one extxyz per
     generator under `frames/` and the Record `frames/frames.{out,toml}`. Returns a dict
     with the rows and paths. `calc=` injects a calculator (tests); otherwise the
@@ -253,12 +261,10 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
         row = dict(GENERATOR=generator, BASIN=int(basin), K=int(k), SEED=int(seed), SOURCE_CONFORMER=int(source),
                    RMS_DISPLACEMENT_A=float(rms), ENERGY=float(e),
                    ENERGY_ABOVE_BASIN=(float(e) - e_basin[basin]) * EV_TO_KCAL,
-                   MAX_FORCE=fmax, LOWEST_FREQ=lowest, STATUS="kept", REASON="-")
-        change = bond_change(atoms, graphs[basin])
-        if fmax > fmax_filter:
-            row.update(STATUS="dropped", REASON="engine |F|max {:.2f} eV/A > {:.1f}".format(fmax, fmax_filter))
-        elif change:
-            row.update(STATUS="dropped", REASON="bond graph: " + change)
+                   MAX_FORCE=fmax, LOWEST_FREQ=lowest, BOND_CHANGE=bond_change(atoms, graphs[basin]) or "-",
+                   STATUS="kept", REASON="-")
+        if row["ENERGY_ABOVE_BASIN"] > energy_window:
+            row.update(STATUS="dropped", REASON="{:.1f} kcal/mol above the basin > {:.0f}".format(row["ENERGY_ABOVE_BASIN"], energy_window))
         rows.append(row)
         if row["STATUS"] == "kept":
             kept[generator].append(dict(
@@ -302,7 +308,7 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
             if not conf.is_file():
                 rows.append(dict(GENERATOR=gen, BASIN=-1, K=k, SEED=0, SOURCE_CONFORMER=cid, RMS_DISPLACEMENT_A=float("nan"),
                                  ENERGY=float("nan"), ENERGY_ABOVE_BASIN=float("nan"), MAX_FORCE=float("nan"), LOWEST_FREQ=float("nan"),
-                                 STATUS="dropped", REASON="no conf.extxyz for input frame {}".format(cid)))
+                                 BOND_CHANGE="-", STATUS="dropped", REASON="no conf.extxyz for input frame {}".format(cid)))
                 continue
             atoms = read(str(conf), format="extxyz")
             b = basin_of(cid)
@@ -324,8 +330,10 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
     info = dict(MOLECULE_DIR=str(molecule), QM9_INDEX=str(qid), SMILES=smiles, ENGINE=ename, LEVEL=level,
                 ENGINE_PARAMS_SHA256=prov.get("params_sha256"), ENGINE_PIN_STATUS=prov.get("params_pin_status"),
                 TEMPERATURE=float(temperature_K), N_DISPLACED_PER_BASIN=int(n_displaced), MAX_RMS_A=float(max_rms_A),
-                FMAX_FILTER_EV_A=float(fmax_filter), BOND_CUTOFF_MULT=BOND_CUTOFF_MULT,
-                BOND_BREAK_MULT=BOND_BREAK_MULT, BOND_FORM_MULT=BOND_FORM_MULT, N_BASINS=len(files),
+                ENERGY_WINDOW_KCAL=float(energy_window), BOND_CUTOFF_MULT=BOND_CUTOFF_MULT,
+                BOND_BREAK_MULT=BOND_BREAK_MULT, BOND_FORM_MULT=BOND_FORM_MULT,
+                N_BOND_CHANGED=sum(1 for r in rows if r["STATUS"] == "kept" and r["BOND_CHANGE"] != "-"),
+                N_BASINS=len(files),
                 N_FRAMES=sum(r["N_FRAMES"] for r in gen_rows), N_DROPPED=sum(r["N_DROPPED"] for r in gen_rows),
                 SECONDS=time.time() - t0)
     fdir = layout.frames_dir(molecule)
@@ -342,22 +350,26 @@ def _write_report(path, info, gen_rows, rows):
     rep = report.Report("openQHA frames", "the Frame set of {} at {}".format(info["QM9_INDEX"], info["LEVEL"]))
     rep.section("conventions")
     for k in ("ENGINE", "LEVEL", "ENGINE_PARAMS_SHA256", "ENGINE_PIN_STATUS", "TEMPERATURE", "N_DISPLACED_PER_BASIN",
-              "MAX_RMS_A", "FMAX_FILTER_EV_A", "BOND_CUTOFF_MULT", "BOND_BREAK_MULT", "BOND_FORM_MULT",
-              "N_BASINS", "N_FRAMES", "N_DROPPED"):
+              "MAX_RMS_A", "ENERGY_WINDOW_KCAL", "BOND_CUTOFF_MULT", "BOND_BREAK_MULT", "BOND_FORM_MULT",
+              "N_BOND_CHANGED", "N_BASINS", "N_FRAMES", "N_DROPPED"):
         rep.kv(k, info[k])
     rep.section("per generator")
     rep.table(["generator", "kept", "dropped", "file"],
               [[r["GENERATOR"], r["N_FRAMES"], r["N_DROPPED"], Path(r["FILE"]).name if r["FILE"] else "-"] for r in gen_rows])
     rep.section("per frame (eV; dE in kcal/mol above the basin; eV/A; A; cm^-1)")
-    rep.table(["generator", "basin", "k", "source", "rms", "E", "dE", "|F|max", "lowest", "status", "reason"],
+    rep.table(["generator", "basin", "k", "source", "rms", "E", "dE", "|F|max", "lowest", "bonds", "status", "reason"],
               [[r["GENERATOR"], r["BASIN"], r["K"], r["SOURCE_CONFORMER"], "%.4f" % r["RMS_DISPLACEMENT_A"],
                 "%.6f" % r["ENERGY"], "%.2f" % r["ENERGY_ABOVE_BASIN"], "%.4f" % r["MAX_FORCE"],
-                "%.1f" % r["LOWEST_FREQ"], r["STATUS"], r["REASON"]]
+                "%.1f" % r["LOWEST_FREQ"], r["BOND_CHANGE"], r["STATUS"], r["REASON"]]
                for r in rows])
     rep.note("a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term "
              "included -- the Hessian-learning target, not a frequency; 'lowest' at a displaced frame is a "
              "curvature. The basin frame reuses the basin's stored hessian.npy. dE of a displaced frame is "
              "the harmonic QUANTUM draw's energy (zero-point motion in every stretch), tens of kcal/mol at "
-             "0.1 A RMS -- not a classical 298 K energy. Hot-MD, cooled and hot normal-mode frames (SPICE, "
-             "OpenREACT) were considered and not built (rulings 2026-09-18).")
+             "0.1 A RMS -- not a classical 298 K energy, but the same range ANI-1's normal-mode sampling at "
+             "600-2000 K trained on (mean ~3/4 N_a kT). The only filter is the energy window (ANI-1's 275 "
+             "kcal/mol; SPICE cuts at 2390), as the published sets do; 'bonds' reports a broken or formed "
+             "bond at perception tolerances (RDKit 1.3 / Open Babel ~1.4) and never drops a frame. Hot-MD, "
+             "cooled and hot normal-mode frames (SPICE, OpenREACT) were considered and not built (rulings "
+             "2026-09-18).")
     rep.write(path, step=STEP)

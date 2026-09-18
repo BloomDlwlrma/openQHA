@@ -7,8 +7,9 @@ the basin frame's Hessian is the stored hessian.npy to 0 and its forces the surr
 zero; the displaced frames stay within the RMS ceiling and the same seed reproduces
 the same positions to 1e-12 while another seed does not; `merged` and `saddle` frames
 come from `DUPLICATE_MAP` / `SADDLE_CONFORMER_IDS` and `mace/confNN/conf.extxyz`; a frame
-with a broken bond and a frame with a huge force are dropped, named and counted; the
-extxyz files read back with a (3N, 3N) Hessian and the Record's counts add up.
+with a broken bond is kept and reported (no bond-graph filter: ANI-1 / SPICE ruling
+2026-09-18), the energy window is the only filter and names the frame's dE; the extxyz
+files read back with a (3N, 3N) Hessian and the Record's counts add up.
 """
 import shutil
 import sys
@@ -153,14 +154,20 @@ def main():
         pos = a.get_positions(); pos[9] += [0.0, 0.0, 1.2]                 # pull the aldehyde H off
         a.set_positions(pos); write(str(layout.mace_conformer_dir(mol2, 3) / "conf.extxyz"), a, format="extxyz")
         out2 = frames.generate(mol2, calc=Harmonic(basins2), engine_name="MACE-OFF23_medium", n_displaced=0)
-        dropped = [r for r in out2["frames"] if r["STATUS"] == "dropped"]
-        check("a merged conformer with a bond stretched by 1.2 A is dropped as 'bond graph: broken ...' and counted",
-              len(dropped) == 1 and dropped[0]["GENERATOR"] == "merged" and dropped[0]["REASON"].startswith("bond graph: broken")
-              and out2["info"]["N_DROPPED"] == 1 and not layout.frames_file(mol2, "merged", level).is_file(), dropped)
-        out3 = frames.generate(mol2, calc=Harmonic(basins2, force_scale=1e4), engine_name="MACE-OFF23_medium", n_displaced=1)
-        big = [r for r in out3["frames"] if r["STATUS"] == "dropped" and "|F|max" in r["REASON"]]
-        check("frames whose engine |F|max exceeds the filter are dropped with the value named (3 displaced + the saddle off-minimum)",
-              len(big) >= 3 and all(r["GENERATOR"] != "basin" for r in big), [(r["GENERATOR"], r["REASON"]) for r in big])
+        merged_row = [r for r in out2["frames"] if r["GENERATOR"] == "merged"][0]
+        check("a merged conformer with a bond stretched by 1.2 A is KEPT (no bond-graph filter, as ANI-1 / SPICE) but reported "
+              "as 'broken ...' and counted in N_BOND_CHANGED",
+              merged_row["STATUS"] == "kept" and merged_row["BOND_CHANGE"].startswith("broken")
+              and out2["info"]["N_BOND_CHANGED"] == 1 and out2["info"]["N_DROPPED"] == 0
+              and layout.frames_file(mol2, "merged", level).is_file(), merged_row)
+        out3 = frames.generate(mol2, calc=Harmonic(basins2, force_scale=1e4), engine_name="MACE-OFF23_medium", n_displaced=1,
+                               energy_window=5.0)
+        dropped = [r for r in out3["frames"] if r["STATUS"] == "dropped"]
+        check("the energy window is the only filter: with a 5 kcal/mol window every off-minimum frame is dropped with its dE named, "
+              "the basin frames stay",
+              len(dropped) >= 3 and all("kcal/mol above the basin" in r["REASON"] for r in dropped)
+              and all(r["GENERATOR"] != "basin" for r in dropped)
+              and all(r["STATUS"] == "kept" for r in out3["frames"] if r["GENERATOR"] == "basin"), [(r["GENERATOR"], r["REASON"]) for r in dropped])
 
     check("frame_seed is stable and distinct across (basin, k)",
           frames.frame_seed("x", 0, "displaced", 0) == frames.frame_seed("x", 0, "displaced", 0)
