@@ -27,9 +27,12 @@ N spread evenly over the sorted index list -- QM9 is ordered by heavy-atom count
 import argparse
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)      # `--dry-run | head` must not end in a traceback
 
 
 def _repo_root():
@@ -186,6 +189,9 @@ def main():
     print("frames       {} to label, {} finished already   ({})".format(
         len(todo), sum(d for _a, d in counts.values()), COMPLETION))
     print("resume       finished frames are skipped; the Record per molecule is rewritten by assemble")
+    if os.environ.get("SLURM_JOB_ID") and args.resource != "local" and not args.local:
+        print("workers      IN THIS ALLOCATION (job {}, {} node(s)): nothing is submitted".format(
+            os.environ["SLURM_JOB_ID"], os.environ.get("SLURM_JOB_NUM_NODES", "?")))
     print()
     print("frame list:")
     for mol, g, b, k in todo:
@@ -229,7 +235,7 @@ def main():
         pcfg = res.config(**kw)
         parsl.load(pcfg)
         _labels.check(pcfg, expect=label)
-        print("executor     {}".format(label))
+        print("executor     {}   mode {}".format(label, getattr(res, "LAST_MODE", None) or "local"), flush=True)
         app = python_app(label_frame_task, executors=[label])
         futures = [app(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough)
                    for mol, g, b, k in todo]

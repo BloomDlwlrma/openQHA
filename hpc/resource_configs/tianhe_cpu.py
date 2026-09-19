@@ -210,9 +210,20 @@ def _worker_init(here, role="crest"):
     return "; ".join(lines)
 
 
+def in_allocation_now():
+    """True inside a Slurm job that has not asked to nest (`S0_PARSL_NESTED=1` forces the
+    driver to submit its own blocks from inside a job). Same rule as tianhe_a.py."""
+    return bool(os.environ.get("SLURM_JOB_ID")) and os.environ.get("S0_PARSL_NESTED") != "1"
+
+
+def _allocated_nodes():
+    v = os.environ.get("SLURM_JOB_NUM_NODES") or os.environ.get("SLURM_NNODES") or "1"
+    return int(v) if v.isdigit() else 1
+
+
 def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
            walltime=None, run_dir=None, worker_init=None, max_workers=None,
-           role="crest", debug=False):
+           role="crest", debug=False, in_allocation=None):
     """Parsl Config for the Tianhe CPU cluster. Every argument defaults to SETTINGS.
 
     `role` selects the layout, because the jobs want opposite things from the same node:
@@ -222,22 +233,70 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         qha      64 workers x 1 core      the CPU fallback route for trajectories
         labels   16 workers x 4 ranks     one ORCA frame label per worker
 
-    `debug=True` swaps in DEBUG_PARTITION and DEBUG_WALLTIME and caps the run at one
-    allocation. That is the smoke test: real modules, real conda activation, real
-    scheduler, 30 minutes, one node. An explicit `partition`/`walltime` still wins.
+    TWO MODES (user ruling 2026-09-19: tests do not run on the login node and do not hold
+    the command line; a Batch is a submitted job):
+
+        in-allocation   the driver runs INSIDE a Slurm job (`sbatch hpc/slurm/hl_*.slurm`):
+                        LocalProvider on the job's own node(s), `SrunLauncher` when the
+                        job holds more than one node, nothing submitted. The default
+                        whenever SLURM_JOB_ID is set (`in_allocation_now`).
+        nested          the driver runs on the login node and parsl submits blocks
+                        through `TianheCNSlurmProvider` (`sbatch`, S0-G-74). The driver
+                        then sits in the login shell for the whole Batch.
+
+    `debug=True` (nested) swaps in DEBUG_PARTITION and DEBUG_WALLTIME and caps the run
+    at one allocation. An explicit `partition`/`walltime` still wins.
     """
     from parsl.config import Config
     from parsl.executors import HighThroughputExecutor
-    from parsl.launchers import SimpleLauncher
-
-    from providers import TianheCNSlurmProvider
+    from parsl.launchers import SimpleLauncher, SrunLauncher
 
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     workers, cores, role_blocks = layout(role)
-    if debug:
-        partition = partition or DEBUG_PARTITION
-        walltime = walltime or DEBUG_WALLTIME
-        role_blocks = 1
+    nested = not (in_allocation_now() if in_allocation is None else in_allocation)
+    if nested:
+        from providers import TianheCNSlurmProvider
+        if debug:
+            partition = partition or DEBUG_PARTITION
+            walltime = walltime or DEBUG_WALLTIME
+            role_blocks = 1
+        # TianheXY-CN is stock Slurm: `sbatch`, not the GPU clusters' `yhbatch`
+        # (S0-G-74). The CN provider maps nothing.
+        provider = TianheCNSlurmProvider(
+            partition or PARTITION,
+            account=account if account is not None else ACCOUNT,
+            nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
+            init_blocks=0, min_blocks=0,
+            # Capped at the site quota, whatever the caller asks for.
+            max_blocks=min(int(max_blocks or role_blocks),
+                           NODE_QUOTA // int(nodes_per_block or NODES_PER_BLOCK),
+                           JOB_QUOTA),
+            scheduler_options="",
+            # THIS CLUSTER IS THE OPPOSITE OF THE GPU ONES. Its normal partitions
+            # allocate a whole node -- the manual calls this exclusive mode -- so
+            # `exclusive=True` is correct here, while on TianheXY-AI the flag is
+            # banned outright. Two policies; that is why they are separate files.
+            exclusive=True,
+            launcher=SimpleLauncher(),
+            worker_init=worker_init or _worker_init(here, role),
+            walltime=walltime or WALLTIME,
+            cmd_timeout=60,
+        )
+        mode = "nested"
+    else:
+        # -------- run inside the job the driver already holds ---------------------------
+        # The job script has sourced hpc/env/{common,tianhe,orca}.sh, so the workers
+        # inherit the environment; the worker init is still run (idempotent: orca.sh
+        # returns at once when S0_ORCA_BIN is set) so a worker started by srun on another
+        # node of the allocation is set up the same way.
+        from parsl.providers import LocalProvider
+        nodes = _allocated_nodes()
+        provider = LocalProvider(
+            nodes_per_block=nodes, init_blocks=1, min_blocks=1, max_blocks=1,
+            launcher=SrunLauncher() if nodes > 1 else SimpleLauncher(),
+            worker_init=worker_init if worker_init is not None else _worker_init(here, role),
+        )
+        mode = "in-allocation ({} node{})".format(nodes, "s" if nodes > 1 else "")
 
     cfg = Config(
         executors=[
@@ -248,28 +307,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
                 label=_labels.label(role),
                 max_workers_per_node=int(max_workers or workers),
                 cores_per_worker=float(cores),
-                # TianheXY-CN is stock Slurm: `sbatch`, not the GPU clusters' `yhbatch`
-                # (S0-G-74). The CN provider maps nothing.
-                provider=TianheCNSlurmProvider(
-                    partition or PARTITION,
-                    account=account if account is not None else ACCOUNT,
-                    nodes_per_block=nodes_per_block or NODES_PER_BLOCK,
-                    init_blocks=0, min_blocks=0,
-                    # Capped at the site quota, whatever the caller asks for.
-                    max_blocks=min(int(max_blocks or role_blocks),
-                                   NODE_QUOTA // int(nodes_per_block or NODES_PER_BLOCK),
-                                   JOB_QUOTA),
-                    scheduler_options="",
-                    # THIS CLUSTER IS THE OPPOSITE OF THE GPU ONES. Its normal partitions
-                    # allocate a whole node -- the manual calls this exclusive mode -- so
-                    # `exclusive=True` is correct here, while on TianheXY-AI the flag is
-                    # banned outright. Two policies; that is why they are separate files.
-                    exclusive=True,
-                    launcher=SimpleLauncher(),
-                    worker_init=worker_init or _worker_init(here, role),
-                    walltime=walltime or WALLTIME,
-                    cmd_timeout=60,
-                ),
+                provider=provider,
             ),
         ],
         run_dir=run_dir or os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
@@ -280,7 +318,12 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         strategy="simple",
     )
     _labels.check(cfg, expect=_labels.label(role))
+    global LAST_MODE
+    LAST_MODE = mode
     return cfg
+
+
+LAST_MODE = None
 
 
 def describe():
@@ -308,6 +351,7 @@ def describe():
         labels=[_labels.label(r) for r in sorted(_LAYOUT)],
         tag=TAG, timeout_s=TIMEOUT_S, hessian_mode=HESSIAN_MODE,
         qha_wall_budget_s=QHA_WALL_BUDGET_S,
+        mode_now="in_allocation" if in_allocation_now() else "nested",
         labels_ranks_per_job=LABELS_RANKS_PER_JOB, labels_workers_per_node=LABELS_WORKERS_PER_NODE,
         maxcore_mb=LABELS_MAXCORE_MB,
         orca_env="conda env orca611 via ~/env_orca611.sh (hpc/env/orca.sh); ORCA 6.1.1 verified on the login node 2026-09-18",

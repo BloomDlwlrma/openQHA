@@ -206,10 +206,17 @@ def main():
     check("tianhe_cpu role labels: 16 workers x 4 ranks, 12 blocks, maxcore 6000, label registered, worker init sources env/orca.sh",
           (w, c, b) == (16, 4, 12) and d["maxcore_mb"] == 6000 and _labels.label("labels") == "openqha_labels_executor"
           and "env/orca.sh" in init and "openqha_find_orca" in init and "unset $v" in init, (w, c, b, d.get("maxcore_mb")))
+    import providers as _prov
+    check("providers.normalise_walltime: Slurm's day form becomes the HH:MM:SS parsl parses (3-00:00:00 -> 72:00:00, 7-00:00:00 -> 168:00:00, 00:30:00 kept)",
+          _prov.normalise_walltime("3-00:00:00") == "72:00:00" and _prov.normalise_walltime("7-00:00:00") == "168:00:00"
+          and _prov.normalise_walltime("00:30:00") == "00:30:00" and _prov.normalise_walltime("1-12:30") == "36:30:00")
+    cfg_wt = tc.config(role="labels", max_blocks=1, walltime="7-00:00:00", run_dir="/tmp/parsl_render_t")
+    check("the tianhe labels provider carries the normalised walltime (7-00:00:00 -> 168:00:00)",
+          cfg_wt.executors[0].provider.walltime == "168:00:00", cfg_wt.executors[0].provider.walltime)
     sh = (ROOT / "hpc" / "env" / "orca.sh").read_text(encoding="utf-8")
-    check("hpc/env/orca.sh: enters env_orca611.sh, exports S0_ORCA_BIN/PATH/LIB, restores PATH and LD_LIBRARY_PATH",
+    check("hpc/env/orca.sh: enters env_orca611.sh, reads ORCA_PATH / type -P (never an alias), exports S0_ORCA_BIN/PATH/LIB, restores PATH and LD_LIBRARY_PATH",
           all(s in sh for s in ("env_orca611.sh", "export S0_ORCA_BIN S0_ORCA_PATH S0_ORCA_LIB", 'export PATH="$_path"',
-                                'export LD_LIBRARY_PATH="$_ld"', "conda deactivate")))
+                                'export LD_LIBRARY_PATH="$_ld"', "conda deactivate", "$ORCA_PATH/orca", "type -P orca", "unalias orca")))
     os.environ["S0_ORCA_PATH"], os.environ["S0_ORCA_LIB"] = "/x/bin", "/x/lib"
     env = orca.subprocess_env()
     del os.environ["S0_ORCA_PATH"], os.environ["S0_ORCA_LIB"]

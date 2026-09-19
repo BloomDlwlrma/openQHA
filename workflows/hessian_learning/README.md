@@ -48,32 +48,40 @@ python workflows/hessian_learning/03_labels.py --tag rings --all --dry-run      
 python workflows/hessian_learning/03_labels.py --tag rings --species dsgdb9nsd_000048 --local   # here, no Parsl
 ```
 
-### On tianhe (TianheXY‑C, user ruling 2026‑09‑18)
+### On tianhe (TianheXY‑C; rulings 2026‑09‑18 / 2026‑09‑19)
+
+**Nothing runs on the login node and no Batch holds the command line: every step is a
+submitted job.** `hpc/resource_configs/tianhe_cpu.py` runs *in‑allocation* whenever the
+driver is inside a Slurm job (LocalProvider on the job's node(s), `srun` launcher across
+nodes, nothing submitted); the login‑node "nested" mode (parsl submits blocks with
+`sbatch`, S0‑G‑74) still exists but is not the way to test.
 
 One frame per Parsl task, `%pal nprocs 4`, `%maxcore 6000` (512 GB × 0.75 / 64), 16
-frames per 64‑core node — role `labels` in `hpc/resource_configs/tianhe_cpu.py`; the
-CPU cluster submits with `sbatch` (S0‑G‑74). ORCA 6.1.1 lives in the conda env
-`orca611`; `hpc/env/orca.sh` enters `~/env_orca611.sh` once in the worker init, records
-`S0_ORCA_BIN` / `S0_ORCA_PATH` / `S0_ORCA_LIB`, and leaves again, so the worker stays in
-`openqha` and only the ORCA subprocess sees those paths. ORCA's scratch goes to the
-node‑local `S0_SCRATCH`; `job.{inp,out,hess,engrad,xyz,property.txt}` come back.
+frames per 64‑core node (role `labels`). ORCA 6.1.1 (shared build, OpenMPI 4.1.8 in the
+conda env `orca611`, verified 2026‑09‑19: 4 MPI processes, water in 41 s) is located by
+`hpc/env/orca.sh` from `~/env_orca611.sh` (`ORCA_PATH` + alias) without activating that
+env in the worker; ORCA's scratch goes to node‑local `S0_SCRATCH`.
 
 ```bash
-# 1. one frame on the debug queue (30 min): modules, conda, ORCA, sbatch, status query
-python -u workflows/hessian_learning/03_labels.py --tag smoke --all --resource tianhe_cpu --debug --limit-frames 1
-# 2. the smoke set (7 molecules, ~80 frames) on one node -- the molecules 01_select chose
-python -u workflows/hessian_learning/03_labels.py --tag smoke --name smoke --resource tianhe_cpu --max-blocks 1
-# 3. the 200-molecule draw on 12 nodes (7-day walltime allowed on deimos)
-python -u workflows/hessian_learning/01_select.py --tag draw --name draw200 --limit 200 --stratify
-python -u workflows/hessian_learning/03_labels.py --tag draw --name draw200 --resource tianhe_cpu --walltime 7-00:00:00
+cd ~/openQHA-main
+# 1. the whole pipeline on debug, one node, 30 min: branch A -> 02 -> 01 -> 03 (one round of
+#    16 frames, in the allocation) -> 04. Skips what is already on disk.
+sbatch hpc/slurm/hl_pipeline_debug.slurm                    # TAG=smoke, the seven pinned molecules
+# 2. the remaining labels + the Dataset, as one job (deimos 1 node 4 h by default;
+#    finished frames are skipped, so resubmit after a time limit)
+sbatch hpc/slurm/hl_labels.slurm                            # TAG=smoke
+TAG=smoke PARTITION=debug TIME=00:30:00 LIMIT_FRAMES=32 sbatch hpc/slurm/hl_labels.slurm   # or two rounds on debug
+# 3. the 200-molecule draw on 12 nodes
+TAG=draw NAME=draw200 sbatch --nodes=12 --time=7-00:00:00 hpc/slurm/hl_labels.slurm
 ```
+Read the Slurm log (`openqha_hl_*_<job>.out` in the submit directory): the frame list,
+`workers IN THIS ALLOCATION`, the Batch table (frame, route, MB, rigid block), then step
+04's per‑molecule split. Measured 2026‑09‑19 on a debug node: one wB97M‑D3BJ/def2‑TZVPPD
+label of a 10‑atom frame = **278 s, 91 MB per rank**.
 
-A resubmission skips every frame whose `job.out` carries the terminal line and whose
-`job.hess` exists, and reruns the rest; `assemble` then rewrites the file and the Record
-from what is on disk. Environment check on the login node before step 1:
-`source ~/env_orca611.sh && which orca && orca --version | head -3` (expect 6.1.1), and
-`conda activate openqha && python -c "import procrustes"` (branch A needs
-`qc-procrustes`; `pip install qc-procrustes` if it fails).
+Environment check, once, on the login node (seconds, no compute):
+`source ~/env_orca611.sh && mpirun --version | head -1` (Open MPI 4.1.x) and
+`python -c "import procrustes"` in `openqha` (branch A needs `qc-procrustes`).
 
 ## Step 04: the Dataset (rounds 3–4, Q3/Q6 (b))
 

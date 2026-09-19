@@ -123,6 +123,27 @@ def preflight(site="tianhe"):
     return out
 
 
+def normalise_walltime(walltime):
+    """Slurm's `D-HH:MM:SS` (also `D-HH:MM`, `D-HH`, `HH:MM`) as the `HH:MM:SS` parsl's
+    `wtime_to_minutes` reads -- it does `hours, mins, seconds = s.split(':')` and
+    `int(hours)`, so the day form the site's own scripts use failed the first labels
+    Batch on tianhe with "invalid literal for int() with base 10: '3-00'" (2026-09-19).
+    Parsl renders `--time` in minutes, so nothing else changes."""
+    s = str(walltime).strip()
+    days = 0
+    if "-" in s:
+        d, s = s.split("-", 1)
+        days = int(d)
+    parts = s.split(":")
+    if len(parts) == 1:
+        h, m, sec = int(parts[0]), 0, 0
+    elif len(parts) == 2:
+        h, m, sec = int(parts[0]), int(parts[1]), 0
+    else:
+        h, m, sec = int(parts[0]), int(parts[1]), int(parts[2])
+    return "{:02d}:{:02d}:{:02d}".format(days * 24 + h, m, sec)
+
+
 def _swap(text, mapping):
     """Replace whole-word command names in a command string."""
     import re
@@ -168,6 +189,8 @@ if SlurmProvider is not None:
             # raise AttributeError, on every machine. The class had never been
             # constructed here (branch E only ever ran the `local` config), which is
             # what let it survive: written is not the same as executed.
+            if "walltime" in kwargs:
+                kwargs["walltime"] = normalise_walltime(kwargs["walltime"])
             src, dst = COMMANDS["slurm"], COMMANDS[self.site]
             self._command_map = {
                 src["submit"]: dst["submit"],
