@@ -46,6 +46,7 @@ source hpc/env/tianhe.sh || { echo "openQHA: hpc/env/tianhe.sh refused (root unr
 source hpc/env/orca.sh
 openqha_find_orca || { echo "openQHA: no ORCA -- step 03 cannot run" >&2; }
 openqha_report_env
+export S0_PARSL_RUN_DIR="$S0_RUNS_ROOT/parsl/${SLURM_JOB_NAME:-hl}_${SLURM_JOB_ID:-$$}"   # one parsl run dir per job: two jobs must never share parsl's numbered runinfo
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME"
 echo "species    $SPECIES"

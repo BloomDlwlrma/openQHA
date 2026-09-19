@@ -185,6 +185,19 @@ def main():
               and (layout.orca_frame_dir(mol, LEVEL, "basin", 2, 0) / "job.out").is_file(),
               (raised, out4["failures"], out4["info"]["N_UNLABELLED"]))
 
+        # --- a frame claimed by another Batch is skipped; a stale claim is not ------------
+        wd_lock = layout.orca_frame_dir(mol, LEVEL, "displaced", 1, 0)
+        wd_lock.mkdir(parents=True, exist_ok=True)
+        (wd_lock / frame_labels.LOCK).write_text("999 now\n", encoding="utf-8")
+        fake6 = FakeOrca()
+        lab6 = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
+        calls_after_claim = fake6.calls
+        os.utime(wd_lock / frame_labels.LOCK, (1, 1))              # a lock from 1970: stale
+        lab6b = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
+        check("a fresh 'running' claim by another Batch skips the frame (runner not called, status running); a stale claim is taken over and released",
+              lab6["status"] == "running" and calls_after_claim == 0 and lab6b["status"] == "refused" and fake6.calls == 1
+              and not (wd_lock / frame_labels.LOCK).exists(), (lab6["status"], fake6.calls, lab6b["status"]))
+
         # --- scratch: the run happens elsewhere and only KEEP files come back ---------
         scratch = Path(tmp) / "scratch"
         fake5 = FakeOrca()

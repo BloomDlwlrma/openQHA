@@ -73,6 +73,11 @@ POSITION_TOL_A = 1e-7
 KEEP = (".inp", ".out", ".hess", ".engrad", ".xyz", ".property.txt", "_property.txt")
 STEM = "job"
 TERMINAL = "****ORCA TERMINATED NORMALLY****"
+#: a frame's job directory is claimed with this file while ORCA runs; a claim older than
+#: LOCK_MAX_AGE_S (a killed job) is ignored. Two Batches over one selection then partition
+#: the frames instead of labelling the same ones (two debug jobs did, 2026-09-19).
+LOCK = "running"
+LOCK_MAX_AGE_S = 2 * 3600
 
 SCHEMA = {
     "Calculation_Info": {
@@ -178,6 +183,34 @@ def finished(workdir, stem=STEM):
     return hess.is_file() and out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")
 
 
+def running_elsewhere(workdir, max_age_s=LOCK_MAX_AGE_S):
+    """True when another process holds a fresh claim on this frame's job directory."""
+    lock = Path(workdir) / LOCK
+    try:
+        return lock.is_file() and (time.time() - lock.stat().st_mtime) < max_age_s
+    except OSError:
+        return False
+
+
+def _claim(workdir):
+    """Claim the job directory: the lock file names the job (Slurm id or pid). Returns
+    False when a fresh claim by someone else is there."""
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    if running_elsewhere(workdir):
+        return False
+    (workdir / LOCK).write_text("{} {}\n".format(os.environ.get("SLURM_JOB_ID", "pid{}".format(os.getpid())),
+                                                 time.strftime("%Y-%m-%dT%H:%M:%S")), encoding="utf-8")
+    return True
+
+
+def _release(workdir):
+    try:
+        (Path(workdir) / LOCK).unlink()
+    except OSError:
+        pass
+
+
 def total_run_seconds(out_text):
     """ORCA's `TOTAL RUN TIME: d days h hours m minutes s seconds ms msec`, or None."""
     m = re.search(r"TOTAL RUN TIME:\s+(\d+) days (\d+) hours (\d+) minutes (\d+) seconds (\d+) msec", out_text)
@@ -272,8 +305,9 @@ def parse_label(workdir, atoms, stem=STEM):
 def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCORE_MB,
               scratch=None, timeout_s=None, runner=None, mace_level_name=None, charge=0, mult=1):
     """ORCA on one frame. Returns the parsed label plus `status` ("labelled" when ORCA ran
-    now, "reused" when its finished job was on disk, "refused" on a geometry mismatch)
-    and the wall seconds of this call. Raises when ORCA does not terminate normally --
+    now, "reused" when its finished job was on disk, "refused" on a geometry mismatch,
+    "running" when another Batch holds a fresh claim on the frame -- nothing is parsed
+    then) and the wall seconds of this call. Raises when ORCA does not terminate normally --
     the caller (a Batch task) records that; the `.out` stays for reading.
 
     `scratch`: a directory to run in (node-local); KEEP files are copied to the
@@ -286,20 +320,26 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
     keywords, blocks, _route = keyword_line(level)
     status = "reused"
     if not finished(workdir):
+        if not _claim(workdir):
+            return dict(status="running", generator=generator, basin=int(basin), k=int(k), keywords=keywords,
+                        wall_seconds=time.time() - t0, workdir=str(workdir), out=str(workdir / (STEM + ".out")),
+                        seconds=None, memory_mb=None, hessian_route="-", noise_floor_cm=float("nan"), orca_version="-")
         status = "labelled"
         rundir = Path(scratch) / molecule.name / frame_tag(generator, basin, k) if scratch else workdir
         rundir.mkdir(parents=True, exist_ok=True)
-        workdir.mkdir(parents=True, exist_ok=True)
         inp, out = rundir / (STEM + ".inp"), rundir / (STEM + ".out")
         inp.write_text(orca.input_text(atoms.get_chemical_symbols(), atoms.get_positions(), keywords,
                                        nprocs, maxcore, charge, mult, blocks), encoding="utf-8")
-        rc = (runner or _run_orca)(inp, out, rundir, timeout_s)
-        text = out.read_text(encoding="utf-8", errors="replace") if out.is_file() else ""
-        if scratch:
-            for f in sorted(rundir.iterdir()):
-                if f.name.startswith(STEM) and any(f.name.endswith(s) for s in KEEP):
-                    shutil.copy2(f, workdir / f.name)
-            shutil.rmtree(rundir, ignore_errors=True)
+        try:
+            rc = (runner or _run_orca)(inp, out, rundir, timeout_s)
+            text = out.read_text(encoding="utf-8", errors="replace") if out.is_file() else ""
+            if scratch:
+                for f in sorted(rundir.iterdir()):
+                    if f.name.startswith(STEM) and any(f.name.endswith(s) for s in KEEP):
+                        shutil.copy2(f, workdir / f.name)
+                shutil.rmtree(rundir, ignore_errors=True)
+        finally:
+            _release(workdir)
         if TERMINAL not in text:
             raise RuntimeError("ORCA did not finish normally for {} of {} (rc {}). Tail:\n{}".format(
                 frame_tag(generator, basin, k), molecule.name, rc, "\n".join(text.split("\n")[-25:])))
@@ -428,6 +468,10 @@ def run(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxcore=M
             failures.append((frame_tag(g, b, k), "{}: {}".format(type(exc).__name__, str(exc)[:200])))
             if progress:
                 progress("FAILED  {} {}: {}".format(molecule.name, frame_tag(g, b, k), str(exc)[:120]))
+            continue
+        if lab["status"] == "running":
+            if progress:
+                progress("{} {} running elsewhere, skipped".format(molecule.name, frame_tag(g, b, k)))
             continue
         if lab["status"] == "labelled":
             computed.append(frame_tag(g, b, k))

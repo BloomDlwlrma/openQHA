@@ -119,9 +119,12 @@ def pending(mols, level, generators):
         n_all = n_done = 0
         for g, b, k in frame_labels.frame_list(mol, generators):
             n_all += 1
-            if frame_labels.finished(layout.orca_frame_dir(mol, level, g, b, k)):
+            wd = layout.orca_frame_dir(mol, level, g, b, k)
+            if frame_labels.finished(wd):
                 n_done += 1
                 continue
+            if frame_labels.running_elsewhere(wd):
+                continue                                   # another Batch holds it (its lock is fresh)
             todo.append((mol, g, b, k))
         counts[mol.name] = (n_all, n_done)
     return todo, counts
@@ -232,6 +235,8 @@ def main():
             kw["debug"] = True
         if args.resource != "local" and "role" not in accepted:
             raise SystemExit("resource {!r} has no roles; the labels executor is not there".format(args.resource))
+        kw.setdefault("run_dir", os.environ.get("S0_PARSL_RUN_DIR") or os.path.join(
+            str(config.runs_root(cfg)), "parsl", "labels_{}".format(os.environ.get("SLURM_JOB_ID") or "pid{}".format(os.getpid()))))
         pcfg = res.config(**kw)
         parsl.load(pcfg)
         _labels.check(pcfg, expect=label)
@@ -276,7 +281,7 @@ def main():
         r["record"] = r.get("record")
         r["STATUS"] = r.get("status")
     _bt.print_table(results, extra=(("frame", 18, "<"), ("route", 9, "<"), ("memory_mb", 9, ">"), ("floor_cm", 8, ">")))
-    ok = [r for r in results if r.get("status") in ("labelled", "reused")]
+    ok = [r for r in results if r.get("status") in ("labelled", "reused", "running")]
     single = sorted(r["seconds"] for r in ok if r.get("seconds") is not None)
     print()
     print("wall_seconds_for_the_whole_batch  {:.1f}".format(wall))
