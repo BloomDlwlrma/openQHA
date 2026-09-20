@@ -124,7 +124,7 @@ def main():
         check("load() gives the dict", prop.load(path)["Census"]["N_BASINS"] == 2)
 
     print("E. the records path rule (no setting level; the setting is in the stem):")
-    m = Path("/r/tag/1_16000/1_1000/dsgdb9nsd_000035")
+    m = Path("/r/tag/dsgdb9nsd_000035")
     check("md records dir openmm", layout.md_records_dir(m, "openmm"), m / "_records/md_openmm")
     check("md records dir ase", layout.md_records_dir(m, "ase"), m / "_records/md_ase")
     check("basin records dir", layout.basin_records_dir(m, "openmm", 1), m / "_records/md_openmm/basin01")

@@ -222,7 +222,7 @@ def molecules_with_branch_a(root, tag):
     """(qid, molecule dir) for every molecule under `tag` whose branch A finished."""
     base = Path(root) / str(tag)
     out = []
-    for rec in sorted(base.glob("*/*/*/{}/{}".format(layout.RECORDS, "branchA.toml"))):
+    for rec in sorted(base.glob("*/{}/{}".format(layout.RECORDS, "branchA.toml"))):
         mol = rec.parent.parent
         if basins_mod.done(mol.name, tag, root=root):
             out.append((mol.name, mol))

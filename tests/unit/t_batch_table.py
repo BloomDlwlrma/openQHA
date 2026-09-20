@@ -45,10 +45,10 @@ def main():
     extra = (("frames", 6, ">"), ("verdict", 7, "<"))
     h = bt.header(extra)
     r1 = dict(species="dsgdb9nsd_000018", basin=0, seed=0, rc=0, seconds=12.34,
-              status="NORMAL TERMINATION", record="/r/t/1_16000/1_1000/dsgdb9nsd_000018/_records/md_openmm/basin00/md.toml",
+              status="NORMAL TERMINATION", record="/r/t/dsgdb9nsd_000018/_records/md_openmm/basin00/md.toml",
               frames=77, verdict="PASS")
     r2 = dict(species="dsgdb9nsd_000035", basin=2, seed=None, rc=1, seconds=3.0, status="FAILED",
-              record="/r/t/1_16000/1_1000/dsgdb9nsd_000035/_records/md_openmm/basin02/md.toml", frames=None)
+              record="/r/t/dsgdb9nsd_000035/_records/md_openmm/basin02/md.toml", frames=None)
     l1, l2 = bt.line(r1, extra), bt.line(r2, extra)
     check("common columns in order", h.split()[:7] == ["species", "basin", "seed", "rc", "seconds", "STATUS", "record"], h)
     check("record column at one offset", h.index("record") == l1.index("/r/") == l2.index("/r/"), (h, l1, l2))

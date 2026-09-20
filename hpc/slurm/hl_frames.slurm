@@ -5,8 +5,8 @@
 # ruling 2026-09-19). TianheXY-C. MACE on CPU, one thread per process (common.sh).
 #
 #     cd $HOME/openQHA-main
-#     TAG=draw NAME=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm   # the gate
-#     TAG=draw NAME=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm               # the campaign
+#     TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm   # the gate
+#     TAG=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm               # the campaign
 #
 # Molecules with a Frame-set Record are skipped, so a resubmission continues.
 # =======================================================================================
@@ -21,7 +21,7 @@
 # no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
 
 TAG="${TAG:-draw}"
-NAME="${NAME:-draw300}"
+NAME="${NAME:-$TAG}"
 CONCURRENCY="${CONCURRENCY:-16}"
 THREADS="${THREADS:-4}"
 LIMIT="${LIMIT:-}"

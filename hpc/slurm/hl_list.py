@@ -5,8 +5,8 @@ hpc/slurm/hl_branchA.slurm and hl_frames.slurm. Login-node cheap: two globs, no 
 
 TOOLING.
 
-    python hpc/slurm/hl_list.py --tag draw --name draw300 --stage branchA --out list.txt
-    python hpc/slurm/hl_list.py --tag draw --name draw300 --stage frames --array-id 3 --array-n 12 --limit 16 --out list.txt
+    python hpc/slurm/hl_list.py --tag draw300 --stage branchA --out list.txt
+    python hpc/slurm/hl_list.py --tag draw300 --stage frames --array-id 3 --array-n 12 --limit 16 --out list.txt
 """
 import argparse
 import sys
@@ -29,13 +29,14 @@ from openqha.store import basins, layout                         # noqa: E402
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", required=True)
-    ap.add_argument("--name", required=True, help="the draw (00_draw.py --name)")
+    ap.add_argument("--name", default=None, help="the draw (00_draw.py --name; default: the tag)")
     ap.add_argument("--stage", choices=("branchA", "frames"), required=True)
     ap.add_argument("--array-id", type=int, default=0)
     ap.add_argument("--array-n", type=int, default=1)
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules for this task (the debug gate)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    args.name = args.name or args.tag
     root = config.runs_root(config.load())
     drawn = [r["qm9_index"] for r in sc.read_draw(root, args.tag, args.name)]
     todo = []

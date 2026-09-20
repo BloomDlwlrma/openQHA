@@ -129,7 +129,7 @@ to `logs/node_local/` doubles the run tree.
 
 Everything above this line is the state the user objected to. What replaced it:
 
-    <root>/<tag>/<range>/<chunk>/<qid>/
+    <root>/<tag>/<qid>/                (flat since 2026-09-20, ADR 0001 amendment 3; before: <tag>/<range>/<chunk>/<qid>)
       crest/                      CREST's working directory, verbatim (+ input.toml, <qid>.xyz, crest.out)
       crest_shake1/               the SHAKE fallback attempt, only when it ran
       mace/confNN/                opt.traj  opt.log  conf.extxyz      every tightened conformer
@@ -150,7 +150,7 @@ Everything above this line is the state the user objected to. What replaced it:
     root   = <prefix>/HDD_POOL/<acct>/<user>/sherwin/runs, prefix /XYFS02 for partitions
              ai and cn, /XYAIFS00 for a100x h100x hx a800x v100x (hpc/env/root.sh derives
              it; S0_RUNS_ROOT set explicitly wins; off-cluster ~/runs/openQHA)
-    shard  = range 16 000 / chunk 1 000  (openqha/store/layout.py, the only place it is spelled)
+    no shard layers since 2026-09-20: <root>/<tag>/<qid>/  (openqha/store/layout.py, the only place it is spelled)
 
 Engine files only in the engine folders. CREST runs node-local (`$S0_SCRATCH/openqha_crest/`)
 and its finished directory is copied once into `crest/`; nothing else is copied anywhere.

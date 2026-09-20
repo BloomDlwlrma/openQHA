@@ -10,13 +10,23 @@ touches; the Slurm log is the Batch's report.
 | 00 | `00_draw.py` | `openqha.data.structure_classes.draw` | `<root>/<tag>/_datasets/<name>/draw.{out,toml,dat}` — the campaign's molecule list: 500 per structure class (`configs/structure_classes.yaml`) from the gated QM9 targets outside MACE-OFF23's SPICE training file, the union over classes, the pinned seven always in |
 | 01 | `01_select.py` | `openqha.data.dataset.select` | `<root>/<tag>/_datasets/<name>/select.{out,toml,dat}` — the molecule list with stratum, SPICE membership, pin status |
 | 02 | `02_frames.py` | `openqha.data.frames.generate` | `<molecule>/frames/<generator>.<mace level>.extxyz`, `frames/frames.{out,toml}` |
-| 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.*`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
+| 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
 | 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz`, `index.dat`, `dataset.{out,toml}`, `molecules-<name>.h5` |
 | 05, 06 | `05_train.py`, `06_judge.py` | stubs: refuse until round 2 is ruled | |
 
-`run.sh --tag T [--tag T2] --name NAME [--limit N] [--stratify] [--with-labels]` runs
+`run.sh --tag T [--tag T2] [--name NAME] [--limit N] [--stratify] [--with-labels]` runs
 01 → 02 → (03 with `--with-labels`, else skipped) → 04 here; the Dataset lives under the
 first tag's `_datasets/<name>/`.
+
+**One campaign = one tag = one Dataset** (ticket 09, ruling 2026‑09‑20): every step's
+`--name` and every stage script's `NAME` default to the tag, so `TAG=draw300` alone is the
+whole address — `<root>/draw300/<qid>/` for the molecules (the tag directory is flat: the
+two shard layers of 2026‑09‑14 are gone),
+`<root>/draw300/_datasets/draw300/` for the Dataset. `--name` is only for a second subset
+on the same tree. A frame's ORCA files are a FILE GROUP of the molecule directory,
+`orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}` (`layout.orca_frame_stem`), not a
+directory two levels down; the fields are joined by `.` because the level and the frame tag
+contain `_`. The msRRHO study's basin‑level jobs (`orca/<level>/basinNN/`) are unchanged.
 
 ## The frame recipe (rounds 3–4, rulings 2026‑09‑18)
 
@@ -66,26 +76,26 @@ disk, so a killed or time‑limited job is resubmitted as it is.
 | all of A → 04 | `hl_pipeline_debug.slurm` | the above in one `debug` job (one round of 16 labels) | |
 
 The label of a **basin / merged / saddle** frame is `EnGrad Freq` (E, F, H); of a
-**displaced** frame `EnGrad` only (E, F) — round 5, Q7 (b). Kept per job: `job.{inp,out,
-hess,engrad}`; no `.gbw`, `.loc`, `property.txt`. ORCA 6.1.1 (OpenMPI 4.1.8 in the conda
+**displaced** frame `EnGrad` only (E, F) — round 5, Q7 (b). Kept per frame: `<molecule>/orca.<level>.
+<frame>.{inp,out,hess,engrad}`; no `.gbw`, `.loc`, `property.txt`. ORCA 6.1.1 (OpenMPI 4.1.8 in the conda
 env `orca611`) is located by `hpc/env/orca.sh` from `~/env_orca611.sh` without activating
 that env in the job.
 
 ```bash
 cd ~/openQHA-main; export OPENQHA_PARTITION=deimos; source hpc/env/common.sh && source hpc/env/tianhe.sh
 # 00 the draw (login node, seconds; the same seed gives the same 6,458 molecules)
-python workflows/hessian_learning/00_draw.py --tag draw --name draw300 --per-class 300 --seed 0
+python workflows/hessian_learning/00_draw.py --tag draw300 --per-class 300 --seed 0
 # the gate: each stage once on debug, LIMIT=16
-TAG=draw NAME=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_branchA.slurm
-TAG=draw NAME=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm
-python workflows/hessian_learning/01_select.py --tag draw --name draw300
-TAG=draw NAME=draw300 LIMIT_FRAMES=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm
+TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_branchA.slurm
+TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm
+python workflows/hessian_learning/01_select.py --tag draw300
+TAG=draw300 LIMIT_FRAMES=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm
 # the campaign: arrays of 12 one-node tasks; the labels three times at 3 days (~8.4 days of 12 nodes at 300 per class)
-TAG=draw NAME=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm
-TAG=draw NAME=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm
-python workflows/hessian_learning/01_select.py --tag draw --name draw300
-TAG=draw NAME=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # x3, until task 0's assemble exits 0
-python workflows/hessian_learning/04_dataset.py --tag draw --name draw300 --export openreact
+TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm
+TAG=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm
+python workflows/hessian_learning/01_select.py --tag draw300
+TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # x3, until task 0's assemble exits 0
+python workflows/hessian_learning/04_dataset.py --tag draw300 --export openreact
 ```
 Read each task's log (`openqha_hl_<stage>_<jobid>_<task>.out`): the task list size, one
 line per molecule/frame, the summary line (`N done, N not, wall`). Measured 2026‑09‑19 on
@@ -98,7 +108,7 @@ blocks with `sbatch` as the queue demands and releasing them as it drains — th
 on‑disk state, so the two modes can be mixed:
 ```bash
 tmux new -s hl-labels
-python -u workflows/hessian_learning/03_labels.py --tag draw --name draw300 --resource tianhe_cpu \
+python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu \
     --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw_$(date +%F_%H%M).log
 # Ctrl+b d detaches; tmux attach -t hl-labels returns; squeue -u $USER shows the blocks
 ```
@@ -114,7 +124,7 @@ curated QM9 files against the quoted counts and flags a pattern >10 % off. `00_d
 draws 500 per class (seeded per class over the sorted candidates) from the 119,275 gated
 targets outside SPICE at any match level; the union is the list (a molecule counts for
 every class it is in), a short class takes all it has and the shortfall is in the Record.
-First real draw (`--name draw500 --seed 0`): **10,471 molecules**; eight‑membered rings
+First real draw (`--tag draw500 --seed 0`): **10,471 molecules**; eight‑membered rings
 378 (all), carboxylic acids 0 (QM9's gated targets have no free COOH).
 
 ## Step 04: the Dataset (rounds 3–4, Q3/Q6 (b))

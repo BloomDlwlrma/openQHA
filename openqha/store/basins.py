@@ -120,7 +120,7 @@ def missing_message(qid, tag, cfg=None, root=None):
     return msg
 
 
-def completed(tag, cfg=None, root=None, chunk_dir=None):
+def completed(tag, cfg=None, root=None):
     """QM9 indices whose basins exist under `tag`: what a resume subtracts.
 
     Done means both: `mace/basin00/basin.extxyz` (the geometries are the product) AND
@@ -128,13 +128,12 @@ def completed(tag, cfg=None, root=None, chunk_dir=None):
     NORMAL TERMINATION by branch A). A job killed between the census and the record
     leaves the first without the second and is redone. Two globs, no per-molecule stat
     (the Lustre lesson in `worklist.py`); the same rule as `done()`, one molecule at a time.
-    `chunk_dir` ("1_1000") restricts the scan to one leaf, for a per-chunk job.
     """
     from . import branch_a_property
     base = Path(root if root is not None else config.runs_root(cfg)) / str(tag)
     if not base.is_dir():
         return set()
-    leaf = "*/{}/*".format(chunk_dir) if chunk_dir else "*/*/*"
+    leaf = "*"                       # the tag directory is flat (ADR 0001, amendment 3)
 
     def _numbers(pattern, up):
         out = set()
@@ -150,13 +149,9 @@ def completed(tag, cfg=None, root=None, chunk_dir=None):
 
 
 def census(tag, cfg=None, root=None):
-    """How many molecules have basins under `tag`, per chunk. Login-node cheap."""
+    """How many molecules have basins under `tag`. Login-node cheap (one glob)."""
     base = Path(root if root is not None else config.runs_root(cfg)) / str(tag)
     if not base.is_dir():
-        return dict(root=str(base), exists=False, total=0, chunks={})
-    chunks = {}
-    for p in base.glob("*/*/*/mace/basin00/basin.extxyz"):
-        key = "{}/{}".format(p.parents[3].parent.name, p.parents[3].name)
-        chunks[key] = chunks.get(key, 0) + 1
-    return dict(root=str(base), exists=True, total=sum(chunks.values()),
-                chunks=dict(sorted(chunks.items())))
+        return dict(root=str(base), exists=False, total=0)
+    n = sum(1 for _ in base.glob("*/mace/basin00/basin.extxyz"))
+    return dict(root=str(base), exists=True, total=n)

@@ -5,8 +5,8 @@
 # shape). TianheXY-C.
 #
 #     cd $HOME/openQHA-main
-#     TAG=draw NAME=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_branchA.slurm   # the gate
-#     TAG=draw NAME=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm             # the campaign
+#     TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_branchA.slurm   # the gate
+#     TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm             # the campaign
 #
 # LAYOUT: CONCURRENCY x THREADS = 64 = the node (16 x 4, the measured 285 s/species
 # condition). Each array task takes every ARRAY_N-th pending molecule of the draw;
@@ -24,7 +24,7 @@
 # no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
 
 TAG="${TAG:-draw}"
-NAME="${NAME:-draw300}"
+NAME="${NAME:-$TAG}"
 THREADS="${THREADS:-4}"
 CONCURRENCY="${CONCURRENCY:-16}"
 LIMIT="${LIMIT:-}"

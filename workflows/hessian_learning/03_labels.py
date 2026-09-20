@@ -23,7 +23,7 @@ TWO WAYS TO RUN IT (user ruling 2026-09-19):
     # tianhe: one frame on the debug queue, then the smoke set on one node, then the draw
     python workflows/hessian_learning/03_labels.py --tag rings --all --resource tianhe_cpu --debug --limit-frames 1
     python workflows/hessian_learning/03_labels.py --tag smoke --all --resource tianhe_cpu --max-blocks 1
-    python workflows/hessian_learning/03_labels.py --tag draw --name draw200 --resource tianhe_cpu
+    python workflows/hessian_learning/03_labels.py --tag draw200 --resource tianhe_cpu
 
 `--name` labels exactly the molecules 01_select chose (select.dat); `--limit N` without
 it applies the same rule as 01 (pinned always, then the first N or, with `--stratify`,
@@ -65,7 +65,7 @@ from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels, frames       # noqa: E402
 from openqha.store import basins as basin_reader, layout     # noqa: E402
 
-COMPLETION = "<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.out carries ****ORCA TERMINATED NORMALLY**** and job.hess exists"
+COMPLETION = "<molecule>/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists"
 
 
 # ======================================================================================
@@ -105,7 +105,7 @@ def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, 
 def molecules_under(tag, cfg=None):
     """Every molecule directory under `tag` with a Frame set (login-node cheap)."""
     base = Path(config.runs_root(cfg)) / str(tag)
-    return sorted(p.parent.parent for p in base.glob("*/*/*/frames/{}.toml".format(frames.STEP)))
+    return sorted(p.parent.parent for p in base.glob("*/frames/{}.toml".format(frames.STEP)))
 
 
 def choose(mols, limit, stratify):
@@ -124,11 +124,11 @@ def pending(mols, level, generators):
         n_all = n_done = 0
         for g, b, k in frame_labels.frame_list(mol, generators):
             n_all += 1
-            wd = layout.orca_frame_dir(mol, level, g, b, k)
-            if frame_labels.finished(wd, hessian=frame_labels.wants_hessian(g)):
+            stem = layout.orca_frame_stem(level, g, b, k)
+            if frame_labels.finished(mol, stem, hessian=frame_labels.wants_hessian(g)):
                 n_done += 1
                 continue
-            if frame_labels.running_elsewhere(wd):
+            if frame_labels.running_elsewhere(mol, stem):
                 continue                                   # another Batch holds it (its lock is fresh)
             todo.append((mol, g, b, k))
         counts[mol.name] = (n_all, n_done)
@@ -138,10 +138,11 @@ def pending(mols, level, generators):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", required=True)
-    g = ap.add_mutually_exclusive_group(required=True)
+    g = ap.add_mutually_exclusive_group()
     g.add_argument("--species", nargs="*", help="QM9 indices")
     g.add_argument("--all", action="store_true", help="every molecule under the tag with a Frame set")
-    g.add_argument("--name", help="the Dataset name of 01_select: label exactly its molecules (select.dat under --tag)")
+    g.add_argument("--name", help="the Dataset name of 01_select: label exactly its molecules (select.dat under --tag); "
+                                  "the default when neither --species nor --all is given: the tag")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="reference level (orca.LEVELS)")
     ap.add_argument("--generators", nargs="*", default=None, help="subset of {}".format(", ".join(frames.GENERATORS)))
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules")
@@ -167,6 +168,8 @@ def main():
     args = ap.parse_args()
 
     cfg = config.load()
+    if not (args.species or args.all or args.name):
+        args.name = args.tag
     if args.species:
         mols = [basin_reader.molecule_for(q, args.tag) for q in args.species]
     elif args.name:

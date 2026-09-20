@@ -1,8 +1,10 @@
 """Ticket 03 of the Hessian-learning set: reference E-F-H labels per frame, on the
 propanal fixture with a FAKE ORCA (no binary): the runner copies the fixture's
 wB97M-D3BJ/def2-TZVPPd `job.hess` / `job.out` (ORCA 6.0.1, basin 0's own minimum) into
-the frame's job directory, and the basin frame of the Frame set is placed at exactly the
-.hess geometry so the round trip can be checked against ORCA's own frequencies.
+the frame's run directory, and the basin frame of the Frame set is placed at exactly the
+.hess geometry so the round trip can be checked against ORCA's own frequencies. The
+frame's files land as `<molecule>/orca.<level>.<gen>_bBB_kK.{inp,out,hess,engrad}`
+(ticket 09: a file group of the molecule directory, no per-frame directory).
 
 Asserted: the keyword line is the level's single point + EnGrad + Freq (analytic) or
 NumFreq (numerical); the labelled extxyz holds the MACE file's positions verbatim, the
@@ -90,6 +92,14 @@ class FakeOrca:
             text = "\n".join(lines)
         (cwd / "job.hess").write_text(text, encoding="utf-8")
         return 0
+
+
+def _raises(fn):
+    try:
+        fn()
+    except ValueError:
+        return True
+    return False
 
 
 def place_basin_at_hess(mol):
@@ -183,7 +193,8 @@ def main():
               lab3["status"] == "refused" and r1["STATUS"] == "refused" and "1e-07" in r1["REASON"]
               and out3["info"]["N_REFUSED"] == 1 and len(frames.read_frames(layout.frames_file(mol, "basin", LEVEL))) == 1,
               (lab3["status"], r1["REASON"]))
-        shutil.rmtree(layout.orca_frame_dir(mol, LEVEL, "basin", 0, 0))     # relabel basin 0 (the .hess geometry)
+        for f in mol.glob(layout.orca_frame_stem(LEVEL, "basin", 0, 0) + ".*"):     # relabel basin 0 (the .hess geometry)
+            f.unlink()
         fake3b = FakeOrca(shift_A=0.5)                      # every atom: ORCA's centre-of-mass frame
         lab3b = frame_labels.label_one(mol, LEVEL, "basin", 0, 0, runner=fake3b, mace_level_name=mlevel)
         check("a .hess translated as a whole (ORCA's centre-of-mass frame, 0.5 A) is accepted: shape deviation below the 1e-7 tolerance, COM shift reported",
@@ -200,32 +211,38 @@ def main():
         out4 = frame_labels.run(mol, LEVEL, generators=("basin",), runner=fake4)
         check("an ORCA that does not terminate raises (the .out stays); run() records the failure and assembles the rest",
               raised and len(out4["failures"]) == 1 and out4["info"]["N_UNLABELLED"] == 1 and out4["info"]["N_REUSED"] == 1
-              and (layout.orca_frame_dir(mol, LEVEL, "basin", 2, 0) / "job.out").is_file(),
+              and layout.orca_frame_file(mol, LEVEL, "basin", 2, 0, ".out").is_file()
+              and not (mol / ("." + layout.orca_frame_stem(LEVEL, "basin", 2, 0))).exists(),
               (raised, out4["failures"], out4["info"]["N_UNLABELLED"]))
 
         # --- a frame claimed by another Batch is skipped; a stale claim is not ------------
-        wd_lock = layout.orca_frame_dir(mol, LEVEL, "displaced", 1, 0)
-        wd_lock.mkdir(parents=True, exist_ok=True)
-        (wd_lock / frame_labels.LOCK).write_text("999 now\n", encoding="utf-8")
+        lock = frame_labels.lock_file(mol, layout.orca_frame_stem(LEVEL, "displaced", 1, 0))
+        lock.write_text("999 now\n", encoding="utf-8")
         fake6 = FakeOrca()
         lab6 = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
         calls_after_claim = fake6.calls
-        os.utime(wd_lock / frame_labels.LOCK, (1, 1))              # a lock from 1970: stale
+        os.utime(lock, (1, 1))                                      # a lock from 1970: stale
         lab6b = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
-        check("a fresh 'running' claim by another Batch skips the frame (runner not called, status running); a stale claim is taken over and released",
+        check("a fresh <stem>.running claim by another Batch skips the frame (runner not called, status running); a stale claim is taken over and released",
               lab6["status"] == "running" and calls_after_claim == 0 and lab6b["status"] == "labelled" and fake6.calls == 1
-              and not (wd_lock / frame_labels.LOCK).exists(), (lab6["status"], fake6.calls, lab6b["status"]))
+              and not lock.exists() and lock.name == "orca.wb97m-d3bj_def2-tzvppd.displaced_b01_k0.running",
+              (lab6["status"], fake6.calls, lab6b["status"], lock.name))
 
         # --- scratch: the run happens elsewhere and only KEEP files come back ---------
         scratch = Path(tmp) / "scratch"
         fake5 = FakeOrca()
         lab5 = frame_labels.label_one(mol, LEVEL, "displaced", 0, 0, runner=fake5, mace_level_name=mlevel, scratch=scratch)
-        wd = layout.orca_frame_dir(mol, LEVEL, "displaced", 0, 0)
-        check("with scratch: ORCA ran in scratch, job.{inp,out,engrad} copied back (no .hess: a gradient job), the scratch copy removed",
-              (wd / "job.out").is_file() and (wd / "job.engrad").is_file() and (wd / "job.inp").is_file()
-              and not (wd / "job.hess").exists()
+        stem5 = layout.orca_frame_stem(LEVEL, "displaced", 0, 0)
+        have5 = sorted(f.name for f in mol.glob(stem5 + ".*"))
+        check("with scratch: ORCA ran in scratch, job.{inp,out,engrad} copied back as <stem>.{inp,out,engrad} (no .hess: a gradient job), the scratch copy removed",
+              have5 == [stem5 + ".engrad", stem5 + ".inp", stem5 + ".out"]
+              and stem5 == "orca.wb97m-d3bj_def2-tzvppd.displaced_b00_k0"
               and not (scratch / mol.name / "displaced_b00_k0").exists() and lab5["status"] == "labelled",
-              (sorted(p.name for p in wd.iterdir()), lab5["status"]))
+              (have5, lab5["status"]))
+        n_dirs = sorted(d.name for d in mol.iterdir() if d.is_dir())
+        check("the molecule directory holds no orca/ or per-frame directory: the frame labels are its files; the level with a slash is refused",
+              "orca" not in n_dirs and not any(d.startswith(".orca") for d in n_dirs)
+              and _raises(lambda: layout.orca_frame_stem("WB97M/tz", "basin", 0, 0)), n_dirs)
 
         # --- Q7 (b): a displaced frame is a gradient job; the mixed file and Record --------
         kw_d = frame_labels.keyword_line(LEVEL, hessian=frame_labels.wants_hessian("displaced"))
@@ -243,6 +260,55 @@ def main():
               and out7["info"]["N_GRADIENT_FRAMES"] == 2 and out7["info"]["N_HESSIAN_FRAMES"] == 1
               and r7[("displaced", 0, 0)]["HAS_HESSIAN"] is False and r7[("basin", 0, 0)]["HAS_HESSIAN"] is True,
               (len(fd), out7["info"]["N_GRADIENT_FRAMES"], out7["info"]["N_HESSIAN_FRAMES"]))
+
+        # --- ticket 09: the flatten script moves the pre-ticket-09 folder form to the file group
+        before = {g: layout.frames_file(mol, g, LEVEL).read_bytes() for g in ("basin", "displaced")}
+        moved_back = 0
+        for f in sorted(mol.glob("orca.{}.*".format(LEVEL))):
+            engine, rest = f.name.split(".", 1)
+            level, frame, ext = rest[:len(LEVEL)], rest[len(LEVEL) + 1:].rsplit(".", 1)[0], f.suffix
+            old_dir = mol / "orca" / level / "frames" / frame
+            old_dir.mkdir(parents=True, exist_ok=True)
+            f.rename(old_dir / ("job" + ext))
+            moved_back += 1
+        (mol / "orca" / LEVEL / "basin00").mkdir(parents=True)                # an msRRHO basin-level job: untouched
+        (mol / "orca" / LEVEL / "basin00" / "job.out").write_text("x", encoding="utf-8")
+        sys.path.insert(0, str(ROOT / "scripts" / "tooling"))
+        import s0_flatten_tree as flat
+        # stage 1 on a copy of the tag in the pre-2026-09-20 shard form: <tag>/1_16000/1_1000/<qid>
+        tag_dir = mol.parent
+        old_mol = tag_dir / "1_16000" / "1_1000" / mol.name
+        old_mol.parent.mkdir(parents=True)
+        mol.rename(old_mol)
+        (tag_dir / "_label" / "acetone" / "_records").mkdir(parents=True)
+        smoves, sfolders = flat.plan_shards(tag_dir)
+        ns, cs, rs = flat.apply(smoves, sfolders)
+        smoves2, _ = flat.plan_shards(tag_dir)
+        check("s0_flatten_tree stage 1: <tag>/<range>/<chunk>/<qid> and <tag>/_label/<label> move up to <tag>/<qid>, the shard folders go, a second plan is empty",
+              ns == 2 and cs == 0 and rs == 3 and mol.is_dir() and (tag_dir / "acetone" / "_records").is_dir()
+              and not (tag_dir / "1_16000").exists() and not (tag_dir / "_label").exists() and not smoves2
+              and flat.molecules(tag_dir) == [mol], (ns, cs, rs, sorted(p.name for p in tag_dir.iterdir())))
+        moves, folders = flat.plan_frames(mol)
+        n_moved, n_conf, n_rm = flat.apply(moves, folders)
+        moves2, _ = flat.plan_frames(mol)
+        out9 = frame_labels.assemble(mol, LEVEL, generators=("basin", "displaced"))
+        after = {g: layout.frames_file(mol, g, LEVEL).read_bytes() for g in ("basin", "displaced")}
+        check("s0_flatten_tree stage 2: every job.<ext> of orca/<level>/frames/<frame>/ becomes <molecule>/orca.<level>.<frame><ext>, the emptied folders go, the basinNN/ job and its orca/ stay, a second plan is empty, assemble reproduces the label files byte for byte",
+              n_moved == moved_back and n_conf == 0 and not (mol / "orca" / LEVEL / "frames").exists()
+              and (mol / "orca" / LEVEL / "basin00" / "job.out").is_file() and not moves2
+              and after == before and out9["info"]["N_LABELLED"] == 3,
+              (n_moved, moved_back, n_conf, n_rm, len(moves2), out9["info"]["N_LABELLED"]))
+
+    # --- ticket 09 A: one campaign, one tag, one Dataset -------------------------------
+    heads = "".join((ROOT / "hpc" / "slurm" / f).read_text(encoding="utf-8") for f in
+                    ("hl_branchA.slurm", "hl_frames.slurm", "hl_labels.slurm", "hl_pipeline_debug.slurm"))
+    readme = (ROOT / "workflows" / "hessian_learning" / "README.md").read_text(encoding="utf-8")
+    check("NAME defaults to TAG in every stage script; no `NAME=draw` left in the slurm headers or the README; the steps' --name is optional",
+          heads.count('NAME="${NAME:-$TAG}"') == 4 and "NAME=draw" not in heads and "NAME=draw" not in readme
+          and all('"--name", default=None' in (ROOT / "workflows" / "hessian_learning" / s).read_text(encoding="utf-8")
+                  for s in ("00_draw.py", "01_select.py", "04_dataset.py"))
+          and '"--name", default=None' in (ROOT / "hpc" / "slurm" / "hl_list.py").read_text(encoding="utf-8"),
+          heads.count('NAME="${NAME:-$TAG}"'))
 
     # --- the HPC layer ----------------------------------------------------------------
     sys.path.insert(0, str(ROOT / "hpc"))

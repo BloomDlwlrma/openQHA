@@ -35,6 +35,27 @@ The two MD folders are named by role, `md_openmm/` and `md_ase/`, because `mace/
 Hessian, and sampling). Route identifiers (`--route openmm|ase`) are unchanged; the
 layout module's `md_folder()` is the only place the folder name is spelled.
 
+## Amendment 3 (user, 2026-09-20): a frame's label is a file group, not a folder
+
+The Hessian-learning campaign labels ~15 frames per molecule with one ORCA job each, and
+the rule "engine files only in engine folders" put every job at
+`orca/<level>/frames/<generator>_bBB_kK/job.{inp,out,hess,engrad}` -- ten path levels
+below the runs root and 100,000 directories for the campaign, which the user ruled too
+long. The exception: a single-job engine run whose products are a fixed, small set of
+files is a FILE GROUP of the molecule directory, the path fields folded into the name,
+`<molecule>/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}` (`layout.orca_frame_stem`).
+The fields are joined by `.` (the repository's `<thing>.<level>.<ext>` convention) because
+the level and the frame tag both contain `_`. ORCA itself still runs in a run directory
+(node-local scratch, or `<molecule>/.<stem>/`) that is removed after the copy-back, so no
+engine scratch file reaches the molecule directory. The basin-level jobs of the msRRHO
+study, `orca/<level>/basinNN/`, keep the folder form: a closed study with four readers
+under `thermochem/` and a fixture in use. In the same ruling the two shard layers of
+2026-09-14 go: the molecule directory is `<root>/<tag>/<qid>/`, the tag directory flat --
+a campaign's tag holds thousands of molecules, not 133 885 -- and a label-only molecule
+sits under its label the same way (`_label/` is gone). One campaign is one tag and one
+Dataset: every step's `--name` defaults to the tag. `scripts/tooling/s0_flatten_tree.py`
+moves an existing tag to this form.
+
 ## Consequences
 
 MACE and OpenMM have no file format of their own, so their folders hold the closest

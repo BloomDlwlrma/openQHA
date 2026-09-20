@@ -9,7 +9,7 @@ first N - pinned others, or, with `--stratify`, others spread evenly over the so
 index list (QM9 is ordered by heavy-atom count).
 
     python workflows/hessian_learning/01_select.py --tag rings --tag propanal --name smoke
-    python workflows/hessian_learning/01_select.py --tag draw --name draw200 --limit 200 --stratify
+    python workflows/hessian_learning/01_select.py --tag draw300 --limit 200 --stratify
 """
 import argparse
 import sys
@@ -32,11 +32,12 @@ from openqha.data import dataset                             # noqa: E402
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", action="append", required=True, help="a tag with branch A products (repeatable; the first holds the Dataset)")
-    ap.add_argument("--name", required=True, help="the Dataset name")
+    ap.add_argument("--name", default=None, help="the Dataset name (default: the first tag)")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--stratify", action="store_true")
     args = ap.parse_args()
     root = config.runs_root(config.load())
+    args.name = args.name or args.tag[0]
     rows = dataset.select(root, args.tag, args.name, limit=args.limit, stratify=args.stratify)
     d = dataset.datasets_dir(root, args.tag[0], args.name)
     for r in rows:

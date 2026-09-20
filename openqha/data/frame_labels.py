@@ -11,13 +11,17 @@ geometry and leave projection to the loss).
 
 WHAT IS WRITTEN
 ---------------
-    <molecule>/orca/<level>/frames/<generator>_bBB_kK/job.{inp,out,hess,engrad}
-        ORCA's engine files, the FULL `.out` kept as ORCA wrote it (user ruling
-        2026-09-17). Basin / merged / saddle frames are HESSIAN jobs (`EnGrad Freq`,
-        a `.hess`); displaced frames are GRADIENT jobs (`EnGrad`, an `.engrad`, no
-        Hessian -- round 5, Q7 (b)). A finished frame (terminal line in the `.out` and
-        its product file) is skipped on a rerun, an unfinished one is rerun -- that is
-        how a Batch resumes.
+    <molecule>/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}
+        ORCA's engine files as a FILE GROUP of the molecule directory (ticket 09, ruling
+        2026-09-20: no per-frame directory; `layout.orca_frame_stem`), the FULL `.out`
+        kept as ORCA wrote it (user ruling 2026-09-17). Basin / merged / saddle frames
+        are HESSIAN jobs (`EnGrad Freq`, a `.hess`); displaced frames are GRADIENT jobs
+        (`EnGrad`, an `.engrad`, no Hessian -- round 5, Q7 (b)). ORCA itself runs as
+        `job.*` in a run directory -- the node-local `scratch`, or `<molecule>/.<stem>/`
+        without one -- and the KEEP kinds are copied back under the stem, the run
+        directory removed. A finished frame (terminal line in the `.out` and its product
+        file) is skipped on a rerun, an unfinished one is rerun -- that is how a Batch
+        resumes.
     <molecule>/frames/<generator>.<level>.extxyz
         the labelled frames: positions VERBATIM from the MACE file, `energy` (eV),
         `forces` (eV/A), `hessian` (3N x 3N flattened, eV/A^2) from ORCA. A frame whose
@@ -83,10 +87,10 @@ KEEP = (".inp", ".out", ".hess", ".engrad")
 HESSIAN_GENERATORS = ("basin", "merged", "saddle")
 STEM = "job"
 TERMINAL = "****ORCA TERMINATED NORMALLY****"
-#: a frame's job directory is claimed with this file while ORCA runs; a claim older than
-#: LOCK_MAX_AGE_S (a killed job) is ignored. Two Batches over one selection then partition
-#: the frames instead of labelling the same ones (two debug jobs did, 2026-09-19).
-LOCK = "running"
+#: a frame is claimed with `<stem>.running` beside its files while ORCA runs; a claim
+#: older than LOCK_MAX_AGE_S (a killed job) is ignored. Two Batches over one selection then
+#: partition the frames instead of labelling the same ones (two debug jobs did, 2026-09-19).
+LOCK = ".running"
 LOCK_MAX_AGE_S = 2 * 3600
 
 SCHEMA = {
@@ -197,11 +201,11 @@ def load_frame(molecule, generator, basin, k, level=None):
     raise KeyError("no frame {} in the {} file of {}".format(frame_tag(generator, basin, k), generator, molecule))
 
 
-def finished(workdir, stem=STEM, hessian=True):
-    """True when ORCA terminated normally there and left a `.hess` (a Hessian job) or an
-    `.engrad` (a gradient job)."""
-    out = Path(workdir) / (stem + ".out")
-    product = Path(workdir) / (stem + (".hess" if hessian else ".engrad"))
+def finished(molecule, stem, hessian=True):
+    """True when ORCA terminated normally for the frame `<molecule>/<stem>.*` and left a
+    `.hess` (a Hessian job) or an `.engrad` (a gradient job)."""
+    out = Path(molecule) / (stem + ".out")
+    product = Path(molecule) / (stem + (".hess" if hessian else ".engrad"))
     return product.is_file() and out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")
 
 
@@ -216,30 +220,34 @@ def engrad_positions(path, natoms):
     return z, xyz
 
 
-def running_elsewhere(workdir, max_age_s=LOCK_MAX_AGE_S):
-    """True when another process holds a fresh claim on this frame's job directory."""
-    lock = Path(workdir) / LOCK
+def lock_file(molecule, stem):
+    """`<molecule>/<stem>.running`."""
+    return Path(molecule) / (stem + LOCK)
+
+
+def running_elsewhere(molecule, stem, max_age_s=LOCK_MAX_AGE_S):
+    """True when another process holds a fresh claim on this frame."""
+    lock = lock_file(molecule, stem)
     try:
         return lock.is_file() and (time.time() - lock.stat().st_mtime) < max_age_s
     except OSError:
         return False
 
 
-def _claim(workdir):
-    """Claim the job directory: the lock file names the job (Slurm id or pid). Returns
-    False when a fresh claim by someone else is there."""
-    workdir = Path(workdir)
-    workdir.mkdir(parents=True, exist_ok=True)
-    if running_elsewhere(workdir):
+def _claim(molecule, stem):
+    """Claim the frame: the lock file names the job (Slurm id or pid). Returns False when
+    a fresh claim by someone else is there."""
+    Path(molecule).mkdir(parents=True, exist_ok=True)
+    if running_elsewhere(molecule, stem):
         return False
-    (workdir / LOCK).write_text("{} {}\n".format(os.environ.get("SLURM_JOB_ID", "pid{}".format(os.getpid())),
-                                                 time.strftime("%Y-%m-%dT%H:%M:%S")), encoding="utf-8")
+    lock_file(molecule, stem).write_text("{} {}\n".format(os.environ.get("SLURM_JOB_ID", "pid{}".format(os.getpid())),
+                                                          time.strftime("%Y-%m-%dT%H:%M:%S")), encoding="utf-8")
     return True
 
 
-def _release(workdir):
+def _release(molecule, stem):
     try:
-        (Path(workdir) / LOCK).unlink()
+        lock_file(molecule, stem).unlink()
     except OSError:
         pass
 
@@ -294,19 +302,20 @@ def _run_orca(inp, out, cwd, timeout_s=None):
                                cwd=str(cwd), env=orca.subprocess_env(), timeout=timeout_s)
 
 
-def parse_label(workdir, atoms, stem=STEM):
-    """Read a finished frame job: energy (eV), forces (eV/A), the Hessian (eV/A^2) when
-    the job computed one (`hessian` None otherwise), the geometry check against `atoms`,
-    wall time, memory, route, version, noise floor (nan without a Hessian)."""
-    workdir = Path(workdir)
-    text = (workdir / (stem + ".out")).read_text(encoding="utf-8", errors="replace")
+def parse_label(molecule, atoms, stem):
+    """Read a finished frame job `<molecule>/<stem>.*`: energy (eV), forces (eV/A), the
+    Hessian (eV/A^2) when the job computed one (`hessian` None otherwise), the geometry
+    check against `atoms`, wall time, memory, route, version, noise floor (nan without a
+    Hessian)."""
+    molecule = Path(molecule)
+    text = (molecule / (stem + ".out")).read_text(encoding="utf-8", errors="replace")
     symbols = list(atoms.get_chemical_symbols())
     n = len(symbols)
-    hess_path, engrad = workdir / (stem + ".hess"), workdir / (stem + ".engrad")
+    hess_path, engrad = molecule / (stem + ".hess"), molecule / (stem + ".engrad")
     parsed = orca.parse_hess(hess_path) if hess_path.is_file() else None
     if parsed is not None:
         if parsed["symbols"] != symbols:
-            raise ValueError("ORCA reordered the atoms in {}: {} -> {}".format(workdir, symbols, parsed["symbols"]))
+            raise ValueError("ORCA reordered the atoms in {}: {} -> {}".format(hess_path, symbols, parsed["symbols"]))
         # ORCA writes the .hess $atoms in the centre-of-mass frame (measured 2026-09-18: every
         # atom of oxetane shifted by the same 0.0764 A). A translation leaves the Cartesian
         # Hessian unchanged, so it is removed before the comparison and reported apart; what
@@ -317,7 +326,7 @@ def parse_label(workdir, atoms, stem=STEM):
         from ase.data import atomic_numbers
         z, pos_bohr = engrad_positions(engrad, n)
         if z != [atomic_numbers[s] for s in symbols]:
-            raise ValueError("ORCA reordered the atoms in {}".format(workdir))
+            raise ValueError("ORCA reordered the atoms in {}".format(engrad))
         pos_job = pos_bohr / orca.BOHR_PER_ANGSTROM
     else:
         raise FileNotFoundError("neither {} nor {}".format(hess_path.name, engrad.name))
@@ -339,7 +348,7 @@ def parse_label(workdir, atoms, stem=STEM):
                seconds=total_run_seconds(text), memory_mb=max_memory_mb(text),
                hessian_route="gradient", orca_version=m.group(1) if m else "unknown",
                noise_floor_cm=float("nan"), lowest_freq=float("nan"),
-               max_force=float(np.abs(forces).max()), out=str(workdir / (stem + ".out")))
+               max_force=float(np.abs(forces).max()), out=str(molecule / (stem + ".out")))
     if parsed is not None:
         h = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
         out.update(hessian=np.asarray(h, dtype=float), hessian_route=orca.hessian_route(text),
@@ -357,23 +366,26 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
     then) and the wall seconds of this call. Raises when ORCA does not terminate normally --
     the caller (a Batch task) records that; the `.out` stays for reading.
 
-    `scratch`: a directory to run in (node-local); KEEP files are copied to the
-    molecule tree on normal termination and the scratch copy removed. `runner`: a
-    callable (inp, out, cwd, timeout_s) -> rc replacing the ORCA binary (tests)."""
+    ORCA runs as `job.*` in a run directory -- `scratch/<molecule>/<frame tag>/` (node-
+    local) when `scratch` is given, `<molecule>/.<stem>/` otherwise; the KEEP kinds are
+    copied back as `<molecule>/<stem>.<ext>` and the run directory removed (the `.out`
+    comes back on a failure too, for reading). `runner`: a callable
+    (inp, out, cwd, timeout_s) -> rc replacing the ORCA binary (tests)."""
     molecule = Path(molecule)
     t0 = time.time()
     atoms = load_frame(molecule, generator, basin, k, mace_level_name)
-    workdir = layout.orca_frame_dir(molecule, level, generator, basin, k)
+    stem = layout.orca_frame_stem(level, generator, basin, k)
     hessian = wants_hessian(generator)
     keywords, blocks, _route = keyword_line(level, hessian=hessian)
     status = "reused"
-    if not finished(workdir, hessian=hessian):
-        if not _claim(workdir):
+    if not finished(molecule, stem, hessian=hessian):
+        if not _claim(molecule, stem):
             return dict(status="running", generator=generator, basin=int(basin), k=int(k), keywords=keywords,
-                        wall_seconds=time.time() - t0, workdir=str(workdir), out=str(workdir / (STEM + ".out")),
+                        wall_seconds=time.time() - t0, workdir=str(molecule), stem=stem,
+                        out=str(molecule / (stem + ".out")),
                         seconds=None, memory_mb=None, hessian_route="-", noise_floor_cm=float("nan"), orca_version="-")
         status = "labelled"
-        rundir = Path(scratch) / molecule.name / frame_tag(generator, basin, k) if scratch else workdir
+        rundir = Path(scratch) / molecule.name / frame_tag(generator, basin, k) if scratch else molecule / ("." + stem)
         rundir.mkdir(parents=True, exist_ok=True)
         inp, out = rundir / (STEM + ".inp"), rundir / (STEM + ".out")
         inp.write_text(orca.input_text(atoms.get_chemical_symbols(), atoms.get_positions(), keywords,
@@ -381,21 +393,21 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
         try:
             rc = (runner or _run_orca)(inp, out, rundir, timeout_s)
             text = out.read_text(encoding="utf-8", errors="replace") if out.is_file() else ""
-            if scratch:
-                for f in sorted(rundir.iterdir()):
-                    if f.name.startswith(STEM) and any(f.name.endswith(s) for s in KEEP):
-                        shutil.copy2(f, workdir / f.name)
-                shutil.rmtree(rundir, ignore_errors=True)
+            for ext in KEEP:
+                f = rundir / (STEM + ext)
+                if f.is_file():
+                    shutil.copy2(f, molecule / (stem + ext))
+            shutil.rmtree(rundir, ignore_errors=True)
         finally:
-            _release(workdir)
+            _release(molecule, stem)
         if TERMINAL not in text:
             raise RuntimeError("ORCA did not finish normally for {} of {} (rc {}). Tail:\n{}".format(
                 frame_tag(generator, basin, k), molecule.name, rc, "\n".join(text.split("\n")[-25:])))
-    lab = parse_label(workdir, atoms)
+    lab = parse_label(molecule, atoms, stem)
     if lab["max_position_dev_A"] > POSITION_TOL_A:
         status = "refused"
     lab.update(status=status, generator=generator, basin=int(basin), k=int(k), keywords=keywords,
-               wall_seconds=time.time() - t0, workdir=str(workdir))
+               wall_seconds=time.time() - t0, workdir=str(molecule), stem=stem)
     return lab
 
 
@@ -422,18 +434,18 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
     for g, a in order:
         b, k = int(a.info["basin"]), int(a.info["k"])
         tag = frame_tag(g, b, k)
-        wd = layout.orca_frame_dir(molecule, level, g, b, k)
+        stem = layout.orca_frame_stem(level, g, b, k)
         row = dict(GENERATOR=g, BASIN=b, K=k, HAS_HESSIAN=wants_hessian(g), ENERGY=float("nan"), ENERGY_ABOVE_BASIN=float("nan"),
                    MAX_FORCE=float("nan"), LOWEST_FREQ=float("nan"), NOISE_FLOOR_CM=float("nan"),
                    MAX_POSITION_DEV_A=float("nan"), COM_SHIFT_A=float("nan"), HESSIAN_ROUTE="-", SECONDS=float("nan"),
                    MEMORY_MB=float("nan"), ORCA_VERSION="-", STATUS="unlabelled", REASON="-",
-                   OUT=str(wd / (STEM + ".out")))
-        if not finished(wd, hessian=wants_hessian(g)):
-            row["REASON"] = "no finished ORCA job at {}".format(wd)
+                   OUT=str(molecule / (stem + ".out")))
+        if not finished(molecule, stem, hessian=wants_hessian(g)):
+            row["REASON"] = "no finished ORCA job {} in {}".format(stem, molecule)
             rows.append(row)
             continue
         try:
-            lab = parse_label(wd, a)
+            lab = parse_label(molecule, a, stem)
         except Exception as exc:
             row["REASON"] = "{}: {}".format(type(exc).__name__, str(exc)[:160])
             rows.append(row)
@@ -559,7 +571,7 @@ def _write_report(path, info, gen_rows, rows):
              "the centre-of-mass translation ORCA applied in the .hess, removed before the geometry check. A "
              "refused frame's .hess geometry differs in shape from the MACE file: the two levels "
              "of a frame must sit at one geometry or the Dataset compares different points. The full .out of "
-             "every job is kept under orca/<level>/frames/.")
+             "every job is kept as <molecule>/orca.<level>.<frame>.out.")
     rep.write(path, step=STEP)
 
 

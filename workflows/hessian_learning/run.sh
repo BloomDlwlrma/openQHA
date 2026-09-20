@@ -2,7 +2,7 @@
 # Workflow hessian_learning, steps 01 -> 02 -> [03] -> 04 in order, on this machine.
 # PRODUCTION.
 #
-#   bash workflows/hessian_learning/run.sh --tag rings [--tag propanal] --name smoke [--limit N] [--stratify] [--with-labels]
+#   bash workflows/hessian_learning/run.sh --tag rings [--tag propanal] [--name smoke] [--limit N] [--stratify] [--with-labels]
 #
 # 03 (reference labels, ORCA) runs only with --with-labels: it is minutes per frame here
 # and a tianhe Batch in production (README). Without it the Dataset is all pool, which
@@ -22,7 +22,8 @@ while [ $# -gt 0 ]; do
         *) echo "run.sh: unknown argument $1" >&2; exit 2 ;;
     esac
 done
-[ ${#tags[@]} -gt 0 ] && [ -n "$name" ] || { echo "usage: run.sh --tag T [--tag T2] --name NAME [--limit N] [--stratify] [--with-labels] [--level L]" >&2; exit 2; }
+[ ${#tags[@]} -gt 0 ] || { echo "usage: run.sh --tag T [--tag T2] [--name NAME] [--limit N] [--stratify] [--with-labels] [--level L]" >&2; exit 2; }
+name="${name:-${tags[0]}}"      # one campaign, one tag, one Dataset (ticket 09)
 tagargs=(); for t in "${tags[@]}"; do tagargs+=(--tag "$t"); done
 lvl=(); [ -n "$level" ] && lvl=(--level "$level")
 

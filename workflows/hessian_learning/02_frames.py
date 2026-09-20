@@ -32,7 +32,7 @@ from openqha.store import basins as basin_reader, layout     # noqa: E402
 def molecules_under(tag, cfg=None):
     """Every molecule directory under `tag` with a branch-A basin list (login-node cheap)."""
     base = Path(config.runs_root(cfg)) / str(tag)
-    return sorted(p.parents[2] for p in base.glob("*/*/*/mace/basin00/basin.extxyz"))
+    return sorted(p.parents[2] for p in base.glob("*/mace/basin00/basin.extxyz"))
 
 
 def main():

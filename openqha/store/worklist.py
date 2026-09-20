@@ -47,12 +47,12 @@ def is_complete(qm9_index, cfg=None, tag=None):
     return basin_reader.done(qm9_index, tag=tag, cfg=cfg)
 
 
-def completed(cfg=None, tag=None, chunk_dir=None):
+def completed(cfg=None, tag=None):
     """Indices already computed, by directory listing rather than per-molecule stat."""
-    return basin_reader.completed(tag=tag, cfg=cfg, chunk_dir=chunk_dir)
+    return basin_reader.completed(tag=tag, cfg=cfg)
 
 
-def remaining(candidates, cfg=None, tag=None, chunk_dir=None, apply_gates=True,
+def remaining(candidates, cfg=None, tag=None, apply_gates=True,
               require_geometry=True, progress=None):
     """Which of `candidates` still need computing, and an account of how that was decided.
 
@@ -60,7 +60,7 @@ def remaining(candidates, cfg=None, tag=None, chunk_dir=None, apply_gates=True,
     that cannot say why it skipped 2522 molecules is a resume nobody can audit.
     """
     cfg = cfg or _config.load()
-    done = completed(cfg=cfg, tag=tag, chunk_dir=chunk_dir)
+    done = completed(cfg=cfg, tag=tag)
 
     todo, skipped_done, skipped_gate, skipped_missing = [], [], [], []
     gate_reason = {}
@@ -111,7 +111,7 @@ def remaining(candidates, cfg=None, tag=None, chunk_dir=None, apply_gates=True,
 
     record = dict(
         completion_criterion=COMPLETION,
-        tag=tag, chunk_dir=chunk_dir,
+        tag=tag,
         n_candidates=len(candidates),
         n_already_done=len(skipped_done),
         n_dropped_no_geometry=len(skipped_missing),

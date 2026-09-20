@@ -3,7 +3,7 @@
 One molecule directory per (root, tag, qid), one folder per engine inside it, engine
 files only in those folders, and this repository's records in `_records/`:
 
-    <root>/<tag>/<range>/<chunk>/<qid>/
+    <root>/<tag>/<qid>/
       crest/                      CREST's working directory, verbatim
       crest_shake1/               the SHAKE fallback, only when it ran
       mace/confNN/                opt.traj  opt.log  conf.extxyz    every tightened conformer
@@ -14,7 +14,13 @@ files only in those folders, and this repository's records in `_records/`:
                                   (every other setting, same folder, its name in the file)
       md_ase/basinNN/             start.extxyz  md.traj  md.log  (the ASE route, the CPU
                                   cross-check; same setting-in-the-name rule)
-      xtb/basinNN/  orca/basinNN/ 02c only
+      frames/                     the Hessian-learning set (ticket 09, 2026-09-20):
+        <gen>.<level>.extxyz  frames.{out,toml}  labels.<level>.{out,toml}
+        orca.<level>.<gen>_bBB_kK.{inp,out,hess,engrad}   one frame's ORCA job, a file group
+      msrrho/                     the msRRHO study (tickets 24-26, closed):
+        orca.<level>.basinNN.{inp,out,hess,xyz}           one basin's Opt+Freq job at a level
+        crest_entropy/runNN/  xtb/entropy_runNN/confKK/   ticket 25's engines, verbatim
+        thermo/<level>.<step>.{out,toml,dat}  thermo/level_compare.*  hessian_compare.*
       _records/                   everything this repository writes about the run
 
 The MD folders are named by ROLE (user ruling 2026-09-15): `mace/` is the potential's
@@ -22,9 +28,12 @@ relax + Hessian, `md_openmm/` and `md_ase/` are the two implementations of the s
 sampling step. The route identifiers a driver takes (`--route openmm|ase`) are unchanged;
 `md_folder(route)` maps them to the folder and nothing else spells the folder name.
 
-The shard is arithmetic on the QM9 index: range 16 000, chunk 1 000 (user ruling
-2026-09-14; the retired basin store used 4 000), so a directory holds at most 1 000
-molecules and a reader never needs an index file to find one.
+The tag directory is FLAT (user ruling 2026-09-20, ADR 0001 amendment 3): the molecule
+directory is `<root>/<tag>/<qid>/`, the two shard layers of 2026-09-14 (`1_16000/1001_2000/`)
+are gone -- a campaign's tag holds thousands of molecules, not 133 885, and the path was
+ruled too long. A molecule without a QM9 index (a SMILES run) goes under its label the
+same way. The Dataset files of a tag live beside the molecules in `_datasets/<name>/`,
+tag-wide records in `_records/`.
 
 **This module composes paths and nothing else.** It reads no configuration and touches
 no filesystem, so a test can hold it to the documented tree with literals. Every writer
@@ -32,12 +41,6 @@ and every reader asks here; a path built anywhere else is a defect.
 """
 import re
 from pathlib import Path
-
-#: Molecules per leaf directory. modifiable_convention.
-CHUNK = 1000
-
-#: Molecules per first-level directory. modifiable_convention.
-RANGE = 16000
 
 #: The engine files of one OpenMM trajectory, in the order they are created.
 OPENMM_FILES = ("start.pdb", "system.xml", "integrator.xml", "traj.dcd",
@@ -62,31 +65,16 @@ def qid_number(qid):
     m = re.search(r"(\d+)\s*$", str(qid).strip())
     if not m:
         raise ValueError(
-            "cannot read a QM9 index out of {!r}; the molecule tree is sharded on the "
-            "number a qid ends in, and this one has none".format(qid))
+            "cannot read a QM9 index out of {!r}: the number a qid ends in, and this one "
+            "has none".format(qid))
     return int(m.group(1))
 
 
-def shard(qid, chunk=CHUNK, rng=RANGE):
-    """(range_dir, chunk_dir) for a QM9 index. Pure arithmetic."""
-    n = qid_number(qid)
-    r0 = ((n - 1) // rng) * rng + 1
-    c0 = ((n - 1) // chunk) * chunk + 1
-    return ("{}_{}".format(r0, r0 + rng - 1), "{}_{}".format(c0, c0 + chunk - 1))
-
-
 def molecule_dir(root, tag, qid):
-    """`<root>/<tag>/<range>/<chunk>/<qid>`. `root` may be any path-like.
-
-    A molecule identified only by a label (a SMILES run, `s0_A_pipeline.py --smiles`)
-    has no index to shard on and goes to `<root>/<tag>/_label/<label>`: an ad-hoc
-    molecule is a handful of runs, and a made-up index would put a fiction into the path.
-    """
-    try:
-        r, c = shard(qid)
-    except ValueError:
-        return Path(root) / str(tag) / "_label" / str(qid)
-    return Path(root) / str(tag) / r / c / str(qid)
+    """`<root>/<tag>/<qid>`. `root` may be any path-like. A molecule identified only by a
+    label (a SMILES run, `s0_A_pipeline.py --smiles`) goes under that label the same way;
+    the tag directory is flat (ADR 0001, amendment 3)."""
+    return Path(root) / str(tag) / str(qid)
 
 
 def crest_dir(molecule, fallback_shake=None):
@@ -197,40 +185,89 @@ def xtb_dir(molecule, basin):
     return Path(molecule) / "xtb" / "basin{:02d}".format(int(basin))
 
 
-def orca_dir(molecule, basin):
-    return Path(molecule) / "orca" / "basin{:02d}".format(int(basin))
-
-
 def records_dir(molecule):
     return Path(molecule) / RECORDS
 
 
-#: The level folder (CONTEXT.md; ADR 0004): every level's results for one molecule, one
-#: sub-folder per level named by the level. Engine files never go here.
-LEVELS = "levels"
+# ====================================================================== the two studies
+#: Two sub-folders of the molecule directory separate the two studies that share its
+#: branch A (user ruling 2026-09-20, ADR 0001 amendment 3): `msrrho/` for the msRRHO study
+#: (the basin-level ORCA jobs, CREST's entropy runs, the xtb Hessians of those, and the
+#: study's Records under `msrrho/thermo/`), `frames/` for the Hessian-learning set (the
+#: Frame sets, their labels and the per-frame ORCA jobs). ORCA jobs are FILE GROUPS,
+#: `orca.<level>.<job>.{inp,out,hess,engrad,xyz}`, never a directory per job.
+MSRRHO = "msrrho"
+THERMO = "thermo"
+FRAMES = "frames"
 
 _LEVEL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 
+def _check_level(level):
+    if not _LEVEL_NAME.match(str(level)):
+        raise ValueError("level name {!r} is not in the CONTEXT.md spelling (lower-case, "
+                         "method first, basis second, joined by '_')".format(level))
+    return str(level)
+
+
+def msrrho_dir(molecule):
+    """`<molecule>/msrrho/`."""
+    return Path(molecule) / MSRRHO
+
+
 def crest_entropy_dir(molecule, run):
-    """`crest_entropy/runNN/`: one CREST `--entropy` run (ticket 25); a separate engine
-    folder because CREST's entropy mode writes its own tree beside the branch A run."""
-    return Path(molecule) / "crest_entropy" / "run{:02d}".format(int(run))
+    """`msrrho/crest_entropy/runNN/`: one CREST `--entropy` run (ticket 25), CREST's own tree
+    verbatim, as `crest/` is for branch A."""
+    return msrrho_dir(molecule) / "crest_entropy" / "run{:02d}".format(int(run))
 
 
 def xtb_entropy_dir(molecule, run, conformer):
-    """`xtb/entropy_runNN/confKK/`: the xtb Hessian of one CREST entropy-run conformer."""
-    return Path(molecule) / "xtb" / "entropy_run{:02d}".format(int(run)) / "conf{:02d}".format(int(conformer))
+    """`msrrho/xtb/entropy_runNN/confKK/`: the xtb Hessian of one CREST entropy-run conformer."""
+    return msrrho_dir(molecule) / "xtb" / "entropy_run{:02d}".format(int(run)) / "conf{:02d}".format(int(conformer))
 
 
-def orca_level_dir(molecule, level, basin):
-    """`orca/<level>/basinNN/`: ORCA's engine files for one basin at one level (ticket 26)."""
-    return Path(molecule) / "orca" / str(level) / "basin{:02d}".format(int(basin))
+def orca_level_stem(level, basin):
+    """`orca.<level>.basinNN`: the file group of one basin's job at one level (ticket 26:
+    optimisation to the level's own minimum + Hessian), files of `msrrho/`."""
+    return "orca.{}.basin{:02d}".format(_check_level(level), int(basin))
+
+
+def orca_level_file(molecule, level, basin, ext):
+    """`msrrho/orca.<level>.basinNN<ext>` (`ext` with its dot)."""
+    return msrrho_dir(molecule) / (orca_level_stem(level, basin) + str(ext))
+
+
+def thermo_dir(molecule):
+    """`msrrho/thermo/`: the msRRHO study's Records, flat -- `<level>.<step>.<ext>` per level
+    (`wb97m-d3bj_def2-tzvppd.thermo_msrrho.toml`, `mace-off23_medium.merge_map.dat`) and the
+    cross-level ones bare (`level_compare.toml`, `hessian_compare.toml`). Replaces the
+    `levels/<level>/` folders of ADR 0004 (user ruling 2026-09-20)."""
+    return msrrho_dir(molecule) / THERMO
+
+
+def level_file(molecule, level, name):
+    """`msrrho/thermo/<level>.<name>`: a Record of one level (`name` = `thermo_msrrho.toml`,
+    `merge_map.dat`, `degeneracy.out`, ...)."""
+    return thermo_dir(molecule) / "{}.{}".format(_check_level(level), name)
+
+
+def thermo_file(molecule, name):
+    """`msrrho/thermo/<name>`: a Record across levels (`level_compare.toml`, `hessian_compare.out`)."""
+    return thermo_dir(molecule) / str(name)
+
+
+def levels_present(molecule, name="thermo_msrrho.toml"):
+    """The levels whose `<level>.<name>` Record exists, from the file names."""
+    d = thermo_dir(molecule)
+    if not d.is_dir():
+        return []
+    suffix = "." + name
+    return sorted(p.name[:-len(suffix)] for p in d.iterdir() if p.name.endswith(suffix) and p.is_file())
 
 
 #: The Frame set folder (CONTEXT.md "Frame set"): one molecule's frames, one extxyz per
-#: generator and per level, engine-independent; its Record beside them.
-FRAMES = "frames"
+#: generator and per level, engine-independent; its Records and the per-frame ORCA file
+#: groups beside them.
 
 
 def frames_dir(molecule):
@@ -240,22 +277,19 @@ def frames_dir(molecule):
 
 def frames_file(molecule, generator, level):
     """`<molecule>/frames/<generator>.<level>.extxyz` (level in the CONTEXT.md spelling)."""
-    if not _LEVEL_NAME.match(str(level)):
-        raise ValueError("level name {!r} is not in the CONTEXT.md spelling".format(level))
-    return frames_dir(molecule) / "{}.{}.extxyz".format(generator, level)
+    return frames_dir(molecule) / "{}.{}.extxyz".format(generator, _check_level(level))
 
 
-def orca_frame_dir(molecule, level, generator, basin, k):
-    """`orca/<level>/frames/<generator>_bBB_kK/`: ORCA's engine files for one frame's label."""
-    return Path(molecule) / "orca" / str(level) / "frames" / "{}_b{:02d}_k{}".format(generator, int(basin), int(k))
+def orca_frame_stem(level, generator, basin, k):
+    """`orca.<level>.<generator>_bBB_kK`: the file group of one frame's ORCA label -- FILES
+    of `frames/`, `<stem>.{inp,out,hess,engrad}` (ticket 09, ruling 2026-09-20: a frame's
+    job is not a directory two levels down). The fields are joined by `.`, the repository's
+    `<thing>.<level>.<ext>` convention (`frames/<generator>.<level>.extxyz`), because the
+    level and the frame tag both contain `_`; `name.split(".")` gives engine, level (the
+    middle parts), frame tag, extension."""
+    return "orca.{}.{}_b{:02d}_k{}".format(_check_level(level), generator, int(basin), int(k))
 
 
-def level_dir(molecule, level):
-    """`<molecule>/levels/<level>/`. The level name must already be in the CONTEXT.md
-    spelling (lower-case, `wb97m-d3bj_def2-tzvppd`, `gfn2`, `mace-off23_medium`); an
-    upper-case or slash-bearing name is refused here rather than spelled two ways."""
-    if not _LEVEL_NAME.match(str(level)):
-        raise ValueError("level name {!r} is not in the CONTEXT.md spelling (lower-case, "
-                         "method first, basis second, joined by '_')".format(level))
-    return Path(molecule) / LEVELS / str(level)
-
+def orca_frame_file(molecule, level, generator, basin, k, ext):
+    """`frames/orca.<level>.<generator>_bBB_kK<ext>` (`ext` with its dot: ".out")."""
+    return frames_dir(molecule) / (orca_frame_stem(level, generator, basin, k) + str(ext))

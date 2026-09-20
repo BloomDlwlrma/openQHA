@@ -245,8 +245,8 @@ python scripts/production/s0_A_pipeline.py --smiles "OCCO" --label ethyleneglyco
     --tag multibasin --skip-crest --reuse ~/runs/openQHA/branchA/multibasin/ethyleneglycol
 ```
 
-Products land in the molecule directory (`<root>/<tag>/_label/<label>/` for a SMILES
-molecule; since 2026-09-14, `docs/output_inventory.md` sections 6 and 8): `mace/confNN/`,
+Products land in the molecule directory (`<root>/<tag>/<qid>/`, or `<root>/<tag>/<label>/` for
+a SMILES molecule; flat since 2026-09-20, ADR 0001 amendment 3; `docs/output_inventory.md` sections 6 and 8): `mace/confNN/`,
 `mace/basinNN/`, and under `_records/`: `branchA.out`, `branchA.toml` (and `driver.log`
 when a Batch ran it). CREST runs node-local and its directory is moved once into `crest/`.
 

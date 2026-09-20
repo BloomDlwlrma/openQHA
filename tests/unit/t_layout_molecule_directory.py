@@ -40,22 +40,18 @@ def check(label, got, want):
 
 
 def main():
-    print("A. shards, worked by hand from range 16 000 / chunk 1 000:")
-    for qid, want in (("dsgdb9nsd_000018", "1_16000/1_1000"),
-                      ("dsgdb9nsd_001000", "1_16000/1_1000"),
-                      ("dsgdb9nsd_001001", "1_16000/1001_2000"),
-                      ("dsgdb9nsd_016000", "1_16000/15001_16000"),
-                      ("dsgdb9nsd_016001", "16001_32000/16001_17000"),
-                      ("dsgdb9nsd_133885", "128001_144000/133001_134000")):
-        check(qid, "/".join(layout.shard(qid)), want)
+    print("A. the tag directory is flat (ADR 0001 amendment 3, 2026-09-20): no shard layers, no shard():")
+    for qid in ("dsgdb9nsd_000018", "dsgdb9nsd_001001", "dsgdb9nsd_133885"):
+        check(qid, layout.molecule_dir(R, "t", qid), R / "t" / qid)
+    check("no shard / CHUNK / RANGE any more", any(hasattr(layout, n) for n in ("shard", "CHUNK", "RANGE")), False)
 
-    print("B. the seven shipped species share one chunk:")
+    print("B. the seven shipped species sit beside each other under the tag:")
     for p in sorted((ROOT / "data" / "reference-geometries").glob("dsgdb9nsd_*.xyz")):
-        check(p.stem, "/".join(layout.shard(p.stem)), "1_16000/1_1000")
+        check(p.stem, layout.molecule_dir(R, "t", p.stem).parent, R / "t")
 
     print("C. the molecule directory and its folders:")
     m = layout.molecule_dir(R, "02d_prod", "dsgdb9nsd_000018")
-    check("molecule_dir", m, R / "02d_prod/1_16000/1_1000/dsgdb9nsd_000018")
+    check("molecule_dir", m, R / "02d_prod/dsgdb9nsd_000018")
     check("crest", layout.crest_dir(m), m / "crest")
     check("crest fallback", layout.crest_dir(m, fallback_shake=1), m / "crest_shake1")
     check("mace conformer 3", layout.mace_conformer_dir(m, 3), m / "mace/conf03")
@@ -84,6 +80,12 @@ def main():
     check("tag records dir", layout.tag_records_dir(R, "02d_prod"), R / "02d_prod/_records")
     check("xtb basin 2", layout.xtb_dir(m, 2), m / "xtb/basin02")
     check("orca basin 2", layout.orca_dir(m, 2), m / "orca/basin02")
+    check("orca level basin 0 (msRRHO, unchanged)", layout.orca_level_dir(m, "wb97m-d3bj_def2-tzvppd", 0),
+          m / "orca/wb97m-d3bj_def2-tzvppd/basin00")
+    check("frame label stem (ticket 09)", layout.orca_frame_stem("wb97m-d3bj_def2-tzvppd", "displaced", 0, 3),
+          "orca.wb97m-d3bj_def2-tzvppd.displaced_b00_k3")
+    check("frame label file", layout.orca_frame_file(m, "hf_cc-pvtz", "basin", 12, 0, ".engrad"),
+          m / "orca.hf_cc-pvtz.basin_b12_k0.engrad")
     check("records", layout.records_dir(m), m / "_records")
 
     print("D. engine file names are fixed by the module, not by callers:")
@@ -92,15 +94,14 @@ def main():
     check("mace conformer files", " ".join(layout.MACE_CONFORMER_FILES), "opt.traj opt.log conf.extxyz")
     check("mace basin files", " ".join(layout.MACE_BASIN_FILES), "basin.extxyz hessian.npy")
 
-    print("E. a qid that carries no number is refused, not sharded into nonsense:")
+    print("E. a qid that carries no number: qid_number refuses it, molecule_dir uses the label as it is:")
     try:
-        layout.shard("acetone")
-        FAIL.append("shard('acetone') did not raise")
+        layout.qid_number("acetone")
+        FAIL.append("qid_number('acetone') did not raise")
         print("  acetone                                                  FAIL (no error)")
     except ValueError as exc:
         print("  acetone -> ValueError: {}".format(str(exc)[:60]))
-    check("molecule_dir for a label-only molecule", layout.molecule_dir(R, "t", "acetone"),
-          R / "t/_label/acetone")
+    check("molecule_dir for a label-only molecule", layout.molecule_dir(R, "t", "acetone"), R / "t/acetone")
 
     print("\n{}".format("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL)))
     return 0 if not FAIL else 1

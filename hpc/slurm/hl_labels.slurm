@@ -7,7 +7,7 @@
 #     cd $HOME/openQHA-main
 #     sbatch hpc/slurm/hl_labels.slurm                                        # tag smoke, deimos, 1 node, 4 h
 #     sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm      # the same on the short queue
-#     TAG=draw NAME=draw200 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_labels.slurm   # 12 nodes: an ARRAY, one node each
+#     TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_labels.slurm   # 12 nodes: an ARRAY, one node each
 #
 # LAYOUT: CONCURRENCY x NPROCS = 64 = the node (16 x 4, user ruling 2026-09-18); MAXCORE
 # = 512 GB x 0.75 / 64 = 6000 MB per rank. An ARRAY job splits the task list round-robin

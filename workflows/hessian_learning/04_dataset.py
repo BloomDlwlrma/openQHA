@@ -31,7 +31,7 @@ from openqha.data import dataset, frame_labels               # noqa: E402
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", action="append", required=True, help="the tags of step 01, in the same order")
-    ap.add_argument("--name", required=True)
+    ap.add_argument("--name", default=None, help="the Dataset name (default: the first tag)")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="the reference level of the labelled splits")
     ap.add_argument("--valid-fraction", type=float, default=dataset.VALID_FRACTION)
     ap.add_argument("--test-fraction", type=float, default=dataset.TEST_FRACTION)
@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--export", choices=("openreact",), default=None)
     args = ap.parse_args()
     root = config.runs_root(config.load())
+    args.name = args.name or args.tag[0]
     out = dataset.build(root, args.tag, args.name, level=args.level, valid_fraction=args.valid_fraction,
                         test_fraction=args.test_fraction, seed=args.seed)
     i = out["info"]

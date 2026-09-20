@@ -90,7 +90,8 @@ def leftovers(new_root):
             p = tag / "_records" / name
             if p.is_file():
                 out.append(p)
-        for rec in sorted(tag.glob("*/*/*/_records")) + sorted(tag.glob("_label/*/_records")):
+        for rec in (sorted(tag.glob("*/_records"))                       # the flat tree (2026-09-20)
+                    + sorted(tag.glob("*/*/*/_records")) + sorted(tag.glob("_label/*/_records"))):   # before it
             if (rec / "basins.toml").is_file():
                 out.append(rec / "basins.toml")
             for md in ("md_openmm", "md_ase"):

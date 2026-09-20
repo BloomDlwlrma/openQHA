@@ -52,7 +52,7 @@ def _basin(i, e, rel, sigma, g_minus):
 RECORD = dict(
     generated_by="scripts/production/s0_A_pipeline.py", branch="A",
     qm9_index="dsgdb9nsd_000035", label="dsgdb9nsd_000035", name="propanal", smiles="CCC=O",
-    tag="propanal", molecule_dir="/r/propanal/1_16000/1_1000/dsgdb9nsd_000035",
+    tag="propanal", molecule_dir="/r/propanal/dsgdb9nsd_000035",
     composite_notation="RI-MP2/cc-pVTZ // MACE-OFF23_medium",
     engine=dict(engine="MACE-OFF23_medium", weights_path="/w/MACE-OFF23_medium.model", bytes=18350596,
                 torch_version="2.12.1", neighbour_list_patch=dict(applied=True)),

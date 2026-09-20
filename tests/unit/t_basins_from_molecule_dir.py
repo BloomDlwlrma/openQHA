@@ -107,7 +107,7 @@ def main():
         check("is_complete agrees", __import__("openqha.store.worklist", fromlist=["x"]).is_complete(qid3, tag=tag) is False)
         c = basins.census(tag=tag)
         # census counts molecules WITH BASINS (18 and 20), done() and completed() ask for the marker too
-        check("census counts 2 under 1_16000/1_1000", c["total"] == 2 and c["chunks"].get("1_16000/1_1000") == 2, c)
+        check("census counts 2 under the flat tag directory", c["total"] == 2 and "chunks" not in c, c)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         os.environ.pop("S0_RUNS_ROOT", None)

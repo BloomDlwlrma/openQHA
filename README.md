@@ -347,15 +347,18 @@ python scripts/production/s0_E_branchA_parsl.py --edges --resource deimos --acco
 
 ### Where the results are
 
-One directory per molecule under a tag, sharded (range 16 000, chunk 1 000) because a
-campaign is 133 885 molecules, with one folder per engine inside it and the engines' own
-files in those folders (since 2026-09-14; `docs/output_inventory.md` sections 6 and 8):
+One directory per molecule under a tag -- the tag directory is flat since 2026-09-20
+(the two shard layers of 2026-09-14 are gone) -- with one folder per engine inside it and
+the engines' own files in those folders (`docs/output_inventory.md` sections 6 and 8); a
+frame's reference label is a file group of the molecule directory (ADR 0001, amendment 3):
 
 ```
-<root>/<tag>/1_16000/1_1000/dsgdb9nsd_000018/
+<root>/<tag>/dsgdb9nsd_000018/
   crest/               CREST's working directory, verbatim
   mace/basinNN/        basin.extxyz  hessian.npy        (mace/confNN/: every relaxation)
   md_openmm/basinNN/   start.pdb system.xml integrator.xml traj.dcd state.csv state.xml state.chk
+  frames/              <generator>.<level>.extxyz  frames.{out,toml}  labels.<level>.{out,toml}
+  orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}   one frame's reference label (a file group)
   _records/            this repository's Records, one per Calculation, in the form ORCA and
                        CREST use: a .out Report for a person (last line: terminated normally)
                        and a .toml Property file for a program ([Calculation_Status] first)
