@@ -302,6 +302,11 @@ def provenance(name=None):
         # neighbour-list fingerprint in `neighbour_list_patch["installed"]` are the part
         # that can be checked.
         mace_module_path=str(getattr(mace, "__file__", "")),
+        # Which mace: since 2026-09-20 the intended one is the fork
+        # BloomDlwlrma/openQHA-Hessian (branch openqha-hessian), installed editable, and
+        # its commit is the only thing that says which loss-side changes were in the
+        # loop. A pip-installed 0.3.16 answers "unknown" here; 05_train refuses that.
+        **mace_fork_info(),
         torch_version=torch.__version__,
         dtype=DTYPE,
         # The interface is not the stock one and a product must not imply that it is.
@@ -310,6 +315,54 @@ def provenance(name=None):
         # openqha/mace_patch.py for the measurement that made this necessary.
         neighbour_list_patch=_patch_state(),
     )
+
+
+#: The mace this repository trains with is a FORK (mace-md's pattern: what must touch
+#: mace's internals is two generic commits on a branch, everything else uses the public
+#: API from `openqha/training/`). The fork's commit is part of a fine-tuned potential's
+#: identity, next to the parameter fingerprint.
+MACE_FORK = "BloomDlwlrma/openQHA-Hessian@openqha-hessian"
+MACE_FORK_BASE = "base-v0.3.16"      # = upstream ACEsuit/mace v0.3.16 (4d2da09) minus three bundled model binaries
+
+
+def _git(args):
+    import subprocess
+    return subprocess.run(["git"] + list(args), check=True, capture_output=True, text=True, timeout=30).stdout
+
+
+def mace_fork_info(module_file=None, run=None):
+    """Which mace checkout is imported, as a git commit -- or "unknown".
+
+    An editable install (`pip install -e <checkout>`) imports `mace/__init__.py` from the
+    checkout itself, so the checkout is the parent of the package directory and its
+    `.git` is right there. A wheel in site-packages has no `.git` beside the package and
+    answers "unknown". Nothing walks further up than that one directory: a `.git` two
+    levels above a site-packages would be somebody's home repository, not mace's.
+
+    Returns mace_fork_commit (40 hex or "unknown"), mace_fork_dirty (True when a TRACKED
+    file of the checkout is modified -- untracked build products such as `*.egg-info`
+    do not count -- None when unknown), mace_fork_path (the checkout, or None).
+    `run` is the git runner, injectable for the unit test.
+    """
+    import re
+    if module_file is None:
+        import mace
+        module_file = getattr(mace, "__file__", None)
+    unknown = dict(mace_fork_commit="unknown", mace_fork_dirty=None, mace_fork_path=None)
+    if not module_file:
+        return unknown
+    root = Path(module_file).resolve().parent.parent
+    if not (root / ".git").exists():
+        return unknown
+    run = run or _git
+    try:
+        commit = run(["-C", str(root), "rev-parse", "HEAD"]).strip()
+        dirty = bool(run(["-C", str(root), "status", "--porcelain", "--untracked-files=no"]).strip())
+    except Exception:                                     # noqa: BLE001 -- no git, not a repo, timeout
+        return unknown
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        return unknown
+    return dict(mace_fork_commit=commit, mace_fork_dirty=dirty, mace_fork_path=str(root))
 
 
 def fingerprint_state_dict(state_dict):

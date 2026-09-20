@@ -63,6 +63,22 @@ def print_rec(rec):
         print("  registry pin    {}".format(rec["pin_status"] + ("" if rec["pin"] is None else "  " + rec["pin"][:16] + "...")))
 
 
+def print_mace():
+    """Two lines that settle which mace is imported: its version and the fork commit
+    (ticket 10 of the Hessian-learning set). 'unknown' means a wheel, not the fork."""
+    try:
+        import mace
+        ver = mace.__version__
+    except Exception as exc:                                       # noqa: BLE001
+        print("mace            not importable: {}".format(exc)); return
+    info = engine.mace_fork_info()
+    print("mace            {}   {}".format(ver, getattr(mace, "__file__", "")))
+    print("mace fork       {}{}   (intended: {} on {})".format(
+        info["mace_fork_commit"], "  DIRTY" if info["mace_fork_dirty"] else "",
+        engine.MACE_FORK, engine.MACE_FORK_BASE))
+    print()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("names", nargs="*", help="registered engine names (default: every one whose file is present)")
@@ -88,6 +104,7 @@ def main():
             bad += not same_params
         sys.exit(1 if bad else 0)
 
+    print_mace()
     if args.pin:
         rec = describe(args.pin)
         print_rec(rec)

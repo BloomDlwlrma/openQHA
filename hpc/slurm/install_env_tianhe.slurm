@@ -17,6 +17,8 @@
 #     ROLE=cpu yhbatch -p debug -t 00:30:00 hpc/slurm/install_env_tianhe.slurm
 #
 # ROLE=gpu (default) | cpu | both      ENV_NAME= to override the environment name
+# MACE_FORK=<checkout>  replace the mace-torch wheel by the editable fork openQHA-Hessian
+#                       (default: ../openQHA-Hessian beside this repository; skipped if absent)
 #
 # =======================================================================================
 # 1. WHY THIS FILE EXISTS, AND WHAT IT DOES *NOT* FIX
@@ -278,3 +280,24 @@ fi
 
 echo
 echo "done: $(date -Is)"
+
+# ---- 9. the mace fork (Hessian learning, ticket 10) -----------------------------------
+# The environment files install the mace-torch WHEEL (0.3.16). Training and every product
+# that names its engine must import the fork BloomDlwlrma/openQHA-Hessian instead
+# (branch openqha-hessian; base-v0.3.16 = upstream v0.3.16 minus three bundled model
+# binaries), installed editable so that `engine.provenance()` can record its commit.
+# The checkout is transferred beside this repository; nothing is fetched from GitHub.
+_fork="${MACE_FORK:-$(cd "$REPO/.." && pwd)/openQHA-Hessian}"
+if [ -f "$_fork/mace/__version__.py" ] && [ -d "$_fork/.git" ]; then
+    for _n in ${ENV_NAME:-} ${ENV_NAME_CPU:-} ${ENV_NAME_GPU:-} openqha openqha-gpu; do
+        conda env list | awk '{print $1}' | grep -qx "$_n" || continue
+        echo
+        echo "=== mace fork into $_n: $_fork ($(git -C "$_fork" rev-parse --short HEAD))"
+        conda run -n "$_n" pip uninstall -y mace-torch >/dev/null 2>&1 || true
+        conda run -n "$_n" pip install --no-deps -e "$_fork" || echo "  fork install FAILED in $_n" >&2
+        conda run -n "$_n" python -c "import mace; print('  mace', mace.__version__, mace.__file__)" || true
+    done
+else
+    echo
+    echo "=== mace fork NOT installed: no checkout at $_fork (set MACE_FORK=<path>); the wheel 0.3.16 stays"
+fi

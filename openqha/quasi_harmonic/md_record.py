@@ -281,7 +281,7 @@ def _write_report(meta, out_path):
     r.section("Provenance")
     r.kv("engine", eng.get("engine") or meta.get("engine_name"))
     for k in ("weights_path", "bytes", "params_sha256", "n_tensors", "params_pin_status", "interface",
-              "mace_torch_version", "torch_version", "dtype"):
+              "mace_torch_version", "mace_fork_commit", "torch_version", "dtype"):
         if k in eng:
             r.kv(k, eng[k])
     for k in ("composite_notation", "protocol_source", "protocol_status", "slurm_job_id", "platform"):

@@ -199,6 +199,22 @@ the exact numbers that produced them. `s0_check_weights.py` with no arguments pr
 three lines (bytes, file hash, fingerprint) for every registered file present;
 `--json` + `--compare` settle in one command whether two machines hold the same numbers.
 
+**The mace fork.** Fine-tuning needs two small changes inside mace-torch (a Hessian field on
+the batch, an external-loss hook), so since 2026-09-20 the mace this repository imports is
+the fork `BloomDlwlrma/openQHA-Hessian`, branch `openqha-hessian`, whose base tag
+`base-v0.3.16` is upstream v0.3.16 minus three bundled foundation-model binaries -- mace-md's
+pattern (`jharrymoore/mace@softcore`): what must touch mace's internals is a fork branch,
+everything else (`openqha/training/`: the Hessian-vector product, the probes, the loss, the
+judge) uses the public API. Install it editable in place of the wheel:
+
+```bash
+pip uninstall -y mace-torch && pip install -e ../openQHA-Hessian     # the checkout beside this repository
+python scripts/tooling/s0_check_weights.py                            # first two lines: version 0.3.16+openqha, fork commit
+```
+
+`engine.provenance()` records `mace_fork_commit` (and `mace_fork_dirty`); a pip wheel gives
+`unknown`, and `05_train` refuses to train on it. Ticket 10 of `.scratch/hessian-learning-set/`.
+
 Verify what you have:
 
 ```bash

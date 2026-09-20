@@ -273,10 +273,22 @@ $M mdanalysis=2.10.0
 $M pip=26.2.1
 
 pip install mace-torch==0.3.16 pymsym==0.3.5 parsl==2026.9.7
+# the mace this repository trains with is the FORK (ticket 10, 2026-09-20): replace the wheel
+pip uninstall -y mace-torch && pip install -e "$MACE_FORK"      # MACE_FORK = the openQHA-Hessian checkout, transferred beside openQHA
+python -c "import mace; print(mace.__version__)"                 # 0.3.16+openqha
 ```
 
 Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`,
 `cudnn 9.10.2.21`, `libblas 3.9.0=37_h5875eb1_mkl`, `mkl 2024.2.2`, `llvm-openmp 23.1.0`.
+
+> **The mace fork.** Since 2026-09-20 `import mace` must be `BloomDlwlrma/openQHA-Hessian`
+> (branch `openqha-hessian`, base tag `base-v0.3.16` = upstream v0.3.16 minus three bundled
+> model binaries) installed EDITABLE from a checkout that travels with the repository
+> (`hpc/tools/xfer_tianhe_ai.sh` copies `openQHA-Hessian/` beside `openQHA/`; no GitHub is
+> needed on the cluster). `openqha.potentials.engine.provenance()` records the checkout's
+> commit as `mace_fork_commit`; a pip wheel answers `unknown` and `05_train` refuses it.
+> `scripts/tooling/s0_check_weights.py` prints the two lines. `install_env_tianhe.slurm`
+> does the replacement in its section 9 when `MACE_FORK` points at the checkout.
 
 ### 3.2 `openqha`
 
@@ -305,6 +317,9 @@ $M xtb=6.7.1
 $M pip=26.2.1
 
 pip install mace-torch==0.3.16 pymsym==0.3.5 parsl==2026.9.7
+# the mace this repository trains with is the FORK (ticket 10, 2026-09-20): replace the wheel
+pip uninstall -y mace-torch && pip install -e "$MACE_FORK"      # MACE_FORK = the openQHA-Hessian checkout, transferred beside openQHA
+python -c "import mace; print(mace.__version__)"                 # 0.3.16+openqha
 ```
 
 > ### ⚠ OPEN: this environment produces a potential that returns `NaN` for every structure
