@@ -27,7 +27,7 @@ After (5 levels; the four fields engine, level, frame, kind become one name; no 
 - [x] unit: `orca_frame_stem` spells `orca.wb97m-d3bj_def2-tzvppd.displaced_b00_k3`; a level with a `/` is refused; `t_frame_labels.py` (25 checks) passes on the flat names, including the lock `<stem>.running`, the scratch copy-back rename, `finished` on `.hess` / `.engrad`, `assemble` finding both kinds, and no `orca/` directory left in the molecule
 - [x] unit: `s0_flatten_tree` stage 1 on a copied tag in the shard form (+ `_label/acetone`) moves both up and removes the three folders; stage 2 on the molecule leaves no `orca/<level>/frames/`, keeps `orca/<level>/basin00/`, a second plan is empty, `assemble` reproduces the label files byte for byte
 - [x] unit: `NAME="${NAME:-$TAG}"` in all four stage scripts, no `NAME=draw` in the headers or the README, `--name` optional in 00/01/04 and `hl_list.py` (03: the default mode when neither `--species` nor `--all`); `t_layout_molecule_directory` holds the flat tree (`molecule_dir` = `<root>/<tag>/<qid>`, no `shard`); unit group 45/45
-- [ ] tianhe (user): `s0_flatten_tree.py --tag smoke` (and `rings`, `propanal`) dry run then `--apply`, then `04_dataset --tag rings --tag propanal --name smoke` reproduces `test 65 / pool 0`
+- [x] tianhe (user, 2026-09-20): `s0_flatten_tree.py --tag smoke` plan then `--apply`: 7 molecules up, 325 frame files into `frames/`, 86 folders removed, 0 conflicts (tianhe holds only the tag `smoke`; `rings` / `propanal` are the WSL msRRHO trees, so stage 3 had nothing to move there); `04_dataset --tag smoke --split-by molecule` -> `test 65 / pool 0`
 
 **Closing (code, 2026-09-20):** A (`--name` defaults; `run.sh`), B (`layout.orca_frame_stem / orca_frame_file`; `frame_labels.finished / lock_file / running_elsewhere / _claim / _release / parse_label / label_one / assemble` on `(molecule, stem)`; ORCA always in a run directory, KEEP copied back under the stem; `03_labels.pending`), C (`layout.molecule_dir` flat; `basins`, `worklist`, the four globs), ADR 0001 amendment 3, README / output inventory / branchA workflow doc, `s0_flatten_tree.py`, tests. Decision S0-C-50. The tianhe migration of the three small trees is the user's run, before any campaign job.
 
@@ -53,6 +53,6 @@ After (5 levels; the four fields engine, level, frame, kind become one name; no 
 
 - [x] unit group 45/45; `t_layout_molecule_directory` holds the new spellings and the absence of the old names; `t_frame_labels` stage 3 check (9 files: basin job + probe, three level Records, cross-level Record, the two engine folders; `levels_present` reads the level back)
 - [x] integration `t_hessian_compare_engine` (MACE on the fixture's reference geometry) passes on the moved fixture
-- [ ] tianhe (user): `s0_flatten_tree.py --tag X` dry run then `--apply` for smoke / rings / propanal, then `04_dataset --tag rings --tag propanal --name smoke` -> `test 65 / pool 0`, and `s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step compare` finds every level from `msrrho/thermo/`
+- [x] tianhe (user, 2026-09-20): as above for `smoke`; the msRRHO `--step compare` check is a WSL-tree matter (no msRRHO data on tianhe) and is covered by the unit + integration tests on the moved fixture
 
 Decision S0-C-51.
