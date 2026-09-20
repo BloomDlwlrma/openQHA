@@ -8,10 +8,10 @@ touches; the Slurm log is the Batch's report.
 | step | driver | Calculation | writes |
 |---|---|---|---|
 | 00 | `00_draw.py` | `openqha.data.structure_classes.draw` | `<root>/<tag>/_datasets/<name>/draw.{out,toml,dat}` — the campaign's molecule list: 500 per structure class (`configs/structure_classes.yaml`) from the gated QM9 targets outside MACE-OFF23's SPICE training file, the union over classes, the pinned seven always in |
-| 01 | `01_select.py` | `openqha.data.dataset.select` | `<root>/<tag>/_datasets/<name>/select.{out,toml,dat}` — the molecule list with stratum, SPICE membership, pin status |
+| 01 | `01_select.py` | `openqha.data.dataset.select` | `<root>/<tag>/_datasets/<name>/select.{out,toml,dat}` — the molecule list (the whole draw, when there is one) with stratum, classes, SPICE membership, pin status, basins / frames present |
 | 02 | `02_frames.py` | `openqha.data.frames.generate` | `<molecule>/frames/<generator>.<mace level>.extxyz`, `frames/frames.{out,toml}` |
 | 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/frames/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
-| 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz`, `index.dat`, `dataset.{out,toml}`, `molecules-<name>.h5` |
+| 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz` (REF_* keys), `mace_<name>.<level>.extxyz`, `index.dat` (classes), `dataset.{out,toml}` ([[Class]]), `molecules-<name>.h5` |
 | 05, 06 | `05_train.py`, `06_judge.py` | stubs: refuse until round 2 is ruled | |
 
 `run.sh --tag T [--tag T2] [--name NAME] [--limit N] [--stratify] [--with-labels]` runs
@@ -63,6 +63,11 @@ python workflows/hessian_learning/03_labels.py --tag rings --species dsgdb9nsd_0
 
 ### On tianhe (TianheXY‑C; rulings 2026‑09‑18 / 2026‑09‑19)
 
+**The campaign is run from [`docs/hessian_learning_campaign.md`](../../docs/hessian_learning_campaign.md)**
+(ticket 08): the sequence, the cost table with its measured column, the 3 × 3‑day
+resubmission scheme, what each log's last lines must say, the progress table
+(`scripts/tooling/s0_hl_progress.py --tag draw300`). What follows is the mechanism.
+
 **A submitted job is plain bash + `xargs`, no parsl** — the hkuhpc shape
 (`qm9_reaction_eng/docs/bash_orca_remain_workflow_lecture.md`): a task list, `awk` gives
 each slot a core range, `xargs -P 16` runs an idempotent worker under `taskset` on the
@@ -96,7 +101,7 @@ TAG=draw300 LIMIT_FRAMES=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/h
 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm
 TAG=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm
 python workflows/hessian_learning/01_select.py --tag draw300
-TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # x3, until task 0's assemble exits 0
+TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # x3, until task 0's assemble exits 0 (docs/hessian_learning_campaign.md)
 python workflows/hessian_learning/04_dataset.py --tag draw300 --export openreact
 ```
 Read each task's log (`openqha_hl_<stage>_<jobid>_<task>.out`): the task list size, one
@@ -129,20 +134,42 @@ every class it is in), a short class takes all it has and the shortfall is in th
 First real draw (`--tag draw500 --seed 0`): **10,471 molecules**; eight‑membered rings
 378 (all), carboxylic acids 0 (QM9's gated targets have no free COOH).
 
-## Step 04: the Dataset (rounds 3–4, Q3/Q6 (b))
+## Step 01: the selection (tickets 04 and 07)
 
-`test` = whole molecules the model never sees: the pinned seven (acetone 000018,
-acetamide 000019, propanal 000035, N‑methylformamide 000036, 2‑methyloxirane 000044,
-cyclopropanol 000046, oxetane 000048) plus `TEST_FRACTION` (0.1) of the others drawn per
-stratum (ring count × heteroatom pattern) with `--seed`; `valid` = `VALID_FRACTION` (0.1)
-of the training molecules' labelled frames, drawn **by frame** (early stopping sees
-interpolation, as SPICE); `train` = the rest; `pool` = frames without a label at the
-level yet, whatever their molecule's split (`molecule_split` in the index). The split is
-set at write time and never recomputed; `index.dat` is the record (one row per frame:
-molecule, tag, basin, generator, k, split, levels, seed, engine fingerprint, ORCA
-version, SPICE membership, stratum, file + row, engine file). `train/valid/test` files
-carry the **reference** E‑F‑H under `energy` / `forces` / `hessian`; `pool` carries the
-engine's. `--export openreact` writes `molecules-<name>.h5` in OpenREACT's layout —
+Every molecule of the draw (`draw.dat`, when the Dataset has one) is a row of `select.dat`
+— with `has_basins` / `has_frames` false until branch A / 02 have run for it, so the
+campaign's progress is one table and `hl_labels.slurm` (`03_labels --name`) always sees the
+whole draw — plus every branch‑A‑finished molecule under the tags. Each row carries the
+stratification keys, the structure `classes` (from `draw.dat`, else classified from the
+SMILES with `configs/structure_classes.yaml`), SPICE membership, pin status; the Record has
+a `[[Class]]` table (molecules / with basins / with frames per class).
+
+## Step 04: the Dataset (rounds 3–4 Q3/Q6 (b); round 5 Q4, ticket 07)
+
+Two splits (`--split-by`). **`frame`, the default (production, round 5 Q4):** the pinned
+seven (acetone 000018, acetamide 000019, propanal 000035, N‑methylformamide 000036,
+2‑methyloxirane 000044, cyclopropanol 000046, oxetane 000048) are whole test molecules;
+every other labelled frame goes to train / valid / test at **90 / 5 / 5** by its own draw
+(a generator seeded from `--seed` and the frame's name, so a frame's split never depends
+on what else is labelled; the fractions are expectations, ±0.1 % over 100,000 frames).
+**`molecule` (the smoke set):** `test` = whole molecules: the pinned seven plus
+`TEST_FRACTION` (0.1) of the others drawn per stratum (ring count × heteroatom pattern);
+`valid` = `VALID_FRACTION` (0.1) of the training molecules' labelled frames, drawn by
+frame; `train` = the rest. In both, `pool` = frames without a label at the level yet,
+whatever their molecule's side (`molecule_split` in the index). The split is set at
+write time and never recomputed: a rebuild keeps every decision of the previous
+`index.dat`. `index.dat` is the record (one row per frame: molecule, tag, basin,
+generator, k, split, levels, seed, engine fingerprint, ORCA version, SPICE membership,
+stratum, **classes**, file + row, engine file); the Record has a `[[Class]]` table
+(molecules, frames, labelled, per split).
+
+`train/valid/test` files carry the **reference** E‑F‑H under `energy` / `forces` /
+`hessian` **and** under MACE‑torch's default training keys `REF_energy` (info),
+`REF_forces` (arrays) and `REF_hessian` (info, flattened; only at basin / merged / saddle
+frames — `has_hessian` says which; round 5 Q7 (b)), plus `split`; `pool` carries the
+engine's. **`mace_<name>.<level>.extxyz`** is the three labelled splits in one file — the
+single xyz for MACE Hessian learning (05_train reads `REF_hessian` where present and
+masks the Hessian term otherwise). `--export openreact` writes `molecules-<name>.h5` in OpenREACT's layout —
 **Å, Eh, Eh/Å, Eh/Å²** (read off `molecules-RTP.h5`: with Eh/Å² its C–H stretches
 project to 3156–3183 cm⁻¹; Eh/bohr² would give ~6000) — with our `split`, `generator`,
 `basin`, `k` datasets beside the standard ones.

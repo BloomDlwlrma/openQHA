@@ -6,6 +6,9 @@
 
 **Delivers:** the page the campaign is run from; the progress table.
 
-- [ ] `s0_hl_progress.py` on the smoke set prints 7 / 7 / 7 / 65 / 0 / 0 with the per-class rows; on a fresh draw the drawn count with zeros elsewhere
-- [ ] the runbook's commands are the ones in the scripts' headers (a test greps them against each other, as `t_script_taxonomy` does for the taxonomy lines)
-- [ ] OPEN until the campaign runs: the cost table's measured column filled from the array logs
+- [x] unit (`t_hl_campaign.py`): `s0_hl_progress.progress` on a fake draw of three molecules (branch A + Frame set + 4 finished file groups + 1 fresh claim + 1 unfinished .out / branch A only / never run) counts 3 / 2 / 1 / 15 / 4 / 11 / 1 with the per-class rows; a fresh draw gives the drawn count with zeros elsewhere; without a draw the selection is the list, without a selection the tags
+- [ ] tianhe (user): `s0_hl_progress.py --tag rings --tag propanal --name smoke` prints 7 / 7 / 7 / 65 / 65 / 0 / 0 (`labelled` counts finished ORCA file groups, so 65 after the flatten migration)
+- [x] the page's sbatch commands are the stage scripts' header commands and nothing else (the 3-day rounds and the 3 h gate rerun excepted), checked both ways by the test; `hl_labels.slurm`'s array header now says `--time=3-00:00:00`
+- [ ] OPEN until the campaign runs: the cost table's measured column filled from the gate's 03 log (per-frame `<s>` averaged over basin_* and displaced_* frames) and the array logs
+
+**Closing (code, 2026-09-20):** `docs/hessian_learning_campaign.md` (the sequence with the gates, the cost table -- A 3,800 core-h ~5 h, 02 < 1 h, 03 125,000-155,000 core-h = 7-8.5 days of 12 nodes -> 3 x 3-day rounds; storage ~35 GB + 6.5 GB + the Dataset; the 3 x 3-day scheme and why a round is the same command; the log lines of every stage and their bad signs; progress and resubmit-as-is; the ALF mode), `scripts/tooling/s0_hl_progress.py` (draw.dat -> select.dat -> the tags; per class and total; finished file groups and fresh claims read from disk), pointers from the workflow README and `tianhe_runbook.md`. Unit group 46/46. Decision S0-G-92.

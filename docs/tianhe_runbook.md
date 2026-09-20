@@ -2,7 +2,9 @@
 
 Site facts and the first-login sequence. **For what to run, where each setting lives and
 where the answer lands, read [`branchA_production.md`](branchA_production.md)** — this
-file is the machine, that one is the work.
+file is the machine, that one is the work. **The Hessian-learning campaign (draw300:
+branch A → Frame sets → reference labels → the Dataset, as Slurm arrays) is run from
+[`hessian_learning_campaign.md`](hessian_learning_campaign.md).**
 
 **Nothing in this repository has ever been submitted to Tianhe.** Steps are marked
 **[measured]** or **[unverified]** so you know which is which before you spend an
