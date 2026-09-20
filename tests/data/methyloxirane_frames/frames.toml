@@ -1,0 +1,123 @@
+[Calculation_Status]
+PROGNAME = "openQHA frames"      # String: the step that wrote this file
+VERSION  = "0.3.0"               # String: openQHA version
+STATUS   = "NORMAL TERMINATION"  # String: the completion marker
+
+[Calculation_Info]
+MOLECULE_DIR          = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044"  # String: the molecule directory
+QM9_INDEX             = "dsgdb9nsd_000044"      # String: the molecule
+SMILES                = "C[C@H]1CO1"            # String: as declared in the branch-A record
+ENGINE                = "MACE-OFF23_medium"     # String: the potential that labelled the frames
+LEVEL                 = "mace-off23_medium"     # String: the engine's level name (the file suffix)
+ENGINE_PARAMS_SHA256  = "e986a6cffd75c3a54b8f5d1f6511c6af00523872a173c5d2e0e8083751a5d7df"  # String: parameter fingerprint of the weights (engine.parameter_fingerprint)
+ENGINE_PIN_STATUS     = "matches"               # String: matches / differs / unpinned against the registry
+TEMPERATURE           = 298.15                  # Double, K: temperature of the harmonic draw
+DISTRIBUTION          = "classical"             # String: classical (equipartition; the default, Q14) or quantum (zero-point amplitude in every mode) draw of the displaced frames
+N_DISPLACED_PER_BASIN = 4                       # Integer: displaced frames drawn per basin
+MAX_RMS_A             = 0.15                    # Double, A: RMS displacement ceiling of a displaced frame (over the 3N coordinates)
+ENERGY_WINDOW_KCAL    = 275.0                   # Double, kcal/mol: the only filter: a frame further above its basin is dropped (ANI-1's 275; SPICE cuts at 2390)
+BOND_CUTOFF_MULT      = 1.2                     # Double: covalent-radius multiplier defining the basin's bond graph (reported, not filtered)
+BOND_BREAK_MULT       = 1.35                    # Double: a basin bond longer than this x (r_i + r_j) is reported as broken (RDKit perceives at 1.3, Open Babel ~1.4)
+BOND_FORM_MULT        = 0.95                    # Double: a non-bonded pair closer than this x (r_i + r_j) is reported as formed
+N_BOND_CHANGED        = 0                       # Integer: kept frames whose bond graph differs from the basin's (information, not a filter)
+N_BASINS              = 1                       # Integer: basins of the molecule
+N_FRAMES              = 5                       # Integer: frames kept, all generators
+N_DROPPED             = 0                       # Integer: frames dropped, all generators
+SECONDS               = 12.777016401290894      # Double, s: wall time
+
+[[Generator]]
+GENERATOR = "basin"                             # String: basin / displaced / merged / saddle
+N_FRAMES  = 1                                   # Integer: frames kept
+N_DROPPED = 0                                   # Integer: frames dropped
+FILE      = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/frames/basin.mace-off23_medium.extxyz"  # String: the extxyz written, or absent when no frame was kept
+
+[[Generator]]
+GENERATOR = "displaced"                         # String: basin / displaced / merged / saddle
+N_FRAMES  = 4                                   # Integer: frames kept
+N_DROPPED = 0                                   # Integer: frames dropped
+FILE      = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/frames/displaced.mace-off23_medium.extxyz"  # String: the extxyz written, or absent when no frame was kept
+
+[[Generator]]
+GENERATOR = "merged"  # String: basin / displaced / merged / saddle
+N_FRAMES  = 0         # Integer: frames kept
+N_DROPPED = 0         # Integer: frames dropped
+
+[[Generator]]
+GENERATOR = "saddle"  # String: basin / displaced / merged / saddle
+N_FRAMES  = 0         # Integer: frames kept
+N_DROPPED = 0         # Integer: frames dropped
+
+[[Frame]]
+GENERATOR          = "basin"                # String: the generator
+BASIN              = 0                      # Integer: the basin the frame was born from
+K                  = 0                      # Integer: index within (generator, basin)
+SEED               = 0                      # Integer: the frame's own seed (displaced), 0 otherwise
+SOURCE_CONFORMER   = 2                      # Integer: branch-A input frame id (merged / saddle / basin), -1 otherwise
+RMS_DISPLACEMENT_A = 0.0                    # Double, A: RMS displacement from the basin over the 3N Cartesian coordinates (hessian.thermal_displacements' definition; per-atom RMS is sqrt(3) larger)
+ENERGY             = -5258.222009460694     # Double, eV: engine energy
+ENERGY_ABOVE_BASIN = 0.0                    # Double, kcal/mol: engine energy above the frame's basin
+MAX_FORCE          = 6.992466354699411e-05  # Double, eV/A: engine |F|max
+LOWEST_FREQ        = 193.5255473954726      # Double, cm^-1: lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); at a displaced frame this is a curvature, not a mode
+BOND_CHANGE        = "-"                    # String: broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)
+STATUS             = "kept"                 # String: kept / dropped
+REASON             = "-"                    # String: why dropped (the energy window), or -
+
+[[Frame]]
+GENERATOR          = "displaced"          # String: the generator
+BASIN              = 0                    # Integer: the basin the frame was born from
+K                  = 0                    # Integer: index within (generator, basin)
+SEED               = 2100523594360233869  # Integer: the frame's own seed (displaced), 0 otherwise
+SOURCE_CONFORMER   = -1                   # Integer: branch-A input frame id (merged / saddle / basin), -1 otherwise
+RMS_DISPLACEMENT_A = 0.05833445875641044  # Double, A: RMS displacement from the basin over the 3N Cartesian coordinates (hessian.thermal_displacements' definition; per-atom RMS is sqrt(3) larger)
+ENERGY             = -5257.909170394199   # Double, eV: engine energy
+ENERGY_ABOVE_BASIN = 7.214240256197472    # Double, kcal/mol: engine energy above the frame's basin
+MAX_FORCE          = 1.704678982480402    # Double, eV/A: engine |F|max
+LOWEST_FREQ        = 285.7863917348472    # Double, cm^-1: lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); at a displaced frame this is a curvature, not a mode
+BOND_CHANGE        = "-"                  # String: broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)
+STATUS             = "kept"               # String: kept / dropped
+REASON             = "-"                  # String: why dropped (the energy window), or -
+
+[[Frame]]
+GENERATOR          = "displaced"          # String: the generator
+BASIN              = 0                    # Integer: the basin the frame was born from
+K                  = 1                    # Integer: index within (generator, basin)
+SEED               = 1022739532756224591  # Integer: the frame's own seed (displaced), 0 otherwise
+SOURCE_CONFORMER   = -1                   # Integer: branch-A input frame id (merged / saddle / basin), -1 otherwise
+RMS_DISPLACEMENT_A = 0.09599723614673203  # Double, A: RMS displacement from the basin over the 3N Cartesian coordinates (hessian.thermal_displacements' definition; per-atom RMS is sqrt(3) larger)
+ENERGY             = -5258.035506191378   # Double, eV: engine energy
+ENERGY_ABOVE_BASIN = 4.300867562624646    # Double, kcal/mol: engine energy above the frame's basin
+MAX_FORCE          = 1.054134649964707    # Double, eV/A: engine |F|max
+LOWEST_FREQ        = 374.0127416760998    # Double, cm^-1: lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); at a displaced frame this is a curvature, not a mode
+BOND_CHANGE        = "-"                  # String: broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)
+STATUS             = "kept"               # String: kept / dropped
+REASON             = "-"                  # String: why dropped (the energy window), or -
+
+[[Frame]]
+GENERATOR          = "displaced"          # String: the generator
+BASIN              = 0                    # Integer: the basin the frame was born from
+K                  = 2                    # Integer: index within (generator, basin)
+SEED               = 891663992295280746   # Integer: the frame's own seed (displaced), 0 otherwise
+SOURCE_CONFORMER   = -1                   # Integer: branch-A input frame id (merged / saddle / basin), -1 otherwise
+RMS_DISPLACEMENT_A = 0.12741532399329047  # Double, A: RMS displacement from the basin over the 3N Cartesian coordinates (hessian.thermal_displacements' definition; per-atom RMS is sqrt(3) larger)
+ENERGY             = -5257.84092563579    # Double, eV: engine energy
+ENERGY_ABOVE_BASIN = 8.78800177166762     # Double, kcal/mol: engine energy above the frame's basin
+MAX_FORCE          = 2.129566797415114    # Double, eV/A: engine |F|max
+LOWEST_FREQ        = 434.16385615191297   # Double, cm^-1: lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); at a displaced frame this is a curvature, not a mode
+BOND_CHANGE        = "-"                  # String: broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)
+STATUS             = "kept"               # String: kept / dropped
+REASON             = "-"                  # String: why dropped (the energy window), or -
+
+[[Frame]]
+GENERATOR          = "displaced"           # String: the generator
+BASIN              = 0                     # Integer: the basin the frame was born from
+K                  = 3                     # Integer: index within (generator, basin)
+SEED               = 2409879901504212602   # Integer: the frame's own seed (displaced), 0 otherwise
+SOURCE_CONFORMER   = -1                    # Integer: branch-A input frame id (merged / saddle / basin), -1 otherwise
+RMS_DISPLACEMENT_A = 0.059439704895210305  # Double, A: RMS displacement from the basin over the 3N Cartesian coordinates (hessian.thermal_displacements' definition; per-atom RMS is sqrt(3) larger)
+ENERGY             = -5258.004744577263    # Double, eV: engine energy
+ENERGY_ABOVE_BASIN = 5.0102472362580475    # Double, kcal/mol: engine energy above the frame's basin
+MAX_FORCE          = 1.9806090201646998    # Double, eV/A: engine |F|max
+LOWEST_FREQ        = 296.55498627647387    # Double, cm^-1: lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); at a displaced frame this is a curvature, not a mode
+BOND_CHANGE        = "-"                   # String: broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)
+STATUS             = "kept"                # String: kept / dropped
+REASON             = "-"                   # String: why dropped (the energy window), or -

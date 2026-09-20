@@ -1,0 +1,143 @@
+[Calculation_Status]
+PROGNAME = "openQHA frame labels"  # String: the step that wrote this file
+VERSION  = "0.3.0"                 # String: openQHA version
+STATUS   = "NORMAL TERMINATION"    # String: the completion marker
+
+[Calculation_Info]
+MOLECULE_DIR       = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044"  # String: the molecule directory
+QM9_INDEX          = "dsgdb9nsd_000044"         # String: the molecule
+LEVEL              = "wb97m-d3bj_def2-tzvppd"   # String: the reference level (CONTEXT.md spelling; the file suffix)
+KEYWORDS           = "wB97M-D3BJ def2-TZVPPD TightSCF EnGrad Freq"  # String: ORCA's ! line: the level's single point + EnGrad + its Hessian route
+HESSIAN_ROUTE      = "analytic"                 # String: analytic / numerical, as the level declares it (orca.LEVELS)
+ORCA_VERSION       = "6.0.1"                    # String: Program Version of the .out files (the set of versions, if a rerun mixed them)
+NPROCS             = 4                          # Integer: ORCA ranks per frame
+MAXCORE_MB         = 3000                       # Integer, MB: %maxcore per rank
+MACE_LEVEL         = "mace-off23_medium"        # String: the Frame set's engine level whose files supplied the geometries
+POSITION_TOL_A     = 1e-07                      # Double, A: a .hess geometry further from the MACE file (translation removed) is refused
+N_FRAMES           = 5                          # Integer: kept frames of the Frame set, the generators considered
+N_LABELLED         = 5                          # Integer: frames with a label in the extxyz (computed now or reused)
+N_COMPUTED         = 1                          # Integer: frames ORCA ran in this call
+N_REUSED           = 4                          # Integer: frames whose finished ORCA job was on disk before this call
+N_REFUSED          = 0                          # Integer: finished jobs whose geometry did not match the MACE file
+N_UNLABELLED       = 0                          # Integer: frames with no finished ORCA job (failed or not yet run)
+SECONDS_PER_FRAME  = 176.7368                   # Double, s: mean ORCA wall time of the labelled frames (TOTAL RUN TIME)
+MAX_MEMORY_MB      = 91.4                       # Double, MB: largest 'Maximum memory used' ORCA reported over all frames, per rank
+NOISE_FLOOR_MAX_CM = 24.434975350685267         # Double, cm^-1: largest rigid-block value over the labelled BASIN frames (the noise floor); displaced frames are excluded, their block holds the gradient term
+SECONDS            = 0.027372121810913086       # Double, s: wall time of this call
+
+[[Generator]]
+GENERATOR  = "basin"                            # String: basin / displaced / merged / saddle
+N_FRAMES   = 1                                  # Integer: kept frames at the MACE level
+N_LABELLED = 1                                  # Integer: frames written to the level's extxyz
+FILE       = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/frames/basin.wb97m-d3bj_def2-tzvppd.extxyz"  # String: the extxyz written, or absent when no frame was labelled
+
+[[Generator]]
+GENERATOR  = "displaced"                        # String: basin / displaced / merged / saddle
+N_FRAMES   = 4                                  # Integer: kept frames at the MACE level
+N_LABELLED = 4                                  # Integer: frames written to the level's extxyz
+FILE       = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/frames/displaced.wb97m-d3bj_def2-tzvppd.extxyz"  # String: the extxyz written, or absent when no frame was labelled
+
+[[Generator]]
+GENERATOR  = "merged"  # String: basin / displaced / merged / saddle
+N_FRAMES   = 0         # Integer: kept frames at the MACE level
+N_LABELLED = 0         # Integer: frames written to the level's extxyz
+
+[[Generator]]
+GENERATOR  = "saddle"  # String: basin / displaced / merged / saddle
+N_FRAMES   = 0         # Integer: kept frames at the MACE level
+N_LABELLED = 0         # Integer: frames written to the level's extxyz
+
+[[Frame]]
+GENERATOR          = "basin"                    # String: the generator
+BASIN              = 0                          # Integer: the basin the frame was born from
+K                  = 0                          # Integer: index within (generator, basin)
+ENERGY             = -5258.225158876687         # Double, eV: reference energy (FINAL SINGLE POINT ENERGY, dispersion included)
+ENERGY_ABOVE_BASIN = 0.0                        # Double, kcal/mol: reference energy above the frame's basin frame (nan when the basin frame is unlabelled)
+MAX_FORCE          = 0.06722352132104842        # Double, eV/A: reference |F|max
+LOWEST_FREQ        = 206.26301510041915         # Double, cm^-1: lowest projected eigenvalue of the reference Hessian as a wavenumber (a curvature at a displaced frame)
+NOISE_FLOOR_CM     = 24.434975350685267         # Double, cm^-1: rigid-block value of the unprojected Hessian (hessian.rigid_block_floor_cm): the noise floor at a basin frame; at a displaced frame the rotational block carries the gradient term and is physics, not noise (oxetane: 24 at the basin, 178 at a displaced frame)
+MAX_POSITION_DEV_A = 1.0142588231093486e-08     # Double, A: largest |.hess geometry - MACE file geometry| after removing the common translation (ORCA writes the .hess in the centre-of-mass frame)
+COM_SHIFT_A        = 0.08483339326040343        # Double, A: the translation removed (|centre-of-mass shift|)
+HESSIAN_ROUTE      = "analytic"                 # String: analytic / numerical / unknown, read from the .out
+SECONDS            = 171.867                    # Double, s: ORCA's TOTAL RUN TIME of the job
+MEMORY_MB          = 91.1                       # Double, MB: largest 'Maximum memory used' line of the .out, per rank
+ORCA_VERSION       = "6.0.1"                    # String: Program Version of the .out
+STATUS             = "reused"                   # String: labelled / reused / refused / unlabelled
+REASON             = "-"                        # String: why refused or unlabelled, or -
+OUT                = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/orca/wb97m-d3bj_def2-tzvppd/frames/basin_b00_k0/job.out"  # String: the ORCA .out
+
+[[Frame]]
+GENERATOR          = "displaced"                # String: the generator
+BASIN              = 0                          # Integer: the basin the frame was born from
+K                  = 0                          # Integer: index within (generator, basin)
+ENERGY             = -5257.910813559138         # Double, eV: reference energy (FINAL SINGLE POINT ENERGY, dispersion included)
+ENERGY_ABOVE_BASIN = 7.248975230668486          # Double, kcal/mol: reference energy above the frame's basin frame (nan when the basin frame is unlabelled)
+MAX_FORCE          = 1.7335853533189718         # Double, eV/A: reference |F|max
+LOWEST_FREQ        = 293.73327668007096         # Double, cm^-1: lowest projected eigenvalue of the reference Hessian as a wavenumber (a curvature at a displaced frame)
+NOISE_FLOOR_CM     = 178.32570291382615         # Double, cm^-1: rigid-block value of the unprojected Hessian (hessian.rigid_block_floor_cm): the noise floor at a basin frame; at a displaced frame the rotational block carries the gradient term and is physics, not noise (oxetane: 24 at the basin, 178 at a displaced frame)
+MAX_POSITION_DEV_A = 1.0495646143859894e-08     # Double, A: largest |.hess geometry - MACE file geometry| after removing the common translation (ORCA writes the .hess in the centre-of-mass frame)
+COM_SHIFT_A        = 0.08483339520513589        # Double, A: the translation removed (|centre-of-mass shift|)
+HESSIAN_ROUTE      = "analytic"                 # String: analytic / numerical / unknown, read from the .out
+SECONDS            = 177.152                    # Double, s: ORCA's TOTAL RUN TIME of the job
+MEMORY_MB          = 90.9                       # Double, MB: largest 'Maximum memory used' line of the .out, per rank
+ORCA_VERSION       = "6.0.1"                    # String: Program Version of the .out
+STATUS             = "reused"                   # String: labelled / reused / refused / unlabelled
+REASON             = "-"                        # String: why refused or unlabelled, or -
+OUT                = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/orca/wb97m-d3bj_def2-tzvppd/frames/displaced_b00_k0/job.out"  # String: the ORCA .out
+
+[[Frame]]
+GENERATOR          = "displaced"                # String: the generator
+BASIN              = 0                          # Integer: the basin the frame was born from
+K                  = 1                          # Integer: index within (generator, basin)
+ENERGY             = -5258.037571342226         # Double, eV: reference energy (FINAL SINGLE POINT ENERGY, dispersion included)
+ENERGY_ABOVE_BASIN = 4.325871310851091          # Double, kcal/mol: reference energy above the frame's basin frame (nan when the basin frame is unlabelled)
+MAX_FORCE          = 1.0392788665442905         # Double, eV/A: reference |F|max
+LOWEST_FREQ        = 372.55955580389525         # Double, cm^-1: lowest projected eigenvalue of the reference Hessian as a wavenumber (a curvature at a displaced frame)
+NOISE_FLOOR_CM     = 128.7565884827162          # Double, cm^-1: rigid-block value of the unprojected Hessian (hessian.rigid_block_floor_cm): the noise floor at a basin frame; at a displaced frame the rotational block carries the gradient term and is physics, not noise (oxetane: 24 at the basin, 178 at a displaced frame)
+MAX_POSITION_DEV_A = 9.839663075647542e-09      # Double, A: largest |.hess geometry - MACE file geometry| after removing the common translation (ORCA writes the .hess in the centre-of-mass frame)
+COM_SHIFT_A        = 0.08483339463730087        # Double, A: the translation removed (|centre-of-mass shift|)
+HESSIAN_ROUTE      = "analytic"                 # String: analytic / numerical / unknown, read from the .out
+SECONDS            = 181.005                    # Double, s: ORCA's TOTAL RUN TIME of the job
+MEMORY_MB          = 91.1                       # Double, MB: largest 'Maximum memory used' line of the .out, per rank
+ORCA_VERSION       = "6.0.1"                    # String: Program Version of the .out
+STATUS             = "reused"                   # String: labelled / reused / refused / unlabelled
+REASON             = "-"                        # String: why refused or unlabelled, or -
+OUT                = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/orca/wb97m-d3bj_def2-tzvppd/frames/displaced_b00_k1/job.out"  # String: the ORCA .out
+
+[[Frame]]
+GENERATOR          = "displaced"                # String: the generator
+BASIN              = 0                          # Integer: the basin the frame was born from
+K                  = 2                          # Integer: index within (generator, basin)
+ENERGY             = -5257.840399766398         # Double, eV: reference energy (FINAL SINGLE POINT ENERGY, dispersion included)
+ENERGY_ABOVE_BASIN = 8.872755866075337          # Double, kcal/mol: reference energy above the frame's basin frame (nan when the basin frame is unlabelled)
+MAX_FORCE          = 2.076776888058662          # Double, eV/A: reference |F|max
+LOWEST_FREQ        = 430.47744308173355         # Double, cm^-1: lowest projected eigenvalue of the reference Hessian as a wavenumber (a curvature at a displaced frame)
+NOISE_FLOOR_CM     = 236.7480419452761          # Double, cm^-1: rigid-block value of the unprojected Hessian (hessian.rigid_block_floor_cm): the noise floor at a basin frame; at a displaced frame the rotational block carries the gradient term and is physics, not noise (oxetane: 24 at the basin, 178 at a displaced frame)
+MAX_POSITION_DEV_A = 1.0362211127351584e-08     # Double, A: largest |.hess geometry - MACE file geometry| after removing the common translation (ORCA writes the .hess in the centre-of-mass frame)
+COM_SHIFT_A        = 0.08483339247950396        # Double, A: the translation removed (|centre-of-mass shift|)
+HESSIAN_ROUTE      = "analytic"                 # String: analytic / numerical / unknown, read from the .out
+SECONDS            = 173.477                    # Double, s: ORCA's TOTAL RUN TIME of the job
+MEMORY_MB          = 90.6                       # Double, MB: largest 'Maximum memory used' line of the .out, per rank
+ORCA_VERSION       = "6.0.1"                    # String: Program Version of the .out
+STATUS             = "reused"                   # String: labelled / reused / refused / unlabelled
+REASON             = "-"                        # String: why refused or unlabelled, or -
+OUT                = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/orca/wb97m-d3bj_def2-tzvppd/frames/displaced_b00_k2/job.out"  # String: the ORCA .out
+
+[[Frame]]
+GENERATOR          = "displaced"                # String: the generator
+BASIN              = 0                          # Integer: the basin the frame was born from
+K                  = 3                          # Integer: index within (generator, basin)
+ENERGY             = -5258.0127803549085        # Double, eV: reference energy (FINAL SINGLE POINT ENERGY, dispersion included)
+ENERGY_ABOVE_BASIN = 4.897565059662149          # Double, kcal/mol: reference energy above the frame's basin frame (nan when the basin frame is unlabelled)
+MAX_FORCE          = 2.0386831863475265         # Double, eV/A: reference |F|max
+LOWEST_FREQ        = 302.28031191238085         # Double, cm^-1: lowest projected eigenvalue of the reference Hessian as a wavenumber (a curvature at a displaced frame)
+NOISE_FLOOR_CM     = 103.15107878131519         # Double, cm^-1: rigid-block value of the unprojected Hessian (hessian.rigid_block_floor_cm): the noise floor at a basin frame; at a displaced frame the rotational block carries the gradient term and is physics, not noise (oxetane: 24 at the basin, 178 at a displaced frame)
+MAX_POSITION_DEV_A = 1.018222917960332e-08      # Double, A: largest |.hess geometry - MACE file geometry| after removing the common translation (ORCA writes the .hess in the centre-of-mass frame)
+COM_SHIFT_A        = 0.08483339257603331        # Double, A: the translation removed (|centre-of-mass shift|)
+HESSIAN_ROUTE      = "analytic"                 # String: analytic / numerical / unknown, read from the .out
+SECONDS            = 180.183                    # Double, s: ORCA's TOTAL RUN TIME of the job
+MEMORY_MB          = 91.4                       # Double, MB: largest 'Maximum memory used' line of the .out, per rank
+ORCA_VERSION       = "6.0.1"                    # String: Program Version of the .out
+STATUS             = "labelled"                 # String: labelled / reused / refused / unlabelled
+REASON             = "-"                        # String: why refused or unlabelled, or -
+OUT                = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044/orca/wb97m-d3bj_def2-tzvppd/frames/displaced_b00_k3/job.out"  # String: the ORCA .out
