@@ -54,7 +54,7 @@ def check(label, ok, detail=""):
 
 def main():
     from ase.data import atomic_masses, atomic_numbers
-    parsed = orca.parse_hess(SRC / "orca" / LEVEL / "basin00" / "job.hess")
+    parsed = orca.parse_hess(layout.orca_level_file(SRC, LEVEL, 0, ".hess"))
     pos = np.asarray(parsed["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
     masses = [float(atomic_masses[atomic_numbers[s]]) for s in parsed["symbols"]]
     h_r = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
@@ -164,9 +164,9 @@ def main():
         prop.write(mol / "mace" / "basin00" / "hessian_at_{}.meta.toml".format(LEVEL),
                    {"Engine_Hessian": meta}, hc.META_SCHEMA, prop.NORMAL_TERMINATION, hc.PROGNAME)
         out = hc.run_calculation(mol, qm9_index="dsgdb9nsd_000035")
-        doc = prop.load(mol / "levels" / "hessian_compare.toml")
+        doc = prop.load(layout.thermo_file(mol, "hessian_compare.toml"))
         rows = {int(r["MACE_BASIN"]): r for r in doc["Basin"]}
-        merge = dat.read_table(layout.level_dir(mol, LEVEL) / "merge_map.dat")
+        merge = dat.read_table(layout.level_file(mol, LEVEL, "merge_map.dat"))
         kept = sorted(int(r["mace_basin"]) for r in merge if r["status"] == "kept")
         check("every kept MACE basin appears exactly once in [[Basin]] (%s)" % kept, sorted(rows) == kept)
         check("the reference round-trip against ORCA's frequencies is below 0.5 cm^-1",
@@ -192,8 +192,8 @@ def main():
               and all(0 < r["MAX_FORCE_ENGINE_AT_REF_EV_A"] < 0.2 for r in rows.values()))
         check("own-geometry thermochemistry columns present (D_ZPE, D_S_VIB, D_S_ROT, D_G_I_REL, D_POPULATION)",
               all(all(k in r for k in ("D_ZPE", "D_S_VIB", "D_S_ROT", "D_G_I_REL", "D_POPULATION")) for r in rows.values()))
-        te = prop.load(layout.level_dir(mol, "mace-off23_medium") / "thermo_msrrho.toml")
-        tr = prop.load(layout.level_dir(mol, LEVEL) / "thermo_msrrho.toml")
+        te = prop.load(layout.level_file(mol, "mace-off23_medium", "thermo_msrrho.toml"))
+        tr = prop.load(layout.level_file(mol, LEVEL, "thermo_msrrho.toml"))
         e0 = next(r for r in te["Basin"] if r["INDEX"] == 0)
         r0t = next(r for r in tr["Basin"] if r["INDEX"] == rows[0]["REF_BASIN"])
         check("D_ZPE of basin 0 is read from the two records (own geometries), not recomputed",
@@ -206,17 +206,17 @@ def main():
               doc["Calculation_Info"]["DIPOLE_DERIVATIVES_PRESENT"] is False
               and set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble"})
         check("the Report ends with the terminal line",
-              report.terminated_normally(mol / "levels" / "hessian_compare.out", "hessian_compare"))
+              report.terminated_normally(layout.thermo_file(mol, "hessian_compare.out"), "hessian_compare"))
 
         # a merged basin is absent from [[Basin]] and counted: edit the merge map
-        mm = layout.level_dir(mol, LEVEL) / "merge_map.dat"
+        mm = layout.level_file(mol, LEVEL, "merge_map.dat")
         rows_mm = dat.read_table(mm)
         for r in rows_mm:
             if int(r["mace_basin"]) == 2:
                 r["status"], r["reference_basin"] = "merged", rows_mm[1]["reference_basin"]
         dat.write_table(mm, rows_mm)
         out2 = hc.run_calculation(mol, qm9_index="dsgdb9nsd_000035")
-        doc2 = prop.load(mol / "levels" / "hessian_compare.toml")
+        doc2 = prop.load(layout.thermo_file(mol, "hessian_compare.toml"))
         check("a MACE basin marked merged is absent from [[Basin]] and counted in N_MERGED",
               sorted(int(r["MACE_BASIN"]) for r in doc2["Basin"]) == [0, 1]
               and doc2["Calculation_Info"]["N_MERGED"] == 1 and doc2["Calculation_Info"]["N_BASINS_COMPARED"] == 2)

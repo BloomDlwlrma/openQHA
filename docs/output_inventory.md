@@ -138,7 +138,10 @@ Everything above this line is the state the user objected to. What replaced it:
                                   state.xml state.chk                  (the default setting)
                                   start_<setting>.pdb ... traj_<setting>.dcd ...
                                   (every other setting, same folder, its name in the file)
-      xtb/basinNN/  orca/basinNN/ 02c only
+      frames/                     the Hessian-learning set (ticket 09): Frame sets, labels,
+                                  orca.<level>.<gen>_bBB_kK.{inp,out,hess,engrad} file groups
+      msrrho/                     the msRRHO study (ticket 09b): orca.<level>.basinNN.* file
+                                  groups, thermo/<level>.<step>.* Records, crest_entropy/, xtb/
       _records/                   everything this repository writes about the run:
         basins.json  basins.xyz                       branch A's record
         openmm/<setting>/basinNN/{meta.json, driver.log, frames.npy, equilibrated.json}

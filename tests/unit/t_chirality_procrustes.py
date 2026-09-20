@@ -43,7 +43,7 @@ from openqha.store import layout, property as prop           # noqa: E402
 
 CHIRAL = ROOT / "tests" / "data" / "procrustes_chirality"
 CREST = ROOT / "tests" / "data" / "propanal_crest"
-ENTROPY = ROOT / "tests" / "data" / "propanal_crest_entropy" / "crest_entropy"
+ENTROPY = ROOT / "tests" / "data" / "propanal_crest_entropy" / "msrrho" / "crest_entropy"
 MOLECULE = ROOT / "tests" / "data" / "propanal_molecule"
 BOHR_PER_A = 1.8897261246
 FAIL = []
@@ -134,7 +134,7 @@ def main():
         mol = Path(tmp) / "dsgdb9nsd_000035"
         shutil.copytree(MOLECULE, mol)
         out = dg.run_calculation(mol, "mace-off23_medium")
-        doc = prop.load(layout.level_dir(mol, "mace-off23_medium") / "degeneracy.toml")
+        doc = prop.load(layout.level_file(mol, "mace-off23_medium", "degeneracy.toml"))
         info = doc["Calculation_Info"]
         check("degeneracy.toml declares CHIRALITY_THRESHOLD, PERMUTATION_CAP and PROCRUSTES_VERSION",
               abs(info["CHIRALITY_THRESHOLD"] - thr) < 1e-12 and info["PERMUTATION_CAP"] == 10000
@@ -145,7 +145,7 @@ def main():
         check("real propanal: g' = (1, 1, 1) with the pair counted once, as in ticket 23",
               [rows[i]["G_PRIME"] for i in (0, 1, 2)] == [1, 1, 1]
               and rows[1]["G_PRIME_SOURCE"] == "mirror_is_basin" and rows[2]["G_PRIME_SOURCE"] == "mirror_is_basin")
-        text = (layout.level_dir(mol, "mace-off23_medium") / "degeneracy.out").read_text(encoding="utf-8")
+        text = (layout.level_file(mol, "mace-off23_medium", "degeneracy.out")).read_text(encoding="utf-8")
         check("the Report cites meng2022procrustes and prints the threshold", "meng2022procrustes" in text
               and "chirality threshold" in text)
     if FAIL:

@@ -21,7 +21,10 @@ enthalpy harmonic, imaginary modes refused). CREST's `--entropy` mode is not dri
 MACE: MACE is not a native CREST engine.
 
 Results of a level are written under the molecule directory's `levels/<level>/`, one
-sub-folder per level; engine files stay in the engine folders of ADR 0001. Level names
+sub-folder per level (amended 2026-09-20, ADR 0001 amendment 3: the folder is now
+`msrrho/thermo/`, flat, `<level>.<step>.<ext>` per level and the cross-level Records bare;
+`layout.level_file / thermo_file / levels_present` are the only spellings); engine files
+stay in the engine folders of ADR 0001. Level names
 are lower-case, method first, basis second, joined by `_`, dispersion inside the method
 token. The `composite_notation` string is derived from the level name.
 

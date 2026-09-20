@@ -44,7 +44,8 @@ from openqha.qm_interfaces import orca                          # noqa: E402
 from openqha.store import layout, property as prop              # noqa: E402
 from openqha.thermochem import hessian as hessian_mod           # noqa: E402
 
-FIX = SRC / "orca" / "wb97m-d3bj_def2-tzvppd" / "basin00"
+FIX = layout.msrrho_dir(SRC)
+FIX_STEM = layout.orca_level_stem("wb97m-d3bj_def2-tzvppd", 0)
 LEVEL = "wb97m-d3bj_def2-tzvppd"
 
 
@@ -61,7 +62,7 @@ class FakeOrca:
         if self.fail:
             out.write_text("ORCA started\nsomething went wrong\n", encoding="utf-8")
             return 1
-        shutil.copy2(FIX / "job.out", out)
+        shutil.copy2(FIX / (FIX_STEM + ".out"), out)
         if "Freq" not in Path(inp).read_text(encoding="utf-8").split("\n")[0]:
             # a GRADIENT job (displaced frame, round 5 Q7 (b)): an .engrad at the input's own
             # geometry -- energy and gradient from the fixture .out, coordinates from the .inp
@@ -69,7 +70,7 @@ class FakeOrca:
             i0 = next(i for i, l in enumerate(lines) if l.startswith("* xyz"))
             geo = [l.split() for l in lines[i0 + 1:] if len(l.split()) == 4]
             from ase.data import atomic_numbers
-            txt = (FIX / "job.out").read_text(encoding="utf-8", errors="replace")
+            txt = (FIX / (FIX_STEM + ".out")).read_text(encoding="utf-8", errors="replace")
             grad = frame_labels.gradient_from_out(txt, len(geo))
             e = frame_labels.first_energy_from_out(txt)
             body = ["#", "# Number of atoms", "#", " {}".format(len(geo)), "#", "# The current total energy in Eh", "#",
@@ -80,7 +81,7 @@ class FakeOrca:
                      for s, *xyz in geo]
             (cwd / "job.engrad").write_text("\n".join(body) + "\n", encoding="utf-8")
             return 0
-        text = (FIX / "job.hess").read_text(encoding="utf-8")
+        text = (FIX / (FIX_STEM + ".hess")).read_text(encoding="utf-8")
         if self.shift_A:
             lines = text.split("\n")
             i = lines.index("$atoms")
@@ -106,7 +107,7 @@ def place_basin_at_hess(mol):
     """Move the fixture's basin 0 (MACE) geometry onto the .hess geometry so the fake
     label is at the frame's own coordinates; rewrite basin.extxyz and rebuild the
     Frame set with the harmonic surrogate."""
-    parsed = orca.parse_hess(FIX / "job.hess")
+    parsed = orca.parse_hess(FIX / (FIX_STEM + ".hess"))
     pos = np.asarray(parsed["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
     p = mol / "mace" / "basin00" / "basin.extxyz"
     a = read(str(p), format="extxyz")
@@ -148,7 +149,7 @@ def main():
         labelled = frames.read_frames(path)
         mace = frames.read_frames(layout.frames_file(mol, "basin", mlevel))
         a = labelled[0]
-        text = (FIX / "job.out").read_text(encoding="utf-8", errors="replace")
+        text = (FIX / (FIX_STEM + ".out")).read_text(encoding="utf-8", errors="replace")
         # the fixture .out is an optimisation (several single points); a label takes the FIRST
         e_ev = frame_labels.first_energy_from_out(text) * orca.EV_PER_HARTREE
         grad = frame_labels.gradient_from_out(text, len(a))
@@ -193,7 +194,7 @@ def main():
               lab3["status"] == "refused" and r1["STATUS"] == "refused" and "1e-07" in r1["REASON"]
               and out3["info"]["N_REFUSED"] == 1 and len(frames.read_frames(layout.frames_file(mol, "basin", LEVEL))) == 1,
               (lab3["status"], r1["REASON"]))
-        for f in mol.glob(layout.orca_frame_stem(LEVEL, "basin", 0, 0) + ".*"):     # relabel basin 0 (the .hess geometry)
+        for f in layout.frames_dir(mol).glob(layout.orca_frame_stem(LEVEL, "basin", 0, 0) + ".*"):     # relabel basin 0 (the .hess geometry)
             f.unlink()
         fake3b = FakeOrca(shift_A=0.5)                      # every atom: ORCA's centre-of-mass frame
         lab3b = frame_labels.label_one(mol, LEVEL, "basin", 0, 0, runner=fake3b, mace_level_name=mlevel)
@@ -212,11 +213,11 @@ def main():
         check("an ORCA that does not terminate raises (the .out stays); run() records the failure and assembles the rest",
               raised and len(out4["failures"]) == 1 and out4["info"]["N_UNLABELLED"] == 1 and out4["info"]["N_REUSED"] == 1
               and layout.orca_frame_file(mol, LEVEL, "basin", 2, 0, ".out").is_file()
-              and not (mol / ("." + layout.orca_frame_stem(LEVEL, "basin", 2, 0))).exists(),
+              and not (layout.frames_dir(mol) / ("." + layout.orca_frame_stem(LEVEL, "basin", 2, 0))).exists(),
               (raised, out4["failures"], out4["info"]["N_UNLABELLED"]))
 
         # --- a frame claimed by another Batch is skipped; a stale claim is not ------------
-        lock = frame_labels.lock_file(mol, layout.orca_frame_stem(LEVEL, "displaced", 1, 0))
+        lock = frame_labels.lock_file(layout.frames_dir(mol), layout.orca_frame_stem(LEVEL, "displaced", 1, 0))
         lock.write_text("999 now\n", encoding="utf-8")
         fake6 = FakeOrca()
         lab6 = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
@@ -233,16 +234,17 @@ def main():
         fake5 = FakeOrca()
         lab5 = frame_labels.label_one(mol, LEVEL, "displaced", 0, 0, runner=fake5, mace_level_name=mlevel, scratch=scratch)
         stem5 = layout.orca_frame_stem(LEVEL, "displaced", 0, 0)
-        have5 = sorted(f.name for f in mol.glob(stem5 + ".*"))
+        have5 = sorted(f.name for f in layout.frames_dir(mol).glob(stem5 + ".*"))
         check("with scratch: ORCA ran in scratch, job.{inp,out,engrad} copied back as <stem>.{inp,out,engrad} (no .hess: a gradient job), the scratch copy removed",
               have5 == [stem5 + ".engrad", stem5 + ".inp", stem5 + ".out"]
               and stem5 == "orca.wb97m-d3bj_def2-tzvppd.displaced_b00_k0"
               and not (scratch / mol.name / "displaced_b00_k0").exists() and lab5["status"] == "labelled",
               (have5, lab5["status"]))
         n_dirs = sorted(d.name for d in mol.iterdir() if d.is_dir())
-        check("the molecule directory holds no orca/ or per-frame directory: the frame labels are its files; the level with a slash is refused",
-              "orca" not in n_dirs and not any(d.startswith(".orca") for d in n_dirs)
-              and _raises(lambda: layout.orca_frame_stem("WB97M/tz", "basin", 0, 0)), n_dirs)
+        f_dirs = sorted(d.name for d in layout.frames_dir(mol).iterdir() if d.is_dir())
+        check("the frame labels are files of frames/: no orca/ or per-frame directory anywhere; the level with a slash is refused",
+              "orca" not in n_dirs and not f_dirs and layout.orca_frame_file(mol, LEVEL, "displaced", 0, 0, ".out").parent == layout.frames_dir(mol)
+              and _raises(lambda: layout.orca_frame_stem("WB97M/tz", "basin", 0, 0)), (n_dirs, f_dirs))
 
         # --- Q7 (b): a displaced frame is a gradient job; the mixed file and Record --------
         kw_d = frame_labels.keyword_line(LEVEL, hessian=frame_labels.wants_hessian("displaced"))
@@ -261,18 +263,24 @@ def main():
               and r7[("displaced", 0, 0)]["HAS_HESSIAN"] is False and r7[("basin", 0, 0)]["HAS_HESSIAN"] is True,
               (len(fd), out7["info"]["N_GRADIENT_FRAMES"], out7["info"]["N_HESSIAN_FRAMES"]))
 
-        # --- ticket 09: the flatten script moves the pre-ticket-09 folder form to the file group
+        # --- tickets 09 / 09b: the flatten script moves the pre-2026-09-20 folder forms to the file groups
         before = {g: layout.frames_file(mol, g, LEVEL).read_bytes() for g in ("basin", "displaced")}
         moved_back = 0
-        for f in sorted(mol.glob("orca.{}.*".format(LEVEL))):
+        for f in sorted(layout.frames_dir(mol).glob("orca.{}.*".format(LEVEL))):
             engine, rest = f.name.split(".", 1)
             level, frame, ext = rest[:len(LEVEL)], rest[len(LEVEL) + 1:].rsplit(".", 1)[0], f.suffix
             old_dir = mol / "orca" / level / "frames" / frame
             old_dir.mkdir(parents=True, exist_ok=True)
             f.rename(old_dir / ("job" + ext))
             moved_back += 1
-        (mol / "orca" / LEVEL / "basin00").mkdir(parents=True)                # an msRRHO basin-level job: untouched
-        (mol / "orca" / LEVEL / "basin00" / "job.out").write_text("x", encoding="utf-8")
+        # the msRRHO study in its old form: a basin job with a probe, two level folders, the entropy engines
+        for rel, text in (("orca/{}/basin00/job.out".format(LEVEL), "x"), ("orca/{}/basin00/job.hess".format(LEVEL), "h"),
+                          ("orca/{}/basin00/k0/job.out".format(LEVEL), "p"),
+                          ("levels/{}/thermo_msrrho.toml".format(LEVEL), "t"), ("levels/{}/merge_map.dat".format(LEVEL), "m"),
+                          ("levels/mace-off23_medium/degeneracy.out", "d"), ("levels/level_compare.toml", "c"),
+                          ("crest_entropy/run01/cre_members", "e"), ("xtb/entropy_run01/conf00/hessian", "q")):
+            (mol / rel).parent.mkdir(parents=True, exist_ok=True)
+            (mol / rel).write_text(text, encoding="utf-8")
         sys.path.insert(0, str(ROOT / "scripts" / "tooling"))
         import s0_flatten_tree as flat
         # stage 1 on a copy of the tag in the pre-2026-09-20 shard form: <tag>/1_16000/1_1000/<qid>
@@ -293,11 +301,25 @@ def main():
         moves2, _ = flat.plan_frames(mol)
         out9 = frame_labels.assemble(mol, LEVEL, generators=("basin", "displaced"))
         after = {g: layout.frames_file(mol, g, LEVEL).read_bytes() for g in ("basin", "displaced")}
-        check("s0_flatten_tree stage 2: every job.<ext> of orca/<level>/frames/<frame>/ becomes <molecule>/orca.<level>.<frame><ext>, the emptied folders go, the basinNN/ job and its orca/ stay, a second plan is empty, assemble reproduces the label files byte for byte",
+        check("s0_flatten_tree stage 2: every job.<ext> of orca/<level>/frames/<frame>/ becomes frames/orca.<level>.<frame><ext>, the emptied folders go, the basinNN/ job stays for stage 3, a second plan is empty, assemble reproduces the label files byte for byte",
               n_moved == moved_back and n_conf == 0 and not (mol / "orca" / LEVEL / "frames").exists()
               and (mol / "orca" / LEVEL / "basin00" / "job.out").is_file() and not moves2
               and after == before and out9["info"]["N_LABELLED"] == 3,
               (n_moved, moved_back, n_conf, n_rm, len(moves2), out9["info"]["N_LABELLED"]))
+        m3, f3 = flat.plan_msrrho(mol)
+        n3, c3, r3 = flat.apply(m3, f3)
+        m3b, _ = flat.plan_msrrho(mol)
+        ms = layout.msrrho_dir(mol)
+        want = {layout.orca_level_file(mol, LEVEL, 0, ".out"): "x", layout.orca_level_file(mol, LEVEL, 0, ".hess"): "h",
+                ms / (layout.orca_level_stem(LEVEL, 0) + ".k0.out"): "p",
+                layout.level_file(mol, LEVEL, "thermo_msrrho.toml"): "t", layout.level_file(mol, LEVEL, "merge_map.dat"): "m",
+                layout.level_file(mol, "mace-off23_medium", "degeneracy.out"): "d", layout.thermo_file(mol, "level_compare.toml"): "c",
+                layout.crest_entropy_dir(mol, 1) / "cre_members": "e", layout.xtb_entropy_dir(mol, 1, 0) / "hessian": "q"}
+        got = {k: (k.read_text(encoding="utf-8") if k.is_file() else None) for k in want}
+        left = sorted(d.name for d in mol.iterdir() if d.is_dir())
+        check("s0_flatten_tree stage 3: the basin job and its probe become msrrho/orca.<level>.basin00[.<probe>].*, levels/ becomes msrrho/thermo/<level>.<name> and bare cross-level names, crest_entropy/ and xtb/ move whole; orca/ levels/ gone; levels_present reads the level back; a second plan is empty",
+              n3 == 9 and c3 == 0 and got == want and not m3b and layout.levels_present(mol) == [LEVEL]
+              and left == ["_records", "frames", "mace", "msrrho"], (n3, c3, r3, left, {str(k.relative_to(mol)): v for k, v in got.items() if v != want[k]}))
 
     # --- ticket 09 A: one campaign, one tag, one Dataset -------------------------------
     heads = "".join((ROOT / "hpc" / "slurm" / f).read_text(encoding="utf-8") for f in

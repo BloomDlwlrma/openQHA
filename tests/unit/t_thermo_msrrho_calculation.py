@@ -50,21 +50,20 @@ def main():
         mol = Path(tmp) / "dsgdb9nsd_000035"
         shutil.copytree(SRC, mol)
         out = me.run_calculation(mol, level=LEVEL, qm9_index="dsgdb9nsd_000035")
-        lvl = layout.level_dir(mol, LEVEL)
-        doc = prop.load(lvl / "thermo_msrrho.toml")
+        doc = prop.load(layout.level_file(mol, LEVEL, "thermo_msrrho.toml"))
 
         # ---------------------------------------------------------------- records
         check("thermo_msrrho.toml starts with [Calculation_Status] NORMAL TERMINATION",
               next(iter(doc)) == "Calculation_Status"
               and doc["Calculation_Status"]["STATUS"] == "NORMAL TERMINATION")
         check("the Report ends with the terminal line",
-              report.terminated_normally(lvl / "thermo_msrrho.out", "thermo_msrrho"))
+              report.terminated_normally(layout.level_file(mol, LEVEL, "thermo_msrrho.out"), "thermo_msrrho"))
         check("only the spec's blocks are in the file",
               set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result", "Imaginary_Spread"}, set(doc))
         check("nothing was written under _records/ by this Calculation",
               set(p.name for p in (mol / "_records").iterdir()) == {"branchA.toml"})
         check("degeneracy.toml was produced beside it (run when absent)",
-              (lvl / "degeneracy.toml").is_file())
+              (layout.level_file(mol, LEVEL, "degeneracy.toml")).is_file())
         info = doc["Calculation_Info"]
         check("conventions are named: preset crest, tau 25, refuse, fscal 1.0",
               info["PRESET"] == "crest" and info["TAU"] == 25.0
@@ -108,7 +107,7 @@ def main():
         head, _sep, _rest = text.partition("[[Basin]]\nINDEX        = 1")
         (one / "_records" / "branchA.toml").write_text(head)
         o1 = me.run_calculation(one, level=LEVEL, qm9_index="dsgdb9nsd_000018")
-        d1 = prop.load(layout.level_dir(one, LEVEL) / "thermo_msrrho.toml")
+        d1 = prop.load(layout.level_file(one, LEVEL, "thermo_msrrho.toml"))
         check("one-basin molecule: S'_conf = 0 and dS_bar = 0 exactly",
               d1["Ensemble"]["S_CONF_PRIME"] == 0.0 and d1["Ensemble"]["DS_BAR"] == 0.0)
         check("one-basin molecule: S_abs equals that basin's S_msRRHO",
@@ -220,7 +219,7 @@ def main():
             np.save(native / "mace" / "basin{:02d}".format(b) / "hessian.npy", hm2 * np.sqrt(np.outer(m3, m3)))
         o_nat = me.run_calculation(native, level=LEVEL, qm9_index="dsgdb9nsd_000035",
                                    imaginary_policy="crest_native")
-        d_nat = prop.load(layout.level_dir(native, LEVEL) / "thermo_msrrho.toml")
+        d_nat = prop.load(layout.level_file(native, LEVEL, "thermo_msrrho.toml"))
         ref_row = next(r for r in d_nat["Basin"] if r["INDEX"] == d_nat["Calculation_Info"]["REFERENCE_BASIN"])
         check("crest_native with a sub-ithr mode on every basin: the record is written, the reference basin kept",
               d_nat["Calculation_Info"]["ITHR_POLICY"] == "crest_native" and ref_row["N_KEPT_NEGATIVE"] == 1

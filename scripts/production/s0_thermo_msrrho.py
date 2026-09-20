@@ -1,17 +1,18 @@
 """msRRHO free energy of one molecule: the MACE level, the reference level, the comparison.
 
 PRODUCTION. One Calculation per invocation, on one molecule directory (ADR 0001) found
-from --species and --tag; records go to the molecule's level folder `levels/<level>/`
-(ADR 0004). Three steps, each a separate --step so a Batch can run them on different
-machines (the reference level needs ORCA; the other two need nothing but the files):
+from --species and --tag; records go to the molecule's thermo folder `msrrho/thermo/`
+(ADR 0004, flat since 2026-09-20: `<level>.<step>.<ext>`). Three steps, each a separate
+--step so a Batch can run them on different machines (the reference level needs ORCA; the
+other two need nothing but the files):
 
-    mace             levels/mace-off23_medium/degeneracy.*  thermo_msrrho.*      (ticket 24)
-    reference        orca/<level>/basinNN/job.*  levels/<level>/thermo_msrrho.*  merge_map.dat
+    mace             msrrho/thermo/mace-off23_medium.{degeneracy,thermo_msrrho}.*       (ticket 24)
+    reference        msrrho/orca.<level>.basinNN.*  msrrho/thermo/<level>.{thermo_msrrho.*,merge_map.dat}
                                                                                 (ticket 26)
-    hessian_compare  mace/basinNN/{hessian,forces}_at_<level>.npy  levels/hessian_compare.*
+    hessian_compare  mace/basinNN/{hessian,forces}_at_<level>.npy  msrrho/thermo/hessian_compare.*
                      (the MACE Hessian at the reference geometry, ticket 27; needs MACE)
-    compare          levels/level_compare.*                                      (ticket 26/27)
-    mode_curvature   orca/<level>/basinNN/modeII_k*/  levels/<level>/mode_curvature_dryrun.*
+    compare          msrrho/thermo/level_compare.*                               (ticket 26/27)
+    mode_curvature   msrrho/orca.<level>.basinNN.modeII_k*.*  msrrho/thermo/<level>.mode_curvature_dryrun.*
                      (the higher level's curvature along the wB97M modes from energies,
                      the dry run before a numerical Hessian; ticket 32)
     write_jobs       <jobs-dir>/<species>_<level>/{*.inp,worker.sh,run.sbatch,README.md}
@@ -146,12 +147,12 @@ def main():
         import numpy as _np
         start = args.start_from or engine.REFERENCE_LEVEL
         jobs = []
-        rows = _dat.read_table(_layout.level_dir(molecule, start) / "merge_map.dat")
+        rows = _dat.read_table(_layout.level_file(molecule, start, "merge_map.dat"))
         for r in rows:
             if r["status"] != "kept":
                 continue
             b = int(r["mace_basin"])
-            parsed = _orca.parse_hess(_layout.orca_level_dir(molecule, start, b) / "job.hess")
+            parsed = _orca.parse_hess(_layout.orca_level_file(molecule, start, b, ".hess"))
             jobs.append(dict(name="{}_basin{:02d}".format(args.species, b), symbols=list(parsed["symbols"]),
                              positions=(_np.asarray(parsed["positions_bohr"]) / _orca.BOHR_PER_ANGSTROM).tolist()))
         out_dir = Path(args.jobs_dir or (Path(molecule) / "jobs")) / "{}_{}".format(args.species, args.level)

@@ -65,7 +65,7 @@ from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels, frames       # noqa: E402
 from openqha.store import basins as basin_reader, layout     # noqa: E402
 
-COMPLETION = "<molecule>/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists"
+COMPLETION = "<molecule>/frames/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists"
 
 
 # ======================================================================================
@@ -125,10 +125,10 @@ def pending(mols, level, generators):
         for g, b, k in frame_labels.frame_list(mol, generators):
             n_all += 1
             stem = layout.orca_frame_stem(level, g, b, k)
-            if frame_labels.finished(mol, stem, hessian=frame_labels.wants_hessian(g)):
+            if frame_labels.finished(layout.frames_dir(mol), stem, hessian=frame_labels.wants_hessian(g)):
                 n_done += 1
                 continue
-            if frame_labels.running_elsewhere(mol, stem):
+            if frame_labels.running_elsewhere(layout.frames_dir(mol), stem):
                 continue                                   # another Batch holds it (its lock is fresh)
             todo.append((mol, g, b, k))
         counts[mol.name] = (n_all, n_done)

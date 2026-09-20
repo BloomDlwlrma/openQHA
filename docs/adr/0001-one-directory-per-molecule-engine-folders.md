@@ -47,9 +47,14 @@ files is a FILE GROUP of the molecule directory, the path fields folded into the
 The fields are joined by `.` (the repository's `<thing>.<level>.<ext>` convention) because
 the level and the frame tag both contain `_`. ORCA itself still runs in a run directory
 (node-local scratch, or `<molecule>/.<stem>/`) that is removed after the copy-back, so no
-engine scratch file reaches the molecule directory. The basin-level jobs of the msRRHO
-study, `orca/<level>/basinNN/`, keep the folder form: a closed study with four readers
-under `thermochem/` and a fixture in use. In the same ruling the two shard layers of
+engine scratch file reaches the molecule directory. Later the same day (ticket 09b) the
+rule became general and the two studies got their own sub-folders: `frames/` holds the
+Hessian-learning set (Frame sets, labels and the per-frame file groups), `msrrho/` the
+msRRHO study -- its basin-level jobs as `orca.<level>.basinNN.{inp,out,hess,xyz}` (the
+probes of `mode_curvature` as `orca.<level>.basinNN.<tag>.*`), its Records flat in
+`msrrho/thermo/` as `<level>.<step>.<ext>` (replacing ADR 0004's `levels/<level>/`), and
+`crest_entropy/`, `xtb/` moved whole. Every ORCA job is a file group; `orca/` and
+`levels/` no longer exist. In the same ruling the two shard layers of
 2026-09-14 go: the molecule directory is `<root>/<tag>/<qid>/`, the tag directory flat --
 a campaign's tag holds thousands of molecules, not 133 885 -- and a label-only molecule
 sits under its label the same way (`_label/` is gone). One campaign is one tag and one

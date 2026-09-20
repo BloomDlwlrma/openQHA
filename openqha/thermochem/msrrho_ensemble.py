@@ -319,13 +319,13 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
     info_a = doc.get("Calculation_Info") or {}
     T = float(temperature_K if temperature_K is not None else info_a.get("TEMPERATURE", thermo.T_REF))
     qid = qm9_index if qm9_index is not None else info_a.get("QM9_INDEX")
-    lvl = layout.level_dir(molecule, level)
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
     if imaginary_policy != "refuse" and thermo.MSRRHO_PRESETS[preset]["ithr_cm"] is None:
         raise ValueError("preset '{}' defines no ithr: the '{}' policy cannot be applied; use "
                          "'refuse' or a preset with ithr (crest, xtb)".format(preset, imaginary_policy))
 
     # g' per basin: the degeneracy Calculation, run here when its record is absent
-    deg_path = lvl / "degeneracy.toml"
+    deg_path = layout.level_file(molecule, level, "degeneracy.toml")
     if not deg_path.is_file():
         degeneracy.run_calculation(molecule, level)
     deg = {int(r["INDEX"]): r for r in prop.load(deg_path).get("Basin", [])}
@@ -356,18 +356,18 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
             "ITHR_POLICY": imaginary_policy, "FSCAL": float(fscal), "TEMPERATURE": T,
             "PRESSURE": float(thermo.P_STD), "REFERENCE_BASIN": ens["reference_basin"],
             "PTOT": float(ptot), "EXTRAPOLATION": "none"}
-    write_records(lvl, info, basins, ens, spread, exp, imaginary=imag)
+    write_records(molecule, level, info, basins, ens, spread, exp, imaginary=imag)
     out = dict(ens)
     out.update(basins=basins, info=info, preset_spread=spread, imaginary_spread=imag,
-               experimental=exp, record=lvl / "thermo_msrrho.toml")
+               experimental=exp, record=layout.level_file(molecule, level, "thermo_msrrho.toml"))
     return out
 
 
-def write_records(lvl, info, basins, ens, spread, exp, extra_blocks=None, schema=None,
+def write_records(molecule, level, info, basins, ens, spread, exp, extra_blocks=None, schema=None,
                   imaginary=None):
-    """Write thermo_msrrho.toml and thermo_msrrho.out into the level folder lvl from
-    the pieces run_calculation (or a reference-level Calculation) assembled."""
-    lvl = Path(lvl)
+    """Write `msrrho/thermo/<level>.thermo_msrrho.{toml,out}` from the pieces run_calculation
+    (or a reference-level Calculation) assembled."""
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
     rows = []
     for b in basins:
         row = {"INDEX": b["index"], "SIGMA": b["sigma"], "G0": b["g0"],
@@ -403,12 +403,12 @@ def write_records(lvl, info, basins, ens, spread, exp, extra_blocks=None, schema
         blocks["Imaginary_Spread"] = imaginary
     if extra_blocks:
         blocks.update(extra_blocks)
-    missing = prop.write(lvl / "thermo_msrrho.toml", blocks, schema or SCHEMA,
+    missing = prop.write(layout.level_file(molecule, level, "thermo_msrrho.toml"), blocks, schema or SCHEMA,
                          prop.NORMAL_TERMINATION, PROGNAME)
     if missing:
         raise RuntimeError("thermo_msrrho.toml keys outside the schema: {}".format(missing))
-    _write_report(lvl / "thermo_msrrho.out", info, basins, ens, spread, exp, imaginary)
-    return lvl / "thermo_msrrho.toml"
+    _write_report(layout.level_file(molecule, level, "thermo_msrrho.out"), info, basins, ens, spread, exp, imaginary)
+    return layout.level_file(molecule, level, "thermo_msrrho.toml")
 
 
 def _write_report(path, info, basins, ens, spread, exp, imaginary=None):

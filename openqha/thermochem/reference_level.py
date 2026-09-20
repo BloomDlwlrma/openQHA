@@ -18,12 +18,13 @@ worth a label later). The RMSD before is MACE geometry -> its own relaxed geomet
 (the geometry shift of the level); the RMSD after is relaxed geometry -> the kept
 representative it merged into (0 for a kept basin).
 
-Engine files: `orca/<level>/basinNN/job.{inp,out,hess,xyz,...}`. Records:
-`levels/<level>/thermo_msrrho.{out,toml}` (ticket-24 shape) and `merge_map.dat`.
+Engine files: `msrrho/orca.<level>.basinNN.{inp,out,hess,xyz}` (a file group, ticket 09b).
+Records: `msrrho/thermo/<level>.thermo_msrrho.{out,toml}` (ticket-24 shape) and
+`<level>.merge_map.dat`.
 
 LEVEL COMPARE
 -------------
-`levels/level_compare.{out,toml}` reads every `levels/<level>/thermo_msrrho.toml` a
+`msrrho/thermo/level_compare.{out,toml}` reads every `<level>.thermo_msrrho.toml` a
 molecule has and prints the three tiers: model error (the engine's level minus the
 reference), level error (reference minus experiment), total (engine minus experiment).
 An absent level is stated as PRESENT = false and no tier that needs it is computed.
@@ -152,8 +153,8 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
         # saddle alike (merge_map.dat lists them all); a merged basin's relaxed geometry is
         # as good a start as a kept one's, and starting it from the MACE geometry instead
         # was a full numerical optimisation for nothing (review 2026-09-18)
-        for r in dat.read_table(layout.level_dir(molecule, start_from) / "merge_map.dat"):
-            hess = layout.orca_level_dir(molecule, start_from, int(r["mace_basin"])) / "job.hess"
+        for r in dat.read_table(layout.level_file(molecule, start_from, "merge_map.dat")):
+            hess = layout.orca_level_file(molecule, start_from, int(r["mace_basin"]), ".hess")
             if hess.is_file():
                 p = orca.parse_hess(hess)
                 starts[int(r["mace_basin"])] = np.asarray(p["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
@@ -169,7 +170,7 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     # g' of the MACE basins (run the degeneracy Calculation at the MACE level if absent)
     g_prime = {}
     if mace_level:
-        deg_path = layout.level_dir(molecule, mace_level) / "degeneracy.toml"
+        deg_path = layout.level_file(molecule, mace_level, "degeneracy.toml")
         if not deg_path.is_file():
             degeneracy.run_calculation(molecule, mace_level)
         g_prime = {int(r["INDEX"]): (int(r["G_PRIME"]), str(r["G_PRIME_SOURCE"]))
@@ -179,9 +180,9 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     relaxed = []
     for b in wanted:
         atoms = read(str(files[b]), format="extxyz")
-        wd = layout.orca_level_dir(molecule, level, b)
         start = starts.get(b, atoms.get_positions())
-        r = orca.optimise_and_hessian(atoms.get_chemical_symbols(), start, wd,
+        r = orca.optimise_and_hessian(atoms.get_chemical_symbols(), start, layout.msrrho_dir(molecule),
+                                      stem=layout.orca_level_stem(level, b),
                                       keywords=keywords, nprocs=nprocs, maxcore=maxcore, blocks=blocks)
         rt = orca.verify_hess_frequencies(r["hess"])
         pos_mace = atoms.get_positions()
@@ -239,9 +240,8 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
                                roundtrip_cm=x["roundtrip_cm"], noise_floor_cm=x["noise_floor_cm"],
                                opt_grad_rms=x["opt_grad_rms"], n_single_points=x["n_single_points"],
                                seconds=x["seconds"]))
-    lvl = layout.level_dir(molecule, level)
-    lvl.mkdir(parents=True, exist_ok=True)
-    dat.write_table(lvl / "merge_map.dat", merge_rows)
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
+    dat.write_table(layout.level_file(molecule, level, "merge_map.dat"), merge_rows)
 
     # ---- assembly on the reference basins -------------------------------------------
     ref_basins = []
@@ -279,11 +279,11 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
             "ROTOR_CAP_RULE": str(thermo.MSRRHO_PRESETS[preset]["rotor_cap"]),
             "ITHR_POLICY": "refuse", "FSCAL": 1.0, "TEMPERATURE": T, "PRESSURE": float(thermo.P_STD),
             "REFERENCE_BASIN": ens["reference_basin"], "PTOT": float(ptot), "EXTRAPOLATION": "none"}
-    me.write_records(lvl, info, ref_basins, ens, spread, exp, imaginary=imag)
+    me.write_records(molecule, level, info, ref_basins, ens, spread, exp, imaginary=imag)
     out = dict(ens)
     out.update(basins=ref_basins, merge_map=merge_rows, info=info, experimental=exp,
                imaginary_spread=imag,
-               record=lvl / "thermo_msrrho.toml", hessian_routes=sorted({x["hessian_route"] for x in relaxed}))
+               record=layout.level_file(molecule, level, "thermo_msrrho.toml"), hessian_routes=sorted({x["hessian_route"] for x in relaxed}))
     return out
 
 
@@ -294,19 +294,17 @@ def _z(symbol):
 
 # ====================================================================== level compare
 def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_LEVEL):
-    """Read every `levels/<level>/thermo_msrrho.toml`, write `levels/level_compare.{out,toml}`."""
+    """Read every `msrrho/thermo/<level>.thermo_msrrho.toml`, write `msrrho/thermo/level_compare.{out,toml}`."""
     molecule = Path(molecule)
-    levels_dir = molecule / layout.LEVELS
     doc_a = prop.load(layout.records_dir(molecule) / "branchA.toml")
     info_a = doc_a.get("Calculation_Info") or {}
     qid = qm9_index if qm9_index is not None else info_a.get("QM9_INDEX")
     engine_level = engine.level_name(info_a.get("ENGINE")) if info_a.get("ENGINE") else None
     found = {}
-    if levels_dir.is_dir():
-        for d in sorted(levels_dir.iterdir()):
-            p = d / "thermo_msrrho.toml"
-            if d.is_dir() and p.is_file() and prop.status_of(p) == prop.NORMAL_TERMINATION:
-                found[d.name] = prop.load(p)
+    for name in layout.levels_present(molecule):
+        p = layout.level_file(molecule, name, "thermo_msrrho.toml")
+        if prop.status_of(p) == prop.NORMAL_TERMINATION:
+            found[name] = prop.load(p)
     names = sorted(set(found) | {reference_level} | ({engine_level} if engine_level else set()))
     rows = []
     for name in names:
@@ -354,7 +352,8 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
     membership = _training_set_membership(info_a.get("SMILES"), qid, cfg)
     if membership is not None:
         blocks["Training_Set"] = {k: v for k, v in membership.items() if k in COMPARE_SCHEMA["Training_Set"]}
-    missing = prop.write(levels_dir / "level_compare.toml", blocks, COMPARE_SCHEMA,
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
+    missing = prop.write(layout.thermo_file(molecule, "level_compare.toml"), blocks, COMPARE_SCHEMA,
                          prop.NORMAL_TERMINATION, COMPARE_PROGNAME)
     if missing:
         raise RuntimeError("level_compare.toml keys outside the schema: {}".format(missing))
@@ -384,9 +383,9 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
              "absent level is stated, never zero.")
     rep.section("training-set membership")
     rep.text("  " + training_set.sentence(membership))
-    rep.write(levels_dir / "level_compare.out", step=COMPARE_STEP)
+    rep.write(layout.thermo_file(molecule, "level_compare.out"), step=COMPARE_STEP)
     return dict(levels=rows, tiers=tiers, training_set=membership,
-                record=levels_dir / "level_compare.toml")
+                record=layout.thermo_file(molecule, "level_compare.toml"))
 
 
 def _training_set_membership(smiles, qid, cfg):
@@ -412,7 +411,7 @@ def _g_ref(doc):
 def _per_basin_table(rep, molecule, found, engine_level, reference_level):
     """The engine's and the reference's [[Basin]] rows side by side, paired by the merge
     map (each at its own geometry), when both records and the map exist."""
-    mm = layout.level_dir(molecule, reference_level) / "merge_map.dat"
+    mm = layout.level_file(molecule, reference_level, "merge_map.dat")
     if not (engine_level in found and reference_level in found and mm.is_file()):
         return
     e_rows = {int(r["INDEX"]): r for r in found[engine_level]["Basin"]}

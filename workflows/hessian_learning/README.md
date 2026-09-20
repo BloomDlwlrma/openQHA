@@ -10,7 +10,7 @@ touches; the Slurm log is the Batch's report.
 | 00 | `00_draw.py` | `openqha.data.structure_classes.draw` | `<root>/<tag>/_datasets/<name>/draw.{out,toml,dat}` — the campaign's molecule list: 500 per structure class (`configs/structure_classes.yaml`) from the gated QM9 targets outside MACE-OFF23's SPICE training file, the union over classes, the pinned seven always in |
 | 01 | `01_select.py` | `openqha.data.dataset.select` | `<root>/<tag>/_datasets/<name>/select.{out,toml,dat}` — the molecule list with stratum, SPICE membership, pin status |
 | 02 | `02_frames.py` | `openqha.data.frames.generate` | `<molecule>/frames/<generator>.<mace level>.extxyz`, `frames/frames.{out,toml}` |
-| 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
+| 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/frames/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
 | 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz`, `index.dat`, `dataset.{out,toml}`, `molecules-<name>.h5` |
 | 05, 06 | `05_train.py`, `06_judge.py` | stubs: refuse until round 2 is ruled | |
 
@@ -26,7 +26,9 @@ two shard layers of 2026‑09‑14 are gone),
 on the same tree. A frame's ORCA files are a FILE GROUP of the molecule directory,
 `orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}` (`layout.orca_frame_stem`), not a
 directory two levels down; the fields are joined by `.` because the level and the frame tag
-contain `_`. The msRRHO study's basin‑level jobs (`orca/<level>/basinNN/`) are unchanged.
+contain `_`; they live in `frames/` beside the Frame sets they label. The msRRHO study has
+its own sub‑folder `msrrho/` (`orca.<level>.basinNN.*` file groups, `thermo/` Records,
+`crest_entropy/`, `xtb/`); a molecule directory is `crest/ mace/ md_*/ frames/ msrrho/ _records/`.
 
 ## The frame recipe (rounds 3–4, rulings 2026‑09‑18)
 
@@ -76,7 +78,7 @@ disk, so a killed or time‑limited job is resubmitted as it is.
 | all of A → 04 | `hl_pipeline_debug.slurm` | the above in one `debug` job (one round of 16 labels) | |
 
 The label of a **basin / merged / saddle** frame is `EnGrad Freq` (E, F, H); of a
-**displaced** frame `EnGrad` only (E, F) — round 5, Q7 (b). Kept per frame: `<molecule>/orca.<level>.
+**displaced** frame `EnGrad` only (E, F) — round 5, Q7 (b). Kept per frame: `<molecule>/frames/orca.<level>.
 <frame>.{inp,out,hess,engrad}`; no `.gbw`, `.loc`, `property.txt`. ORCA 6.1.1 (OpenMPI 4.1.8 in the conda
 env `orca611`) is located by `hpc/env/orca.sh` from `~/env_orca611.sh` without activating
 that env in the job.

@@ -83,13 +83,16 @@ joined by `_`, dispersion inside the method token. An engine may run several lev
 `wb97m-d3bj_def2-tzvppd`, the level MACE-OFF23 was trained to.
 _Avoid_: level of theory (as a folder or key name), method, theory
 
-**Level folder**:
-The one folder in a molecule directory, `levels/`, that holds every level's results for
-that molecule, one sub-folder per level named by the level. Engine files stay in engine
-folders; the level folder holds the Records of the Calculations that turn a level's
-Hessians into thermochemistry, and the merge map of that level's basins. A level that was
-not computed for a molecule has no sub-folder: absence is stated, never a zero.
-_Avoid_: reference folder, benchmark folder, per-level records
+**Thermo folder** (was "level folder" until 2026-09-20):
+The one folder in a molecule directory, `msrrho/thermo/`, that holds every level's msRRHO
+results for that molecule, FLAT: `<level>.<step>.{out,toml,dat}` per level
+(`wb97m-d3bj_def2-tzvppd.thermo_msrrho.toml`, `mace-off23_medium.merge_map.dat`), the
+cross-level Records bare (`level_compare.toml`, `hessian_compare.toml`). Engine files stay
+in engine folders (`msrrho/orca.<level>.basinNN.*`); the thermo folder holds the Records of
+the Calculations that turn a level's Hessians into thermochemistry, and the merge map of
+that level's basins. A level that was not computed for a molecule has no file: absence is
+stated, never a zero (`layout.levels_present`).
+_Avoid_: level folder, reference folder, benchmark folder, per-level records
 
 **Numerical reference level**:
 A reference level whose geometry and Hessian ORCA can only produce from energies

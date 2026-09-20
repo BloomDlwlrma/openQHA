@@ -98,27 +98,55 @@ def input_text(symbols, positions, keywords, nprocs, maxcore, charge=0, mult=1, 
     return "\n".join(lines) + "\n"
 
 
-def run_single_point(symbols, positions, workdir, keywords, nprocs=8, maxcore=3000,
-                     blocks="", charge=0, mult=1, stem="job", timeout_s=None):
-    """A single-point energy at any keyword line, in `workdir` (an engine folder), skipped
-    when a normally terminated `.out` is there. Returns energy_eh, seconds (None when
-    reused), the path of the full `.out`."""
+#: The kinds of an ORCA job's files published from its run directory into the file group
+#: `<workdir>/<stem>.<ext>` (ticket 09b, 2026-09-20): the input, the FULL `.out`, the
+#: Hessian, the gradient, the optimised geometry. Everything else ORCA writes (`.gbw`,
+#: `.densities`, `.tmp*`, `property.txt`) is scratch and goes with the run directory.
+KEEP = (".inp", ".out", ".hess", ".engrad", ".xyz")
+TERMINAL = "****ORCA TERMINATED NORMALLY****"
+
+
+def _run_job(workdir, stem, inp_text, timeout_s=None, run_stem="job"):
+    """Run one ORCA job: `<workdir>/.<stem>/job.inp` in that run directory, then the KEEP
+    kinds copied to `<workdir>/<stem>.<ext>` (the `.out` on a failure too, for reading) and
+    the run directory removed. Returns (rc, seconds, the text of the `.out`)."""
     workdir = Path(workdir)
-    workdir.mkdir(parents=True, exist_ok=True)
-    inp, out = workdir / (stem + ".inp"), workdir / (stem + ".out")
-    seconds = None
-    if not (out.is_file() and "****ORCA TERMINATED NORMALLY****" in out.read_text(encoding="utf-8", errors="replace")):
-        inp.write_text(input_text(symbols, positions, keywords, nprocs, maxcore, charge, mult, blocks),
-                       encoding="utf-8")
-        t0 = time.time()
+    rundir = workdir / ("." + stem)
+    rundir.mkdir(parents=True, exist_ok=True)
+    inp, out = rundir / (run_stem + ".inp"), rundir / (run_stem + ".out")
+    inp.write_text(inp_text, encoding="utf-8")
+    t0 = time.time()
+    try:
         with open(out, "w") as fh:
             rc = subprocess.call([orca_binary(), str(inp)], stdout=fh, stderr=subprocess.STDOUT,
-                                 cwd=str(workdir), env=subprocess_env(), timeout=timeout_s)
-        seconds = time.time() - t0
-        text = out.read_text(encoding="utf-8", errors="replace")
-        if "****ORCA TERMINATED NORMALLY****" not in text:
-            raise RuntimeError("ORCA did not finish normally in {} (rc {}). Tail:\n{}".format(
-                workdir, rc, "\n".join(text.split("\n")[-25:])))
+                                 cwd=str(rundir), env=subprocess_env(), timeout=timeout_s)
+    finally:
+        for ext in KEEP:
+            f = rundir / (run_stem + ext)
+            if f.is_file():
+                shutil.copy2(f, workdir / (stem + ext))
+        shutil.rmtree(rundir, ignore_errors=True)
+    text = (workdir / (stem + ".out")).read_text(encoding="utf-8", errors="replace") \
+        if (workdir / (stem + ".out")).is_file() else ""
+    return rc, time.time() - t0, text
+
+
+def run_single_point(symbols, positions, workdir, keywords, nprocs=8, maxcore=3000,
+                     blocks="", charge=0, mult=1, stem="job", timeout_s=None):
+    """A single-point energy at any keyword line, published as the file group
+    `<workdir>/<stem>.{inp,out,engrad}` (`_run_job`), skipped when a normally terminated
+    `.out` is there. Returns energy_eh, seconds (None when reused), the path of the full
+    `.out`."""
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    out = workdir / (stem + ".out")
+    seconds = None
+    if not (out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")):
+        rc, seconds, text = _run_job(workdir, stem, input_text(symbols, positions, keywords, nprocs, maxcore,
+                                                              charge, mult, blocks), timeout_s)
+        if TERMINAL not in text:
+            raise RuntimeError("ORCA did not finish normally for {} in {} (rc {}). Tail:\n{}".format(
+                stem, workdir, rc, "\n".join(text.split("\n")[-25:])))
     text = out.read_text(encoding="utf-8", errors="replace")
     return dict(energy_eh=final_energy_from_out(text), seconds=seconds, out=str(out),
                 keywords=keywords)
@@ -267,39 +295,33 @@ def n_single_points(out_text):
 def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORDS,
                          nprocs=8, maxcore=3000, charge=0, mult=1, stem="job",
                          timeout_s=None, blocks=""):
-    """Geometry optimisation plus Hessian at one level, in `workdir` (an engine folder).
+    """Geometry optimisation plus Hessian at one level, published as the file group
+    `<workdir>/<stem>.{inp,out,hess,xyz}` (`_run_job`; `workdir` = `layout.msrrho_dir`,
+    `stem` = `layout.orca_level_stem`).
 
     Skips ORCA when `workdir/<stem>.hess` exists and the `.out` terminated normally, so a
     Batch can be resumed. Returns the relaxed geometry (A), energy (Eh, the last FINAL
     SINGLE POINT ENERGY of the `.out`), the parsed Hessian record (`parse_hess`), whether the
     Hessian was analytic or numerical, the wall time, and ORCA's version.
 
-    The FULL `<stem>.out` is the engine record and is kept as ORCA wrote it -- in the run
-    directory and in every fixture copied from one (user ruling 2026-09-17). Never trim it
+    The FULL `<stem>.out` is the engine record and is kept as ORCA wrote it -- in the file
+    group and in every fixture copied from one (user ruling 2026-09-17). Never trim it
     to the lines a parser happens to read: the optimisation trajectory, SCF convergence,
     the Hessian route and the thermochemistry block are what a reader needs when a number
     looks wrong, and none of them can be recovered from a single-point line.
     """
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    inp = workdir / (stem + ".inp")
     out = workdir / (stem + ".out")
     hess = workdir / (stem + ".hess")
-    done = hess.is_file() and out.is_file() and \
-        "****ORCA TERMINATED NORMALLY****" in out.read_text(encoding="utf-8", errors="replace")
+    done = hess.is_file() and out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")
     seconds = None
     if not done:
-        inp.write_text(input_text(symbols, positions, keywords, nprocs, maxcore, charge, mult, blocks),
-                       encoding="utf-8")
-        t0 = time.time()
-        with open(out, "w") as fh:
-            rc = subprocess.call([orca_binary(), str(inp)], stdout=fh, stderr=subprocess.STDOUT,
-                                 cwd=str(workdir), env=subprocess_env(), timeout=timeout_s)
-        seconds = time.time() - t0
-        text = out.read_text(encoding="utf-8", errors="replace")
-        if "****ORCA TERMINATED NORMALLY****" not in text:
-            raise RuntimeError("ORCA did not finish normally in {} (rc {}). Tail:\n{}".format(
-                workdir, rc, "\n".join(text.split("\n")[-25:])))
+        rc, seconds, text = _run_job(workdir, stem, input_text(symbols, positions, keywords, nprocs, maxcore,
+                                                              charge, mult, blocks), timeout_s)
+        if TERMINAL not in text:
+            raise RuntimeError("ORCA did not finish normally for {} in {} (rc {}). Tail:\n{}".format(
+                stem, workdir, rc, "\n".join(text.split("\n")[-25:])))
     text = out.read_text(encoding="utf-8", errors="replace")
     parsed = parse_hess(hess)
     if parsed["symbols"] != list(symbols):

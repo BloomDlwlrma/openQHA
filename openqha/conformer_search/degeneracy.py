@@ -544,7 +544,7 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
             row["mirror_partner"] = -1
         row["duplicate_of"] = duplicate.get(b, -1)
         rows.append(row)
-    lvl = layout.level_dir(molecule, level)
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
     info = {"MOLECULE_DIR": str(molecule), "LEVEL": str(level), "CREST_DIR": str(crest_dir),
             "N_CONFORMERS": len(confs),
             "N_ROTAMERS": int(sum(c["n_rotamers"] for c in confs)),
@@ -564,7 +564,7 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
                          "MAX_CORE_RMSD": r["max_core_rmsd"],
                          "MIRROR_PARTNER": r["mirror_partner"],
                          "DUPLICATE_OF": r["duplicate_of"]} for r in rows]}
-    missing = prop.write(lvl / "degeneracy.toml", blocks, SCHEMA, prop.NORMAL_TERMINATION,
+    missing = prop.write(layout.level_file(molecule, level, "degeneracy.toml"), blocks, SCHEMA, prop.NORMAL_TERMINATION,
                          PROGNAME)
     if missing:
         raise RuntimeError("degeneracy.toml keys outside the schema: {}".format(missing))
@@ -605,6 +605,6 @@ def run_calculation(molecule, level, crest_folder=None, rthr=RTHR_A,
              "our Kabsch is asserted equal to the library's rotational RMSD on every pair. The "
              "core count is the diagnostic CREST writes into cre_degen2 (= g_rot * cores). A "
              "basin whose mirror image is itself a basin is counted once: g' = 1 for both.")
-    rep.write(lvl / "degeneracy.out", step=STEP)
+    rep.write(layout.level_file(molecule, level, "degeneracy.out"), step=STEP)
     return dict(level=str(level), crest_dir=str(crest_dir), conformers=confs, basins=rows,
-                excluded_atoms=excluded, record=lvl / "degeneracy.toml")
+                excluded_atoms=excluded, record=layout.level_file(molecule, level, "degeneracy.toml"))

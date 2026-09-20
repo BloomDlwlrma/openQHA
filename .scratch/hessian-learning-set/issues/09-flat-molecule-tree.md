@@ -30,3 +30,29 @@ After (5 levels; the four fields engine, level, frame, kind become one name; no 
 - [ ] tianhe (user): `s0_flatten_tree.py --tag smoke` (and `rings`, `propanal`) dry run then `--apply`, then `04_dataset --tag rings --tag propanal --name smoke` reproduces `test 65 / pool 0`
 
 **Closing (code, 2026-09-20):** A (`--name` defaults; `run.sh`), B (`layout.orca_frame_stem / orca_frame_file`; `frame_labels.finished / lock_file / running_elsewhere / _claim / _release / parse_label / label_one / assemble` on `(molecule, stem)`; ORCA always in a run directory, KEEP copied back under the stem; `03_labels.pending`), C (`layout.molecule_dir` flat; `basins`, `worklist`, the four globs), ADR 0001 amendment 3, README / output inventory / branchA workflow doc, `s0_flatten_tree.py`, tests. Decision S0-C-50. The tianhe migration of the three small trees is the user's run, before any campaign job.
+
+---
+
+## 09b (ruled and approved 2026-09-20, same day): the two studies get sub-folders, every ORCA job is a file group, the level Records go flat
+
+**Ruling:** `<qid>/` gets `msrrho/` and `frames/` to tell the two studies apart; the msRRHO basin-level jobs flatten like the frame jobs; `levels/<level>/<step>.<ext>` becomes `thermo/<level>.<step>.<ext>`; `crest_entropy/`, `xtb/` move whole into `msrrho/`; the xtb Hessian code is not touched (ticket 25's seam is closed; no xtb Hessian is computed in the campaign).
+
+```
+<qid>/
+  crest/  mace/  md_openmm/  md_ase/                            branch A / B (unchanged)
+  frames/  <gen>.<level>.extxyz  frames.*  labels.<level>.*     the Hessian-learning set
+           orca.<level>.<gen>_bBB_kK.{inp,out,hess,engrad}      one frame's ORCA job
+  msrrho/  orca.<level>.basinNN.{inp,out,hess,xyz}              one basin's Opt+Freq job (ticket 26)
+           orca.<level>.basinNN.<probe>.{inp,out}               mode_curvature's points (ticket 32)
+           thermo/<level>.{thermo_msrrho,merge_map,degeneracy,mode_curvature_dryrun}.*  level_compare.*  hessian_compare.*
+           crest_entropy/runNN/  xtb/entropy_runNN/confKK/      ticket 25's engines, verbatim
+  _records/
+```
+
+**Built:** `layout`: `MSRRHO / THERMO`, `msrrho_dir`, `thermo_dir`, `orca_level_stem / orca_level_file`, `level_file`, `thermo_file`, `levels_present`, `crest_entropy_dir` / `xtb_entropy_dir` under `msrrho/`, `orca_frame_file` under `frames/`; `orca_dir`, `orca_level_dir`, `level_dir`, `LEVELS` removed. `orca._run_job`: every ORCA job runs in `<folder>/.<stem>/` as `job.*` and publishes `KEEP = inp/out/hess/engrad/xyz` as `<folder>/<stem>.<ext>` (`run_single_point`, `optimise_and_hessian`; `frame_labels.label_one` has the same shape with its test runner). Readers: `reference_level` (`optimise_and_hessian(msrrho_dir, stem=orca_level_stem)`, `levels_present` for `level_compare`), `mode_curvature` (probes as `<stem>.<tag>`), `hessian_compare`, `msrrho_ensemble.write_records(molecule, level, ...)`, `crest_entropy`, `degeneracy`, `s0_thermo_msrrho`, `s0_B_report_ensemble`; `frame_labels` functions take the `frames/` folder. Fixtures moved with `git mv`: `tests/data/propanal_molecule/msrrho/orca.<level>.basinNN.*` (12 files), `tests/data/propanal_crest_entropy/msrrho/{crest_entropy,xtb}`. `s0_flatten_tree.py` stage 3 (`plan_msrrho`) + stage 2 targets `frames/` (also lifts the ticket-09 interim `<qid>/orca.*` files). Docs: ADR 0001 amendment 3 extended, ADR 0004 amended, CONTEXT.md "Thermo folder", README trees, output inventory, module docstrings.
+
+- [x] unit group 45/45; `t_layout_molecule_directory` holds the new spellings and the absence of the old names; `t_frame_labels` stage 3 check (9 files: basin job + probe, three level Records, cross-level Record, the two engine folders; `levels_present` reads the level back)
+- [x] integration `t_hessian_compare_engine` (MACE on the fixture's reference geometry) passes on the moved fixture
+- [ ] tianhe (user): `s0_flatten_tree.py --tag X` dry run then `--apply` for smoke / rings / propanal, then `04_dataset --tag rings --tag propanal --name smoke` -> `test 65 / pool 0`, and `s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step compare` finds every level from `msrrho/thermo/`
+
+Decision S0-C-51.

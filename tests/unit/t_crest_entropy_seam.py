@@ -15,7 +15,7 @@ What is asserted (spec, Testing Decisions; the ticket's criteria):
     zero entropy) the third conformer is kept and dS_bar closes to 0.03 (measured
     -0.002 / -0.022; it was +0.10 / +0.12 while `refuse` dropped that conformer).
   * two runs are recorded with their spread; a single run is refused.
-  * the records live in levels/gfn2/ and nowhere else.
+  * the records live in msrrho/thermo/gfn2.* and nowhere else.
 """
 import shutil
 import sys
@@ -50,15 +50,14 @@ def main():
         mol = Path(tmp) / "dsgdb9nsd_000035"
         shutil.copytree(SRC, mol)
         out = ce.run_calculation(mol, run_crest=False, runs=(1, 2))
-        lvl = layout.level_dir(mol, "gfn2")
-        doc = prop.load(lvl / "thermo_msrrho.toml")
+        doc = prop.load(layout.level_file(mol, "gfn2", "thermo_msrrho.toml"))
 
-        check("records in levels/gfn2/ only",
-              (lvl / "thermo_msrrho.toml").is_file() and (lvl / "thermo_msrrho.out").is_file()
+        check("records in msrrho/thermo/gfn2.* only",
+              (layout.level_file(mol, "gfn2", "thermo_msrrho.toml")).is_file() and (layout.level_file(mol, "gfn2", "thermo_msrrho.out")).is_file()
               and not (mol / "_records").exists())
         check("Property file starts with [Calculation_Status] and the Report ends with the terminal line",
               next(iter(doc)) == "Calculation_Status"
-              and report.terminated_normally(lvl / "thermo_msrrho.out", "thermo_msrrho"))
+              and report.terminated_normally(layout.level_file(mol, "gfn2", "thermo_msrrho.out"), "thermo_msrrho"))
         check("[Crest] has two runs with sthr 25, ithr -50, fscal 1",
               len(doc["Crest"]) == 2 and all(r["STHR"] == 25.0 and r["ITHR"] == -50.0 and r["FSCAL"] == 1.0
                                              for r in doc["Crest"]))

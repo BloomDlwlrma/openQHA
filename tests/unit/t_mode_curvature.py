@@ -22,7 +22,8 @@ def _repo_root():
 
 ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
-from openqha.qm_interfaces import orca                       # noqa: E402
+from openqha.qm_interfaces import orca
+from openqha.store import layout                       # noqa: E402
 from openqha.thermochem import hessian_compare as hc         # noqa: E402
 from openqha.thermochem import mode_curvature as mc          # noqa: E402
 
@@ -48,7 +49,7 @@ def quadratic_energies(h_ev_a2, x0, geoms):
 
 def main():
     from ase.data import atomic_masses, atomic_numbers
-    parsed = orca.parse_hess(SRC / "orca" / LEVEL / "basin00" / "job.hess")
+    parsed = orca.parse_hess(layout.orca_level_file(SRC, LEVEL, 0, ".hess"))
     x_r = np.asarray(parsed["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
     masses = [float(atomic_masses[atomic_numbers[s]]) for s in parsed["symbols"]]
     h_r = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])

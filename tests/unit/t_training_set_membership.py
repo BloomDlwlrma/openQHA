@@ -37,7 +37,7 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha import config                                   # noqa: E402
 from openqha.data import training_set as ts                  # noqa: E402
-from openqha.store import dat, property as prop              # noqa: E402
+from openqha.store import layout, dat, property as prop              # noqa: E402
 
 TINY = ROOT / "tests" / "data" / "spice_tiny"
 MOLECULE = ROOT / "tests" / "data" / "propanal_molecule"
@@ -119,18 +119,18 @@ def main():
         cfg.setdefault("data", {})["training_sets"] = {"mace_off23": {
             "root": str(root), "cache_dir": str(Path(tmp) / "cache2"), "doi": "test"}}
         out = rl.level_compare(mol, qm9_index="dsgdb9nsd_000035", cfg=cfg)
-        doc = prop.load(mol / "levels" / "level_compare.toml")
+        doc = prop.load(layout.thermo_file(mol, "level_compare.toml"))
         check("level_compare writes [Training_Set] for propanal from the configured files (index built on demand)",
               "Training_Set" in doc and doc["Training_Set"]["IN_TRAINING"] is True
               and doc["Training_Set"]["MATCH_LEVEL"] == "isomeric" and doc["Training_Set"]["SOURCE"] == "mace-off23_spice"
               and (Path(tmp) / "cache2" / "mace-off23_spice_index.dat").is_file())
-        text = (mol / "levels" / "level_compare.out").read_text(encoding="utf-8")
+        text = (layout.thermo_file(mol, "level_compare.out")).read_text(encoding="utf-8")
         check("the Report says the tiers are in-distribution numbers", "in-distribution" in text)
         cfg["data"]["training_sets"] = {"mace_off23": {"root": str(Path(tmp) / "nowhere"),
                                                         "cache_dir": str(Path(tmp) / "cache3")}}
         rl.level_compare(mol, qm9_index="dsgdb9nsd_000035", cfg=cfg)
-        doc = prop.load(mol / "levels" / "level_compare.toml")
-        text = (mol / "levels" / "level_compare.out").read_text(encoding="utf-8")
+        doc = prop.load(layout.thermo_file(mol, "level_compare.toml"))
+        text = (layout.thermo_file(mol, "level_compare.out")).read_text(encoding="utf-8")
         check("without files or index: no [Training_Set] block, and the Report says the check was not run",
               "Training_Set" not in doc and "not checked" in text)
     if FAIL:

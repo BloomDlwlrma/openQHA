@@ -241,7 +241,7 @@ def thermo_dir(molecule):
     """`msrrho/thermo/`: the msRRHO study's Records, flat -- `<level>.<step>.<ext>` per level
     (`wb97m-d3bj_def2-tzvppd.thermo_msrrho.toml`, `mace-off23_medium.merge_map.dat`) and the
     cross-level ones bare (`level_compare.toml`, `hessian_compare.toml`). Replaces the
-    `levels/<level>/` folders of ADR 0004 (user ruling 2026-09-20)."""
+    per-level folders of ADR 0004 (user ruling 2026-09-20)."""
     return msrrho_dir(molecule) / THERMO
 
 

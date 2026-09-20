@@ -153,16 +153,15 @@ def main():
                 + "".join("{} 0 0 0\n".format(s) for s in sym))
         level = "mace-off23_medium"
         out = degeneracy.run_calculation(mol, level=level)
-        lvl = layout.level_dir(mol, level)
-        check("records land in the level folder, not _records/",
-              (lvl / "degeneracy.toml").is_file() and (lvl / "degeneracy.out").is_file()
+        check("records land in msrrho/thermo/<level>.degeneracy.*, not _records/",
+              (layout.level_file(mol, level, "degeneracy.toml")).is_file() and (layout.level_file(mol, level, "degeneracy.out")).is_file()
               and not (mol / "_records").exists())
-        doc = prop.load(lvl / "degeneracy.toml")
+        doc = prop.load(layout.level_file(mol, level, "degeneracy.toml"))
         first = next(iter(doc))
         check("the Property file starts with [Calculation_Status] = NORMAL TERMINATION",
               first == "Calculation_Status" and doc["Calculation_Status"]["STATUS"] == "NORMAL TERMINATION")
         check("the Report ends with the terminal line",
-              report.terminated_normally(lvl / "degeneracy.out", "degeneracy"))
+              report.terminated_normally(layout.level_file(mol, level, "degeneracy.out"), "degeneracy"))
         rows = doc["Basin"]
         check("one [[Basin]] row per basin with G_PRIME (1, 2, 2) mapped by conformer",
               [r["G_PRIME"] for r in rows] == [1, 2, 2] and [r["CONFORMER"] for r in rows] == [0, 1, 2])
@@ -196,7 +195,7 @@ def main():
               [r["g_prime_source"] for r in rows] == ["achiral", "mirror_is_basin", "mirror_is_basin"])
         check("real propanal: the CREST gauche group itself still reports 2 cores",
               out["conformers"][1]["n_cores"] == 2 and out["conformers"][1]["mirror_flag"] is True)
-        doc = prop.load(layout.level_dir(mol, "mace-off23_medium") / "degeneracy.toml")
+        doc = prop.load(layout.level_file(mol, "mace-off23_medium", "degeneracy.toml"))
         check("MIRROR_PARTNER is in the Property file",
               [r["MIRROR_PARTNER"] for r in doc["Basin"]] == [-1, 2, 1])
 

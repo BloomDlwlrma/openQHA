@@ -44,7 +44,7 @@ def main():
         check("an unknown level raises naming the known ones", "wb97m" in str(exc))
     est = orca_jobs.point_estimate(10)
     check("point estimate for 10 atoms: 600 opt + 3600 NumFreq", est["opt"] == 600 and est["numfreq"] == 3600)
-    text = (ROOT / "tests/data/propanal_molecule/orca/wb97m-d3bj_def2-tzvppd/basin00/job.out").read_text(encoding="utf-8", errors="replace")
+    text = (ROOT / "tests/data/propanal_molecule/msrrho/orca.wb97m-d3bj_def2-tzvppd.basin00.out").read_text(encoding="utf-8", errors="replace")
     check("the propanal fixture: analytic route, final RMS gradient read, 6 single points (one per optimisation step)",
           orca.hessian_route(text) == "analytic" and 0 < orca.final_rms_gradient(text) < 1e-4
           and orca.n_single_points(text) == 6)

@@ -1,16 +1,17 @@
-"""Move a tag's molecule tree to the flat form of ADR 0001 amendment 3 (ticket 09,
-ruling 2026-09-20), in two stages that are each idempotent.
+"""Move a tag's molecule tree to the flat form of ADR 0001 amendment 3 (tickets 09 and
+09b, rulings 2026-09-20), in three stages that are each idempotent.
 
-TOOLING. Stage 1, the shard layers: `<tag>/<range>/<chunk>/<qid>/` -> `<tag>/<qid>/`
-and `<tag>/_label/<label>/` -> `<tag>/<label>/`; the emptied `<chunk>/`, `<range>/` and
-`_label/` folders are removed. Stage 2, the frame labels: every
-`<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.<ext>` becomes
-`<molecule>/orca.<level>.<generator>_bBB_kK<ext>` (all of a job's files move, KEEP or
-not); a `running` claim becomes `<stem>.running`; the emptied `frames/`, `orca/<level>/`
-and `orca/` folders are removed (`orca/<level>/basinNN/` of the msRRHO study is left
-where it is, and keeps its `orca/`). A target that already exists is not overwritten
-(reported as a conflict, the source left). Without `--apply` nothing moves: the plan is
-printed. A second `--apply` finds nothing to do.
+TOOLING. Stage 1, the shard layers: `<tag>/<range>/<chunk>/<qid>/` -> `<tag>/<qid>/` and
+`<tag>/_label/<label>/` -> `<tag>/<label>/`. Stage 2, the frame labels: every
+`<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.<ext>` (or the ticket-09 interim
+form `<molecule>/orca.<level>.<frame>.<ext>`) becomes `frames/orca.<level>.<generator>_bBB_kK<ext>`;
+a `running` claim becomes `<stem>.running`. Stage 3, the msRRHO study into `msrrho/`:
+`orca/<level>/basinNN/job.<ext>` -> `msrrho/orca.<level>.basinNN<ext>` (a probe sub-folder
+`<tag>/job.<ext>` -> `msrrho/orca.<level>.basinNN.<tag><ext>`), `levels/<level>/<name>` ->
+`msrrho/thermo/<level>.<name>`, `levels/<name>` -> `msrrho/thermo/<name>`, and `crest_entropy/`,
+`xtb/` moved whole. Emptied folders are removed; a target that already exists is not
+overwritten (reported as a conflict, the source left). Without `--apply` nothing moves: the
+plan is printed. A second `--apply` finds nothing to do.
 
     python scripts/tooling/s0_flatten_tree.py --tag smoke            # the plan
     python scripts/tooling/s0_flatten_tree.py --tag smoke --apply
@@ -33,6 +34,7 @@ from openqha import config                                      # noqa: E402
 from openqha.store import layout                                # noqa: E402
 
 FRAME_DIR = re.compile(r"^(basin|displaced|merged|saddle)_b(\d{2})_k(\d+)$")
+BASIN_DIR = re.compile(r"^basin(\d{2})$")
 SHARD_DIR = re.compile(r"^\d+_\d+$")
 
 
@@ -57,33 +59,79 @@ def plan_shards(tag_dir):
     return moves, folders
 
 
+def _job_files(job_dir, stem, target_dir):
+    """The moves of one job folder's files to the file group `<target_dir>/<stem>.<ext>`."""
+    out = []
+    for f in sorted(p for p in job_dir.iterdir() if p.is_file()):
+        if f.name == "running":
+            out.append((f, target_dir / (stem + ".running")))
+        elif f.name.startswith("job."):
+            out.append((f, target_dir / (stem + f.name[len("job"):])))
+        else:
+            out.append((f, target_dir / (stem + "." + f.name)))
+    return out
+
+
 def plan_frames(molecule):
     """[(source, target)] for one molecule's frame jobs, and the folders to remove after."""
+    molecule = Path(molecule)
     moves, folders = [], []
-    orca = Path(molecule) / "orca"
-    if not orca.is_dir():
-        return moves, folders
-    for level_dir in sorted(p for p in orca.iterdir() if p.is_dir()):
-        frames = level_dir / "frames"
-        if not frames.is_dir():
-            continue
-        for job in sorted(p for p in frames.iterdir() if p.is_dir()):
-            m = FRAME_DIR.match(job.name)
-            if not m:
+    orca = molecule / "orca"
+    if orca.is_dir():
+        for level_dir in sorted(p for p in orca.iterdir() if p.is_dir()):
+            frames = level_dir / "frames"
+            if not frames.is_dir():
                 continue
-            gen, b, k = m.group(1), int(m.group(2)), int(m.group(3))
-            stem = layout.orca_frame_stem(level_dir.name, gen, b, k)
-            for f in sorted(job.iterdir()):
-                if f.name == "running":
-                    moves.append((f, Path(molecule) / (stem + ".running")))
-                elif f.name.startswith("job."):
-                    moves.append((f, Path(molecule) / (stem + f.name[len("job"):])))
-                else:
-                    moves.append((f, Path(molecule) / (stem + "." + f.name)))
-            folders.append(job)
-        folders.append(frames)
-        folders.append(level_dir)
-    folders.append(orca)
+            for job in sorted(p for p in frames.iterdir() if p.is_dir()):
+                m = FRAME_DIR.match(job.name)
+                if not m:
+                    continue
+                stem = layout.orca_frame_stem(level_dir.name, m.group(1), int(m.group(2)), int(m.group(3)))
+                moves += _job_files(job, stem, layout.frames_dir(molecule))
+                folders.append(job)
+            folders.append(frames)
+            folders.append(level_dir)
+        folders.append(orca)
+    # the ticket-09 interim form: file groups directly in the molecule directory
+    for f in sorted(molecule.glob("orca.*")):
+        if f.is_file() and FRAME_DIR.match(f.name.split(".")[-2]):
+            moves.append((f, layout.frames_dir(molecule) / f.name))
+    return moves, folders
+
+
+def plan_msrrho(molecule):
+    """[(source, target)] for one molecule's msRRHO study, and the folders to remove after."""
+    molecule = Path(molecule)
+    moves, folders = [], []
+    orca = molecule / "orca"
+    if orca.is_dir():
+        for level_dir in sorted(p for p in orca.iterdir() if p.is_dir()):
+            for job in sorted(p for p in level_dir.iterdir() if p.is_dir()):
+                m = BASIN_DIR.match(job.name)
+                if not m:
+                    continue
+                stem = layout.orca_level_stem(level_dir.name, int(m.group(1)))
+                moves += _job_files(job, stem, layout.msrrho_dir(molecule))
+                for probe in sorted(p for p in job.iterdir() if p.is_dir()):
+                    moves += _job_files(probe, stem + "." + probe.name, layout.msrrho_dir(molecule))
+                    folders.append(probe)
+                folders.append(job)
+            folders.append(level_dir)
+        folders.append(orca)
+    levels = molecule / "levels"
+    if levels.is_dir():
+        for p in sorted(levels.iterdir()):
+            if p.is_dir():
+                for f in sorted(q for q in p.iterdir() if q.is_file()):
+                    moves.append((f, layout.level_file(molecule, p.name, f.name)))
+                folders.append(p)
+            elif p.is_file():
+                moves.append((p, layout.thermo_file(molecule, p.name)))
+        folders.append(levels)
+    for name in ("crest_entropy", "xtb"):
+        d = molecule / name
+        if d.is_dir():
+            moves.append((d, layout.msrrho_dir(molecule) / name))
     return moves, folders
 
 
@@ -94,6 +142,7 @@ def apply(moves, folders):
             n_conflict += 1
             print("conflict: {} exists; {} left".format(dst, src))
             continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
         src.rename(dst)
         n_moved += 1
     n_rm = 0
@@ -102,7 +151,7 @@ def apply(moves, folders):
             d.rmdir()
             n_rm += 1
         except OSError:
-            pass                            # not empty (basinNN/, a conflict) -> stays
+            pass                            # not empty (a conflict) -> stays
     return n_moved, n_conflict, n_rm
 
 
@@ -128,23 +177,25 @@ def main():
     else:
         print("shards: {} molecules to move up{}".format(
             len(moves), ", e.g. {} -> {}".format(moves[0][0].relative_to(tag_dir), moves[0][1].name) if moves else ""))
-    # stage 2: the frame jobs, molecule by molecule (after stage 1 the molecules are one level down)
-    total_moves = total_conf = total_rm = 0
+    # stages 2 and 3, molecule by molecule (after stage 1 the molecules are one level down)
     mols = molecules(tag_dir) if args.apply else molecules(tag_dir) + [s for s, _ in moves]
-    for mol in mols:
-        fm, ff = plan_frames(mol)
-        if not fm:
-            continue
-        if args.apply:
-            n, c, r = apply(fm, ff)
-            total_moves, total_conf, total_rm = total_moves + n, total_conf + c, total_rm + r
-            print("{}: {} files moved, {} conflicts, {} folders removed".format(mol.name, n, c, r))
-        else:
-            total_moves += len(fm)
-            print("{}: {} files, e.g. {} -> {}".format(mol.name, len(fm), fm[0][0].relative_to(mol), fm[0][1].name))
-    print("frames: {} molecules; {} files {}{}".format(
-        len(mols), total_moves, "moved" if args.apply else "to move",
-        ", {} conflicts, {} folders removed".format(total_conf, total_rm) if args.apply else " (add --apply)"))
+    for stage, planner in (("frames", plan_frames), ("msrrho", plan_msrrho)):
+        total_moves = total_conf = total_rm = 0
+        for mol in mols:
+            fm, ff = planner(mol)
+            if not fm:
+                continue
+            if args.apply:
+                n, c, r = apply(fm, ff)
+                total_moves, total_conf, total_rm = total_moves + n, total_conf + c, total_rm + r
+                print("{} {}: {} moved, {} conflicts, {} folders removed".format(stage, mol.name, n, c, r))
+            else:
+                total_moves += len(fm)
+                print("{} {}: {} to move, e.g. {} -> {}".format(stage, mol.name, len(fm),
+                                                              fm[0][0].relative_to(mol), fm[0][1].relative_to(mol)))
+        print("{}: {} molecules; {} {}{}".format(
+            stage, len(mols), total_moves, "moved" if args.apply else "to move",
+            ", {} conflicts, {} folders removed".format(total_conf, total_rm) if args.apply else " (add --apply)"))
     return 0
 
 

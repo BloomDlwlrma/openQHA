@@ -358,7 +358,8 @@ frame's reference label is a file group of the molecule directory (ADR 0001, ame
   mace/basinNN/        basin.extxyz  hessian.npy        (mace/confNN/: every relaxation)
   md_openmm/basinNN/   start.pdb system.xml integrator.xml traj.dcd state.csv state.xml state.chk
   frames/              <generator>.<level>.extxyz  frames.{out,toml}  labels.<level>.{out,toml}
-  orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}   one frame's reference label (a file group)
+                       orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}   one frame's label (a file group)
+  msrrho/              orca.<level>.basinNN.{inp,out,hess,xyz}  thermo/<level>.<step>.*  crest_entropy/  xtb/
   _records/            this repository's Records, one per Calculation, in the form ORCA and
                        CREST use: a .out Report for a person (last line: terminated normally)
                        and a .toml Property file for a program ([Calculation_Status] first)
@@ -390,13 +391,14 @@ python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag p
 ```
 
 ```
-<molecule>/levels/
-  mace-off23_medium/        degeneracy.{out,toml}  thermo_msrrho.{out,toml}
-  wb97m-d3bj_def2-tzvppd/   thermo_msrrho.{out,toml}  merge_map.dat
-  gfn2/                     thermo_msrrho.{out,toml}   (the CREST --entropy seam, ticket 25)
+<molecule>/msrrho/thermo/                                  (flat since 2026-09-20, ticket 09b)
+  mace-off23_medium.degeneracy.{out,toml}  mace-off23_medium.thermo_msrrho.{out,toml}
+  wb97m-d3bj_def2-tzvppd.thermo_msrrho.{out,toml}  wb97m-d3bj_def2-tzvppd.merge_map.dat
+  gfn2.thermo_msrrho.{out,toml}                            (the CREST --entropy seam, ticket 25)
   hessian_compare.{out,toml}  the MACE Hessian at the reference geometry vs the reference Hessian
   level_compare.{out,toml}  every level beside the reference and the experiment, every term
-<molecule>/orca/wb97m-d3bj_def2-tzvppd/basinNN/   job.{inp,out,hess,xyz}   (engine files)
+<molecule>/msrrho/orca.wb97m-d3bj_def2-tzvppd.basinNN.{inp,out,hess,xyz}   (engine files, a file group)
+<molecule>/msrrho/crest_entropy/runNN/  msrrho/xtb/entropy_runNN/confKK/  (ticket 25's engines)
 <molecule>/mace/basinNN/{hessian,forces}_at_wb97m-d3bj_def2-tzvppd.npy      (engine files)
 ```
 

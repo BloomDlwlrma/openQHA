@@ -39,10 +39,11 @@ of the deepest point below k = 0 in cm^-1 (negative: a double well at that level
 
 FILES
 -----
-Engine files: `orca/<level>/basinNN/modeII_dqD.DDDD_kK/job.{inp,out}` per point (full
-`.out` kept; the tag carries delta_q so a rerun at another rise never reuses a point),
-the k = 0 point shared as `k0`; the reference-surface points likewise under
-`orca/<reference level>/basinNN/`. Record: `levels/<level>/mode_curvature_dryrun.{out,toml}`.
+Engine files: `msrrho/orca.<level>.basinNN.modeII_dqD.DDDD_kK.{inp,out}` per point (a
+file group; full `.out` kept; the tag carries delta_q so a rerun at another rise never
+reuses a point), the k = 0 point shared as `.k0`; the reference-surface points likewise
+as `orca.<reference level>.basinNN.<tag>.*`. Record:
+`msrrho/thermo/<level>.mode_curvature_dryrun.{out,toml}`.
 """
 import math
 import time
@@ -204,20 +205,20 @@ def run_calculation(molecule, level="dlpno-ccsdt_cc-pvtz", reference_level=engin
     hkw = higher_keywords or hspec["single_point"]
     hblk = hspec["blocks"] if higher_blocks is None else higher_blocks
     rkw = rspec["single_point"]
-    merge = dat.read_table(layout.level_dir(molecule, reference_level) / "merge_map.dat")
+    merge = dat.read_table(layout.level_file(molecule, reference_level, "merge_map.dat"))
     kept = [r for r in merge if r["status"] == "kept"]
     if basins is not None:
         kept = [r for r in kept if int(r["mace_basin"]) in {int(b) for b in basins}]
     calc, ename, _prov = engine.calculator(name=engine_name)
     hc_rows = {}
-    hc_path = molecule / layout.LEVELS / "hessian_compare.toml"
+    hc_path = layout.thermo_file(molecule, "hessian_compare.toml")
     if hc_path.is_file():
         hc_rows = {int(r["MACE_BASIN"]): r for r in prop.load(hc_path).get("Basin", [])}
 
     rows, n_points, secs_higher = [], 0, 0.0
     for r in kept:
         mb, rb = int(r["mace_basin"]), int(r["reference_basin"])
-        parsed = orca.parse_hess(layout.orca_level_dir(molecule, reference_level, mb) / "job.hess")
+        parsed = orca.parse_hess(layout.orca_level_file(molecule, reference_level, mb, ".hess"))
         symbols = list(parsed["symbols"])
         x_r = np.asarray(parsed["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
         masses = [float(atomic_masses[atomic_numbers[s]]) for s in symbols]
@@ -236,8 +237,9 @@ def run_calculation(molecule, level="dlpno-ccsdt_cc-pvtz", reference_level=engin
             for (k, d), g in zip(pts, geoms):
                 tag = "mode{:02d}_dq{:.4f}_k{}".format(i, d, k) if k != 0 else "k0"
                 try:
-                    hp = orca.run_single_point(symbols, g, layout.orca_level_dir(molecule, level, mb) / tag,
-                                               hkw, nprocs=nprocs, maxcore=maxcore, blocks=hblk)
+                    hp = orca.run_single_point(symbols, g, layout.msrrho_dir(molecule), hkw,
+                                               stem=layout.orca_level_stem(level, mb) + "." + tag,
+                                               nprocs=nprocs, maxcore=maxcore, blocks=hblk)
                 except RuntimeError as exc:
                     complete = False
                     report_fail = str(exc)[:200]
@@ -245,8 +247,9 @@ def run_calculation(molecule, level="dlpno-ccsdt_cc-pvtz", reference_level=engin
                 n_points += 1
                 if hp["seconds"] is not None:
                     secs.append(hp["seconds"]); secs_higher += hp["seconds"]
-                rp = orca.run_single_point(symbols, g, layout.orca_level_dir(molecule, reference_level, mb) / tag,
-                                           rkw, nprocs=nprocs, maxcore=maxcore)
+                rp = orca.run_single_point(symbols, g, layout.msrrho_dir(molecule), rkw,
+                                           stem=layout.orca_level_stem(reference_level, mb) + "." + tag,
+                                           nprocs=nprocs, maxcore=maxcore)
                 atoms = Atoms(symbols=symbols, positions=g)
                 atoms.calc = calc
                 e_h[(k, d)] = hp["energy_eh"]; e_r[(k, d)] = rp["energy_eh"]
@@ -296,14 +299,14 @@ def run_calculation(molecule, level="dlpno-ccsdt_cc-pvtz", reference_level=engin
             "ENGINE_LEVEL": engine_level, "KEYWORDS": hkw, "BLOCKS": hblk.replace("\n", " ; "),
             "TARGET_RISE_EH": float(target_rise_eh), "DELTA_Q_MAX": DELTA_Q_MAX, "PROFILE_BELOW_CM": PROFILE_BELOW_CM,
             "N_SINGLE_POINTS": n_points, "SECONDS_HIGHER_LEVEL": secs_higher, "MODE_RULE": str(modes)}
-    lvl = layout.level_dir(molecule, level)
-    lvl.mkdir(parents=True, exist_ok=True)
-    missing = prop.write(lvl / (STEP + ".toml"), {"Calculation_Info": info, "Mode": rows, "Summary": summary},
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
+    rec = layout.level_file(molecule, level, STEP + ".toml")
+    missing = prop.write(rec, {"Calculation_Info": info, "Mode": rows, "Summary": summary},
                          SCHEMA, prop.NORMAL_TERMINATION, PROGNAME)
     if missing:
         raise RuntimeError("{}.toml keys outside the schema: {}".format(STEP, missing))
-    _write_report(lvl / (STEP + ".out"), info, rows, summary)
-    return dict(info=info, modes=rows, summary=summary, record=lvl / (STEP + ".toml"))
+    _write_report(layout.level_file(molecule, level, STEP + ".out"), info, rows, summary)
+    return dict(info=info, modes=rows, summary=summary, record=rec)
 
 
 def _write_report(path, info, rows, summary):

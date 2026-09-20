@@ -222,7 +222,7 @@ def basin_index(label):
 def _msrrho_comparison(molecule, rec_a, report, temperature):
     """Lines comparing the msRRHO Calculation's per-basin T*S_vib and S_abs with the
     trajectory route's T*S, or [] when no thermo_msrrho record exists at the potential's
-    level. Reads `levels/<level>/thermo_msrrho.toml` (ADR 0004)."""
+    level. Reads `msrrho/thermo/<level>.thermo_msrrho.toml` (ADR 0004)."""
     from openqha.potentials import engine
     from openqha.store import layout, property as prop
     engine_name = (rec_a.get("Calculation_Info") or {}).get("ENGINE")
@@ -232,7 +232,7 @@ def _msrrho_comparison(molecule, rec_a, report, temperature):
         level = engine.level_name(engine_name)
     except KeyError:
         return []
-    path = layout.level_dir(molecule, level) / "thermo_msrrho.toml"
+    path = layout.level_file(molecule, level, "thermo_msrrho.toml")
     if not path.is_file():
         return []
     doc = prop.load(path)

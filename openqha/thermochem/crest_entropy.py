@@ -29,7 +29,7 @@ WHAT CREST ACTUALLY DOES (read from crest-master/src/entropy on 2026-09-16)
   in one run and `cs` in the next, and S'_conf moved by R ln 2 (3.1495 vs 2.7199). Our
   own assembly classifies chirality from the geometry (`degeneracy.symmetry_class`).
 
-Records: `levels/gfn2/thermo_msrrho.{out,toml}` in the ticket-24 shape plus a `[Crest]`
+Records: `msrrho/thermo/gfn2.thermo_msrrho.{out,toml}` in the ticket-24 shape plus a `[Crest]`
 block (CREST's numbers per run and their spread) and a `[Seam]` block (ours minus theirs,
 term by term). GFN2 is never a reference for MACE (ADR 0004).
 """
@@ -112,7 +112,7 @@ SCHEMA["Seam"] = {
 
 # ====================================================================== CREST run
 def run_crest_entropy(molecule, reference_xyz, run, threads=4, gfn=2, binary=None):
-    """One `crest <ref> --entropy --gfn2 --keepdir` in `crest_entropy/runNN/`. Skipped
+    """One `crest <ref> --entropy --gfn2 --keepdir` in `msrrho/crest_entropy/runNN/`. Skipped
     when that folder already holds a normally terminated run."""
     d = layout.crest_entropy_dir(molecule, run)
     out = d / "crest_entropy.out"
@@ -337,7 +337,7 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
                     nprocs=4, temperature_K=298.15, preset="crest", gfn=2, level=LEVEL,
                     imaginary_policy=SEAM_POLICY):
     """CREST `--entropy` (each run in `runs` unless its folder is complete), xtb Hessians,
-    our assembly, the seam; records in `levels/gfn2/`. Returns the full record."""
+    our assembly, the seam; records `msrrho/thermo/gfn2.*`. Returns the full record."""
     molecule = Path(molecule)
     if run_crest:
         if reference_xyz is None:
@@ -350,7 +350,7 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
         raise ValueError("at least two CREST entropy runs are required (the sampling is "
                          "stochastic); {} given".format(len(evals)))
     first = evals[0]
-    lvl = layout.level_dir(molecule, level)
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
 
     s_confs = [e["crest"].get("S_conf", float("nan")) for e in evals]
     s_tots = [e["crest"].get("S_conf_total", float("nan")) for e in evals]
@@ -402,11 +402,11 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
                              S_TOTAL_SPREAD=float(np.nanmax(s_tots) - np.nanmin(s_tots)))
                         for r in crest_rows],
               "Seam": [e["seam"] for e in evals]}
-    missing = prop.write(lvl / "thermo_msrrho.toml", blocks, SCHEMA, prop.NORMAL_TERMINATION, PROGNAME)
+    missing = prop.write(layout.level_file(molecule, level, "thermo_msrrho.toml"), blocks, SCHEMA, prop.NORMAL_TERMINATION, PROGNAME)
     if missing:
         raise RuntimeError("thermo_msrrho.toml (gfn2) keys outside the schema: {}".format(missing))
-    _write_report(lvl / "thermo_msrrho.out", info, evals)
-    return dict(level=level, runs=evals, record=lvl / "thermo_msrrho.toml",
+    _write_report(layout.level_file(molecule, level, "thermo_msrrho.out"), info, evals)
+    return dict(level=level, runs=evals, record=layout.level_file(molecule, level, "thermo_msrrho.toml"),
                 S_conf_spread=float(np.nanmax(s_confs) - np.nanmin(s_confs)))
 
 

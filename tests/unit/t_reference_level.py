@@ -7,7 +7,7 @@ so `optimise_and_hessian` finds finished jobs and runs nothing.
 
 Asserted: the .hess passes the frequency round-trip; the merge map lists every requested
 MACE basin exactly once with its status and displacement; the Hessian route is recorded
-(analytic here); the level's thermo_msrrho record lands in levels/<level>/ with the
+(analytic here); the level's thermo_msrrho record lands in msrrho/thermo/<level>.* with the
 ticket-24 blocks; level_compare states an absent level as PRESENT = false and computes the
 tiers only where both sides exist; on the basins the fixture holds, S_abs at the reference
 level is compared with the declared experiment.
@@ -43,8 +43,8 @@ def check(label, ok, detail=""):
 
 
 def main():
-    available = sorted(int(p.name[len("basin"):]) for p in (SRC / "orca" / LEVEL).iterdir()
-                       if (p / "job.hess").is_file())
+    available = sorted(int(p.name[len("orca." + LEVEL + ".basin"):-len(".hess")])
+                       for p in layout.msrrho_dir(SRC).glob("orca.{}.basin*.hess".format(LEVEL)))
     print("  fixture holds reference-level jobs for basins", available)
     with tempfile.TemporaryDirectory(prefix="reference_level_") as tmp:
         mol = Path(tmp) / "dsgdb9nsd_000035"
@@ -57,22 +57,21 @@ def main():
               by[LEVEL]["PRESENT"] is False and "MODEL_ERROR_S" not in cmp0["tiers"])
 
         out = rl.run_calculation(mol, level=LEVEL, basins=available)
-        lvl = layout.level_dir(mol, LEVEL)
         check("ORCA was not run (finished engine files reused); routes recorded: %s" % out["hessian_routes"],
               out["hessian_routes"] == ["analytic"])
-        rows = dat.read_table(lvl / "merge_map.dat")
+        rows = dat.read_table(layout.level_file(mol, LEVEL, "merge_map.dat"))
         check("merge map lists every requested MACE basin exactly once",
               sorted(int(r["mace_basin"]) for r in rows) == available)
         check("every row has a status in {kept, merged, saddle} and a displacement RMSD",
               all(r["status"] in ("kept", "merged", "saddle") and r["rmsd_displacement_A"] >= 0 for r in rows))
         check("the frequency round-trip on every .hess is below 0.5 cm^-1",
               all(r["roundtrip_cm"] < 0.5 for r in rows), [r["roundtrip_cm"] for r in rows])
-        doc = prop.load(lvl / "thermo_msrrho.toml")
-        check("levels/<level>/thermo_msrrho.toml has the ticket-24 blocks and LEVEL = " + LEVEL,
+        doc = prop.load(layout.level_file(mol, LEVEL, "thermo_msrrho.toml"))
+        check("msrrho/thermo/<level>.thermo_msrrho.toml has the ticket-24 blocks and LEVEL = " + LEVEL,
               set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result", "Imaginary_Spread"}
               and doc["Calculation_Info"]["LEVEL"] == LEVEL)
         check("the Report ends with the terminal line",
-              report.terminated_normally(lvl / "thermo_msrrho.out", "thermo_msrrho"))
+              report.terminated_normally(layout.level_file(mol, LEVEL, "thermo_msrrho.out"), "thermo_msrrho"))
         res = doc["Result"]
         print("      reference level on basins %s: S_abs = %.3f cal/mol/K (experiment 72.75, diff %+.3f)"
               % (available, res["S_ABS"], res["S_ABS"] - 72.75))
@@ -109,13 +108,13 @@ def main():
               abs(t["MODEL_ERROR_S"] - (t["MODEL_ERROR_S_REF"] + t["MODEL_ERROR_S_CONF_PRIME"] + t["MODEL_ERROR_DS_BAR"])) < 1e-9)
         print("      model error split: S_ref %+.3f  S'_conf %+.3f  dS_bar %+.3f cal/mol/K"
               % (t["MODEL_ERROR_S_REF"], t["MODEL_ERROR_S_CONF_PRIME"], t["MODEL_ERROR_DS_BAR"]))
-        rtext = (mol / "levels" / "level_compare.out").read_text(encoding="utf-8")
+        rtext = (layout.thermo_file(mol, "level_compare.out")).read_text(encoding="utf-8")
         check("the Report prints the per-basin table (each level at its own geometry)",
               "per basin, each level at its own geometry" in rtext)
-        cdoc = prop.load(mol / "levels" / "level_compare.toml")
+        cdoc = prop.load(layout.thermo_file(mol, "level_compare.toml"))
         check("level_compare.toml starts with [Calculation_Status]; report ends with its terminal line",
               next(iter(cdoc)) == "Calculation_Status"
-              and report.terminated_normally(mol / "levels" / "level_compare.out", "level_compare"))
+              and report.terminated_normally(layout.thermo_file(mol, "level_compare.out"), "level_compare"))
     if FAIL:
         print("FAIL: " + ", ".join(FAIL))
         sys.exit(1)

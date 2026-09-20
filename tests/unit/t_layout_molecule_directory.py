@@ -79,13 +79,20 @@ def main():
           m / "md_openmm/basin00/state_p1500_s5.csv")
     check("tag records dir", layout.tag_records_dir(R, "02d_prod"), R / "02d_prod/_records")
     check("xtb basin 2", layout.xtb_dir(m, 2), m / "xtb/basin02")
-    check("orca basin 2", layout.orca_dir(m, 2), m / "orca/basin02")
-    check("orca level basin 0 (msRRHO, unchanged)", layout.orca_level_dir(m, "wb97m-d3bj_def2-tzvppd", 0),
-          m / "orca/wb97m-d3bj_def2-tzvppd/basin00")
+    check("no orca_dir / orca_level_dir / level_dir / LEVELS any more (ticket 09b)",
+          any(hasattr(layout, n) for n in ("orca_dir", "orca_level_dir", "level_dir", "LEVELS")), False)
+    check("msrrho basin job stem", layout.orca_level_stem("wb97m-d3bj_def2-tzvppd", 0), "orca.wb97m-d3bj_def2-tzvppd.basin00")
+    check("msrrho basin job file", layout.orca_level_file(m, "wb97m-d3bj_def2-tzvppd", 2, ".hess"),
+          m / "msrrho/orca.wb97m-d3bj_def2-tzvppd.basin02.hess")
+    check("crest entropy run 1", layout.crest_entropy_dir(m, 1), m / "msrrho/crest_entropy/run01")
+    check("xtb entropy run 2 conf 99", layout.xtb_entropy_dir(m, 2, 99), m / "msrrho/xtb/entropy_run02/conf99")
+    check("thermo record of a level", layout.level_file(m, "mace-off23_medium", "thermo_msrrho.toml"),
+          m / "msrrho/thermo/mace-off23_medium.thermo_msrrho.toml")
+    check("thermo record across levels", layout.thermo_file(m, "level_compare.out"), m / "msrrho/thermo/level_compare.out")
     check("frame label stem (ticket 09)", layout.orca_frame_stem("wb97m-d3bj_def2-tzvppd", "displaced", 0, 3),
           "orca.wb97m-d3bj_def2-tzvppd.displaced_b00_k3")
-    check("frame label file", layout.orca_frame_file(m, "hf_cc-pvtz", "basin", 12, 0, ".engrad"),
-          m / "orca.hf_cc-pvtz.basin_b12_k0.engrad")
+    check("frame label file, in frames/", layout.orca_frame_file(m, "hf_cc-pvtz", "basin", 12, 0, ".engrad"),
+          m / "frames/orca.hf_cc-pvtz.basin_b12_k0.engrad")
     check("records", layout.records_dir(m), m / "_records")
 
     print("D. engine file names are fixed by the module, not by callers:")

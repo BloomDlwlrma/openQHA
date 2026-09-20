@@ -72,7 +72,7 @@ class Harmonic(Calculator):
 
 def make_molecule(tmp, with_merged=True):
     mol = Path(tmp) / "dsgdb9nsd_000035"
-    shutil.copytree(SRC, mol, ignore=shutil.ignore_patterns("orca", "levels", "crest", "frames"))
+    shutil.copytree(SRC, mol, ignore=shutil.ignore_patterns("orca", "levels", "msrrho", "crest", "frames"))
     basins = []
     for b in range(3):
         a = read(str(mol / "mace" / "basin{:02d}".format(b) / "basin.extxyz"), format="extxyz")

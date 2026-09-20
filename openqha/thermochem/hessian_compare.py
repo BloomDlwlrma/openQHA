@@ -58,7 +58,7 @@ FILES
 -----
 Engine files (ADR 0001): `mace/basinNN/hessian_at_<level>.npy` (eV/A^2) and
 `forces_at_<level>.npy` (eV/A), the engine evaluated at x_r; reused when present.
-Record: `levels/hessian_compare.{out,toml}`.
+Record: `msrrho/thermo/hessian_compare.{out,toml}`.
 """
 import math
 from pathlib import Path
@@ -331,7 +331,7 @@ def run_calculation(molecule, reference_level=engine.REFERENCE_LEVEL, engine_lev
                     engine_name=None, low_cm=LOW_CM, gap_cm=GAP_CM):
     """Compare the engine Hessian at the reference geometry with the reference Hessian
     for every MACE basin the merge map marks `kept`; set the two levels' own-geometry
-    thermochemistry side by side; write `levels/hessian_compare.{out,toml}`."""
+    thermochemistry side by side; write `msrrho/thermo/hessian_compare.{out,toml}`."""
     from ase.data import atomic_masses, atomic_numbers
     molecule = Path(molecule)
     doc_a = prop.load(layout.records_dir(molecule) / "branchA.toml")
@@ -341,8 +341,7 @@ def run_calculation(molecule, reference_level=engine.REFERENCE_LEVEL, engine_lev
     engine_level = engine_level or (engine.level_name(info_a.get("ENGINE")) if info_a.get("ENGINE") else None)
     if not engine_level:
         raise ValueError("no engine level: branchA.toml names no ENGINE and none was given")
-    ref_dir = layout.level_dir(molecule, reference_level)
-    mm_path = ref_dir / "merge_map.dat"
+    mm_path = layout.level_file(molecule, reference_level, "merge_map.dat")
     if not mm_path.is_file():
         raise FileNotFoundError("no merge map at {}: run the reference level first".format(mm_path))
     merge = dat.read_table(mm_path)
@@ -355,13 +354,13 @@ def run_calculation(molecule, reference_level=engine.REFERENCE_LEVEL, engine_lev
     n_saddle = sum(1 for r in merge if r["status"] == "saddle")
 
     # the two levels' own thermochemistry, for the side-by-side columns
-    thermo_e = _thermo_rows(layout.level_dir(molecule, engine_level) / "thermo_msrrho.toml")
-    thermo_r = _thermo_rows(ref_dir / "thermo_msrrho.toml")
+    thermo_e = _thermo_rows(layout.level_file(molecule, engine_level, "thermo_msrrho.toml"))
+    thermo_r = _thermo_rows(layout.level_file(molecule, reference_level, "thermo_msrrho.toml"))
 
     rows, computed = [], 0
     for r in kept:
         mb, rb = int(r["mace_basin"]), int(r["reference_basin"])
-        parsed = orca.parse_hess(layout.orca_level_dir(molecule, reference_level, mb) / "job.hess")
+        parsed = orca.parse_hess(layout.orca_level_file(molecule, reference_level, mb, ".hess"))
         rt = orca.verify_hess_frequencies(parsed)
         symbols = list(parsed["symbols"])
         positions = np.asarray(parsed["positions_bohr"], dtype=float) / orca.BOHR_PER_ANGSTROM
@@ -385,18 +384,17 @@ def run_calculation(molecule, reference_level=engine.REFERENCE_LEVEL, engine_lev
             "TEMPERATURE": T, "LOW_CUTOFF": float(low_cm), "DEGENERACY_GAP": float(gap_cm),
             "N_BASINS_COMPARED": len(rows), "N_MERGED": n_merged, "N_SADDLE": n_saddle,
             "DIPOLE_DERIVATIVES_PRESENT": False, "ENGINE": info_a.get("ENGINE")}
-    levels_dir = molecule / layout.LEVELS
-    levels_dir.mkdir(parents=True, exist_ok=True)
+    layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
     blocks = {"Calculation_Info": info,
               "Basin": [{k: v for k, v in r.items() if k in SCHEMA["Basin"]} for r in rows],
               "Ensemble": ens}
-    missing = prop.write(levels_dir / "hessian_compare.toml", blocks, SCHEMA,
+    missing = prop.write(layout.thermo_file(molecule, "hessian_compare.toml"), blocks, SCHEMA,
                          prop.NORMAL_TERMINATION, PROGNAME)
     if missing:
         raise RuntimeError("hessian_compare.toml keys outside the schema: {}".format(missing))
-    _write_report(levels_dir / "hessian_compare.out", info, rows, ens)
+    _write_report(layout.thermo_file(molecule, "hessian_compare.out"), info, rows, ens)
     return dict(info=info, basins=rows, ensemble=ens, n_computed_now=computed,
-                record=levels_dir / "hessian_compare.toml")
+                record=layout.thermo_file(molecule, "hessian_compare.toml"))
 
 
 def _thermo_rows(path):

@@ -29,13 +29,14 @@ def main():
     from ase import Atoms
     from openqha.potentials import engine
     from openqha.qm_interfaces import orca
+    from openqha.store import layout
     from openqha.thermochem import hessian as hessian_mod
     try:
         calc, name, _prov = engine.calculator(device="cpu")
     except Exception as exc:                                   # noqa: BLE001
         print("SKIP: {}".format(exc))
         return 0
-    parsed = orca.parse_hess(SRC / "orca" / LEVEL / "basin00" / "job.hess")
+    parsed = orca.parse_hess(layout.orca_level_file(SRC, LEVEL, 0, ".hess"))
     atoms = Atoms(symbols=parsed["symbols"],
                   positions=np.asarray(parsed["positions_bohr"]) / orca.BOHR_PER_ANGSTROM)
     h, asym = hessian_mod.hessian(atoms, calc, mode="analytic")
