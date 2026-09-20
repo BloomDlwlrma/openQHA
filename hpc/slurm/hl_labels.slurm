@@ -1,16 +1,19 @@
 #!/bin/bash
-# openQHA Hessian-learning step 03 -- reference labels as ONE submitted job, the driver
-# and its 16-per-node ORCA workers inside the allocation (user ruling 2026-09-19: no
-# Batch holds the login node's command line). TianheXY-C. Then step 04.
+# openQHA Hessian-learning step 03 -- reference labels as a submitted job: plain bash,
+# a task list, `xargs -P 16` over hl_label_worker.sh, NO parsl (user ruling 2026-09-19,
+# the hkuhpc shape of qm9_reaction_eng/docs/bash_orca_remain_workflow_lecture.md).
+# TianheXY-C. Then step 04.
 #
 #     cd $HOME/openQHA-main
-#     sbatch hpc/slurm/hl_labels.slurm                                  # tag smoke, deimos, 1 node, 4 h
-#     TAG=smoke PARTITION=debug TIME=00:30:00 LIMIT_FRAMES=32 sbatch hpc/slurm/hl_labels.slurm   # two rounds on the short queue
-#     TAG=draw NAME=draw200 NODES=12 TIME=7-00:00:00 sbatch hpc/slurm/hl_labels.slurm           # the 200-molecule draw
+#     sbatch hpc/slurm/hl_labels.slurm                                        # tag smoke, deimos, 1 node, 4 h
+#     sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm      # the same on the short queue
+#     TAG=draw NAME=draw200 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_labels.slurm   # 12 nodes: an ARRAY, one node each
 #
-# PARTITION / TIME / NODES are read at submission: `sbatch --partition=debug --time=00:30:00
-# --nodes=1 hpc/slurm/hl_labels.slurm` works too (command-line flags beat the #SBATCH lines).
-# Finished frames are skipped, so a killed or time-limited job is simply resubmitted.
+# LAYOUT: CONCURRENCY x NPROCS = 64 = the node (16 x 4, user ruling 2026-09-18); MAXCORE
+# = 512 GB x 0.75 / 64 = 6000 MB per rank. An ARRAY job splits the task list round-robin
+# over its tasks; a frame another task is already running is skipped (its `running`
+# claim), a finished frame is reused, so a killed or time-limited job is resubmitted as
+# it is. Task 0 (or the only task) assembles and builds the Dataset at the end.
 # =======================================================================================
 #SBATCH --job-name=openqha_hl_labels
 #SBATCH --partition=deimos
@@ -24,9 +27,15 @@
 
 TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
-LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
+export LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
+export NPROCS="${NPROCS:-4}"
+export MAXCORE="${MAXCORE:-6000}"
+CONCURRENCY="${CONCURRENCY:-16}"
 LIMIT_FRAMES="${LIMIT_FRAMES:-}"
+ARRAY_ID="${SLURM_ARRAY_TASK_ID:-0}"
+ARRAY_N="${SLURM_ARRAY_TASK_COUNT:-1}"
 
+# ---- 1. site environment ---------------------------------------------------------------
 module purge 2>/dev/null || true
 module load anaconda3/202309 2>/dev/null || module load anaconda3/2023.09 2>/dev/null || true
 for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
@@ -39,17 +48,38 @@ source hpc/env/tianhe.sh || { echo "openQHA: hpc/env/tianhe.sh refused (root unr
 source hpc/env/orca.sh
 openqha_find_orca || { echo "openQHA: no ORCA -- stopping" >&2; exit 1; }
 openqha_report_env
-export S0_PARSL_RUN_DIR="$S0_RUNS_ROOT/parsl/${SLURM_JOB_NAME:-hl}_${SLURM_JOB_ID:-$$}"   # one parsl run dir per job: two jobs must never share parsl's numbered runinfo
 echo "runs root  $S0_RUNS_ROOT"
-echo "tag/name   $TAG / $NAME   level $LEVEL   nodes ${SLURM_JOB_NUM_NODES:-1}"
+echo "tag/name   $TAG / $NAME   level $LEVEL   layout ${CONCURRENCY} x ${NPROCS} ranks, %maxcore $MAXCORE   array task $ARRAY_ID/$ARRAY_N"
+if [ $((CONCURRENCY * NPROCS)) -gt "$(nproc)" ]; then
+    echo "openQHA: layout ${CONCURRENCY} x ${NPROCS} exceeds the node's $(nproc) cores" >&2; exit 1
+fi
 
-echo; echo "== 03 labels, in this allocation"
+# ---- 2. the task list: pending frames of the selection, this array task's share --------
+LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
 python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" \
-    --resource tianhe_cpu ${LIMIT_FRAMES:+--limit-frames "$LIMIT_FRAMES"} 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
-rc=${PIPESTATUS[0]}
+    ${LIMIT_FRAMES:+--limit-frames "$LIMIT_FRAMES"} --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+[ -f "$LIST" ] || { echo "openQHA: no task list written" >&2; exit 1; }
+TOTAL=$(wc -l < "$LIST")
+MINE="$LIST.task$ARRAY_ID"
+awk -v id="$ARRAY_ID" -v n="$ARRAY_N" '(NR - 1) % n == id' "$LIST" > "$MINE"
+echo "frames     $TOTAL pending, $(wc -l < "$MINE") for this task"
 
-echo; echo "== 04 Dataset"
-python -u workflows/hessian_learning/04_dataset.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --export openreact 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+# ---- 3. the work: one worker per line, a core range per slot (hkuhpc's awk + xargs) ------
+echo; echo "== 03 labels"
+started=$(date +%s)
+awk -v nc="$CONCURRENCY" -v np="$NPROCS" '{
+        slot = (NR - 1) % nc; s = slot * np; e = s + np - 1
+        printf "%s %s %s %s %d-%d\n", $1, $2, $3, $4, s, e
+    }' "$MINE" | xargs -r -n 5 -P "$CONCURRENCY" bash hpc/slurm/hl_label_worker.sh
+echo "== 03 wall $(( $(date +%s) - started )) s for $(wc -l < "$MINE") frames"
 
-echo; echo "== labels exit $rc; Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
-exit "$rc"
+# ---- 4. assemble + the Dataset (the first array task; the others' frames are on disk) ----
+if [ "$ARRAY_ID" = 0 ]; then
+    echo; echo "== 03 assemble"
+    python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --assemble 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+    rc=${PIPESTATUS[0]}
+    echo; echo "== 04 Dataset"
+    python -u workflows/hessian_learning/04_dataset.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --export openreact 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+    echo; echo "== assemble exit $rc (1 = frames still unlabelled: resubmit); Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
+    exit "$rc"
+fi

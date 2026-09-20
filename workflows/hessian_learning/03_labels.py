@@ -3,13 +3,18 @@ molecules (CONTEXT.md "Frame set", "Batch"; ticket 03 of the Hessian-learning se
 
 PRODUCTION. The Batch driver over `openqha.data.frame_labels`: ONE FRAME PER TASK (an
 ORCA single point + EnGrad + analytic Hessian at the frame's fixed geometry, `%pal nprocs
-4`), fanned out over Parsl -- 16 frames per 64-core node on tianhe (role `labels`, user
-ruling 2026-09-18: 1 node for the 7-molecule smoke set, 12 nodes for the 200-molecule
-draw) -- then `assemble` per molecule writes `<generator>.<level>.extxyz` and the Record
-`frames/labels.<level>.{out,toml}`. Finished frames (terminal line + `.hess`) are
-skipped, so a resubmission continues where the last one stopped. The Slurm log is the
-Batch's report (records redesign 2026-09-15): the frame list and the Batch table are
-printed, nothing else is written outside the molecule trees.
+4`), 16 frames per 64-core node on tianhe (role `labels`, user ruling 2026-09-18: 1 node
+for the 7-molecule smoke set, 12 nodes for the 200-molecule draw), then `assemble` per
+molecule writes `<generator>.<level>.extxyz` and the Record `frames/labels.<level>.{out,
+toml}`. Finished frames (terminal line + `.hess`) are skipped, so a resubmission continues
+where the last one stopped. The Slurm log is the Batch's report.
+
+TWO WAYS TO RUN IT (user ruling 2026-09-19):
+  * a submitted job, plain bash + xargs, NO parsl: `hpc/slurm/hl_labels.slurm` calls this
+    driver with `--list FILE` (the pending frames, one per line), runs
+    `python -m openqha.data.frame_labels` per line through xargs, then `--assemble`;
+  * the ALF mode: this driver on the login node, parsl submitting blocks with
+    `--resource tianhe_cpu` (SlurmProvider, sbatch), for a campaign nobody wants to babysit.
 
     # the frame list only
     python workflows/hessian_learning/03_labels.py --tag rings --all --dry-run
@@ -120,7 +125,7 @@ def pending(mols, level, generators):
         for g, b, k in frame_labels.frame_list(mol, generators):
             n_all += 1
             wd = layout.orca_frame_dir(mol, level, g, b, k)
-            if frame_labels.finished(wd):
+            if frame_labels.finished(wd, hessian=frame_labels.wants_hessian(g)):
                 n_done += 1
                 continue
             if frame_labels.running_elsewhere(wd):
@@ -153,6 +158,11 @@ def main():
     ap.add_argument("--account", default=None)
     ap.add_argument("--debug", action="store_true", help="the site's short partition, one allocation")
     ap.add_argument("--dry-run", action="store_true", help="print the frame list and submit nothing")
+    ap.add_argument("--list", metavar="FILE", default=None,
+                    help="write the pending frames as a task list (molecule_dir generator basin k, one per line) for "
+                         "the xargs worker of hpc/slurm/hl_labels.slurm, and stop")
+    ap.add_argument("--assemble", action="store_true",
+                    help="run no ORCA: assemble every chosen molecule's files and Record from the finished jobs on disk")
     ap.add_argument("--timeout", type=float, default=None, help="seconds per ORCA job")
     args = ap.parse_args()
 
@@ -192,9 +202,6 @@ def main():
     print("frames       {} to label, {} finished already   ({})".format(
         len(todo), sum(d for _a, d in counts.values()), COMPLETION))
     print("resume       finished frames are skipped; the Record per molecule is rewritten by assemble")
-    if os.environ.get("SLURM_JOB_ID") and args.resource != "local" and not args.local:
-        print("workers      IN THIS ALLOCATION (job {}, {} node(s)): nothing is submitted".format(
-            os.environ["SLURM_JOB_ID"], os.environ.get("SLURM_JOB_NUM_NODES", "?")))
     print()
     print("frame list:")
     for mol, g, b, k in todo:
@@ -207,12 +214,21 @@ def main():
         print(json.dumps(dict(level=args.level, keywords=keywords, resource=described, n_molecules=len(mols),
                               n_frames=len(todo), nprocs=args.nprocs, maxcore=maxcore), indent=2, default=str))
         return 0
+    if args.list:
+        Path(args.list).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.list).write_text("".join("{} {} {} {}\n".format(mol, g, b, k) for mol, g, b, k in todo), encoding="utf-8")
+        print("task list    {} ({} frames)".format(args.list, len(todo)))
+        return 0
+    if args.assemble:
+        todo = []                                        # nothing runs; the assembly below reads the disk
 
     passthrough = {k: os.environ[k] for k in ("S0_RUNS_ROOT", "S0_CONFIG", "S0_ORCA_BIN", "S0_ORCA_PATH", "S0_ORCA_LIB")
                    if k in os.environ}
     started = time.time()
     results = []
-    if todo and args.local:
+    if args.assemble:
+        pass
+    elif todo and args.local:
         for mol, g, b, k in todo:
             r = label_frame_task(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough)
             results.append(r)
@@ -288,6 +304,8 @@ def main():
     print("single_task_seconds_median        {:.1f}".format(single[len(single) // 2] if single else float("nan")))
     for l in _bt.footer(wall, len(ok), len(results), what="frames labelled in this Batch"):
         print(l)
+    if args.assemble:
+        return 0 if all(i["N_UNLABELLED"] + i["N_REFUSED"] == 0 for i in summaries) else 1
     print("molecules fully labelled          {}/{}  ({} frames still unlabelled or refused over the chosen molecules)".format(
         sum(1 for i in summaries if i["N_LABELLED"] == i["N_FRAMES"]), len(mols),
         sum(i["N_UNLABELLED"] + i["N_REFUSED"] for i in summaries)))

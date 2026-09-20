@@ -11,10 +11,13 @@ geometry and leave projection to the loss).
 
 WHAT IS WRITTEN
 ---------------
-    <molecule>/orca/<level>/frames/<generator>_bBB_kK/job.{inp,out,hess,engrad,...}
+    <molecule>/orca/<level>/frames/<generator>_bBB_kK/job.{inp,out,hess,engrad}
         ORCA's engine files, the FULL `.out` kept as ORCA wrote it (user ruling
-        2026-09-17). A finished frame (terminal line in the `.out` and a `.hess`) is
-        skipped on a rerun, an unfinished one is rerun -- that is how a Batch resumes.
+        2026-09-17). Basin / merged / saddle frames are HESSIAN jobs (`EnGrad Freq`,
+        a `.hess`); displaced frames are GRADIENT jobs (`EnGrad`, an `.engrad`, no
+        Hessian -- round 5, Q7 (b)). A finished frame (terminal line in the `.out` and
+        its product file) is skipped on a rerun, an unfinished one is rerun -- that is
+        how a Batch resumes.
     <molecule>/frames/<generator>.<level>.extxyz
         the labelled frames: positions VERBATIM from the MACE file, `energy` (eV),
         `forces` (eV/A), `hessian` (3N x 3N flattened, eV/A^2) from ORCA. A frame whose
@@ -69,8 +72,15 @@ MAXCORE_MB = 6000
 #: 3e-8 A), not a geometry difference. 1e-7 is ten times that and ten times below the
 #: 1e-6 A distortion the unit test refuses.
 POSITION_TOL_A = 1e-7
-#: ORCA files published from scratch into the molecule tree (everything else is scratch)
-KEEP = (".inp", ".out", ".hess", ".engrad", ".xyz", ".property.txt", "_property.txt")
+#: ORCA files published from scratch into the molecule tree (everything else is scratch).
+#: Round 5 (2026-09-19): no `.gbw`, no `.loc`, and no `property.txt` (it duplicates the
+#: Hessian: 85 KB of 231 per 10-atom frame) -- the full `.out`, the `.hess`, the `.engrad`.
+KEEP = (".inp", ".out", ".hess", ".engrad")
+#: generators whose frames get a reference HESSIAN (single point + EnGrad + Freq): the
+#: stationary conformers. The displaced frames get energy + gradient only (round 5, Q7 (b):
+#: the literature trains Hessians at stationary points; an analytic Hessian of a 19-atom
+#: molecule is 40-80 min, its gradient 3-5 min).
+HESSIAN_GENERATORS = ("basin", "merged", "saddle")
 STEM = "job"
 TERMINAL = "****ORCA TERMINATED NORMALLY****"
 #: a frame's job directory is claimed with this file while ORCA runs; a claim older than
@@ -84,7 +94,9 @@ SCHEMA = {
         "MOLECULE_DIR": ("String", None, "the molecule directory"),
         "QM9_INDEX": ("String", None, "the molecule"),
         "LEVEL": ("String", None, "the reference level (CONTEXT.md spelling; the file suffix)"),
-        "KEYWORDS": ("String", None, "ORCA's ! line: the level's single point + EnGrad + its Hessian route"),
+        "KEYWORDS": ("String", None, "ORCA's ! line of a Hessian job: the level's single point + EnGrad + its Hessian route; a gradient job (displaced frames) drops the Freq"),
+        "N_HESSIAN_FRAMES": ("Integer", None, "frames labelled with a Hessian (basin / merged / saddle)"),
+        "N_GRADIENT_FRAMES": ("Integer", None, "frames labelled with energy + forces only (displaced)"),
         "HESSIAN_ROUTE": ("String", None, "analytic / numerical, as the level declares it (orca.LEVELS)"),
         "ORCA_VERSION": ("String", None, "Program Version of the .out files (the set of versions, if a rerun mixed them)"),
         "NPROCS": ("Integer", None, "ORCA ranks per frame"),
@@ -112,6 +124,7 @@ SCHEMA = {
         "GENERATOR": ("String", None, "the generator"),
         "BASIN": ("Integer", None, "the basin the frame was born from"),
         "K": ("Integer", None, "index within (generator, basin)"),
+        "HAS_HESSIAN": ("Boolean", None, "a Hessian job (basin / merged / saddle: EnGrad + Freq) rather than a gradient job (displaced: EnGrad only; round 5, Q7 (b))"),
         "ENERGY": ("Double", "eV", "reference energy (FINAL SINGLE POINT ENERGY, dispersion included)"),
         "ENERGY_ABOVE_BASIN": ("Double", "kcal/mol", "reference energy above the frame's basin frame (nan when the basin frame is unlabelled)"),
         "MAX_FORCE": ("Double", "eV/A", "reference |F|max"),
@@ -135,12 +148,19 @@ def frame_tag(generator, basin, k):
     return "{}_b{:02d}_k{}".format(generator, int(basin), int(k))
 
 
-def keyword_line(level):
-    """ORCA's `!` line for a label: the level's single point, `EnGrad`, and `Freq` or
-    `NumFreq` by the level's Hessian route. Returns (keywords, blocks, route)."""
+def keyword_line(level, hessian=True):
+    """ORCA's `!` line for a label: the level's single point, `EnGrad`, and -- with
+    `hessian` -- `Freq` or `NumFreq` by the level's Hessian route. Returns (keywords,
+    blocks, route); route is "gradient" for a gradient-only job."""
     spec = orca.level_spec(level)
+    if not hessian:
+        return "{} EnGrad".format(spec["single_point"]), spec.get("blocks", ""), "gradient"
     freq = "Freq" if spec["route"] == "analytic" else "NumFreq"
     return "{} EnGrad {}".format(spec["single_point"], freq), spec.get("blocks", ""), spec["route"]
+
+
+def wants_hessian(generator):
+    return generator in HESSIAN_GENERATORS
 
 
 def frames_record(molecule):
@@ -177,10 +197,23 @@ def load_frame(molecule, generator, basin, k, level=None):
     raise KeyError("no frame {} in the {} file of {}".format(frame_tag(generator, basin, k), generator, molecule))
 
 
-def finished(workdir, stem=STEM):
-    """True when ORCA terminated normally there and left a `.hess`."""
-    out, hess = Path(workdir) / (stem + ".out"), Path(workdir) / (stem + ".hess")
-    return hess.is_file() and out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")
+def finished(workdir, stem=STEM, hessian=True):
+    """True when ORCA terminated normally there and left a `.hess` (a Hessian job) or an
+    `.engrad` (a gradient job)."""
+    out = Path(workdir) / (stem + ".out")
+    product = Path(workdir) / (stem + (".hess" if hessian else ".engrad"))
+    return product.is_file() and out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")
+
+
+def engrad_positions(path, natoms):
+    """The atomic numbers and coordinates (bohr) at the end of an ORCA `.engrad`."""
+    vals = [l.strip() for l in Path(path).read_text(encoding="utf-8").split("\n") if l.strip() and not l.strip().startswith("#")]
+    rows = vals[2 + 3 * natoms:2 + 4 * natoms]
+    if len(rows) != natoms:
+        raise ValueError("{} has no coordinate block of {} atoms".format(path, natoms))
+    z = [int(float(r.split()[0])) for r in rows]
+    xyz = np.array([[float(v) for v in r.split()[1:4]] for r in rows])
+    return z, xyz
 
 
 def running_elsewhere(workdir, max_age_s=LOCK_MAX_AGE_S):
@@ -262,43 +295,57 @@ def _run_orca(inp, out, cwd, timeout_s=None):
 
 
 def parse_label(workdir, atoms, stem=STEM):
-    """Read a finished frame job: energy (eV), forces (eV/A), Hessian (eV/A^2), the
-    geometry check against `atoms`, wall time, memory, route, version, noise floor."""
+    """Read a finished frame job: energy (eV), forces (eV/A), the Hessian (eV/A^2) when
+    the job computed one (`hessian` None otherwise), the geometry check against `atoms`,
+    wall time, memory, route, version, noise floor (nan without a Hessian)."""
     workdir = Path(workdir)
     text = (workdir / (stem + ".out")).read_text(encoding="utf-8", errors="replace")
-    parsed = orca.parse_hess(workdir / (stem + ".hess"))
     symbols = list(atoms.get_chemical_symbols())
-    if parsed["symbols"] != symbols:
-        raise ValueError("ORCA reordered the atoms in {}: {} -> {}".format(workdir, symbols, parsed["symbols"]))
-    # ORCA writes the .hess $atoms in the centre-of-mass frame (measured 2026-09-18: every
-    # atom of oxetane shifted by the same 0.0764 A). A translation leaves the Cartesian
-    # Hessian unchanged, so it is removed before the comparison and reported apart; what
-    # must agree is the shape. ORCA does not rotate (no symmetry handling here), and a
-    # rotation would show up as a residual after the shift.
-    pos_hess = np.asarray(parsed["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
-    diff = pos_hess - atoms.get_positions()
+    n = len(symbols)
+    hess_path, engrad = workdir / (stem + ".hess"), workdir / (stem + ".engrad")
+    parsed = orca.parse_hess(hess_path) if hess_path.is_file() else None
+    if parsed is not None:
+        if parsed["symbols"] != symbols:
+            raise ValueError("ORCA reordered the atoms in {}: {} -> {}".format(workdir, symbols, parsed["symbols"]))
+        # ORCA writes the .hess $atoms in the centre-of-mass frame (measured 2026-09-18: every
+        # atom of oxetane shifted by the same 0.0764 A). A translation leaves the Cartesian
+        # Hessian unchanged, so it is removed before the comparison and reported apart; what
+        # must agree is the shape. ORCA does not rotate (no symmetry handling here), and a
+        # rotation would show up as a residual after the shift.
+        pos_job = np.asarray(parsed["positions_bohr"]) / orca.BOHR_PER_ANGSTROM
+    elif engrad.is_file():
+        from ase.data import atomic_numbers
+        z, pos_bohr = engrad_positions(engrad, n)
+        if z != [atomic_numbers[s] for s in symbols]:
+            raise ValueError("ORCA reordered the atoms in {}".format(workdir))
+        pos_job = pos_bohr / orca.BOHR_PER_ANGSTROM
+    else:
+        raise FileNotFoundError("neither {} nor {}".format(hess_path.name, engrad.name))
+    diff = pos_job - atoms.get_positions()
     shift = diff.mean(axis=0)
     dev = float(np.abs(diff - shift).max())
-    engrad = workdir / (stem + ".engrad")
     if engrad.is_file():
-        e_eh, grad = orca._parse_engrad(engrad, len(symbols))
+        e_eh, grad = orca._parse_engrad(engrad, n)
     else:
-        e_eh, grad = first_energy_from_out(text), gradient_from_out(text, len(symbols))
+        e_eh, grad = first_energy_from_out(text), gradient_from_out(text, n)
     # the FIRST single point is the frame's: a NumFreq level prints one more per displaced
     # geometry, and the last of those is not the label (review 2026-09-18)
     e_out = first_energy_from_out(text)
     forces = -np.asarray(grad, dtype=float) * orca.EV_PER_HARTREE * orca.BOHR_PER_ANGSTROM
-    h = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
     masses = atoms.get_masses()
     m = re.search(r"Program Version\s+(\S+)", text)
-    return dict(energy=float(e_out) * orca.EV_PER_HARTREE, energy_engrad=float(e_eh) * orca.EV_PER_HARTREE,
-                forces=forces, hessian=np.asarray(h, dtype=float), max_position_dev_A=dev,
-                com_shift_A=float(np.linalg.norm(shift)),
-                seconds=total_run_seconds(text), memory_mb=max_memory_mb(text),
-                hessian_route=orca.hessian_route(text), orca_version=m.group(1) if m else "unknown",
-                noise_floor_cm=float(hessian_mod.rigid_block_floor_cm(h, masses, atoms.get_positions())),
-                lowest_freq=frames_mod.lowest_projected_cm(h, masses, atoms.get_positions()),
-                max_force=float(np.abs(forces).max()), out=str(workdir / (stem + ".out")))
+    out = dict(energy=float(e_out) * orca.EV_PER_HARTREE, energy_engrad=float(e_eh) * orca.EV_PER_HARTREE,
+               forces=forces, hessian=None, max_position_dev_A=dev, com_shift_A=float(np.linalg.norm(shift)),
+               seconds=total_run_seconds(text), memory_mb=max_memory_mb(text),
+               hessian_route="gradient", orca_version=m.group(1) if m else "unknown",
+               noise_floor_cm=float("nan"), lowest_freq=float("nan"),
+               max_force=float(np.abs(forces).max()), out=str(workdir / (stem + ".out")))
+    if parsed is not None:
+        h = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
+        out.update(hessian=np.asarray(h, dtype=float), hessian_route=orca.hessian_route(text),
+                   noise_floor_cm=float(hessian_mod.rigid_block_floor_cm(h, masses, atoms.get_positions())),
+                   lowest_freq=frames_mod.lowest_projected_cm(h, masses, atoms.get_positions()))
+    return out
 
 
 # ====================================================================== one frame
@@ -317,9 +364,10 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
     t0 = time.time()
     atoms = load_frame(molecule, generator, basin, k, mace_level_name)
     workdir = layout.orca_frame_dir(molecule, level, generator, basin, k)
-    keywords, blocks, _route = keyword_line(level)
+    hessian = wants_hessian(generator)
+    keywords, blocks, _route = keyword_line(level, hessian=hessian)
     status = "reused"
-    if not finished(workdir):
+    if not finished(workdir, hessian=hessian):
         if not _claim(workdir):
             return dict(status="running", generator=generator, basin=int(basin), k=int(k), keywords=keywords,
                         wall_seconds=time.time() - t0, workdir=str(workdir), out=str(workdir / (STEM + ".out")),
@@ -375,12 +423,12 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
         b, k = int(a.info["basin"]), int(a.info["k"])
         tag = frame_tag(g, b, k)
         wd = layout.orca_frame_dir(molecule, level, g, b, k)
-        row = dict(GENERATOR=g, BASIN=b, K=k, ENERGY=float("nan"), ENERGY_ABOVE_BASIN=float("nan"),
+        row = dict(GENERATOR=g, BASIN=b, K=k, HAS_HESSIAN=wants_hessian(g), ENERGY=float("nan"), ENERGY_ABOVE_BASIN=float("nan"),
                    MAX_FORCE=float("nan"), LOWEST_FREQ=float("nan"), NOISE_FLOOR_CM=float("nan"),
                    MAX_POSITION_DEV_A=float("nan"), COM_SHIFT_A=float("nan"), HESSIAN_ROUTE="-", SECONDS=float("nan"),
                    MEMORY_MB=float("nan"), ORCA_VERSION="-", STATUS="unlabelled", REASON="-",
                    OUT=str(wd / (STEM + ".out")))
-        if not finished(wd):
+        if not finished(wd, hessian=wants_hessian(g)):
             row["REASON"] = "no finished ORCA job at {}".format(wd)
             rows.append(row)
             continue
@@ -410,7 +458,8 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
         info = {key: a.info[key] for key in ("qm9_index", "basin", "generator", "k", "seed", "source_conformer",
                                              "rms_displacement_A", "smiles") if key in a.info}
         info.update(level=level, orca_version=lab["orca_version"], hessian_route=lab["hessian_route"],
-                    noise_floor_cm=lab["noise_floor_cm"], keywords=keywords)
+                    noise_floor_cm=lab["noise_floor_cm"], keywords=keyword_line(level, hessian=wants_hessian(g))[0],
+                    has_hessian=lab["hessian"] is not None)
         kept.setdefault(g, []).append(dict(atoms=a, energy=lab["energy"], forces=lab["forces"],
                                            hessian=lab["hessian"], info=info))
 
@@ -431,13 +480,15 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
                 HESSIAN_ROUTE=route, ORCA_VERSION=", ".join(versions) if versions else "-",
                 NPROCS=int(nprocs), MAXCORE_MB=int(maxcore), MACE_LEVEL=mlevel, POSITION_TOL_A=POSITION_TOL_A,
                 N_FRAMES=len(rows), N_LABELLED=len(lab_rows),
+                N_HESSIAN_FRAMES=sum(1 for r in lab_rows if r["HAS_HESSIAN"]),
+                N_GRADIENT_FRAMES=sum(1 for r in lab_rows if not r["HAS_HESSIAN"]),
                 N_COMPUTED=sum(1 for r in rows if r["STATUS"] == "labelled"),
                 N_REUSED=sum(1 for r in rows if r["STATUS"] == "reused"),
                 N_REFUSED=sum(1 for r in rows if r["STATUS"] == "refused"),
                 N_UNLABELLED=sum(1 for r in rows if r["STATUS"] == "unlabelled"),
                 SECONDS_PER_FRAME=float(np.mean(secs)) if secs else float("nan"),
                 MAX_MEMORY_MB=float(max(mems)) if mems else float("nan"),
-                NOISE_FLOOR_MAX_CM=float(max([r["NOISE_FLOOR_CM"] for r in lab_rows if r["GENERATOR"] == "basin"] or [float("nan")])),
+                NOISE_FLOOR_MAX_CM=float(max([r["NOISE_FLOOR_CM"] for r in lab_rows if r["GENERATOR"] == "basin" and np.isfinite(r["NOISE_FLOOR_CM"])] or [float("nan")])),
                 SECONDS=time.time() - t0)
     toml = record_path(molecule, level)
     missing = prop.write(toml, {"Calculation_Info": info, "Generator": gen_rows, "Frame": rows},
@@ -487,20 +538,21 @@ def _write_report(path, info, gen_rows, rows):
     rep = report.Report(PROGNAME, "reference E-F-H labels of {} at {}".format(info["QM9_INDEX"], info["LEVEL"]))
     rep.section("conventions")
     for k in ("LEVEL", "KEYWORDS", "HESSIAN_ROUTE", "ORCA_VERSION", "NPROCS", "MAXCORE_MB", "MACE_LEVEL",
-              "POSITION_TOL_A", "N_FRAMES", "N_LABELLED", "N_COMPUTED", "N_REUSED", "N_REFUSED", "N_UNLABELLED",
+              "POSITION_TOL_A", "N_FRAMES", "N_LABELLED", "N_HESSIAN_FRAMES", "N_GRADIENT_FRAMES", "N_COMPUTED", "N_REUSED", "N_REFUSED", "N_UNLABELLED",
               "SECONDS_PER_FRAME", "MAX_MEMORY_MB", "NOISE_FLOOR_MAX_CM"):
         rep.kv(k, info[k])
     rep.section("per generator")
     rep.table(["generator", "frames", "labelled", "file"],
               [[r["GENERATOR"], r["N_FRAMES"], r["N_LABELLED"], Path(r["FILE"]).name if r["FILE"] else "-"] for r in gen_rows])
     rep.section("per frame (eV; dE kcal/mol above the basin frame; eV/A; cm^-1; A; s; MB)")
-    rep.table(["generator", "basin", "k", "E", "dE", "|F|max", "lowest", "rigid", "|dx|max", "com", "route", "s", "MB", "status", "reason"],
-              [[r["GENERATOR"], r["BASIN"], r["K"], "%.6f" % r["ENERGY"], "%.2f" % r["ENERGY_ABOVE_BASIN"],
+    rep.table(["generator", "basin", "k", "H", "E", "dE", "|F|max", "lowest", "rigid", "|dx|max", "com", "route", "s", "MB", "status", "reason"],
+              [[r["GENERATOR"], r["BASIN"], r["K"], "yes" if r["HAS_HESSIAN"] else "-", "%.6f" % r["ENERGY"], "%.2f" % r["ENERGY_ABOVE_BASIN"],
                 "%.4f" % r["MAX_FORCE"], "%.1f" % r["LOWEST_FREQ"], "%.2f" % r["NOISE_FLOOR_CM"],
                 "%.1e" % r["MAX_POSITION_DEV_A"], "%.4f" % r["COM_SHIFT_A"], r["HESSIAN_ROUTE"], "%.0f" % r["SECONDS"],
                 "%.0f" % r["MEMORY_MB"], r["STATUS"], r["REASON"]] for r in rows])
-    rep.note("a label is ORCA's energy, gradient and raw Cartesian Hessian at the FRAME'S FIXED GEOMETRY "
-             "(single point + EnGrad + Freq/NumFreq; no optimisation), converted once to eV, eV/A, eV/A^2 "
+    rep.note("a label is ORCA's energy, gradient and -- at basin / merged / saddle frames ('H' = yes) -- raw "
+             "Cartesian Hessian at the FRAME'S FIXED GEOMETRY (single point + EnGrad [+ Freq/NumFreq]; no "
+             "optimisation; displaced frames get energy + forces only, round 5 Q7 (b)), converted once to eV, eV/A, eV/A^2 "
              "and written beside the MACE file with the same positions. 'lowest' at a displaced frame is a "
              "curvature; 'rigid' is the rigid-body block of the unprojected Hessian -- the noise floor at a basin "
              "frame (a few cm^-1 to ~30 for an analytic Hessian), the gradient term at a displaced frame. 'com' is "
@@ -509,3 +561,42 @@ def _write_report(path, info, gen_rows, rows):
              "of a frame must sit at one geometry or the Dataset compares different points. The full .out of "
              "every job is kept under orca/<level>/frames/.")
     rep.write(path, step=STEP)
+
+
+# ====================================================================== the worker
+def main(argv=None):
+    """One frame from the command line -- the `xargs` worker of hpc/slurm/hl_labels.slurm
+    (the hkuhpc shape: a task list, one process per line, idempotent, judged by the
+    terminal line). Prints one line `<tag> <status> <seconds> <MB>`; exit 0 when the frame
+    is labelled, reused, refused or running elsewhere, 1 when ORCA failed.
+
+        python -m openqha.data.frame_labels <molecule dir> <generator> <basin> <k> \
+            [--level L] [--nprocs 4] [--maxcore 6000] [--scratch DIR]
+    """
+    import argparse
+    ap = argparse.ArgumentParser(description=main.__doc__)
+    ap.add_argument("molecule")
+    ap.add_argument("generator")
+    ap.add_argument("basin", type=int)
+    ap.add_argument("k", type=int)
+    ap.add_argument("--level", default=DEFAULT_LEVEL)
+    ap.add_argument("--nprocs", type=int, default=NPROCS)
+    ap.add_argument("--maxcore", type=int, default=MAXCORE_MB)
+    ap.add_argument("--scratch", default=os.environ.get("S0_SCRATCH") or None)
+    ap.add_argument("--timeout", type=float, default=None)
+    a = ap.parse_args(argv)
+    tag = "{} {}".format(Path(a.molecule).name, frame_tag(a.generator, a.basin, a.k))
+    try:
+        lab = label_one(a.molecule, a.level, a.generator, a.basin, a.k, nprocs=a.nprocs, maxcore=a.maxcore,
+                        scratch=a.scratch, timeout_s=a.timeout)
+    except Exception as exc:
+        print("{} FAILED {}: {}".format(tag, type(exc).__name__, str(exc).strip().splitlines()[-1][:200] if str(exc).strip() else ""), flush=True)
+        return 1
+    print("{} {} {} {}".format(tag, lab["status"],
+                               "{:.0f}".format(lab["seconds"]) if lab.get("seconds") is not None else "-",
+                               "{:.0f}".format(lab["memory_mb"]) if lab.get("memory_mb") is not None else "-"), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

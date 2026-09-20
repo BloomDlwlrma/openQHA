@@ -10,9 +10,9 @@
 #     A   branch A per molecule (CREST + MACE), xargs -P 16, 4 threads each     ~10 min
 #     02  Frame sets (MACE E-F-H at every frame), xargs -P 7                    ~2 min
 #     01  the selection (select.dat)                                            seconds
-#     03  reference labels, IN THIS ALLOCATION: 16 ORCA jobs x 4 ranks at once,
-#         capped at LIMIT_FRAMES (default 16 = one round, ~5 min) so the job fits;
-#         the rest is hl_labels.slurm
+#     03  reference labels: a task list, xargs -P 16 over hl_label_worker.sh (4 ORCA
+#         ranks each, taskset-pinned), capped at LIMIT_FRAMES (default 16 = one round,
+#         ~5 min) so the job fits; the rest is hl_labels.slurm. No parsl in a job.
 #     04  the Dataset (labelled frames -> test, the rest -> pool) + OpenREACT export
 #
 # The Slurm log (%x_%j.out in the submit directory) is the Batch's report.
@@ -46,7 +46,6 @@ source hpc/env/tianhe.sh || { echo "openQHA: hpc/env/tianhe.sh refused (root unr
 source hpc/env/orca.sh
 openqha_find_orca || { echo "openQHA: no ORCA -- step 03 cannot run" >&2; }
 openqha_report_env
-export S0_PARSL_RUN_DIR="$S0_RUNS_ROOT/parsl/${SLURM_JOB_NAME:-hl}_${SLURM_JOB_ID:-$$}"   # one parsl run dir per job: two jobs must never share parsl's numbered runinfo
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME"
 echo "species    $SPECIES"
@@ -76,10 +75,14 @@ printf '%s\n' $SPECIES | xargs -P 7 -I{} python -u workflows/hessian_learning/02
 echo; echo "== 01 selection"
 python -u workflows/hessian_learning/01_select.py --tag "$TAG" --name "$NAME"
 
-# ---- 03. labels, in this allocation, one round ------------------------------------------
-echo; echo "== 03 labels (in this allocation, at most $LIMIT_FRAMES frames)"
-python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" \
-    --resource tianhe_cpu --limit-frames "$LIMIT_FRAMES" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+# ---- 03. labels: one round of 16, plain bash + xargs (no parsl in a job) ---------------
+echo; echo "== 03 labels (at most $LIMIT_FRAMES frames, ${CONCURRENCY:-16} x ${NPROCS:-4} ranks)"
+export LEVEL NPROCS="${NPROCS:-4}" MAXCORE="${MAXCORE:-6000}"
+LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
+python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL"     --limit-frames "$LIMIT_FRAMES" --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+awk -v nc="${CONCURRENCY:-16}" -v np="$NPROCS" '{ slot = (NR - 1) % nc; s = slot * np; printf "%s %s %s %s %d-%d
+", $1, $2, $3, $4, s, s + np - 1 }' "$LIST"     | xargs -r -n 5 -P "${CONCURRENCY:-16}" bash hpc/slurm/hl_label_worker.sh
+python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --assemble 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
 
 # ---- 04. the Dataset ---------------------------------------------------------------------
 echo; echo "== 04 Dataset"

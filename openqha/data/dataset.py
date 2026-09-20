@@ -489,7 +489,12 @@ def _write_split(path, atoms_list):
         b = a.copy()
         b.calc = SinglePointCalculator(b, energy=float(a.get_potential_energy()), forces=np.asarray(a.get_forces(), dtype=float))
         b.info = dict(a.info)
-        b.info["hessian"] = np.asarray(a.info["hessian"], dtype=float).reshape(-1)
+        if a.info.get("hessian") is not None:
+            b.info["hessian"] = np.asarray(a.info["hessian"], dtype=float).reshape(-1)
+            b.info["has_hessian"] = True
+        else:
+            b.info.pop("hessian", None)
+            b.info["has_hessian"] = False
         out.append(b)
     write(str(path), out, format="extxyz")
 
@@ -554,7 +559,10 @@ def export_openreact(dataset_dir, level=frame_labels.DEFAULT_LEVEL, name=None, s
             g.create_dataset("coordinates", data=np.array([a.get_positions() for _r, a in items]))
             g.create_dataset("energies", data=np.array([float(a.get_potential_energy()) * ev2eh for _r, a in items]))
             g.create_dataset("forces", data=np.array([np.asarray(a.get_forces()) * ev2eh for _r, a in items]))
-            g.create_dataset("hessian", data=np.array([np.asarray(a.info["hessian"]) * ev2eh for _r, a in items]))
+            nat3 = 3 * len(a0)
+            g.create_dataset("hessian", data=np.array([np.asarray(a.info["hessian"]) * ev2eh if a.info.get("hessian") is not None
+                                                       else np.full((nat3, nat3), np.nan) for _r, a in items]))
+            g.create_dataset("has_hessian", data=np.array([a.info.get("hessian") is not None for _r, a in items]))
             g.create_dataset("split", data=np.array([r["split"].encode() for r, _a in items], dtype="S5"))
             g.create_dataset("generator", data=np.array([r["generator"].encode() for r, _a in items], dtype="S9"))
             g.create_dataset("basin", data=np.array([int(r["basin"]) for r, _a in items]))

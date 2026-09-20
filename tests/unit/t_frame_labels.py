@@ -60,6 +60,24 @@ class FakeOrca:
             out.write_text("ORCA started\nsomething went wrong\n", encoding="utf-8")
             return 1
         shutil.copy2(FIX / "job.out", out)
+        if "Freq" not in Path(inp).read_text(encoding="utf-8").split("\n")[0]:
+            # a GRADIENT job (displaced frame, round 5 Q7 (b)): an .engrad at the input's own
+            # geometry -- energy and gradient from the fixture .out, coordinates from the .inp
+            lines = [l for l in Path(inp).read_text(encoding="utf-8").split("\n")]
+            i0 = next(i for i, l in enumerate(lines) if l.startswith("* xyz"))
+            geo = [l.split() for l in lines[i0 + 1:] if len(l.split()) == 4]
+            from ase.data import atomic_numbers
+            txt = (FIX / "job.out").read_text(encoding="utf-8", errors="replace")
+            grad = frame_labels.gradient_from_out(txt, len(geo))
+            e = frame_labels.first_energy_from_out(txt)
+            body = ["#", "# Number of atoms", "#", " {}".format(len(geo)), "#", "# The current total energy in Eh", "#",
+                    " {:.12f}".format(e), "#", "# The current gradient in Eh/bohr", "#"]
+            body += ["{:.12f}".format(v) for v in grad.reshape(-1)]
+            body += ["#", "# The atomic numbers and current coordinates in Bohr", "#"]
+            body += ["{:4d} {:.10f} {:.10f} {:.10f}".format(atomic_numbers[s], *(float(v) * orca.BOHR_PER_ANGSTROM for v in xyz))
+                     for s, *xyz in geo]
+            (cwd / "job.engrad").write_text("\n".join(body) + "\n", encoding="utf-8")
+            return 0
         text = (FIX / "job.hess").read_text(encoding="utf-8")
         if self.shift_A:
             lines = text.split("\n")
@@ -195,7 +213,7 @@ def main():
         os.utime(wd_lock / frame_labels.LOCK, (1, 1))              # a lock from 1970: stale
         lab6b = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
         check("a fresh 'running' claim by another Batch skips the frame (runner not called, status running); a stale claim is taken over and released",
-              lab6["status"] == "running" and calls_after_claim == 0 and lab6b["status"] == "refused" and fake6.calls == 1
+              lab6["status"] == "running" and calls_after_claim == 0 and lab6b["status"] == "labelled" and fake6.calls == 1
               and not (wd_lock / frame_labels.LOCK).exists(), (lab6["status"], fake6.calls, lab6b["status"]))
 
         # --- scratch: the run happens elsewhere and only KEEP files come back ---------
@@ -203,10 +221,28 @@ def main():
         fake5 = FakeOrca()
         lab5 = frame_labels.label_one(mol, LEVEL, "displaced", 0, 0, runner=fake5, mace_level_name=mlevel, scratch=scratch)
         wd = layout.orca_frame_dir(mol, LEVEL, "displaced", 0, 0)
-        check("with scratch: ORCA ran in scratch, job.{inp,out,hess} copied back, the scratch copy removed",
-              (wd / "job.out").is_file() and (wd / "job.hess").is_file() and (wd / "job.inp").is_file()
-              and not (scratch / mol.name / "displaced_b00_k0").exists() and lab5["status"] == "refused",
+        check("with scratch: ORCA ran in scratch, job.{inp,out,engrad} copied back (no .hess: a gradient job), the scratch copy removed",
+              (wd / "job.out").is_file() and (wd / "job.engrad").is_file() and (wd / "job.inp").is_file()
+              and not (wd / "job.hess").exists()
+              and not (scratch / mol.name / "displaced_b00_k0").exists() and lab5["status"] == "labelled",
               (sorted(p.name for p in wd.iterdir()), lab5["status"]))
+
+        # --- Q7 (b): a displaced frame is a gradient job; the mixed file and Record --------
+        kw_d = frame_labels.keyword_line(LEVEL, hessian=frame_labels.wants_hessian("displaced"))
+        check("a displaced frame's keyword line is the single point + EnGrad only (route gradient); basin / merged / saddle keep Freq",
+              kw_d[0] == "wB97M-D3BJ def2-TZVPPD TightSCF EnGrad" and kw_d[2] == "gradient"
+              and frame_labels.wants_hessian("basin") and frame_labels.wants_hessian("saddle") and not frame_labels.wants_hessian("displaced"))
+        check("the gradient label: energy and forces present, hessian None, geometry check from the .engrad coordinates (dev < 1e-7), route gradient, floor nan",
+              lab5["hessian"] is None and lab5["max_position_dev_A"] < 1e-7 and lab5["hessian_route"] == "gradient"
+              and np.isnan(lab5["noise_floor_cm"]) and lab5["forces"].shape == (10, 3), (lab5["max_position_dev_A"], lab5["hessian_route"]))
+        out7 = frame_labels.assemble(mol, LEVEL, generators=("basin", "displaced"))
+        fd = frames.read_frames(layout.frames_file(mol, "displaced", LEVEL))
+        r7 = {(r["GENERATOR"], r["BASIN"], r["K"]): r for r in out7["frames"]}
+        check("assemble: the displaced file carries has_hessian=false and no hessian key; the Record counts N_HESSIAN_FRAMES / N_GRADIENT_FRAMES and HAS_HESSIAN per row",
+              len(fd) == 2 and all(a.info["has_hessian"] is False and "hessian" not in a.info for a in fd)
+              and out7["info"]["N_GRADIENT_FRAMES"] == 2 and out7["info"]["N_HESSIAN_FRAMES"] == 1
+              and r7[("displaced", 0, 0)]["HAS_HESSIAN"] is False and r7[("basin", 0, 0)]["HAS_HESSIAN"] is True,
+              (len(fd), out7["info"]["N_GRADIENT_FRAMES"], out7["info"]["N_HESSIAN_FRAMES"]))
 
     # --- the HPC layer ----------------------------------------------------------------
     sys.path.insert(0, str(ROOT / "hpc"))

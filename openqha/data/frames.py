@@ -215,7 +215,12 @@ def _write_frames(path, frames):
         a = fr["atoms"].copy()
         a.calc = SinglePointCalculator(a, energy=fr["energy"], forces=fr["forces"])
         a.info.update(fr["info"])
-        a.info["hessian"] = np.asarray(fr["hessian"], dtype=float).reshape(-1)
+        if fr.get("hessian") is not None:
+            a.info["hessian"] = np.asarray(fr["hessian"], dtype=float).reshape(-1)
+            a.info["has_hessian"] = True
+        else:
+            a.info.pop("hessian", None)
+            a.info["has_hessian"] = False
         out.append(a)
     path.parent.mkdir(parents=True, exist_ok=True)
     write(str(path), out, format="extxyz")
@@ -228,7 +233,11 @@ def read_frames(path):
     out = []
     for a in read(str(path), index=":", format="extxyz"):
         n = 3 * len(a)
-        a.info["hessian"] = np.asarray(a.info["hessian"], dtype=float).reshape(n, n)
+        if "hessian" in a.info:
+            a.info["hessian"] = np.asarray(a.info["hessian"], dtype=float).reshape(n, n)
+            a.info["has_hessian"] = True
+        else:
+            a.info["has_hessian"] = False
         out.append(a)
     return out
 

@@ -7,6 +7,7 @@ touches; the Slurm log is the Batch's report.
 
 | step | driver | Calculation | writes |
 |---|---|---|---|
+| 00 | `00_draw.py` | `openqha.data.structure_classes.draw` | `<root>/<tag>/_datasets/<name>/draw.{out,toml,dat}` — the campaign's molecule list: 500 per structure class (`configs/structure_classes.yaml`) from the gated QM9 targets outside MACE-OFF23's SPICE training file, the union over classes, the pinned seven always in |
 | 01 | `01_select.py` | `openqha.data.dataset.select` | `<root>/<tag>/_datasets/<name>/select.{out,toml,dat}` — the molecule list with stratum, SPICE membership, pin status |
 | 02 | `02_frames.py` | `openqha.data.frames.generate` | `<molecule>/frames/<generator>.<mace level>.extxyz`, `frames/frames.{out,toml}` |
 | 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.*`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
@@ -50,38 +51,71 @@ python workflows/hessian_learning/03_labels.py --tag rings --species dsgdb9nsd_0
 
 ### On tianhe (TianheXY‑C; rulings 2026‑09‑18 / 2026‑09‑19)
 
-**Nothing runs on the login node and no Batch holds the command line: every step is a
-submitted job.** `hpc/resource_configs/tianhe_cpu.py` runs *in‑allocation* whenever the
-driver is inside a Slurm job (LocalProvider on the job's node(s), `srun` launcher across
-nodes, nothing submitted); the login‑node "nested" mode (parsl submits blocks with
-`sbatch`, S0‑G‑74) still exists but is not the way to test.
+**A submitted job is plain bash + `xargs`, no parsl** — the hkuhpc shape
+(`qm9_reaction_eng/docs/bash_orca_remain_workflow_lecture.md`): a task list, `awk` gives
+each slot a core range, `xargs -P 16` runs an idempotent worker under `taskset` on the
+node‑local scratch, the terminal line decides; many nodes = a Slurm **array**, the list
+split round‑robin. Nothing runs on the login node. Every stage script skips what is on
+disk, so a killed or time‑limited job is resubmitted as it is.
 
-One frame per Parsl task, `%pal nprocs 4`, `%maxcore 6000` (512 GB × 0.75 / 64), 16
-frames per 64‑core node (role `labels`). ORCA 6.1.1 (shared build, OpenMPI 4.1.8 in the
-conda env `orca611`, verified 2026‑09‑19: 4 MPI processes, water in 41 s) is located by
-`hpc/env/orca.sh` from `~/env_orca611.sh` (`ORCA_PATH` + alias) without activating that
-env in the worker; ORCA's scratch goes to node‑local `S0_SCRATCH`.
+| stage | script | worker per line | layout |
+|---|---|---|---|
+| A branch A | `hl_branchA.slurm` | `hl_branchA_worker.sh` → `s0_A_pipeline.py --species` | 16 × 4 threads |
+| 02 frames | `hl_frames.slurm` | `02_frames.py --species` (MACE, CPU) | 16 × 4 |
+| 03 labels | `hl_labels.slurm` | `hl_label_worker.sh` → `python -m openqha.data.frame_labels` | 16 × 4 ORCA ranks, `%maxcore 6000` |
+| all of A → 04 | `hl_pipeline_debug.slurm` | the above in one `debug` job (one round of 16 labels) | |
+
+The label of a **basin / merged / saddle** frame is `EnGrad Freq` (E, F, H); of a
+**displaced** frame `EnGrad` only (E, F) — round 5, Q7 (b). Kept per job: `job.{inp,out,
+hess,engrad}`; no `.gbw`, `.loc`, `property.txt`. ORCA 6.1.1 (OpenMPI 4.1.8 in the conda
+env `orca611`) is located by `hpc/env/orca.sh` from `~/env_orca611.sh` without activating
+that env in the job.
 
 ```bash
-cd ~/openQHA-main
-# 1. the whole pipeline on debug, one node, 30 min: branch A -> 02 -> 01 -> 03 (one round of
-#    16 frames, in the allocation) -> 04. Skips what is already on disk.
-sbatch hpc/slurm/hl_pipeline_debug.slurm                    # TAG=smoke, the seven pinned molecules
-# 2. the remaining labels + the Dataset, as one job (deimos 1 node 4 h by default;
-#    finished frames are skipped, so resubmit after a time limit)
-sbatch hpc/slurm/hl_labels.slurm                            # TAG=smoke
-TAG=smoke PARTITION=debug TIME=00:30:00 LIMIT_FRAMES=32 sbatch hpc/slurm/hl_labels.slurm   # or two rounds on debug
-# 3. the 200-molecule draw on 12 nodes
-TAG=draw NAME=draw200 sbatch --nodes=12 --time=7-00:00:00 hpc/slurm/hl_labels.slurm
+cd ~/openQHA-main; export OPENQHA_PARTITION=deimos; source hpc/env/common.sh && source hpc/env/tianhe.sh
+# 00 the draw (login node, seconds; the same seed gives the same 6,458 molecules)
+python workflows/hessian_learning/00_draw.py --tag draw --name draw300 --per-class 300 --seed 0
+# the gate: each stage once on debug, LIMIT=16
+TAG=draw NAME=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_branchA.slurm
+TAG=draw NAME=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm
+python workflows/hessian_learning/01_select.py --tag draw --name draw300
+TAG=draw NAME=draw300 LIMIT_FRAMES=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm
+# the campaign: arrays of 12 one-node tasks; the labels three times at 3 days (~8.4 days of 12 nodes at 300 per class)
+TAG=draw NAME=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm
+TAG=draw NAME=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm
+python workflows/hessian_learning/01_select.py --tag draw --name draw300
+TAG=draw NAME=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # x3, until task 0's assemble exits 0
+python workflows/hessian_learning/04_dataset.py --tag draw --name draw300 --export openreact
 ```
-Read the Slurm log (`openqha_hl_*_<job>.out` in the submit directory): the frame list,
-`workers IN THIS ALLOCATION`, the Batch table (frame, route, MB, rigid block), then step
-04's per‑molecule split. Measured 2026‑09‑19 on a debug node: one wB97M‑D3BJ/def2‑TZVPPD
-label of a 10‑atom frame = **278 s, 91 MB per rank**.
+Read each task's log (`openqha_hl_<stage>_<jobid>_<task>.out`): the task list size, one
+line per molecule/frame, the summary line (`N done, N not, wall`). Measured 2026‑09‑19 on
+a debug node: branch A 460–590 s per molecule (16 at once), a 10‑atom wB97M‑D3BJ/
+def2‑TZVPPD Hessian label 245–305 s and 75–92 MB per rank under 16‑way contention.
 
-Environment check, once, on the login node (seconds, no compute):
-`source ~/env_orca611.sh && mpirun --version | head -1` (Open MPI 4.1.x) and
-`python -c "import procrustes"` in `openqha` (branch A needs `qc-procrustes`).
+**The ALF mode** (parsl, for a campaign nobody wants to resubmit by hand): the driver on
+the login node in `tmux`, `SlurmProvider` submitting up to `--max-blocks` one‑node
+blocks with `sbatch` as the queue demands and releasing them as it drains — the same
+on‑disk state, so the two modes can be mixed:
+```bash
+tmux new -s hl-labels
+python -u workflows/hessian_learning/03_labels.py --tag draw --name draw300 --resource tianhe_cpu \
+    --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw_$(date +%F_%H%M).log
+# Ctrl+b d detaches; tmux attach -t hl-labels returns; squeue -u $USER shows the blocks
+```
+
+## Step 00: the structure-class draw (round 5, 2026‑09‑19)
+
+`configs/structure_classes.yaml` defines 23 classes by SMARTS or ring rule (three‑ and
+four‑membered rings, bicyclic, polycyclic, aromatic, eight‑membered, heterocyclic;
+carbonitrile, primary/secondary alcohol, trialkylamine, tertiary/aliphatic/aromatic amine,
+alkyne, dialkyl ether, epoxide, aldehyde, ketone, amide, carboxylic acid, ester,
+cyclopropane). `scripts/tooling/s0_structure_census.py` counts every class over the
+curated QM9 files against the quoted counts and flags a pattern >10 % off. `00_draw.py`
+draws 500 per class (seeded per class over the sorted candidates) from the 119,275 gated
+targets outside SPICE at any match level; the union is the list (a molecule counts for
+every class it is in), a short class takes all it has and the shortfall is in the Record.
+First real draw (`--name draw500 --seed 0`): **10,471 molecules**; eight‑membered rings
+378 (all), carboxylic acids 0 (QM9's gated targets have no free COOH).
 
 ## Step 04: the Dataset (rounds 3–4, Q3/Q6 (b))
 
