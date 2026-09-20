@@ -20,8 +20,8 @@
 #SBATCH --nodes=1
 #SBATCH --exclusive
 #SBATCH --time=04:00:00
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/slurm/%x_%A_%a.out
+#SBATCH --error=logs/slurm/%x_%A_%a.err
 
 # no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
 

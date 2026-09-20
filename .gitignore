@@ -64,3 +64,7 @@ venv/
 Thumbs.db
 # 02d-2 writes one conf per settings row at submit time; the source of truth is settings.tsv
 examples/02d-2_qha_settings_array/generated/
+
+# ---- Slurm job logs (hpc/slurm/*.slurm write --output/--error here) ------------------
+logs/slurm/*
+!logs/slurm/.gitkeep

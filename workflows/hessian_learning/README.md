@@ -104,7 +104,7 @@ python workflows/hessian_learning/01_select.py --tag draw300
 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # x3, until task 0's assemble exits 0 (docs/hessian_learning_campaign.md)
 python workflows/hessian_learning/04_dataset.py --tag draw300 --export openreact
 ```
-Read each task's log (`openqha_hl_<stage>_<jobid>_<task>.out`): the task list size, one
+Read each task's log (`logs/slurm/openqha_hl_<stage>_<jobid>_<task>.out`): the task list size, one
 line per molecule/frame, the summary line (`N done, N not, wall`). Measured 2026‑09‑19 on
 a debug node: branch A 460–590 s per molecule (16 at once), a 10‑atom wB97M‑D3BJ/
 def2‑TZVPPD Hessian label 245–305 s and 75–92 MB per rank under 16‑way contention.

@@ -1,0 +1,2 @@
+# Slurm stdout/stderr of every hpc/slurm/*.slurm job land here (--output=logs/slurm/...);
+# the directory must exist at submission time, which is what this file is for.

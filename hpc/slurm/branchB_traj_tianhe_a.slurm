@@ -35,8 +35,8 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=12
 #SBATCH --time=24:00:00        # 2026-09-12, see tianhe_a.py WALLTIME
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/slurm/%x_%j.out
+#SBATCH --error=logs/slurm/%x_%j.err
 # **ONE CARD, 12 CPUs -- the fine-grained environment's unit.** Submit from a shell that
 # has run `source /APP/u22/ai_x86/toolshs/set-XY-I.sh`; there `-G` is MANDATORY and `--mem`
 # is FORBIDDEN (site PDF). Without the script the same prompt talks to the DEFAULT

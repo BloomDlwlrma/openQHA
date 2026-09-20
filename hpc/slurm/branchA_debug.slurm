@@ -20,8 +20,8 @@
 #SBATCH --nodes=1
 #SBATCH --exclusive
 #SBATCH --time=00:30:00
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/slurm/%x_%j.out
+#SBATCH --error=logs/slurm/%x_%j.err
 # ^ %x_%j in the SUBMIT directory, deliberately, and not a path under HDD_POOL.
 #   Slurm opens --output BEFORE the script runs, so a directory the script creates is
 #   created too late and the job dies with no log saying why (rule 6 of this project's

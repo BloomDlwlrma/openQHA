@@ -104,7 +104,7 @@ change nothing but the number of rounds.
 
 ## 4. What each log's last lines must say
 
-Logs land in the submission directory as `openqha_hl_<stage>_<jobid>_<task>.out`.
+Logs land in `logs/slurm/` of the checkout (the directory the job was submitted from) as `openqha_hl_<stage>_<jobid>_<task>.out`; a job submitted without `--array` gets Slurm's "no task" number, `_4294967294`. The directory ships with the repository (`.gitkeep`), its contents are git-ignored.
 
 | stage | the lines | a bad sign |
 |---|---|---|

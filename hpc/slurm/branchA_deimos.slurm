@@ -35,8 +35,8 @@
 #SBATCH --nodes=1
 #SBATCH --exclusive
 #SBATCH --time=3-00:00:00
-#SBATCH --output=%x_%A_%j.out
-#SBATCH --error=%x_%A_%j.err
+#SBATCH --output=logs/slurm/%x_%A_%j.out
+#SBATCH --error=logs/slurm/%x_%A_%j.err
 
 # `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 # NOT `set -u` -- see branchA_debug.slurm.

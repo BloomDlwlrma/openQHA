@@ -81,8 +81,8 @@
 # =======================================================================================
 #SBATCH --job-name=openqha_install
 #SBATCH --nodes=1
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/slurm/%x_%j.out
+#SBATCH --error=logs/slurm/%x_%j.err
 # NO --exclusive: banned on TianheXY-AI (manual 6.2.2) and not passed on TianheXY-A
 # either, by the 2026-09-05 ruling.
 # NO --mem: the system sizes memory from the GPU count and specifying it is refused.
