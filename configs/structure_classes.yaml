@@ -1,0 +1,80 @@
+# Structure classes of the Hessian-learning draw (round 5, Q2 (a), 2026-09-19).
+#
+# One entry per class. `smarts` is matched with RDKit on the molecule's relaxed SMILES
+# (explicit H removed); a `rule` entry is a ring rule evaluated on RDKit's ring info:
+#     min_rings N        at least N SSSR rings
+#     fused              at least two rings sharing at least one atom (bicyclic and up)
+#     aromatic_rings N   at least N aromatic rings
+#     ring_size N        at least one ring of exactly N atoms
+# `qm9_count` is the count the user quoted for the whole of QM9 (133,885 molecules); the
+# census (scripts/tooling/s0_structure_census.py) reprints every class over the curated
+# 133,660 files and flags a class more than 10 % off its quoted count as suspect. A
+# definition is one line here; the draw (00_draw.py) reads this file.
+classes:
+  # ---- rings ----------------------------------------------------------------------------
+  - name: three_membered_ring
+    smarts: "[r3]"
+    note: "the most common QM9 ring skeleton (~4.8 % of molecules)"
+  - name: small_ring
+    smarts: "[r3,r4]"
+    note: "three- and four-membered rings"
+  - name: bicyclic
+    rule: {min_rings: 2, fused: true}
+    note: "two or more rings sharing at least one atom (fused, bridged, spiro)"
+  - name: polycyclic
+    rule: {min_rings: 3}
+    note: "three or more SSSR rings"
+  - name: aromatic
+    rule: {aromatic_rings: 1}
+    qm9_count: 15863
+    note: "at least one aromatic ring (RDKit aromaticity)"
+  - name: eight_membered_ring
+    rule: {ring_size: 8}
+    qm9_count: 36
+    note: "only 36 in QM9: the draw takes all it finds"
+  - name: heterocyclic
+    smarts: "[r;!#6]"
+    qm9_count: 61904
+    note: "a ring atom that is not carbon"
+  # ---- functional groups ------------------------------------------------------------------
+  - name: carbonitrile
+    smarts: "[#6][CX2]#[NX1]"
+    qm9_count: 10315
+  - name: secondary_alcohol
+    smarts: "[CX4H1]([#6])([#6])[OX2H]"
+    qm9_count: 10668
+  - name: primary_alcohol
+    smarts: "[CX4H2][OX2H]"
+  - name: trialkylamine
+    smarts: "[NX3]([CX4])([CX4])[CX4]"
+    qm9_count: 10687
+  - name: tertiary_amine
+    smarts: "[NX3;H0;!$(NC=O)]([#6])([#6])[#6]"
+    qm9_count: 11057
+    note: "three carbon neighbours, no H, not an amide N"
+  - name: aliphatic_amine
+    smarts: "[NX3;!$(NC=O);!$(N-a)][CX4]"
+    note: "an amine N (any degree) bonded to sp3 carbon, not an amide, not on an aromatic ring"
+  - name: aromatic_amine
+    smarts: "[NX3]-a"
+  - name: alkyne
+    smarts: "[CX2]#[CX2]"
+    qm9_count: 10873
+  - name: dialkyl_ether
+    smarts: "[CX4][OX2][CX4]"
+    qm9_count: 24012
+  - name: epoxide
+    smarts: "C1OC1"
+  - name: aldehyde
+    smarts: "[CX3H1](=O)[#6]"
+  - name: ketone
+    smarts: "[#6][CX3](=O)[#6]"
+  - name: amide
+    smarts: "[CX3](=O)[NX3]"
+  - name: carboxylic_acid
+    smarts: "[CX3](=O)[OX2H1]"
+  - name: ester
+    smarts: "[CX3](=O)[OX2][#6]"
+  - name: cyclopropane
+    smarts: "[C;r3]1[C;r3][C;r3]1"
+    note: "an all-carbon three-membered ring"
