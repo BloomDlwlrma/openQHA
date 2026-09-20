@@ -1,12 +1,14 @@
 """Workflow hessian_learning, step 01: the molecule list of a Dataset (ticket 04).
 
-PRODUCTION. `openqha.data.dataset.select`: every molecule under the given tags whose
+PRODUCTION. `openqha.data.dataset.select`: every molecule of the draw (`draw.dat` of
+step 00, when the Dataset has one -- listed whether or not branch A has run for it, so
+this table is the campaign's progress) and every molecule under the given tags whose
 branch A finished, with its stratification keys (ring count, heteroatom pattern, heavy
-atoms), its MACE-OFF23 training-set membership, whether it is one of the seven pinned
-molecules and whether a Frame set exists. Writes `select.{out,toml,dat}` under
-`<root>/<first tag>/_datasets/<name>/`. `--limit N` keeps the pinned molecules plus the
-first N - pinned others, or, with `--stratify`, others spread evenly over the sorted
-index list (QM9 is ordered by heavy-atom count).
+atoms), its structure classes, its MACE-OFF23 training-set membership, whether it is
+one of the seven pinned molecules and whether basins / a Frame set exist. Writes
+`select.{out,toml,dat}` under `<root>/<first tag>/_datasets/<name>/`. `--limit N` keeps
+the pinned molecules plus the first N - pinned others, or, with `--stratify`, others
+spread evenly over the sorted index list (QM9 is ordered by heavy-atom count).
 
     python workflows/hessian_learning/01_select.py --tag rings --tag propanal --name smoke
     python workflows/hessian_learning/01_select.py --tag draw300 --limit 200 --stratify
@@ -41,11 +43,13 @@ def main():
     rows = dataset.select(root, args.tag, args.name, limit=args.limit, stratify=args.stratify)
     d = dataset.datasets_dir(root, args.tag[0], args.name)
     for r in rows:
-        print("{:18s} {:10s} {:24s} {:9s} in_training={:8s} {} basins {} frames {}".format(
+        print("{:18s} {:10s} {:24s} {:9s} in_training={:8s} {} basins {:>3} frames {:>3}  {}".format(
             r["qm9_index"], r["tag"], r["smiles"][:24], r["stratum"], r["in_training"],
-            "PINNED" if r["pinned"] else "      ", r["n_basins"], r["n_frames"] if r["has_frames"] else "-"))
-    print("select: {} molecules ({} with a Frame set, {} pinned) -> {}".format(
-        len(rows), sum(1 for r in rows if r["has_frames"]), sum(1 for r in rows if r["pinned"]), d / "select.dat"))
+            "PINNED" if r["pinned"] else "      ", r["n_basins"] if r["has_basins"] else "-",
+            r["n_frames"] if r["has_frames"] else "-", r["classes"]))
+    print("select: {} molecules ({} drawn, {} with basins, {} with a Frame set, {} pinned) -> {}".format(
+        len(rows), sum(1 for r in rows if r["drawn"]), sum(1 for r in rows if r["has_basins"]),
+        sum(1 for r in rows if r["has_frames"]), sum(1 for r in rows if r["pinned"]), d / "select.dat"))
     return 0 if rows else 1
 
 

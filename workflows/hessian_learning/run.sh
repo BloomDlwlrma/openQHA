@@ -45,5 +45,5 @@ else
     echo "== 03 labels: skipped (--with-labels to run here; tianhe Batch in production)"
 fi
 echo "== 04 dataset"
-python -u "$here/04_dataset.py" "${tagargs[@]}" --name "$name" "${lvl[@]}" || { echo "04 failed" >&2; exit 1; }
+python -u "$here/04_dataset.py" "${tagargs[@]}" --name "$name" --split-by molecule "${lvl[@]}" || { echo "04 failed" >&2; exit 1; }
 echo "== 05 train / 06 judge: round 2 open -- not run"
