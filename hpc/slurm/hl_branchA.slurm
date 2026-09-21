@@ -8,8 +8,12 @@
 #     TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_branchA.slurm   # the gate
 #     TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm             # the campaign
 #
-# LAYOUT: CONCURRENCY x THREADS = 64 = the node (16 x 4, the measured 285 s/species
-# condition). Each array task takes every ARRAY_N-th pending molecule of the draw;
+# LAYOUT: the job ASKS for the node (`--exclusive --ntasks=1 --cpus-per-task=64 --mem=0`)
+# and DERIVES the layout from what Slurm granted: CONCURRENCY = CORES / THREADS, so
+# 16 x 4 on a 64-core node (the measured 285 s/species condition) and 8 x 4 on a 32-core
+# one. THREADS is CREST's own `-T` (independent metadynamics runs), the one thread axis
+# common.sh leaves open; the MACE relax inside a worker is single-threaded, so a worker
+# holds 4 cores during CREST and 1 during MACE. Each array task takes every ARRAY_N-th pending molecule of the draw;
 # molecules with branch A done are skipped (`basins.done`), so a resubmission continues.
 # The molecule tree is written under $S0_RUNS_ROOT/<TAG>/ by s0_A_pipeline.py itself.
 # =======================================================================================
@@ -17,16 +21,28 @@
 #SBATCH --partition=deimos
 #SBATCH --nodes=1
 #SBATCH --exclusive
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=0
 #SBATCH --time=1-00:00:00
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.err
 
 # no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
 
+# What Slurm granted, READ FIRST: the unset loop below erases SLURM_CPUS_* (it keeps
+# Slurm's MPI variables out of ORCA's mpirun), and `nproc` is not a fallback for them --
+# it honours OMP_NUM_THREADS, which common.sh sets to 1, and reported "1 core" on a
+# 64-core node (2026-09-20). `--cpus-per-task=64 --mem=0` above ASK for the whole node;
+# these two lines record what arrived, and the layout below is derived from it.
+CORES="${SLURM_CPUS_PER_TASK:-${SLURM_CPUS_ON_NODE:-$(nproc --all)}}"
+MEM_MB="${SLURM_MEM_PER_NODE:-0}"
+
 TAG="${TAG:-draw}"
 NAME="${NAME:-$TAG}"
 THREADS="${THREADS:-4}"
-CONCURRENCY="${CONCURRENCY:-16}"
+CONCURRENCY="${CONCURRENCY:-$(( CORES / THREADS ))}"
+[ "$CONCURRENCY" -ge 1 ] || CONCURRENCY=1
 LIMIT="${LIMIT:-}"
 TIMEOUT_S="${TIMEOUT_S:-3600}"
 ARRAY_ID="${SLURM_ARRAY_TASK_ID:-0}"
@@ -47,9 +63,7 @@ openqha_require crest xtb python || exit 1
 python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "registry pin" || echo "openQHA: weights check failed" >&2
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME   layout ${CONCURRENCY} x ${THREADS} threads   array task $ARRAY_ID/$ARRAY_N"
-# the node's cores from Slurm, not `nproc`: common.sh exports OMP_NUM_THREADS=1 and GNU nproc
-# honours it (it printed 1 on a 64-core node, 2026-09-20); `nproc --all` ignores it
-CORES="${SLURM_CPUS_ON_NODE:-$(nproc --all)}"
+echo "allocation $CORES cores, ${MEM_MB} MB (0 = the node's memory); CREST runs -T $THREADS per molecule"
 if [ $((CONCURRENCY * THREADS)) -gt "$CORES" ]; then
     echo "openQHA: layout ${CONCURRENCY} x ${THREADS} exceeds the node's $CORES cores" >&2; exit 1
 fi

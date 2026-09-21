@@ -21,11 +21,21 @@
 #SBATCH --partition=debug
 #SBATCH --nodes=1
 #SBATCH --exclusive
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=0
 #SBATCH --time=00:30:00
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
 
 # no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
+
+# what Slurm granted, READ FIRST (the unset loop below erases SLURM_CPUS_*; `nproc` honours
+# common.sh's OMP_NUM_THREADS=1 and would say 1): the layouts are derived from it
+CORES="${SLURM_CPUS_PER_TASK:-${SLURM_CPUS_ON_NODE:-$(nproc --all)}}"
+NPROCS="${NPROCS:-4}"
+CONCURRENCY="${CONCURRENCY:-$(( CORES / NPROCS ))}"
+[ "$CONCURRENCY" -ge 1 ] || CONCURRENCY=1
 
 TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
@@ -76,12 +86,12 @@ echo; echo "== 01 selection"
 python -u workflows/hessian_learning/01_select.py --tag "$TAG" --name "$NAME"
 
 # ---- 03. labels: one round of 16, plain bash + xargs (no parsl in a job) ---------------
-echo; echo "== 03 labels (at most $LIMIT_FRAMES frames, ${CONCURRENCY:-16} x ${NPROCS:-4} ranks)"
-export LEVEL NPROCS="${NPROCS:-4}" MAXCORE="${MAXCORE:-6000}"
+echo; echo "== 03 labels (at most $LIMIT_FRAMES frames, ${CONCURRENCY} x ${NPROCS} ranks of $CORES cores)"
+export LEVEL NPROCS MAXCORE="${MAXCORE:-6000}"
 LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
 python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL"     --limit-frames "$LIMIT_FRAMES" --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
-awk -v nc="${CONCURRENCY:-16}" -v np="$NPROCS" '{ slot = (NR - 1) % nc; s = slot * np; printf "%s %s %s %s %d-%d
-", $1, $2, $3, $4, s, s + np - 1 }' "$LIST"     | xargs -r -n 5 -P "${CONCURRENCY:-16}" bash hpc/slurm/hl_label_worker.sh
+awk -v nc="$CONCURRENCY" -v np="$NPROCS" '{ slot = (NR - 1) % nc; s = slot * np; printf "%s %s %s %s %d-%d
+", $1, $2, $3, $4, s, s + np - 1 }' "$LIST"     | xargs -r -n 5 -P "$CONCURRENCY" bash hpc/slurm/hl_label_worker.sh
 python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --assemble 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
 
 # ---- 04. the Dataset ---------------------------------------------------------------------

@@ -9,8 +9,10 @@
 #     sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm      # the same on the short queue
 #     TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # 12 nodes: an ARRAY, one node each; one round of three (docs/hessian_learning_campaign.md)
 #
-# LAYOUT: CONCURRENCY x NPROCS = 64 = the node (16 x 4, user ruling 2026-09-18); MAXCORE
-# = 512 GB x 0.75 / 64 = 6000 MB per rank. An ARRAY job splits the task list round-robin
+# LAYOUT: the job ASKS for the node (`--exclusive --ntasks=1 --cpus-per-task=64 --mem=0`)
+# and DERIVES the layout from what Slurm granted: CONCURRENCY = CORES / NPROCS, so 16 x 4
+# ORCA ranks on a 64-core node (user ruling 2026-09-18); MAXCORE = 512 GB x 0.75 / 64 =
+# 6000 MB per RANK, so the 64 ranks together stay under the node's memory. An ARRAY job splits the task list round-robin
 # over its tasks; a frame another task is already running is skipped (its `running`
 # claim), a finished frame is reused, so a killed or time-limited job is resubmitted as
 # it is. Task 0 (or the only task) assembles and builds the Dataset at the end.
@@ -19,18 +21,32 @@
 #SBATCH --partition=deimos
 #SBATCH --nodes=1
 #SBATCH --exclusive
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=0
 #SBATCH --time=04:00:00
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.err
 
 # no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
 
+# What Slurm granted, READ FIRST: the unset loop below erases SLURM_CPUS_* (it keeps
+# Slurm's MPI variables out of ORCA's mpirun), and `nproc` is not a fallback for them --
+# it honours OMP_NUM_THREADS, which common.sh sets to 1, and reported "1 core" on a
+# 64-core node (2026-09-20). `--cpus-per-task=64 --mem=0` above ASK for the whole node;
+# these two lines record what arrived, and the layout below is derived from it.
+CORES="${SLURM_CPUS_PER_TASK:-${SLURM_CPUS_ON_NODE:-$(nproc --all)}}"
+MEM_MB="${SLURM_MEM_PER_NODE:-0}"
+
 TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
 export LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
 export NPROCS="${NPROCS:-4}"
+# %maxcore is per RANK: 0.75 x the node's memory / cores (512 GB / 64 = 8 GB -> 6000 MB),
+# so CONCURRENCY x NPROCS ranks together stay below what the allocation holds.
 export MAXCORE="${MAXCORE:-6000}"
-CONCURRENCY="${CONCURRENCY:-16}"
+CONCURRENCY="${CONCURRENCY:-$(( CORES / NPROCS ))}"
+[ "$CONCURRENCY" -ge 1 ] || CONCURRENCY=1
 LIMIT_FRAMES="${LIMIT_FRAMES:-}"
 ARRAY_ID="${SLURM_ARRAY_TASK_ID:-0}"
 ARRAY_N="${SLURM_ARRAY_TASK_COUNT:-1}"
@@ -50,9 +66,7 @@ openqha_find_orca || { echo "openQHA: no ORCA -- stopping" >&2; exit 1; }
 openqha_report_env
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME   level $LEVEL   layout ${CONCURRENCY} x ${NPROCS} ranks, %maxcore $MAXCORE   array task $ARRAY_ID/$ARRAY_N"
-# the node's cores from Slurm, not `nproc`: common.sh exports OMP_NUM_THREADS=1 and GNU nproc
-# honours it (it printed 1 on a 64-core node, 2026-09-20); `nproc --all` ignores it
-CORES="${SLURM_CPUS_ON_NODE:-$(nproc --all)}"
+echo "allocation $CORES cores, ${MEM_MB} MB (0 = the node's memory); $(( CONCURRENCY * NPROCS * MAXCORE / 1024 )) GB is the ranks' ceiling"
 if [ $((CONCURRENCY * NPROCS)) -gt "$CORES" ]; then
     echo "openQHA: layout ${CONCURRENCY} x ${NPROCS} exceeds the node's $CORES cores" >&2; exit 1
 fi

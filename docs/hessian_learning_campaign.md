@@ -51,8 +51,23 @@ tail, the Hessian did not fit in 30 minutes — rerun that gate as
 
 ## 2. The cost
 
-Layout everywhere: 16 workers × 4 cores per node (branch A: 4 CREST/MACE threads; labels:
-4 ORCA ranks, `%maxcore 6000`). 12 nodes = 768 cores. The draw: 6,458 molecules, 83 %
+**The layout, and what actually occupies the 64 cores** (ruling 2026-09-21: the jobs
+declare what they need and derive the rest). Every stage script asks for the whole node —
+`--nodes=1 --exclusive --ntasks=1 --cpus-per-task=64 --mem=0` — reads back what Slurm
+granted (`SLURM_CPUS_PER_TASK`, captured **before** the loop that unsets `SLURM_*` for
+ORCA's mpirun) and sets `CONCURRENCY = CORES / per-worker cores`, so the same script fills
+a 32-core node with 8 × 4 instead of failing:
+
+| stage | per worker | on 64 cores | what is busy |
+|---|---|---|---|
+| A branch A | 4 (CREST `-T 4`) | 16 × 4 | 64 during CREST — the metadynamics runs are the one thread axis `common.sh` leaves open; 16 during the MACE relax that follows it (single-threaded) |
+| 02 frames | 1 (MACE on the CPU) | **64 × 1** | 64. Before 2026-09-21 this job pinned 4-core ranges and ran 16 workers — 48 cores idle, the stage four times slower than it needed to be |
+| 03 labels | 4 (ORCA MPI ranks, `%pal nprocs 4`) | 16 × 4 | 64, and `%maxcore 6000` per rank keeps 64 × 6 GB = 384 GB under the node's 512 |
+
+`nproc` is not a way to ask how many cores a job has: it honours `OMP_NUM_THREADS`, which
+`common.sh` sets to 1, and it answered **1** on a 64-core node on 2026-09-20 — the guard
+in the branch A and labels scripts then refused the job. `SLURM_CPUS_PER_TASK` (or
+`nproc --all` off a cluster) is the answer. 12 nodes = 768 cores. The draw: 6,458 molecules, 83 %
 with 9 heavy atoms (≈ 19 atoms); a molecule's Frame set is ~3 basins × (1 + 4 displaced)
 plus merged / saddle frames ≈ 15–17 frames, of which 3–5 are Hessian jobs (basin /
 merged / saddle: `EnGrad Freq`) and ~12 gradient jobs (displaced: `EnGrad`; round 5 Q7 b).
@@ -60,7 +75,7 @@ merged / saddle: `EnGrad Freq`) and ~12 gradient jobs (displaced: `EnGrad`; roun
 | stage | per unit | basis | draw300 (12 nodes) | measured on the campaign |
 |---|---|---|---|---|
 | A branch A | 460–590 s / molecule at 16 per node **[measured 2026-09-19, debug]** | 6,458 × 525 s × 4 cores = 3,800 core-h | **~5 h** (array `--time=1-00:00:00` is slack) | — |
-| 02 frames | ~1 min / molecule **[estimate from the smoke set]** | 6,458 × 60 s × 4 = 430 core-h | **< 1 h** | — |
+| 02 frames | ~1 min / molecule **[estimate from the smoke set]** | 6,458 × 60 s × 1 core = 108 core-h | **< 15 min** (64 × 1 since 2026-09-21) | — |
 | 03 Hessian jobs | 10 atoms: 245–305 s **[measured]**; 19 atoms: 40–80 min **[estimate, N³–N⁴ scaling]** | 6,458 × 4 × 60 min × 4 cores = 103,000 core-h | 5.6 days | — |
 | 03 gradient jobs | 19 atoms: 3–5 min **[estimate]** | 6,458 × 12 × 4 min × 4 = 20,700 core-h | 1.1 days | — |
 | 03 total | | **≈ 125,000–155,000 core-h** | **≈ 7–8.5 days** → 3 rounds of 3 days | — |

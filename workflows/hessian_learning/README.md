@@ -13,7 +13,7 @@ touches; the Slurm log is the Batch's report.
 | 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/frames/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
 | 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz` (REF_* keys), `mace_<name>.<level>.extxyz`, `index.dat` (classes), `dataset.{out,toml}` ([[Class]]), `molecules-<name>.h5` |
 | 05 | `05_train.py` | `openqha.training.run.run_training` → `mace.cli.run_train.run` (the fork) | `<root>/<tag>/_datasets/<name>/train/<run>/` — mace's own files (`<run>.model`, `checkpoints/`, `logs/`, `results/`) plus `config.yaml` and the Record `train.{out,toml,dat}` (settings, epoch table, the base and fine-tuned fingerprints, the config SHA, the mace fork's commit) |
-| 06 | `06_judge.py` | stub: ticket 14 | |
+| 06 | `06_judge.py` | `openqha.training.judge.run` | `<root>/<tag>/_datasets/<name>/judge/<run>/judge.{out,toml,dat}` — per frame, per structure class and per distribution; the entropy tier read from the msRRHO Records; the forgetting line on a fixed SPICE draw; one PASS / FAIL line per threshold |
 
 `run.sh --tag T [--tag T2] [--name NAME] [--limit N] [--stratify] [--with-labels]` runs
 01 → 02 → (03 with `--with-labels`, else skipped) → 04 here; the Dataset lives under the
@@ -78,9 +78,14 @@ disk, so a killed or time‑limited job is resubmitted as it is.
 
 | stage | script | worker per line | layout |
 |---|---|---|---|
-| A branch A | `hl_branchA.slurm` | `hl_branchA_worker.sh` → `s0_A_pipeline.py --species` | 16 × 4 threads |
-| 02 frames | `hl_frames.slurm` | `02_frames.py --species` (MACE, CPU) | 16 × 4 |
+| A branch A | `hl_branchA.slurm` | `hl_branchA_worker.sh` → `s0_A_pipeline.py --species` | 16 × 4 (CREST `-T 4`) |
+| 02 frames | `hl_frames.slurm` | `02_frames.py --species` (MACE, CPU) | **64 × 1** (MACE is single-threaded) |
 | 03 labels | `hl_labels.slurm` | `hl_label_worker.sh` → `python -m openqha.data.frame_labels` | 16 × 4 ORCA ranks, `%maxcore 6000` |
+
+Every stage script asks for the whole node (`--exclusive --ntasks=1 --cpus-per-task=64
+--mem=0`) and derives `CONCURRENCY` from what Slurm granted (`SLURM_CPUS_PER_TASK`, read
+before the `SLURM_*` unset loop); `nproc` is not usable for this — it honours
+`common.sh`'s `OMP_NUM_THREADS=1` and reported 1 core on a 64-core node (2026-09-20).
 | all of A → 04 | `hl_pipeline_debug.slurm` | the above in one `debug` job (one round of 16 labels) | |
 
 The label of a **basin / merged / saddle** frame is `EnGrad Freq` (E, F, H); of a
@@ -214,6 +219,44 @@ masks the Hessian term otherwise). `--export openreact` writes `molecules-<name>
 **Å, Eh, Eh/Å, Eh/Å²** (read off `molecules-RTP.h5`: with Eh/Å² its C–H stretches
 project to 3156–3183 cm⁻¹; Eh/bohr² would give ~6000) — with our `split`, `generator`,
 `basin`, `k` datasets beside the standard ones.
+
+## Step 06: the judge (ticket 14)
+
+The ruler of Algorithm 3. It takes the SHIPPED full Hessian (`MACECalculator.get_hessian`,
+mace's `compute_hessians_vmap`) against the Label through `hessian_compare` — the same
+four metric families every earlier comparison in this repository used — and **never calls
+the estimator or the training loss**: the optimiser reads eq. 6, the judge reads eq. 1
+exactly. A loss that flatters itself cannot flatter the ruler.
+
+```bash
+# the base model on a Dataset, and the two calibrations
+python workflows/hessian_learning/06_judge.py --tag rings --name smoke --engine base
+python workflows/hessian_learning/06_judge.py --tag rings --name smoke --engine base --scale 0.9
+
+# a fine-tuned potential, with the forgetting line
+python scripts/tooling/s0_spice_test_draw.py --n 5000          # once; writes the ids beside the frames
+python workflows/hessian_learning/06_judge.py --tag draw300 --engine MACE-OFF23_medium-prod1     --spice-file data/training_sets/spice_test_5000.extxyz
+```
+
+**Three rows, not one** (CONTEXT *Held-out*): `interpolation` (frames of the fine-tuned
+molecules, held out by frame — interpolation within them), `out_of_molecule` (whole
+molecules, the only generalisation number) and `in_distribution` (the molecules the BASE
+model was trained on, where the question is damage, not accuracy).
+
+**Both calibrations, every time.** `--engine base` must not fail a no-degradation line and
+gives ~0 against its own Hessian as the Label; `--scale 0.9` (forces ×0.9, Hessian ×0.81,
+so every frequency ×0.9) must FAIL the low-mode line. Measured on the 2-methyloxirane
+basin frame: the base model's low-mode MAE is 12.7 cm⁻¹ and the scaled one's 32.1, against
+a threshold of 8.5 — so **the base model fails that line on an out-of-distribution ring,
+which is the error the fine-tune exists to fix** (S0-C-41). Every line prints the Label's
+own grid noise beside it (24.4 cm⁻¹ on that frame, S0-C-44): no threshold means anything
+below the floor of the number it is judging.
+
+**What the judge will not do**: recompute thermochemistry. The entropy tier is read from
+the msRRHO Records on disk (`s0_thermo_msrrho.py` with `S0_ENGINE=<engine>` writes them),
+and a molecule without one is reported as absent rather than filled in — a judge that
+produced the numbers it judges would be marking its own work. A run with no labelled frame
+refuses instead of reporting PASS.
 
 ## Registering the fine‑tuned weights
 
