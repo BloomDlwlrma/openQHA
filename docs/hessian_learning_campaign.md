@@ -7,6 +7,19 @@ install) are in [`tianhe_runbook.md`](tianhe_runbook.md); what each step compute
 Everything below is TianheXY-C (`debug` for the gates, `deimos` for the campaign; one
 node = 64 cores, 512 GB). Numbers are marked **[measured]** or **[estimate]**.
 
+**Before anything: the geometries.** A molecule of the draw starts from its curated QM9
+file, and `data/qm9/` is not in git — the first gate on 2026-09-21 failed on all 16
+molecules with `reference geometry not found … curatedQM9 at None`. Do not copy 133 661
+files onto Lustre; copy the ONE archive (ticket 17):
+
+```bash
+# on the workstation, once (~20 min): one group per molecule into one HDF5, verified by read-back
+python scripts/tooling/s0_pack_curated_qm9.py
+scp data/qm9/curated_qm9.h5 tianhe:~/openQHA-main/data/qm9/
+# on tianhe: `curated_qm9.find()` extracts a molecule into data/qm9/_h5cache/ the first time
+# it is asked for -- 6,458 files for the campaign, not 133,661
+```
+
 The rules this page follows (rulings 2026-09-18 … 20): nothing runs on the login node
 except the second-long steps; every test is a `debug` job; a submitted job is plain bash +
 `xargs`, no parsl (parsl only in the ALF mode, §6); one campaign is one tag

@@ -116,6 +116,11 @@ data:
   #     dsgdb9_XXXXXX_new.xyz         1 573   repaired, short tag
   # A lookup assuming one pattern would silently miss most of the repairs.
   curated_qm9_dir: "133660_curatedQM9_outof_133885"
+  # The same archive as ONE file (ticket 17): scripts/tooling/s0_pack_curated_qm9.py writes
+  # one group per molecule (geometry, charges, frequencies, SMILES, InChI, the file's text)
+  # into data/qm9/curated_qm9.h5; a molecule is extracted on demand when the directory is
+  # absent (a cluster). S0_CURATED_QM9_H5 overrides.
+  curated_qm9_h5: "curated_qm9.h5"
   vendored_reference_geometries: "data/reference-geometries"   # the 7 distributed with the repository
   # The released MACE-OFF23 training data (ticket 30): is a molecule in the potential's
   # training set? The two SPICE-derived extxyz files (5.2 GB) are NOT in git; declare

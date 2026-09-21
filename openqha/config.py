@@ -250,9 +250,11 @@ def read_qm9_xyz(path):
     only appears once a geometry comes from QM9 or curatedQM9 -- that is, for every
     molecule the repository does not ship.
 
-    Also handles QM9's Fortran-style exponents (`-0.535689*^-6`), which float() rejects.
+    Also handles QM9's exponent spellings (`-0.535689*^-6`, and `-8.7796E^-6` in 151 files
+    of the curated archive), which float() rejects (`curated_qm9.qm9_float`).
     """
     from ase import Atoms
+    from .data import curated_qm9
 
     lines = Path(path).read_text(encoding="utf-8").splitlines()
     n = int(lines[0].split()[0])
@@ -260,7 +262,7 @@ def read_qm9_xyz(path):
     for row in lines[2:2 + n]:
         f = row.split()
         symbols.append(f[0])
-        positions.append([float(x.replace("*^", "e")) for x in f[1:4]])
+        positions.append([curated_qm9.qm9_float(x) for x in f[1:4]])
     return Atoms(symbols=symbols, positions=positions)
 
 

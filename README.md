@@ -326,7 +326,7 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 |---|---|---|
 | 7 reference geometries + a 7-row index excerpt | 11 KB | **yes** — the core deliverable reproduces with no external data |
 | QM9 (133 885 molecules) | ~340 MB | no — `scripts/tooling/s0_prepare_data.py` |
-| curatedQM9 (repaired geometries) | ~200 MB | no — unpack under `data/qm9/` |
+| curatedQM9 (repaired geometries) | ~200 MB, 133 661 files | no — unpack under `data/qm9/`, **or one file**: `scripts/tooling/s0_pack_curated_qm9.py` writes it into `data/qm9/curated_qm9.h5` — one group per molecule (`dsgdb9nsd_%06d`: species, positions, Mulliken charges, frequencies, both SMILES and InChI, and the file's text); a cluster gets that one file and `curated_qm9.find()` extracts a molecule on demand |
 | MACE-OFF weights | ~120 MB | no — downloaded by the installer, hash-checked on every load |
 
 **curatedQM9** repairs the molecules whose deposited QM9 geometry is not the molecule its
