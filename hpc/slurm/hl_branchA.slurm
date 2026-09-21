@@ -47,8 +47,11 @@ openqha_require crest xtb python || exit 1
 python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "registry pin" || echo "openQHA: weights check failed" >&2
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME   layout ${CONCURRENCY} x ${THREADS} threads   array task $ARRAY_ID/$ARRAY_N"
-if [ $((CONCURRENCY * THREADS)) -gt "$(nproc)" ]; then
-    echo "openQHA: layout ${CONCURRENCY} x ${THREADS} exceeds the node's $(nproc) cores" >&2; exit 1
+# the node's cores from Slurm, not `nproc`: common.sh exports OMP_NUM_THREADS=1 and GNU nproc
+# honours it (it printed 1 on a 64-core node, 2026-09-20); `nproc --all` ignores it
+CORES="${SLURM_CPUS_ON_NODE:-$(nproc --all)}"
+if [ $((CONCURRENCY * THREADS)) -gt "$CORES" ]; then
+    echo "openQHA: layout ${CONCURRENCY} x ${THREADS} exceeds the node's $CORES cores" >&2; exit 1
 fi
 
 # ---- 2. the task list: this task's share of the draw's molecules without branch A -----

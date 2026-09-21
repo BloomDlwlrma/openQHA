@@ -50,8 +50,11 @@ openqha_find_orca || { echo "openQHA: no ORCA -- stopping" >&2; exit 1; }
 openqha_report_env
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME   level $LEVEL   layout ${CONCURRENCY} x ${NPROCS} ranks, %maxcore $MAXCORE   array task $ARRAY_ID/$ARRAY_N"
-if [ $((CONCURRENCY * NPROCS)) -gt "$(nproc)" ]; then
-    echo "openQHA: layout ${CONCURRENCY} x ${NPROCS} exceeds the node's $(nproc) cores" >&2; exit 1
+# the node's cores from Slurm, not `nproc`: common.sh exports OMP_NUM_THREADS=1 and GNU nproc
+# honours it (it printed 1 on a 64-core node, 2026-09-20); `nproc --all` ignores it
+CORES="${SLURM_CPUS_ON_NODE:-$(nproc --all)}"
+if [ $((CONCURRENCY * NPROCS)) -gt "$CORES" ]; then
+    echo "openQHA: layout ${CONCURRENCY} x ${NPROCS} exceeds the node's $CORES cores" >&2; exit 1
 fi
 
 # ---- 2. the task list: pending frames of the selection, this array task's share --------
