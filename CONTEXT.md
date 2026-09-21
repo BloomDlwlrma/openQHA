@@ -159,6 +159,39 @@ and never recomputed: `valid` is drawn by frame from the training molecules, `te
 whole molecules the model has never seen.
 _Avoid_: training set (alone -- that is one split), benchmark, corpus
 
+**Replay**:
+The base model's own training frames that a fine-tune concatenates into the same training
+set as the Dataset -- a fixed draw from SPICE's train split, one seed one file for a whole
+campaign, energies and forces only, no Hessian -- so that the fine-tune keeps what the base
+knew. Its size is reported as frames per Hessian frame (the same file is a different ratio
+on every Dataset), its weight is each frame's `config_weight`; it never overlaps the
+forgetting set's molecules nor the in_distribution molecules, and the tool that draws it
+refuses when it would.
+_Avoid_: co-training (PFT's step loop, which mace does not do), pretraining head (the
+implementation's `pt_head`), fine-tune set
+
+**Held-out**, and the three distributions:
+What a judged number is worth depends on what the model had already seen, so every judge
+table has three rows and never one. **interpolation**: frames of molecules the model was
+fine-tuned on, held out by FRAME (the production split, round-5 Q4) -- it measures
+interpolation within those molecules, not generalisation to new ones. **out_of_molecule**:
+whole molecules held out, which the fine-tune never saw in any frame. **in_distribution**:
+molecules the BASE model was trained on (the four shipped ones, S0-C-40) -- there the
+question is not accuracy but damage, and the line to watch is "no worse than the base".
+A number quoted without its row is not a claim about anything.
+_Avoid_: held-out (alone), test set (alone -- which test?), generalisation (for the by-frame split)
+
+**Judge**:
+The step that decides whether a potential is better, reading only shipped paths: the full
+Cartesian Hessian from the engine's own `get_hessian` against the reference Label through
+`hessian_compare`, never the training loss's estimator. It reports per structure class and
+per distribution, sets anharmonic modes aside from the entropy tier, reads the
+thermochemistry from the msRRHO Records rather than recomputing it, and ends in PASS / FAIL
+lines with a threshold each. It is calibrated in both directions: the base model against
+itself must not fail a no-degradation line, and a deliberately scaled potential must fail
+the low-mode line.
+_Avoid_: evaluation (alone), validation (that is inside training), benchmark
+
 **Workflow**:
 An ordered set of Batches that turns a molecule list into one deliverable, kept as
 numbered drivers in one folder under `workflows/`, each step writing Records into the
