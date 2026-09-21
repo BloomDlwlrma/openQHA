@@ -1,12 +1,14 @@
 """The fine-tune: openQHA's own entry point into the mace fork's training loop.
 
-PRODUCTION. Ticket 13 of the Hessian-learning set.
+PRODUCTION. Ticket 13 of the Hessian-learning set; the Replay corrections of ticket 18
+and the training control of ticket 21 (S0-C-55..57; 2026-09-21).
 
 The shape is mace-md's: an entry point of OUR OWN builds mace's argument namespace and
 calls `mace.cli.run_train.run(args)`. Nothing here reimplements a training loop; what
-mace could not do -- read a Hessian label (commit A) and take a loss from outside
-(commit B) -- lives in the fork, and the loss itself is `openqha.training.phl_loss`,
-reached by name:
+mace could not do -- read a Hessian label (commit A), take a loss from outside (commit
+B), keep that loss in multihead mode and give it the force graph at evaluation (commit
+C) -- lives in the fork, and the loss itself is `openqha.training.phl_loss`, reached by
+name:
 
     --loss external --loss_module openqha.training.phl_loss:build
 
@@ -17,6 +19,26 @@ One run is a directory of the Dataset:
         <run>.model        the fine-tuned potential (and <run>_stagetwo.model with --swa)
         checkpoints/, logs/, results/    mace's own
         train.{out,toml}   the Record: the settings, the epoch table, the identities
+
+THE REPLAY (CONTEXT.md "Replay"; S0-C-56/57). `--multiheads` concatenates a file of the
+base model's own training frames (`s0_spice_pt_draw.py` writes it) into the training set
+as mace's `pt_head`. Its size is the FILE's: mace's `--num_samples_pt` is read only on
+the Materials-Project download path and is never emitted here; `--real_pt_data_ratio_
+threshold` is emitted as 0, because its default 0.1 silently duplicates the fine-tune
+frames whenever they are fewer than a tenth of the replay. The Record counts the file's
+frames (`PT_N_FRAMES`), reads their `config_weight` (`PT_CONFIG_WEIGHT`), parses both
+heads' counts from mace's log and prints the ratio as replay frames per Hessian frame
+(`REPLAY_PER_HESSIAN_FRAME`), the number the scan rows R0-R4 are defined by. mace takes
+`--valid_fraction` of the replay file for the pretraining head's OWN validation unless
+`--pt_valid_file` names one; the draw tool writes that companion file and it is passed.
+
+THE CONTROL (S0-C-55; the base's recipe, MACE-OFF23): every flag that steers the loop
+is emitted explicitly and recorded -- `--lr`, `--scheduler_patience`, `--patience`,
+`--eval_interval`, `--ema`, `--swa --start_swa --swa_lr` with the Stage Two weights
+(`--swa_energy_weight`, `--swa_forces_weight`, `--swa_hessian_weight` by the rule
+w_H x swa_forces_weight / forces_weight). The three validation curves (E, F, Hessian
+terms per epoch, the loss's `eval_summary` through commit C) are parsed from mace's
+`results/*.txt` (or its log) into the Record; a flat Hessian curve is a warning line.
 
 The Record is what makes a fine-tuned potential traceable: the Dataset and its index, the
 loss settings, the mace fork's commit, the base model's parameter fingerprint and the
@@ -37,6 +59,7 @@ from pathlib import Path
 
 from ..potentials import engine
 from ..store import dat, property as prop, report
+from . import phl_loss
 
 PROGNAME = "openQHA hl_train"
 STEP = "train"
@@ -46,6 +69,20 @@ LOSS_MODULE = "openqha.training.phl_loss:build"
 
 #: MACE-torch's keys in the Dataset's merged file (`dataset.REF_*_KEY`)
 ENERGY_KEY, FORCES_KEY, HESSIAN_KEY = "REF_energy", "REF_forces", "REF_hessian"
+
+#: the control defaults (the base's recipe: scheduler_patience 20, patience 50,
+#: swa_lr = lr / 40, Stage Two at 3/4 of the epochs; mace's Stage Two weights 1000 / 100)
+DEFAULT_LR = 0.01
+DEFAULT_SCHEDULER_PATIENCE = 20
+DEFAULT_PATIENCE = 50
+DEFAULT_EVAL_INTERVAL = 1
+SWA_LR_RATIO = 40.0
+DEFAULT_SWA_ENERGY_WEIGHT = 1000.0
+DEFAULT_SWA_FORCES_WEIGHT = 100.0
+#: mace's `--real_pt_data_ratio_threshold`: 0 = never duplicate the fine-tune frames
+REAL_PT_DATA_RATIO_THRESHOLD = 0.0
+#: a validation Hessian curve whose relative range is below this "did not move"
+FLAT_CURVE_TOL = 1e-6
 
 SCHEMA = {
     "Calculation_Info": {
@@ -72,21 +109,43 @@ SCHEMA = {
         "CONFIG_FILE": ("String", None, "the mace argument file"),
         "CONFIG_SHA256": ("String", None, "SHA-256 of the config file: the training recipe's identity"),
         "LOSS": ("String", None, "the loss module and factory (mace's --loss external)"),
-        "ENERGY_WEIGHT": ("Double", None, "w_E of eq. 11"),
-        "FORCES_WEIGHT": ("Double", None, "w_F of eq. 11"),
-        "HESSIAN_WEIGHT": ("Double", None, "w_H of eq. 11"),
-        "PROBE": ("String", None, "rademacher / gaussian / modes / cartesian (Algorithm 1)"),
+        "ENERGY_WEIGHT": ("Double", None, "w_E of eq. 11 (Stage One)"),
+        "FORCES_WEIGHT": ("Double", None, "w_F of eq. 11 (Stage One)"),
+        "HESSIAN_WEIGHT": ("Double", None, "w_H of eq. 11 (Stage One)"),
+        "PROBE": ("String", None, "rademacher / gaussian / modes / cartesian (Algorithm 1): the training probes"),
         "N_PROBES": ("Integer", None, "probes per structure per step (k of eq. 6)"),
-        "MODE_WEIGHTING": ("String", None, "entropy (|dS_msRRHO/d omega|) or none"),
+        "MODE_WEIGHTING": ("String", None, "the target: cartesian (the raw matrix, S0-C-53, default), entropy or none (the projected diagnostics)"),
+        "VALID_PROBES": ("String", None, "the validation estimator: rademacher k=4 fixed per frame (S0-C-55)"),
         "MAX_NUM_EPOCHS": ("Integer", None, "epochs asked for"),
         "N_EPOCHS": ("Integer", None, "epochs the log holds"),
         "BATCH_SIZE": ("Integer", None, "structures per step"),
-        "SEED": ("Integer", None, "mace's seed; also the probe generator's"),
+        "SEED": ("Integer", None, "mace's seed; also the training probe generator's"),
         "DEVICE": ("String", None, "cpu / cuda"),
         "DTYPE": ("String", None, "float64 throughout, as the Labels are"),
-        "MULTIHEADS": ("Boolean", None, "a pretraining head replayed beside the fine-tuning head (round-2 Q7 a)"),
-        "PT_TRAIN_FILE": ("String", None, "the replay frames, or - "),
-        "NUM_SAMPLES_PT": ("Integer", None, "replay frames drawn per epoch"),
+        "LR": ("Double", None, "the learning rate (mace's --lr)"),
+        "SCHEDULER_PATIENCE": ("Integer", None, "ReduceLROnPlateau patience on the total validation loss, epochs"),
+        "PATIENCE": ("Integer", None, "early-stopping patience on the total validation loss, epochs"),
+        "EVAL_INTERVAL": ("Integer", None, "validate every this many epochs"),
+        "EMA": ("Boolean", None, "exponential moving average of the parameters (mace's --ema)"),
+        "SWA": ("Boolean", None, "Stage Two on (mace's --swa)"),
+        "START_SWA": ("Integer", None, "the epoch Stage Two starts at (3/4 of MAX_NUM_EPOCHS by default)"),
+        "SWA_LR": ("Double", None, "the Stage Two learning rate (LR / 40 by default, the base's ratio)"),
+        "SWA_ENERGY_WEIGHT": ("Double", None, "w_E in Stage Two"),
+        "SWA_FORCES_WEIGHT": ("Double", None, "w_F in Stage Two"),
+        "SWA_HESSIAN_WEIGHT": ("Double", None, "w_H in Stage Two = HESSIAN_WEIGHT x SWA_FORCES_WEIGHT / FORCES_WEIGHT"),
+        "STAGE_TWO_EPOCH": ("Integer", None, "the epoch the log switched to Stage Two at, or -1"),
+        "MULTIHEADS": ("Boolean", None, "a Replay concatenated as mace's pretraining head (round-2 Q7 a; CONTEXT Replay)"),
+        "PT_TRAIN_FILE": ("String", None, "the Replay file, or -"),
+        "PT_VALID_FILE": ("String", None, "the Replay's own validation file (mace takes --valid_fraction of the Replay without one), or -"),
+        "PT_N_FRAMES": ("Integer", None, "frames counted in the Replay file (0 without one)"),
+        "PT_CONFIG_WEIGHT": ("String", None, "the Replay frames' config_weight: one value, `mixed`, or - "),
+        "PT_HEAD_TRAIN": ("Integer", None, "mace's count of pretraining-head training frames (parsed from its log; -1 when not logged)"),
+        "PT_HEAD_VALID": ("Integer", None, "mace's count of pretraining-head validation frames (-1 when not logged)"),
+        "FT_HEAD_TRAIN": ("Integer", None, "mace's count of fine-tuning-head training frames (-1 when not logged)"),
+        "FT_HEAD_VALID": ("Integer", None, "mace's count of fine-tuning-head validation frames (-1 when not logged)"),
+        "REPLAY_PER_HESSIAN_FRAME": ("Double", None, "PT_N_FRAMES / N_TRAIN_HESSIAN: the Replay's size as the scan rows define it (0 without a Replay)"),
+        "REAL_PT_DATA_RATIO_THRESHOLD": ("Double", None, "mace's duplication threshold, always 0 here (never duplicate the fine-tune frames)"),
+        "HESSIAN_CURVE_MOVED": ("Boolean", None, "the validation Hessian term changed across the epochs (a flat curve means the term did not act)"),
         "MACE_VERSION": ("String", None, "mace.__version__ (the fork: 0.3.16+openqha)"),
         "MACE_FORK": ("String", None, "the fork the training code came from"),
         "MACE_FORK_COMMIT": ("String", None, "commit of the mace checkout (refused when unknown or dirty)"),
@@ -95,21 +154,30 @@ SCHEMA = {
         "SECONDS_PER_EPOCH": ("Double", "s", "wall time / epochs"),
     },
     "Epoch": {
-        "EPOCH": ("Integer", None, "epoch index as mace logged it"),
+        "EPOCH": ("Integer", None, "epoch index as mace logged it; -1 = the evaluation before any training (the base model)"),
         "SPLIT": ("String", None, "train (the step's loss) or valid (mace's evaluation)"),
         "LOSS": ("Double", None, "the total loss of eq. 11"),
         "RMSE_E_PER_ATOM_MEV": ("Double", "meV", "energy RMSE per atom, when the log gives it"),
         "RMSE_F_MEV_A": ("Double", "meV/A", "force RMSE, when the log gives it"),
+        "VALID_ENERGY": ("Double", None, "the energy term of eq. 11 over the validation pass (valid rows)"),
+        "VALID_FORCES": ("Double", None, "the forces term over the validation pass (valid rows)"),
+        "VALID_HESSIAN": ("Double", None, "the Hessian term over the validation pass, the fixed-probe estimator (valid rows)"),
     },
 }
 
 EPOCH_ROW = {
-    "epoch": ("Integer", None, "epoch index"),
+    "epoch": ("Integer", None, "epoch index (-1 = before any training)"),
     "split": ("String", None, "train / valid"),
     "loss": ("Double", None, "total loss"),
     "rmse_e_per_atom_meV": ("Double", "meV", "energy RMSE per atom"),
     "rmse_f_meV_A": ("Double", "meV/A", "force RMSE"),
+    "valid_energy": ("Double", None, "energy term over the validation pass"),
+    "valid_forces": ("Double", None, "forces term over the validation pass"),
+    "valid_hessian": ("Double", None, "Hessian term over the validation pass (fixed probes)"),
 }
+
+EPOCH_KEYS = ("epoch", "split", "loss", "rmse_e_per_atom_meV", "rmse_f_meV_A",
+              "valid_energy", "valid_forces", "valid_hessian")
 
 
 def sha256_file(path):
@@ -160,13 +228,88 @@ def split_files(dataset_dir, name, level, out_dir):
     return out, counts
 
 
+_CONFIG_WEIGHT = re.compile(r'(?:^|\s)config_weight=("?)([-+0-9.eE]+)\1')
+
+
+def replay_file_summary(path):
+    """What the Record says about a Replay file, from its frame headers only (a
+    68,000-frame file is read in seconds, never parsed as atoms): `n_frames`, the
+    `config_weight` values seen (a set), and `config_weight` as one string -- the value,
+    `mixed`, or `1.0` when no frame carries the key (mace's default)."""
+    n, weights = 0, set()
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        while True:
+            line = fh.readline()
+            if not line:
+                break
+            s = line.strip()
+            if not s:
+                continue
+            try:
+                nat = int(s.split()[0])
+            except ValueError:
+                raise ValueError("{}: expected an atom count, read {!r}".format(path, s[:40]))
+            header = fh.readline()
+            m = _CONFIG_WEIGHT.search(header)
+            weights.add(float(m.group(2)) if m else 1.0)
+            n += 1
+            for _ in range(nat):
+                fh.readline()
+    if not weights:
+        label = "-"
+    elif len(weights) == 1:
+        label = repr(float(next(iter(weights))))
+    else:
+        label = "mixed"
+    return dict(n_frames=n, weights=weights, config_weight=label)
+
+
+def stage_two_weights(hessian_weight, forces_weight, swa_forces_weight, swa_hessian_weight=None):
+    """The rule of ticket 21: w_H^(2) = w_H x w_F^(2) / w_F unless given."""
+    if swa_hessian_weight is not None:
+        return float(swa_hessian_weight)
+    if not forces_weight:
+        return float(hessian_weight)
+    return float(hessian_weight) * float(swa_forces_weight) / float(forces_weight)
+
+
+def control_settings(max_epochs, lr=None, scheduler_patience=DEFAULT_SCHEDULER_PATIENCE, patience=DEFAULT_PATIENCE,
+                     eval_interval=DEFAULT_EVAL_INTERVAL, ema=True, swa=True, start_swa=None, swa_lr=None,
+                     swa_energy_weight=DEFAULT_SWA_ENERGY_WEIGHT, swa_forces_weight=DEFAULT_SWA_FORCES_WEIGHT,
+                     hessian_weight=1.0, forces_weight=100.0, swa_hessian_weight=None):
+    """Every control value with its default resolved, as one dict (the Record's and the
+    argv's single source): LR, SCHEDULER_PATIENCE, PATIENCE, EVAL_INTERVAL, EMA, SWA,
+    START_SWA (3 x max_epochs // 4, at least 1), SWA_LR (LR / 40), the Stage Two weights."""
+    lr = DEFAULT_LR if lr is None else float(lr)
+    max_epochs = int(max_epochs)
+    return dict(
+        LR=float(lr),
+        SCHEDULER_PATIENCE=int(scheduler_patience), PATIENCE=int(patience), EVAL_INTERVAL=int(eval_interval),
+        EMA=bool(ema), SWA=bool(swa),
+        START_SWA=int(start_swa) if start_swa is not None else max(1, 3 * max_epochs // 4),
+        SWA_LR=float(swa_lr) if swa_lr is not None else float(lr) / SWA_LR_RATIO,
+        SWA_ENERGY_WEIGHT=float(swa_energy_weight), SWA_FORCES_WEIGHT=float(swa_forces_weight),
+        SWA_HESSIAN_WEIGHT=stage_two_weights(hessian_weight, forces_weight, swa_forces_weight, swa_hessian_weight),
+    )
+
+
 def mace_argv(train_file, valid_file, run, work_dir, foundation, level, *, energy_weight=1.0,
               forces_weight=100.0, hessian_weight=1.0, probe="rademacher", n_probes=4,
-              mode_weighting="entropy", max_epochs=100, batch_size=4, valid_batch_size=None,
-              seed=123, device="cpu", lr=None, multiheads=False, pt_train_file=None,
-              num_samples_pt=5000, extra=()):
+              mode_weighting=phl_loss.DEFAULT_MODE_WEIGHTING, max_epochs=100, batch_size=4, valid_batch_size=None,
+              seed=123, device="cpu", lr=None, multiheads=False, pt_train_file=None, pt_valid_file=None,
+              scheduler_patience=DEFAULT_SCHEDULER_PATIENCE, patience=DEFAULT_PATIENCE,
+              eval_interval=DEFAULT_EVAL_INTERVAL, ema=True, swa=True, start_swa=None, swa_lr=None,
+              swa_energy_weight=DEFAULT_SWA_ENERGY_WEIGHT, swa_forces_weight=DEFAULT_SWA_FORCES_WEIGHT,
+              swa_hessian_weight=None, extra=()):
     """mace's command line for one fine-tune, as a list. The keys are the Dataset's
-    (`REF_*`), the loss is ours by name, the dtype is float64 because the Labels are."""
+    (`REF_*`), the loss is ours by name, the dtype is float64 because the Labels are,
+    every control flag is explicit (ticket 21), and the Replay is the file and nothing
+    else (ticket 18: no `--num_samples_pt`, the duplication threshold 0)."""
+    ctl = control_settings(max_epochs, lr=lr, scheduler_patience=scheduler_patience, patience=patience,
+                           eval_interval=eval_interval, ema=ema, swa=swa, start_swa=start_swa, swa_lr=swa_lr,
+                           swa_energy_weight=swa_energy_weight, swa_forces_weight=swa_forces_weight,
+                           hessian_weight=hessian_weight, forces_weight=forces_weight,
+                           swa_hessian_weight=swa_hessian_weight)
     argv = [
         "--name", str(run),
         "--work_dir", str(work_dir),
@@ -192,13 +335,26 @@ def mace_argv(train_file, valid_file, run, work_dir, foundation, level, *, energ
         "--default_dtype", "float64",
         "--error_table", "PerAtomRMSE",
         "--save_cpu",
+        # the control (ticket 21): explicit, so the config file and the Record say it
+        "--lr", repr(ctl["LR"]),
+        "--scheduler_patience", str(ctl["SCHEDULER_PATIENCE"]),
+        "--patience", str(ctl["PATIENCE"]),
+        "--eval_interval", str(ctl["EVAL_INTERVAL"]),
     ]
-    if lr is not None:
-        argv += ["--lr", repr(float(lr))]
+    if ctl["EMA"]:
+        argv += ["--ema"]
+    if ctl["SWA"]:
+        argv += ["--swa", "--start_swa", str(ctl["START_SWA"]), "--swa_lr", repr(ctl["SWA_LR"]),
+                 "--swa_energy_weight", repr(ctl["SWA_ENERGY_WEIGHT"]),
+                 "--swa_forces_weight", repr(ctl["SWA_FORCES_WEIGHT"]),
+                 "--swa_hessian_weight", repr(ctl["SWA_HESSIAN_WEIGHT"])]
     if multiheads:
-        argv += ["--multiheads_finetuning", "True", "--num_samples_pt", str(int(num_samples_pt))]
+        argv += ["--multiheads_finetuning", "True",
+                 "--real_pt_data_ratio_threshold", repr(REAL_PT_DATA_RATIO_THRESHOLD)]
         if pt_train_file:
             argv += ["--pt_train_file", str(pt_train_file)]
+        if pt_valid_file:
+            argv += ["--pt_valid_file", str(pt_valid_file)]
     else:
         argv += ["--multiheads_finetuning", "False"]
     argv += [str(a) for a in extra]
@@ -222,26 +378,96 @@ def argv_pairs(argv):
 
 
 _EPOCH = re.compile(
-    r"Epoch (?P<epoch>\d+):.*?(?P<valid>head: \w+, )?loss=(?P<loss>[-\d.eE+]+)"
+    r"(?:Epoch (?P<epoch>\d+)|(?P<initial>Initial)):.*?(?:head: (?P<head>\w+), )?loss=(?P<loss>[-\d.eE+]+)"
     r"(?:.*?RMSE_E_per_atom=\s*(?P<rmse_e>[-\d.eE+]+) meV)?"
     r"(?:.*?RMSE_F=\s*(?P<rmse_f>[-\d.eE+]+) meV / A)?")
+#: mace's pretraining head: its validation rows are not the fine-tune's curves
+PT_HEAD = "pt_head"
+INITIAL_EPOCH = -1
+_VALID_TERMS = re.compile(
+    r"openQHA loss \(valid\): energy=(?P<e>[-\d.eE+]+|-) forces=(?P<f>[-\d.eE+]+|-) hessian=(?P<h>[-\d.eE+]+|-)")
+_STAGE_TWO = re.compile(r"Changing loss based on Stage Two Weights")
+_HEAD = re.compile(r"Processing head (?P<head>\w+)")
+_HEAD_COUNTS = re.compile(r"Total number of configurations: train=(?P<train>\d+), valid=(?P<valid>\d+)")
+_PT_COUNTS = re.compile(r"Total number of configurations in pretraining: train=(?P<train>\d+), valid=(?P<valid>\d+)")
+
+
+def _num(s):
+    return None if s in (None, "-") else float(s)
 
 
 def parse_epochs(log_text):
-    """The epoch table out of mace's log. mace prints one line per validation; the
-    training loss of the same epoch is in `results/<run>_*.txt` as JSON lines, which is
-    where the per-term numbers live too."""
+    """The epoch table out of mace's log. mace prints one line per validation (the
+    `Initial:` one before any training is epoch -1); the loss's own line (`openQHA loss
+    (valid): ...`, commit C) precedes it and carries the three terms, which are attached
+    to the next Epoch line. The pretraining head's lines (`head: pt_head`) are dropped:
+    they are not the fine-tune's curves. The training loss of the same epoch is in
+    `results/<run>_*.txt` as JSON lines (`parse_results`)."""
     rows = []
-    for m in _EPOCH.finditer(log_text):
-        rows.append(dict(epoch=int(m.group("epoch")), split="valid", loss=float(m.group("loss")),
-                         rmse_e_per_atom_meV=float(m.group("rmse_e")) if m.group("rmse_e") else None,
-                         rmse_f_meV_A=float(m.group("rmse_f")) if m.group("rmse_f") else None))
+    pending = None
+    for line in log_text.splitlines():
+        m = _VALID_TERMS.search(line)
+        if m:
+            pending = dict(valid_energy=_num(m.group("e")), valid_forces=_num(m.group("f")),
+                           valid_hessian=_num(m.group("h")))
+            continue
+        m = _EPOCH.search(line)
+        if m:
+            if m.group("head") == PT_HEAD:
+                pending = None
+                continue
+            row = dict(epoch=INITIAL_EPOCH if m.group("initial") else int(m.group("epoch")), split="valid",
+                       loss=float(m.group("loss")),
+                       rmse_e_per_atom_meV=float(m.group("rmse_e")) if m.group("rmse_e") else None,
+                       rmse_f_meV_A=float(m.group("rmse_f")) if m.group("rmse_f") else None,
+                       valid_energy=None, valid_forces=None, valid_hessian=None)
+            if pending:
+                row.update(pending)
+                pending = None
+            rows.append(row)
     return rows
+
+
+def parse_stage_two_epoch(log_text):
+    """The epoch mace switched to Stage Two at (the first Epoch line after the switch
+    message), or -1."""
+    switched = False
+    for line in log_text.splitlines():
+        if _STAGE_TWO.search(line):
+            switched = True
+            continue
+        if switched:
+            m = _EPOCH.search(line)
+            if m:
+                return int(m.group("epoch"))
+    return -1
+
+
+def parse_head_counts(log_text):
+    """mace's per-head frame counts from its log: `{head: (train, valid)}` for every
+    `Processing head` block, plus `pt` from the pretraining summary line (the count
+    after any duplication; equal to the head's when the threshold is 0)."""
+    out, head = {}, None
+    for line in log_text.splitlines():
+        m = _HEAD.search(line)
+        if m:
+            head = m.group("head")
+            continue
+        m = _HEAD_COUNTS.search(line)
+        if m and head:
+            out[head] = (int(m.group("train")), int(m.group("valid")))
+            continue
+        m = _PT_COUNTS.search(line)
+        if m:
+            out["pt"] = (int(m.group("train")), int(m.group("valid")))
+    return out
 
 
 def parse_results(results_dir):
     """mace's `results/*.txt`: one JSON object per evaluation (`mode`, `epoch`, `loss`,
-    the error columns). Both splits, in the order they were written."""
+    the error columns; the loss's three validation terms through commit C). Both splits,
+    in the order they were written; the evaluation before any training (`epoch` null)
+    is epoch -1; the pretraining head's rows (`head` = pt_head) are dropped."""
     rows = []
     for path in sorted(Path(results_dir).glob("*.txt")):
         for line in path.read_text().splitlines():
@@ -252,15 +478,47 @@ def parse_results(results_dir):
                 r = json.loads(line)
             except ValueError:
                 continue
-            if r.get("epoch") is None:
+            if r.get("head") == PT_HEAD:
                 continue
+            valid = not str(r.get("mode", "")).startswith("opt")
+            if r.get("epoch") is None:
+                if not valid:
+                    continue
+                r["epoch"] = INITIAL_EPOCH
             rows.append(dict(epoch=int(r["epoch"]),
-                             split="train" if str(r.get("mode", "")).startswith("opt") else "valid",
+                             split="valid" if valid else "train",
                              loss=float(r["loss"]) if r.get("loss") is not None else None,
                              rmse_e_per_atom_meV=(float(r["rmse_e_per_atom"]) * 1000.0
                                                  if r.get("rmse_e_per_atom") is not None else None),
-                             rmse_f_meV_A=(float(r["rmse_f"]) * 1000.0 if r.get("rmse_f") is not None else None)))
+                             rmse_f_meV_A=(float(r["rmse_f"]) * 1000.0 if r.get("rmse_f") is not None else None),
+                             valid_energy=_num(r.get("valid_energy_term")) if valid else None,
+                             valid_forces=_num(r.get("valid_forces_term")) if valid else None,
+                             valid_hessian=_num(r.get("valid_hessian_term")) if valid else None))
     return rows
+
+
+def validation_curves(epochs):
+    """The three curves as `{name: [(epoch, value), ...]}` from the epoch rows (valid
+    rows with a value; one point per epoch, the last written)."""
+    out = {}
+    for name in ("valid_energy", "valid_forces", "valid_hessian"):
+        by_epoch = {}
+        for r in epochs:
+            if r["split"] == "valid" and r.get(name) is not None:
+                by_epoch[r["epoch"]] = float(r[name])
+        out[name] = sorted(by_epoch.items())
+    return out
+
+
+def curve_moved(points, tol=FLAT_CURVE_TOL):
+    """False when the curve has fewer than two points or its range is below `tol` of its
+    magnitude: the term did not act (a flat Hessian curve is the sign of ticket 18's bug)."""
+    vals = [v for _e, v in points]
+    if len(vals) < 2:
+        return False
+    span = max(vals) - min(vals)
+    scale = max(abs(v) for v in vals) or 1.0
+    return span > tol * scale
 
 
 def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run=False,
@@ -268,6 +526,9 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
     """One fine-tune, end to end: the run directory, the split files, mace's arguments,
     `mace.cli.run_train.run`, the Record. Returns the info dict (`--dry-run`: the argv
     and the info without training)."""
+    if "num_samples_pt" in settings:
+        raise TypeError("num_samples_pt is gone (ticket 18): the Replay's size is its file's; "
+                        "draw it with scripts/tooling/s0_spice_pt_draw.py --n N")
     dataset_dir = Path(dataset_dir)
     run_dir = dataset_dir / STEP / run
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -282,12 +543,28 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
     config_file = run_dir / "config.yaml"
     config_file.write_text("\n".join("{}: {}".format(k, v) for k, v in argv_pairs(argv).items()) + "\n",
                            encoding="utf-8")
+    ctl = control_settings(settings.get("max_epochs", 100), lr=settings.get("lr"),
+                           scheduler_patience=settings.get("scheduler_patience", DEFAULT_SCHEDULER_PATIENCE),
+                           patience=settings.get("patience", DEFAULT_PATIENCE),
+                           eval_interval=settings.get("eval_interval", DEFAULT_EVAL_INTERVAL),
+                           ema=settings.get("ema", True), swa=settings.get("swa", True),
+                           start_swa=settings.get("start_swa"), swa_lr=settings.get("swa_lr"),
+                           swa_energy_weight=settings.get("swa_energy_weight", DEFAULT_SWA_ENERGY_WEIGHT),
+                           swa_forces_weight=settings.get("swa_forces_weight", DEFAULT_SWA_FORCES_WEIGHT),
+                           hessian_weight=settings.get("hessian_weight", 1.0),
+                           forces_weight=settings.get("forces_weight", 100.0),
+                           swa_hessian_weight=settings.get("swa_hessian_weight"))
+
+    multiheads = bool(settings.get("multiheads", False))
+    pt_file = settings.get("pt_train_file") if multiheads else None
+    replay = replay_file_summary(pt_file) if pt_file else dict(n_frames=0, config_weight="-")
+    n_hess = counts["train"][1]
 
     info = dict(
         RUN=str(run), TAG=str(tag), NAME=str(name), LEVEL=str(level),
         DATASET_DIR=str(dataset_dir), INDEX_FILE=str(dataset_dir / "index.dat"),
         TRAIN_FILE=str(files["train"]), VALID_FILE=str(files["valid"]),
-        N_TRAIN=counts["train"][0], N_TRAIN_HESSIAN=counts["train"][1],
+        N_TRAIN=counts["train"][0], N_TRAIN_HESSIAN=n_hess,
         N_VALID=counts["valid"][0], N_VALID_HESSIAN=counts["valid"][1],
         FOUNDATION_MODEL=foundation_name, FOUNDATION_PARAMS_SHA256=fp_base["params_sha256"],
         ENGINE_PARAMS_SHA256=fp_base["params_sha256"],
@@ -298,17 +575,26 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
         HESSIAN_WEIGHT=float(settings.get("hessian_weight", 1.0)),
         PROBE=str(settings.get("probe", "rademacher")),
         N_PROBES=int(settings.get("n_probes", 4)),
-        MODE_WEIGHTING=str(settings.get("mode_weighting", "entropy")),
+        MODE_WEIGHTING=str(settings.get("mode_weighting", phl_loss.DEFAULT_MODE_WEIGHTING)),
+        VALID_PROBES=phl_loss.VALID_PROBES_LABEL,
         MAX_NUM_EPOCHS=int(settings.get("max_epochs", 100)),
         BATCH_SIZE=int(settings.get("batch_size", 4)),
         SEED=int(settings.get("seed", 123)),
         DEVICE=str(settings.get("device", "cpu")), DTYPE="float64",
-        MULTIHEADS=bool(settings.get("multiheads", False)),
-        PT_TRAIN_FILE=str(settings.get("pt_train_file") or "-"),
-        NUM_SAMPLES_PT=int(settings.get("num_samples_pt", 5000)),
+        STAGE_TWO_EPOCH=-1,
+        MULTIHEADS=multiheads,
+        PT_TRAIN_FILE=str(pt_file or "-"),
+        PT_VALID_FILE=str(settings.get("pt_valid_file") or "-") if multiheads else "-",
+        PT_N_FRAMES=int(replay["n_frames"]),
+        PT_CONFIG_WEIGHT=str(replay["config_weight"]),
+        PT_HEAD_TRAIN=-1, PT_HEAD_VALID=-1, FT_HEAD_TRAIN=-1, FT_HEAD_VALID=-1,
+        REPLAY_PER_HESSIAN_FRAME=(float(replay["n_frames"]) / n_hess) if (n_hess and replay["n_frames"]) else 0.0,
+        REAL_PT_DATA_RATIO_THRESHOLD=REAL_PT_DATA_RATIO_THRESHOLD if multiheads else 0.0,
+        HESSIAN_CURVE_MOVED=False,
         MACE_VERSION=fork["mace_version"], MACE_FORK=engine.MACE_FORK,
         MACE_FORK_COMMIT=fork["mace_fork_commit"],
     )
+    info.update(ctl)
     if dry_run:
         return dict(info=info, argv=argv, run_dir=run_dir, epochs=[], dry_run=True)
 
@@ -320,10 +606,21 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
     if not model_file.is_file():
         stage_two = run_dir / "{}_stagetwo.model".format(run)
         model_file = stage_two if stage_two.is_file() else model_file
+    log_text = "\n".join(p.read_text(errors="replace") for p in sorted((run_dir / "logs").glob("*.log")))
     epochs = parse_results(run_dir / "results")
     if not epochs:
-        epochs = parse_epochs("\n".join(p.read_text(errors="replace") for p in (run_dir / "logs").glob("*.log")))
-    info["N_EPOCHS"] = len({r["epoch"] for r in epochs})
+        epochs = parse_epochs(log_text)
+    heads = parse_head_counts(log_text)
+    if "pt" in heads:
+        info["PT_HEAD_TRAIN"], info["PT_HEAD_VALID"] = heads["pt"]
+    elif "pt_head" in heads:
+        info["PT_HEAD_TRAIN"], info["PT_HEAD_VALID"] = heads["pt_head"]
+    ft = [h for h in heads if h not in ("pt", "pt_head")]
+    if ft:
+        info["FT_HEAD_TRAIN"], info["FT_HEAD_VALID"] = heads[ft[0]]
+    info["STAGE_TWO_EPOCH"] = parse_stage_two_epoch(log_text)
+    info["HESSIAN_CURVE_MOVED"] = curve_moved(validation_curves(epochs)["valid_hessian"])
+    info["N_EPOCHS"] = len({r["epoch"] for r in epochs if r["epoch"] != INITIAL_EPOCH})
     info["SECONDS"] = float(seconds)
     info["SECONDS_PER_EPOCH"] = float(seconds / max(1, info["N_EPOCHS"]))
     info["MODEL_FILE"] = str(model_file) if model_file.is_file() else "-"
@@ -352,9 +649,18 @@ def _run_mace(argv, run_dir):
         os.chdir(cwd)
 
 
+def _epoch_row(r):
+    return dict(epoch=r["epoch"], split=r["split"], loss=r.get("loss"),
+                rmse_e_per_atom_meV=r.get("rmse_e_per_atom_meV"), rmse_f_meV_A=r.get("rmse_f_meV_A"),
+                valid_energy=r.get("valid_energy"), valid_forces=r.get("valid_forces"),
+                valid_hessian=r.get("valid_hessian"))
+
+
 def write_record(run_dir, info, epochs):
+    epochs = [_epoch_row(r) for r in epochs]
     rows = [dict(EPOCH=r["epoch"], SPLIT=r["split"], LOSS=r["loss"],
-                 RMSE_E_PER_ATOM_MEV=r["rmse_e_per_atom_meV"], RMSE_F_MEV_A=r["rmse_f_meV_A"])
+                 RMSE_E_PER_ATOM_MEV=r["rmse_e_per_atom_meV"], RMSE_F_MEV_A=r["rmse_f_meV_A"],
+                 VALID_ENERGY=r["valid_energy"], VALID_FORCES=r["valid_forces"], VALID_HESSIAN=r["valid_hessian"])
             for r in epochs]
     missing = prop.write(Path(run_dir) / (STEP + ".toml"), {"Calculation_Info": info, "Epoch": rows},
                          SCHEMA, prop.NORMAL_TERMINATION, PROGNAME)
@@ -364,6 +670,10 @@ def write_record(run_dir, info, epochs):
     _write_report(Path(run_dir) / (STEP + ".out"), info, epochs)
 
 
+def _fmt(v, spec="{:.6e}"):
+    return "-" if v is None else spec.format(v)
+
+
 def _write_report(path, info, epochs):
     rep = report.Report(PROGNAME, "Fine-tune {!r} of {} on {}".format(
         info["RUN"], info["FOUNDATION_MODEL"], info["NAME"]))
@@ -371,9 +681,26 @@ def _write_report(path, info, epochs):
     for k in ("TAG", "NAME", "LEVEL", "DATASET_DIR", "TRAIN_FILE", "N_TRAIN", "N_TRAIN_HESSIAN",
               "VALID_FILE", "N_VALID", "N_VALID_HESSIAN"):
         rep.kv(k, info.get(k))
-    rep.section("the loss (design-phl-loss.md eq. 11; T03)")
-    for k in ("LOSS", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "PROBE", "N_PROBES",
-              "MODE_WEIGHTING", "MULTIHEADS", "PT_TRAIN_FILE", "NUM_SAMPLES_PT"):
+    rep.section("the loss (eq. 11; the Cartesian target S0-C-53; T04 / T05)")
+    for k in ("LOSS", "MODE_WEIGHTING", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "PROBE", "N_PROBES",
+              "VALID_PROBES"):
+        rep.kv(k, info.get(k))
+    rep.section("the Replay (CONTEXT Replay; S0-C-56/57)")
+    for k in ("MULTIHEADS", "PT_TRAIN_FILE", "PT_VALID_FILE", "PT_N_FRAMES", "PT_CONFIG_WEIGHT", "PT_HEAD_TRAIN",
+              "PT_HEAD_VALID", "FT_HEAD_TRAIN", "FT_HEAD_VALID", "REPLAY_PER_HESSIAN_FRAME",
+              "REAL_PT_DATA_RATIO_THRESHOLD"):
+        rep.kv(k, info.get(k))
+    if info.get("MULTIHEADS"):
+        rep.note("REPLAY_PER_HESSIAN_FRAME = PT_N_FRAMES / N_TRAIN_HESSIAN is the Replay's size as the scan rows "
+                 "R0-R4 define it (R1 ~ 0.3, R2 ~ 1, R3 ~ 4 on draw300); the same file is a different ratio on "
+                 "every Dataset. The counts PT_HEAD_* / FT_HEAD_* are mace's own, parsed from its log, and equal "
+                 "the files' because the duplication threshold is 0.")
+    rep.section("the control (S0-C-55; the base's recipe)")
+    for k in ("LR", "SCHEDULER_PATIENCE", "PATIENCE", "EVAL_INTERVAL", "EMA", "SWA", "START_SWA", "SWA_LR",
+              "STAGE_TWO_EPOCH"):
+        rep.kv(k, info.get(k))
+    rep.section("StageTwo weights (w_H^(2) = w_H x w_F^(2) / w_F)")
+    for k in ("SWA_ENERGY_WEIGHT", "SWA_FORCES_WEIGHT", "SWA_HESSIAN_WEIGHT"):
         rep.kv(k, info.get(k))
     rep.section("identity")
     for k in ("FOUNDATION_MODEL", "FOUNDATION_PARAMS_SHA256", "MODEL_FILE", "MODEL_PARAMS_SHA256",
@@ -384,13 +711,19 @@ def _write_report(path, info, epochs):
     for k in ("MAX_NUM_EPOCHS", "N_EPOCHS", "BATCH_SIZE", "SECONDS", "SECONDS_PER_EPOCH"):
         rep.kv(k, info.get(k))
     if epochs:
-        rep.section("epochs")
-        rep.table(["epoch", "split", "loss", "RMSE E/atom meV", "RMSE F meV/A"],
-                  [[r["epoch"], r["split"],
-                    "-" if r["loss"] is None else "{:.6f}".format(r["loss"]),
-                    "-" if r["rmse_e_per_atom_meV"] is None else "{:.2f}".format(r["rmse_e_per_atom_meV"]),
-                    "-" if r["rmse_f_meV_A"] is None else "{:.2f}".format(r["rmse_f_meV_A"])]
+        curves = validation_curves(epochs)
+        rep.section("validation curves (the three terms per epoch; the Hessian term is the fixed-probe estimator)")
+        rep.kv("HESSIAN_CURVE_MOVED", info.get("HESSIAN_CURVE_MOVED"))
+        if not info.get("HESSIAN_CURVE_MOVED"):
+            rep.note("WARNING: the Hessian term did not move across the validation epochs -- the term did not act "
+                     "(ticket 18's failure mode: the loss replaced in multihead mode, or w_H 0) or the run is one epoch.")
+        rep.table(["epoch", "split", "loss", "RMSE E/atom meV", "RMSE F meV/A", "valid E term", "valid F term",
+                   "valid H term"],
+                  [[r["epoch"], r["split"], _fmt(r["loss"], "{:.6f}"),
+                    _fmt(r["rmse_e_per_atom_meV"], "{:.2f}"), _fmt(r["rmse_f_meV_A"], "{:.2f}"),
+                    _fmt(r["valid_energy"]), _fmt(r["valid_forces"]), _fmt(r["valid_hessian"])]
                    for r in epochs])
+        del curves
     rep.write(path)
 
 
@@ -398,12 +731,16 @@ def registry_entry(info):
     """The `ENGINES` lines for the fine-tuned potential (ticket 01's recipe): the
     Dataset's index and the config SHA are its `source`, so the numbers can be traced."""
     name = "{}-{}".format(info["FOUNDATION_MODEL"], info["RUN"])
+    replay = ""
+    if info.get("MULTIHEADS") and info.get("PT_N_FRAMES"):
+        replay = "; Replay {} frames ({:.2f} per Hessian frame, config_weight {})".format(
+            info["PT_N_FRAMES"], float(info.get("REPLAY_PER_HESSIAN_FRAME") or 0.0), info.get("PT_CONFIG_WEIGHT"))
     return dict(name=name,
                 filename="{}.model".format(name),
                 source="{} + config {}".format(info["INDEX_FILE"], info["CONFIG_SHA256"][:16]),
-                note="Fine-tuned on {} ({} frames, {} with Hessians) with the projected Hessian loss "
-                     "(w_H {}, probe {} k={}, {} weighting); mace fork {}.".format(
-                         info["NAME"], info["N_TRAIN"], info["N_TRAIN_HESSIAN"], info["HESSIAN_WEIGHT"],
-                         info["PROBE"], info["N_PROBES"], info["MODE_WEIGHTING"],
+                note="Fine-tuned on {} ({} frames, {} with Hessians) with the Hessian loss "
+                     "(target {}, w_H {}, probe {} k={}){}; mace fork {}.".format(
+                         info["NAME"], info["N_TRAIN"], info["N_TRAIN_HESSIAN"], info["MODE_WEIGHTING"],
+                         info["HESSIAN_WEIGHT"], info["PROBE"], info["N_PROBES"], replay,
                          info["MACE_FORK_COMMIT"][:12]),
                 params_sha256=info.get("MODEL_PARAMS_SHA256"))

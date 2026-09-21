@@ -12,6 +12,14 @@ A6 (H_r := 0.81 H_theta -> the closed form, non-zero gradient) through the modul
 a batch whose `hessian` field has the wrong length is refused; `build(args)` returns
 the class with the flags and `repr` names them; the Rademacher estimator with k = 4
 over 400 seeds has its mean within 3 sigma of the exact loss and the variance eq. 8 gives.
+
+Ticket 21 (S0-C-53, S0-C-55): `mode_weighting = cartesian` (the default) makes the HVP
+path with the 3N unit probes and the full-matrix path equal `phl.cartesian_loss_full` to
+1e-12 and the batch mean holds; in eval mode the Hessian term is the same on two calls
+(1e-12, the frame's fixed probes), differs between frames, and differs from a training
+call's fresh draw; `eval_summary()` averages the three terms over the pass and resets;
+`wants_hessian_at_eval` is False and `wants_force_graph_at_eval` True; `build(args)`
+defaults to cartesian; probe = modes is refused on the cartesian target.
 """
 import argparse
 import sys
@@ -231,14 +239,92 @@ def main():
           isinstance(b, phl_loss.WeightedEnergyForcesHessianLoss) and float(b.hessian_weight) == 7.5 and b.n_probes == 2
           and b.probe == "gaussian" and b.mode_weighting == "none" and b.seed == 11 and float(b.forces_weight) == 100.0)
     check("repr names every setting", "hessian_weight=7.500" in repr(b) and "probe='gaussian'" in repr(b) and "seed=11" in repr(b), repr(b))
-    check("wants_hessian_at_eval is set (the fork's evaluate reads it)", b.wants_hessian_at_eval is True)
+    check("wants_hessian_at_eval is False and wants_force_graph_at_eval True (S0-C-55; the fork's evaluate reads both)",
+          b.wants_hessian_at_eval is False and b.wants_force_graph_at_eval is True)
+    b_default = phl_loss.build(argparse.Namespace(energy_weight=1.0, forces_weight=100.0, hessian_weight=1.0, seed=1))
+    check("build(args) without the flag defaults to the cartesian target",
+          b_default.mode_weighting == "cartesian" and b_default.metric == "cartesian" and "cartesian" in repr(b_default))
     try:
         phl_loss.WeightedEnergyForcesHessianLoss(probe="hutchinson")
         check("an unknown probe is refused at construction", False)
     except ValueError:
         check("an unknown probe is refused at construction", True)
 
-    print("\n{} checks, {} failed".format(19, len(FAIL)))
+    # --- the Cartesian target (ticket 21) ------------------------------------------------------------
+    cart_a = phl.cartesian_loss_full(Ha_t, Ha)
+    cart_b = phl.cartesian_loss_full(Hb_t, Hb)
+    lc = phl_loss.WeightedEnergyForcesHessianLoss(probe="cartesian", mode_weighting="cartesian")
+    ref, pred = make_batch([(xa, ma, Ha)], toy)
+    est_c = float(lc.hvp_error(ref, pred))
+    full_c = float(lc.hessian_error_full(ref, full_hessian_pred(toy, ref, pred)))
+    check("cartesian target: the 3N unit probes through the HVP path = ||dH||^2/(9N^2) (1e-12)",
+          abs(est_c - cart_a) < 1e-12, (est_c, cart_a))
+    check("cartesian target: the full-matrix path = the same number (1e-12)", abs(full_c - cart_a) < 1e-12, (full_c, cart_a))
+    c = lc.constants(Ha, ma, xa)
+    check("cartesian FrameConstants: no reference modes, projector I, inv_sqrt_m 1, n_vib 3N, a seed from the Label",
+          c.modes_r is None and np.array_equal(c.projector, np.eye(3 * n_a)) and np.all(c.inv_sqrt_m == 1.0)
+          and c.n_vib == 3 * n_a and c.seed == phl_loss.frame_seed(Ha) and c.seed != phl_loss.frame_seed(Hb))
+    ref2, pred2 = make_batch([(xa, ma, Ha), (xb, mb, Hb)], toy)
+    two_c = float(lc.hvp_error(ref2, pred2))
+    check("cartesian target: two-molecule batch = mean of the single-molecule values (1e-13)",
+          abs(two_c - 0.5 * (cart_a + cart_b)) < 1e-13)
+    try:
+        phl_loss.WeightedEnergyForcesHessianLoss(probe="modes", mode_weighting="cartesian")
+        check("probe=modes is refused on the cartesian target", False)
+    except ValueError:
+        check("probe=modes is refused on the cartesian target", True)
+
+    # --- validation: four probes fixed per frame (S0-C-55) ---------------------------------------------
+    lv = phl_loss.WeightedEnergyForcesHessianLoss(probe="rademacher", n_probes=4, mode_weighting="cartesian", seed=3)
+    lv.eval()
+    ref, pred = make_batch([(xa, ma, Ha)], toy)
+    v1 = float(lv.hvp_error(ref, pred))
+    ref, pred = make_batch([(xa, ma, Ha)], toy)
+    v2 = float(lv.hvp_error(ref, pred))
+    check("eval mode: two calls on the same frame give the same Hessian term (1e-12) -- the probes are fixed",
+          abs(v1 - v2) < 1e-12 and v1 > 0, (v1, v2))
+    lv2 = phl_loss.WeightedEnergyForcesHessianLoss(probe="rademacher", n_probes=4, mode_weighting="cartesian", seed=99)
+    lv2.eval()
+    ref, pred = make_batch([(xa, ma, Ha)], toy)
+    check("... and a second module with another mace seed gives the same value: the probes come from the Label, not the seed",
+          abs(float(lv2.hvp_error(ref, pred)) - v1) < 1e-12)
+    vt_a, _r, _i = lv.constants(Ha, ma, xa).probes("rademacher", 4)
+    vt_b, _r, _i = lv.constants(Hb, mb, xb).probes("rademacher", 4)
+    check("different frames get different fixed probes (their Labels differ)",
+          vt_a.shape == (4, 3 * n_a) and vt_b.shape == (4, 3 * n_b) and not np.array_equal(vt_a[:, :12], vt_b[:, :12]))
+    lv.train()
+    ref, pred = make_batch([(xa, ma, Ha)], toy)
+    t1 = float(lv.hvp_error(ref, pred))
+    ref, pred = make_batch([(xa, ma, Ha)], toy)
+    t2 = float(lv.hvp_error(ref, pred))
+    check("training mode: fresh draws, two calls differ", abs(t1 - t2) > 1e-9, (t1, t2))
+    var_c = phl.estimator_variance(Ha_t, Ha, ma, xa, k=4, metric="cartesian")["rademacher"]
+    check("the fixed validation value is within 4 sigma of the exact Cartesian loss (eq. 8's sigma for k = 4)",
+          abs(v1 - cart_a) < 4 * np.sqrt(var_c), (v1, cart_a, np.sqrt(var_c)))
+    # the summary over a pass: E and F averaged per graph, H per labelled graph, then reset
+    lv.eval()
+    ref, pred = make_batch([(xa, ma, Ha), (xb, mb, None)], toy)
+    lv(ref, pred)
+    ref, pred = make_batch([(xb, mb, Hb)], toy)
+    lv(ref, pred)
+    e1, f1 = lv.last_terms["energy"], lv.last_terms["forces"]
+    summary = lv.eval_summary()
+    hb_fixed = float(lv.hvp_error(*make_batch([(xb, mb, Hb)], toy)))
+    check("eval_summary: three terms over the pass (H = mean of the two labelled graphs' fixed values), n_labelled 2, the label of the probes; then reset",
+          abs(summary["valid_hessian_term"] - 0.5 * (v1 + hb_fixed)) < 1e-12 and summary["valid_hessian_n_labelled"] == 2
+          and summary["valid_probes"] == "rademacher k=4 fixed" and summary["valid_target"] == "cartesian"
+          and summary["valid_forces_term"] is not None and summary["valid_energy_term"] is not None
+          and lv._eval_sums["n_batches"] == 0,           # reset; hvp_error alone (above) does not accumulate
+          summary)
+    lv.eval_summary()
+    check("eval_summary on an empty pass answers None terms", lv.eval_summary()["valid_hessian_term"] is None)
+    lv.train()
+    ref, pred = make_batch([(xa, ma, Ha)], toy)
+    lv(ref, pred)
+    check("training-mode forwards do not accumulate", lv._eval_sums["n_batches"] == 0)
+    del e1, f1
+
+    print("\n{} checks, {} failed".format(34, len(FAIL)))
     return 1 if FAIL else 0
 
 

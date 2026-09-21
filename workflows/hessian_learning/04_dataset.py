@@ -5,7 +5,10 @@ PRODUCTION. `openqha.data.dataset.build` over the selection of step 01. `--split
 other labelled frame goes to train / valid / test at 90 / 5 / 5 by its own seeded draw.
 `--split-by molecule` (the smoke set): test = whole molecules (the pinned seven + a
 per-stratum draw), valid = a fraction of the training molecules' labelled frames, train
-= the rest. pool = frames without a label at the level yet. Writes
+= the rest. pool = frames without a label at the level yet. `--train-generators basin`
+(the default; S0-C-54, ADR 0005): only basin frames may train; every labelled frame of
+another generator (displaced, merged, saddle) is a held-out frame in test, read by the
+judge and never trained on. Writes
 `{train,valid,test,pool}.<level>.extxyz` (with MACE-torch's REF_energy / REF_forces /
 REF_hessian keys and `split`), the single `mace_<name>.<level>.extxyz`, `index.dat`
 (with `classes`) and `dataset.{out,toml}` (with a `[[Class]]` table) under
@@ -30,7 +33,7 @@ def _repo_root():
 ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha import config                                   # noqa: E402
-from openqha.data import dataset, frame_labels               # noqa: E402
+from openqha.data import dataset, frame_labels, frames       # noqa: E402
 
 
 def main():
@@ -43,12 +46,21 @@ def main():
     ap.add_argument("--valid-fraction", type=float, default=None, help="default: the mode's (0.05 by frame, 0.1 by molecule)")
     ap.add_argument("--test-fraction", type=float, default=None, help="default: the mode's (0.05 by frame, 0.1 by molecule)")
     ap.add_argument("--seed", type=int, default=dataset.SEED)
+    ap.add_argument("--no-pinned", action="store_true",
+                    help="drop the pinned rule: the seven split by frame like any other molecule. A FIT Dataset "
+                         "(ticket 15) for measuring cost, the epoch-0 balance and w_H -- never a claim about "
+                         "generalisation, and the Record says PURPOSE = fit")
+    ap.add_argument("--train-generators", nargs="+", choices=list(frames.GENERATORS), default=list(dataset.TRAIN_GENERATORS),
+                    metavar="GEN", help="the generators whose frames may train (default: basin); the others are held out "
+                                        "in test for the judge (S0-C-54)")
     ap.add_argument("--export", choices=("openreact",), default=None)
     args = ap.parse_args()
     root = config.runs_root(config.load())
     args.name = args.name or args.tag[0]
     out = dataset.build(root, args.tag, args.name, level=args.level, split_by=args.split_by,
-                        valid_fraction=args.valid_fraction, test_fraction=args.test_fraction, seed=args.seed)
+                        valid_fraction=args.valid_fraction, test_fraction=args.test_fraction, seed=args.seed,
+                        pinned=() if args.no_pinned else dataset.PINNED,
+                        purpose="fit" if args.no_pinned else "judge", train_generators=tuple(args.train_generators))
     i = out["info"]
     for m in out["molecules"]:
         print("{:18s} {:9s} {:5s} {} frames {:3d} labelled {:3d}  train {:3d} valid {:3d} test {:3d} pool {:3d}".format(
@@ -63,6 +75,8 @@ def main():
           "{} with a Hessian  -> {}".format(
               i["NAME"], i["LEVEL"], i["SPLIT_BY"], i["N_MOLECULES"], i["N_TEST_MOLECULES"], i["N_FRAMES"], i["N_TRAIN"],
               i["N_VALID"], i["N_TEST"], i["N_POOL"], i["N_HESSIAN_FRAMES"], out["dir"]))
+    print("generators: train {} (basin frames in train {}); held out {} ({} labelled frames in test for the judge)".format(
+        " ".join(i["TRAIN_GENERATORS"]), i["N_TRAIN_BASIN"], " ".join(i["HELD_OUT_GENERATORS"]) or "-", i["N_TEST_HELD_OUT"]))
     if i["MERGED_FILE"] != "-":
         print("merged  {} ({} labelled frames, keys REF_energy / REF_forces / REF_hessian / split)".format(
             i["MERGED_FILE"], i["N_LABELLED"]))

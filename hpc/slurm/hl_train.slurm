@@ -6,9 +6,10 @@
 #     TAG=smoke RUN=gate PROBE=modes MAX_EPOCHS=2 \
 #         yhbatch -p ai -G 1 -c 12 -t 00:30:00 hpc/slurm/hl_train.slurm
 #
-#     # the campaign run (settings from ticket 15's smoke fit)
-#     TAG=draw300 RUN=prod1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 \
+#     # a scan row (tickets 16, 18, 19): the Replay file IS its size, s0_spice_pt_draw.py wrote it
+#     TAG=draw300 RUN=R1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 \
 #         MULTIHEADS=1 PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.extxyz \
+#         PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.valid.extxyz \
 #         yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
 #
 # WHAT RUNS: `workflows/hessian_learning/05_train.py`, which builds mace's arguments and
@@ -47,13 +48,13 @@ N_PROBES="${N_PROBES:-4}"
 HESSIAN_WEIGHT="${HESSIAN_WEIGHT:-1.0}"
 ENERGY_WEIGHT="${ENERGY_WEIGHT:-1.0}"
 FORCES_WEIGHT="${FORCES_WEIGHT:-100.0}"
-MODE_WEIGHTING="${MODE_WEIGHTING:-entropy}"
+MODE_WEIGHTING="${MODE_WEIGHTING:-cartesian}"      # the target (S0-C-53); entropy / none are diagnostics
 MAX_EPOCHS="${MAX_EPOCHS:-100}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 SEED="${SEED:-123}"
 MULTIHEADS="${MULTIHEADS:-0}"
-PT_TRAIN_FILE="${PT_TRAIN_FILE:-}"
-NUM_SAMPLES_PT="${NUM_SAMPLES_PT:-5000}"
+PT_TRAIN_FILE="${PT_TRAIN_FILE:-}"         # the Replay file (s0_spice_pt_draw.py); its frame count is the size
+PT_VALID_FILE="${PT_VALID_FILE:-}"         # its companion validation file (<stem>.valid.extxyz)
 EXTRA="${EXTRA:-}"                       # passed to the driver as is (e.g. --register)
 
 # ---- 1. site environment ------------------------------------------------------------------
@@ -107,8 +108,9 @@ ARGS=(--tag "$TAG" --name "$NAME" --run "$RUN" --level "$LEVEL" --device cuda
       --energy-weight "$ENERGY_WEIGHT" --forces-weight "$FORCES_WEIGHT" --hessian-weight "$HESSIAN_WEIGHT"
       --max-epochs "$MAX_EPOCHS" --batch-size "$BATCH_SIZE" --seed "$SEED")
 if [ "$MULTIHEADS" = "1" ]; then
-    ARGS+=(--multiheads --num-samples-pt "$NUM_SAMPLES_PT")
+    ARGS+=(--multiheads)
     [ -n "$PT_TRAIN_FILE" ] && ARGS+=(--pt-train-file "$PT_TRAIN_FILE")
+    [ -n "$PT_VALID_FILE" ] && ARGS+=(--pt-valid-file "$PT_VALID_FILE")
 fi
 # shellcheck disable=SC2206
 [ -n "$EXTRA" ] && ARGS+=($EXTRA)

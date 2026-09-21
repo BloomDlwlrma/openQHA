@@ -135,7 +135,9 @@ the quantum draw is available by name -- within a stated RMS displacement), `mer
 (a CREST conformer branch A merged into a basin), `saddle` (a merged conformer that re-optimised to a
 saddle at the reference) -- carrying, per Level that has been run on it, the energy,
 forces and Cartesian Hessian at that geometry. A frame's Hessian is the raw Cartesian
-matrix at a fixed geometry, gradient term included; it is not a frequency.
+matrix at a fixed geometry, gradient term included; it is not a frequency. "Stationary"
+of a frame means stationary on the ENGINE's surface (the basin was optimised with MACE):
+at the reference level the same geometry carries a gradient, which its Label keeps.
 _Avoid_: conformation (SPICE's word; collides with CREST's conformer), sample, structure
 
 **Frame set**:
@@ -155,8 +157,10 @@ A split of Frame sets over many molecules -- `train`, `valid`, `test`, and `pool
 frames that exist but carry no reference label yet -- written under the root as one
 file per split and one index naming every contributing Frame set, its molecule, basin,
 generator, split and the Levels present. The split is set when the Dataset is written
-and never recomputed: `valid` is drawn by frame from the training molecules, `test` is
-whole molecules the model has never seen.
+and never recomputed: `train` and `valid` hold frames of the training generators only
+(basin, since S0-C-54), `valid` drawn by frame from the training molecules; `test` is
+whole molecules the model has never seen, the by-frame test draw, and every labelled
+frame of a Held-out generator.
 _Avoid_: training set (alone -- that is one split), benchmark, corpus
 
 **Replay**:
@@ -165,10 +169,20 @@ set as the Dataset -- a fixed draw from SPICE's train split, one seed one file f
 campaign, energies and forces only, no Hessian -- so that the fine-tune keeps what the base
 knew. Its size is reported as frames per Hessian frame (the same file is a different ratio
 on every Dataset), its weight is each frame's `config_weight`; it never overlaps the
-forgetting set's molecules nor the in_distribution molecules, and the tool that draws it
-refuses when it would.
+forgetting set's molecules nor the in_distribution molecules: the tool that draws it
+skips their frames (SPICE's test split is by frame, so most molecules have frames on both
+sides) and refuses to write when what it drew would still overlap.
 _Avoid_: co-training (PFT's step loop, which mace does not do), pretraining head (the
 implementation's `pt_head`), fine-tune set
+
+**Held-out generator**:
+A Frame generator whose frames enter the Dataset, may carry Labels and are read by the
+Judge, but never enter `train` or `valid` -- today `displaced`, `merged` and `saddle`
+(S0-C-54, ADR 0005: the fine-tune learns basin Hessians only; the msRRHO result is the
+deliverable). Their labelled frames sit in `test` with `held_out_generator = yes` in the
+index, and the Judge reports them as reference rows (binned by RMS displacement), never
+as gates. Which generators train is the Dataset's `TRAIN_GENERATORS`, set at build time.
+_Avoid_: test generator, extrapolation set (that is what the rows measure, not the frames)
 
 **Held-out**, and the three distributions:
 What a judged number is worth depends on what the model had already seen, so every judge

@@ -1,12 +1,121 @@
-"""Workflow hessian_learning, step 06: judge -- NOT BUILT.
+"""Workflow hessian_learning, step 06: the judge (ticket 14).
 
-PRODUCTION (stub). Round 2 of the Hessian-learning grilling is open on the label level,
-the set, the loss (PHL vs full E-F-H), the weighting, forgetting and the judge
-thresholds (Q1-Q10 in .scratch/hessian-learning-set/grilling-round-2.md). This driver
-refuses until those are ruled; it exists so run.sh names every step of the workflow.
+PRODUCTION. The ruler of Algorithm 3: the SHIPPED full Hessian (`MACECalculator.get_hessian`)
+against the Label through `hessian_compare`, per structure class and per distribution,
+with the entropy tier read from the msRRHO Records, the forgetting line on a fixed SPICE
+draw, and one PASS / FAIL line per threshold. Nothing here calls the estimator or the
+training loss: the optimiser reads eq. 6, the judge reads eq. 1 exactly.
+
+    # the base model on the smoke Dataset -- the must-PASS calibration
+    python workflows/hessian_learning/06_judge.py --tag rings --name smoke --engine base
+
+    # the must-FAIL calibration: every frequency x0.9
+    python workflows/hessian_learning/06_judge.py --tag rings --name smoke --engine base --scale 0.9
+
+    # a fine-tuned potential (registered by 05_train --register)
+    python workflows/hessian_learning/06_judge.py --tag draw300 --engine MACE-OFF23_medium-prod1 \
+        --spice-file data/training_sets/spice_test_5000.extxyz
+
+Writes `<root>/<tag>/_datasets/<name>/judge/<run>/judge.{out,toml,dat}`.
 """
+import argparse
 import sys
+from pathlib import Path
+
+
+def _repo_root():
+    for _p in Path(__file__).resolve().parents:
+        if (_p / "openqha" / "__init__.py").is_file():
+            return _p
+    raise RuntimeError("openQHA package not found above " + __file__)
+
+
+ROOT = _repo_root()
+sys.path.insert(0, str(ROOT))
+from openqha import config                                   # noqa: E402
+from openqha.data import frame_labels                        # noqa: E402
+from openqha.potentials import engine                        # noqa: E402
+from openqha.training import judge                           # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--tag", required=True)
+    ap.add_argument("--name", default=None, help="the Dataset name (default: the tag)")
+    ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="the reference level of the Labels")
+    ap.add_argument("--engine", default="base",
+                    help="a registered engine name, or 'base' for the production default (S0_ENGINE)")
+    ap.add_argument("--base-engine", default=None, help="what to compare against (default: the production default)")
+    ap.add_argument("--scale", type=float, default=1.0,
+                    help="judge a deliberately wrong potential: forces x s, Hessian x s^2 (0.9 = the must-fail line)")
+    ap.add_argument("--split", action="append", default=None, help="Dataset splits to judge (default: test)")
+    ap.add_argument("--run", default=None, help="the judge run name (default: the engine, + the scale)")
+    ap.add_argument("--spice-file", default=None, help="the fixed SPICE draw for the forgetting line")
+    ap.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
+    ap.add_argument("--quiet", action="store_true", help="no per-frame progress")
+    args = ap.parse_args()
+
+    name = args.name or args.tag
+    splits = tuple(args.split or ("test",))
+    base_name = args.base_engine or engine.engine_name()
+    engine_name = base_name if args.engine == "base" else args.engine
+
+    calc, engine_name, prov = engine.calculator(device=args.device, name=engine_name)
+    base_calc, base_name, base_prov = engine.calculator(device=args.device, name=base_name)
+    run_name = args.run or (engine_name if args.scale == 1.0 else "{}_x{:g}".format(engine_name, args.scale))
+    if args.scale != 1.0:
+        calc = judge.ScaledCalculator(calc, args.scale)
+
+    print("judging    {}{}  against {}".format(engine_name, "" if args.scale == 1.0 else
+                                               "  x{:g} (calibration)".format(args.scale), base_name))
+    print("dataset    {} / {} at {}, splits {}".format(args.tag, name, args.level, ", ".join(splits)))
+    out = judge.run(config.runs_root(config.load()), args.tag, name, args.level, calc, engine_name,
+                    base_calc=base_calc, base_engine=base_name, run_name=run_name, splits=splits,
+                    scale=args.scale, spice_file=args.spice_file,
+                    engine_params_sha256=prov.get("params_sha256"),
+                    base_params_sha256=base_prov.get("params_sha256"),
+                    progress=None if args.quiet else (lambda s: print("  ...", s, end="\r", flush=True)))
+    if not args.quiet:
+        print(" " * 70, end="\r")
+    info = out["info"]
+    print("frames     {} from {} molecules in {:.1f} s".format(info["N_FRAMES"], info["N_MOLECULES"], info["SECONDS"]))
+
+    print("\n{:18s} {:>6s} {:>5s} {:>9s} {:>9s} {:>12s} {:>9s} {:>9s}".format(
+        "distribution", "frames", "mols", "low MAE", "MAE", "||A||^2/n", "base low", "base MAE"))
+    for d in out["distributions"]:
+        print("{:18s} {:6d} {:5d} {:>9s} {:>9s} {:>12s} {:>9s} {:>9s}".format(
+            d["DISTRIBUTION"], d["N_FRAMES"], d["N_MOLECULES"],
+            judge._num(d["FREQ_MAE_LOW_CM"], "{:.2f}"), judge._num(d["FREQ_MAE_CM"], "{:.2f}"),
+            judge._num(d["LOSS_EXACT"], "{:.4e}"), judge._num(d["BASE_FREQ_MAE_LOW_CM"], "{:.2f}"),
+            judge._num(d["BASE_FREQ_MAE_CM"], "{:.2f}")))
+    if out["classes"]:
+        print("\n{:24s} {:>6s} {:>5s} {:>9s} {:>9s}".format("class", "frames", "mols", "low MAE", "MAE"))
+        for c in out["classes"]:
+            print("{:24s} {:6d} {:5d} {:>9s} {:>9s}".format(
+                c["CLASS"], c["N_FRAMES"], c["N_MOLECULES"],
+                judge._num(c["FREQ_MAE_LOW_CM"], "{:.2f}"), judge._num(c["FREQ_MAE_CM"], "{:.2f}")))
+    if out["thermochemistry"]:
+        print("\n{:18s} {:>10s} {:>12s} {:>6s}  {}".format(
+            "molecule", "S_msRRHO", "model error", "anh", "source"))
+        for r in out["thermochemistry"]:
+            print("{:18s} {:>10s} {:>12s} {:6d}  {}".format(
+                r["QM9_INDEX"], judge._num(r["S_MSRRHO"], "{:.3f}"), judge._num(r["MODEL_ERROR_S_REF"], "{:+.3f}"),
+                r["N_ANHARMONIC"], "-" if r["SOURCE"] == "-" else Path(r["SOURCE"]).name))
+    if out["forgetting"]:
+        f = out["forgetting"]
+        print("\nforgetting  {} frames: E {} vs {} meV/atom, F {} vs {} meV/A".format(
+            f["N_FRAMES"], judge._num(f["ENGINE_E_RMSE_MEV_PER_ATOM"], "{:.2f}"),
+            judge._num(f["BASE_E_RMSE_MEV_PER_ATOM"], "{:.2f}"),
+            judge._num(f["ENGINE_F_RMSE_MEV_A"], "{:.2f}"), judge._num(f["BASE_F_RMSE_MEV_A"], "{:.2f}")))
+
+    print("\n{:34s} {:>10s} {:>10s}  {}".format("verdict line", "value", "threshold", "result"))
+    for line in out["verdict"]:
+        print("{:34s} {:>10s} {:>10s}  {}".format(
+            line["LINE"], judge._num(line["VALUE"], "{:.4f}"), judge._num(line["THRESHOLD"], "{:.4f}"), line["RESULT"]))
+    print("\nVERDICT    {}".format(info["VERDICT"]))
+    print("record     {}".format(out["run_dir"]))
+    return 0
+
 
 if __name__ == "__main__":
-    sys.stderr.write("06_judge: round 2 open (grilling-round-2.md Q1-Q10 unruled) -- nothing to run yet.\n")
-    raise SystemExit(2)
+    raise SystemExit(main())

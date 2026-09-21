@@ -1,15 +1,25 @@
 """Ticket 13 of the Hessian-learning set: `openqha.training.run` fine-tunes the real
-MACE-OFF23_medium through the mace fork, with the projected Hessian loss.
+MACE-OFF23_medium through the mace fork, with the Hessian loss; tickets 18 and 21
+(2026-09-21): the Replay that acts and is recorded, the Cartesian target, the
+fixed-probe validation and the explicit control.
 
 INTEGRATION (engine, CPU, minutes). Builds a two-molecule Dataset directory from the
-2-methyloxirane frame fixture (basin frame with a reference Hessian, displaced frames
-E-F only, as round-5 Q7 (b) labels them), then:
+2-methyloxirane frame fixture -- BASIN frames only in train and valid (S0-C-54), the
+displaced frames of the fixture unused here -- then:
 
-  * `--probe modes` for 2 epochs: the run directory, the model file, the Record, and
-    the epoch table; the training loss at epoch 0 is finite and the fine-tuned model
-    loads in `MACECalculator` with a different parameter fingerprint from the base;
-  * the exact validation term: mace's `evaluate` gave the loss a FULL Hessian (the
-    fork's `wants_hessian_at_eval` line), checked by reading the loss back;
+  * (21) a 4-epoch fine-tune with the default target (`cartesian`, `rademacher` k = 4):
+    the run directory, the model file, the Record; the three validation curves exist
+    (epoch -1 = the base model, then one per epoch); the epoch -1 Hessian value equals
+    `smoke_fit.epoch_zero_balance`'s Cartesian L_H within 4 s.e. of the fixed-probe
+    estimator (one frame, k = 4); Stage Two switches at epoch 3 and the log names the
+    swa weights; the fine-tuned model loads in `MACECalculator`;
+  * the validation estimator is the SAME on a second evaluate of the same model (the
+    probes are fixed per frame) and `wants_hessian_at_eval` is False (no full matrix);
+  * (18) a 3-epoch fine-tune with `--multiheads` and a two-frame Replay file with
+    `config_weight = 3`: the Record's `PT_N_FRAMES` 2, `PT_CONFIG_WEIGHT` 3.0,
+    `REPLAY_PER_HESSIAN_FRAME` 2, both heads' counts parsed from mace's log, the
+    validation Hessian curve NOT constant (the term acts: commit C kept the loss) and
+    `MACE_FORK_COMMIT` is not commit B's;
   * `--loss weighted` on the same files runs unchanged (the default path).
 
 SKIPs without the model or without the fork.
@@ -31,6 +41,8 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 FIX = ROOT / "tests" / "data" / "methyloxirane_frames"
 LEVEL = "wb97m-d3bj_def2-tzvppd"
+#: the fork's commit B (the external-loss hook); commit C is what ticket 18 adds after it
+FORK_COMMIT_B = "e68390fca2b9c055609726f8d0897cc90a4ee08d"
 FAIL = []
 
 
@@ -41,17 +53,14 @@ def check(label, ok, detail=""):
 
 
 def build_dataset(tmp, name, level):
-    """A Dataset directory with the merged MACE-form file: train = basin + 2 displaced,
-    valid = a second copy of the basin + 2 displaced (the machinery, not generalisation)."""
+    """A Dataset directory with the merged MACE-form file: train = the basin frame,
+    valid = the basin frame again (S0-C-54: basin frames only; the machinery, not
+    generalisation). Two copies in each split so mace's batch of 2 is full."""
     from openqha.data import dataset, frames
-    basin = frames.read_frames(FIX / "basin.{}.extxyz".format(level))[0]
-    disp = frames.read_frames(FIX / "displaced.{}.extxyz".format(level))
-    for a in disp:
-        a.info.pop("hessian", None)
-        a.info["has_hessian"] = False
-    basin_again = frames.read_frames(FIX / "basin.{}.extxyz".format(level))[0]   # re-read: copy() drops the calculator
-    rows = [(basin, "train")] + [(a, "train") for a in disp[:2]] + \
-           [(basin_again, "valid")] + [(a, "valid") for a in disp[2:4]]
+    rows = []
+    for split in ("train", "train", "valid", "valid"):
+        basin = frames.read_frames(FIX / "basin.{}.extxyz".format(level))[0]   # re-read: copy() drops the calculator
+        rows.append((basin, split))
     d = Path(tmp) / name
     d.mkdir(parents=True, exist_ok=True)
     dataset._write_split(dataset.merged_file(d, name, level), rows, reference=True)
@@ -73,27 +82,37 @@ def main():
         return 0
     print("  mace {}  fork {}{}".format(__import__("mace").__version__, fork["mace_fork_commit"][:12],
                                         "  DIRTY" if fork["mace_fork_dirty"] else ""))
+    import numpy as np
+    import torch
+    from ase.io import read, write as ase_write
+    from mace.calculators import MACECalculator
+    from openqha.training import phl, phl_loss, smoke_fit
 
     with tempfile.TemporaryDirectory() as tmp:
         d = build_dataset(tmp, "smoke_fit", LEVEL)
         out = train_run.run_training(
-            d, "test", "smoke_fit", LEVEL, "modes2", dry_run=True, strict_fork=False,
-            probe="modes", mode_weighting="none", hessian_weight=1e-3, max_epochs=2, batch_size=2)
+            d, "test", "smoke_fit", LEVEL, "cart4", dry_run=True, strict_fork=False,
+            hessian_weight=1e-3, max_epochs=4, batch_size=2)
         argv = out["argv"]
-        check("dry run: the command names the external loss, the keys and float64",
+        check("dry run: the command names the external loss, the keys, float64, the cartesian target and the control",
               "--loss" in argv and argv[argv.index("--loss") + 1] == "external"
               and argv[argv.index("--loss_module") + 1] == train_run.LOSS_MODULE
               and argv[argv.index("--hessian_key") + 1] == "REF_hessian"
-              and argv[argv.index("--default_dtype") + 1] == "float64", argv)
-        check("dry run: the Record counts the frames and their Hessians (3 train / 3 valid, 1 + 1 labelled)",
-              (out["info"]["N_TRAIN"], out["info"]["N_TRAIN_HESSIAN"]) == (3, 1)
-              and (out["info"]["N_VALID"], out["info"]["N_VALID_HESSIAN"]) == (3, 1), out["info"])
-        check("dry run writes no model", not (out["run_dir"] / "modes2.model").is_file())
+              and argv[argv.index("--default_dtype") + 1] == "float64"
+              and argv[argv.index("--hessian_mode_weighting") + 1] == "cartesian"
+              and argv[argv.index("--start_swa") + 1] == "3" and "--ema" in argv
+              and argv[argv.index("--scheduler_patience") + 1] == "20", argv)
+        check("dry run: the Record counts the frames and their Hessians (2 train / 2 valid, all labelled), no Replay",
+              (out["info"]["N_TRAIN"], out["info"]["N_TRAIN_HESSIAN"]) == (2, 2)
+              and (out["info"]["N_VALID"], out["info"]["N_VALID_HESSIAN"]) == (2, 2)
+              and out["info"]["PT_N_FRAMES"] == 0 and out["info"]["REPLAY_PER_HESSIAN_FRAME"] == 0.0
+              and out["info"]["VALID_PROBES"] == "rademacher k=4 fixed", out["info"])
+        check("dry run writes no model", not (out["run_dir"] / "cart4.model").is_file())
 
+        # --- (21) the Cartesian target, four epochs, Stage Two at 3 ------------------------------
         out = train_run.run_training(
-            d, "test", "smoke_fit", LEVEL, "modes2", strict_fork=False,
-            probe="modes", mode_weighting="none", hessian_weight=1e-3, max_epochs=2, batch_size=2,
-            seed=7, device="cpu")
+            d, "test", "smoke_fit", LEVEL, "cart4", strict_fork=False,
+            hessian_weight=1e-3, max_epochs=4, batch_size=2, seed=7, device="cpu")
         info, run_dir = out["info"], out["run_dir"]
         check("the run produced a model file", Path(info["MODEL_FILE"]).is_file(), info["MODEL_FILE"])
         check("the Record is on disk (train.out / .toml / .dat)",
@@ -101,22 +120,48 @@ def main():
         check("the epoch table has both splits", {r["split"] for r in out["epochs"]} >= {"train", "valid"},
               sorted({r["split"] for r in out["epochs"]}))
         check("every logged loss is finite", all(r["loss"] is None or r["loss"] == r["loss"] for r in out["epochs"]))
-        check("the Record carries the identities (base, model, config SHA, fork commit)",
+        curves = train_run.validation_curves(out["epochs"])
+        check("the three validation curves exist: epoch -1 (the base) and epochs 0..3, every value finite",
+              all([e for e, _v in curves[k]] == [-1, 0, 1, 2, 3] for k in ("valid_energy", "valid_forces", "valid_hessian"))
+              and all(np.isfinite(v) for k in curves for _e, v in curves[k]), curves)
+        check("the Hessian curve moved and the Record says so", info["HESSIAN_CURVE_MOVED"] is True
+              and train_run.curve_moved(curves["valid_hessian"]), curves["valid_hessian"])
+        log = "\n".join(p.read_text(errors="replace") for p in sorted((run_dir / "logs").glob("*.log")))
+        check("Stage Two switched at epoch 3 and the log names the swa weights (hessian_weight 0.001 x 100 / 100)",
+              info["STAGE_TWO_EPOCH"] == 3 and "Stage Two" in log and "hessian_weight=0.001" in log
+              and abs(info["SWA_HESSIAN_WEIGHT"] - 1e-3) < 1e-15, (info["STAGE_TWO_EPOCH"], info["SWA_HESSIAN_WEIGHT"]))
+        check("the Record carries the identities (base, model, config SHA, fork commit) and the control",
               len(info["FOUNDATION_PARAMS_SHA256"]) == 64 and len(info.get("MODEL_PARAMS_SHA256", "")) == 64
               and len(info["CONFIG_SHA256"]) == 64 and info["MACE_FORK_COMMIT"] != "unknown"
-              and info["SECONDS_PER_EPOCH"] > 0, info)
+              and info["SECONDS_PER_EPOCH"] > 0 and info["LR"] == 0.01 and info["SWA_LR"] == 0.00025
+              and info["EMA"] is True and info["SWA"] is True and info["START_SWA"] == 3, info)
         check("the fine-tuned potential is NOT the base model (the fingerprint moved)",
               info["MODEL_PARAMS_SHA256"] != info["FOUNDATION_PARAMS_SHA256"])
         print("  {} epochs in {:.1f} s ({:.1f} s per epoch, {} train frames)".format(
             info["N_EPOCHS"], info["SECONDS"], info["SECONDS_PER_EPOCH"], info["N_TRAIN"]))
-        for r in out["epochs"][-4:]:
-            print("    epoch {:3d} {:6s} loss {}".format(
-                r["epoch"], r["split"], "-" if r["loss"] is None else "{:.6f}".format(r["loss"])))
+        for r in out["epochs"]:
+            if r["split"] == "valid":
+                print("    epoch {:3d} valid loss {}  E {}  F {}  H {}".format(
+                    r["epoch"], "-" if r["loss"] is None else "{:.6f}".format(r["loss"]),
+                    "-" if r["valid_energy"] is None else "{:.3e}".format(r["valid_energy"]),
+                    "-" if r["valid_forces"] is None else "{:.3e}".format(r["valid_forces"]),
+                    "-" if r["valid_hessian"] is None else "{:.3e}".format(r["valid_hessian"])))
+
+        # the epoch -1 Hessian value is the base model's fixed-probe estimate of the Cartesian
+        # target: within 4 s.e. of the exact epoch-zero balance (one frame, k = 4 Rademacher)
+        base_calc = MACECalculator(model_paths=str(engine.model_path()), device="cpu", default_dtype="float64")
+        bal = smoke_fit.epoch_zero_balance(base_calc, info["VALID_FILE"], mode_weighting="cartesian")
+        atoms = read(str(info["VALID_FILE"]), index="0", format="extxyz")
+        n3 = 3 * len(atoms)
+        h_r = np.asarray(atoms.info["REF_hessian"], dtype=float).reshape(n3, n3)
+        from openqha.training.judge import hessian_at
+        h_e = hessian_at(base_calc, atoms)
+        se = np.sqrt(phl.estimator_variance(h_e, h_r, atoms.get_masses(), atoms.positions, k=4, metric="cartesian")["rademacher"])
+        h_init = curves["valid_hessian"][0][1]
+        check("epoch -1 validation Hessian term = epoch_zero_balance's Cartesian L_H within 4 s.e. ({:.3e} vs {:.3e}, s.e. {:.1e})".format(
+              h_init, bal["L_H"], se), abs(h_init - bal["L_H"]) < 4 * se + 1e-12, (h_init, bal["L_H"], se))
 
         # the fine-tuned model loads and answers
-        from ase.io import read
-        from mace.calculators import MACECalculator
-        atoms = read(str(info["TRAIN_FILE"]), index="0", format="extxyz")
         calc = MACECalculator(model_paths=info["MODEL_FILE"], device="cpu", default_dtype="float64")
         atoms.calc = calc
         e = float(atoms.get_potential_energy())
@@ -124,58 +169,71 @@ def main():
         check("the fine-tuned model loads in MACECalculator and gives E and a (3N, N, 3) Hessian",
               e == e and h.shape == (3 * len(atoms), len(atoms), 3), (e, h.shape))
 
-        # the validation term is the EXACT one: mace's evaluate gave the loss a full
-        # Hessian (the fork's `wants_hessian_at_eval` line), not the estimator
+        # the validation term through mace's own evaluate: no full matrix, the force graph
+        # kept, and the SAME value on a second pass (the probes are fixed per frame)
         from mace import data as mdata, tools as mtools
         from mace.tools import torch_geometric
         from mace.tools.train import evaluate
-        from openqha.training import phl_loss
-        import torch
         torch.set_default_dtype(torch.float64)
-        loss_fn = phl_loss.WeightedEnergyForcesHessianLoss(probe="modes", mode_weighting="none")
+        loss_fn = phl_loss.WeightedEnergyForcesHessianLoss(probe="rademacher", n_probes=4, mode_weighting="cartesian", seed=1)
+        check("wants_hessian_at_eval False, wants_force_graph_at_eval True",
+              loss_fn.wants_hessian_at_eval is False and loss_fn.wants_force_graph_at_eval is True)
         ks = mdata.KeySpecification.from_defaults()
         frames = read(str(info["VALID_FILE"]), index=":", format="extxyz")
         table = mtools.AtomicNumberTable(sorted({int(z) for a in frames for z in a.numbers}))
         ads = [mdata.AtomicData.from_config(mdata.config_from_atoms(a, key_specification=ks),
                                             z_table=table, cutoff=float(calc.r_max)) for a in frames]
-        loader = torch_geometric.dataloader.DataLoader(dataset=ads, batch_size=3, shuffle=False)
-        evaluate(model=calc.models[0], loss_fn=loss_fn, data_loader=loader,
-                 output_args={"energy": True, "forces": True, "virials": False, "stress": False,
-                              "hessian": loss_fn.wants_hessian_at_eval},
-                 device=torch.device("cpu"))
-        check("mace's evaluate gave the loss the FULL Hessian: the exact term, not the estimator",
-              loss_fn.last_terms["hessian_exact"] is not None and loss_fn.last_terms["n_labelled"] == 1,
-              loss_fn.last_terms)
-        print("    exact validation Hessian term on the fine-tuned model: {:.6e}".format(
-            loss_fn.last_terms["hessian_exact"]))
+        loader = torch_geometric.dataloader.DataLoader(dataset=ads, batch_size=2, shuffle=False)
+        oa = {"energy": True, "forces": True, "virials": False, "stress": False,
+              "hessian": loss_fn.wants_hessian_at_eval, "force_graph": loss_fn.wants_force_graph_at_eval}
+        _l1, aux1 = evaluate(model=calc.models[0], loss_fn=loss_fn, data_loader=loader, output_args=oa, device=torch.device("cpu"))
+        _l2, aux2 = evaluate(model=calc.models[0], loss_fn=loss_fn, data_loader=loader, output_args=oa, device=torch.device("cpu"))
+        check("mace's evaluate: the estimator (no hessian_exact), the summary in aux, identical on two passes (1e-12)",
+              loss_fn.last_terms["hessian_exact"] is None and aux1.get("valid_hessian_term") is not None
+              and abs(aux1["valid_hessian_term"] - aux2["valid_hessian_term"]) < 1e-12
+              and aux1["valid_hessian_n_labelled"] == 2, (aux1.get("valid_hessian_term"), aux2.get("valid_hessian_term")))
+        print("    fixed-probe validation Hessian term on the fine-tuned model: {:.6e}".format(aux1["valid_hessian_term"]))
 
         entry = train_run.registry_entry(info)
         check("the ENGINES entry names the Dataset index and the config SHA",
               entry["filename"].endswith(".model") and "config" in entry["source"]
               and entry["params_sha256"] == info["MODEL_PARAMS_SHA256"], entry)
 
-        # --- multihead replay (round-2 Q7 a): the pretraining head's frames carry no
-        # Hessian, so the Hessian term sees only the fine-tuning head's
+        # --- (18) the Replay: two frames with config_weight 3, three epochs -------------------------
         pt = Path(tmp) / "pt.xyz"
+        pt_valid = Path(tmp) / "pt.valid.xyz"
         pt_frames = read(str(ROOT / "tests" / "data" / "spice_tiny" / "train_large_neut_no_bad_clean.xyz"),
                          index=":", format="extxyz")
         for a in pt_frames:
             a.info["REF_energy"] = float(a.info.get("energy", -1.0))
             a.arrays["REF_forces"] = a.arrays.get("forces", a.get_forces())   # ASE may park them on the calculator
             a.info.pop("REF_hessian", None)
-        from ase.io import write as ase_write
-        ase_write(str(pt), pt_frames, format="extxyz")
+            a.info["config_weight"] = 3.0
+        ase_write(str(pt), pt_frames[:2], format="extxyz")
+        ase_write(str(pt_valid), pt_frames[2:3], format="extxyz")
         mh = train_run.run_training(
-            d, "test", "smoke_fit", LEVEL, "mh1", strict_fork=False, probe="modes",
-            mode_weighting="none", hessian_weight=1e-3, max_epochs=1, batch_size=2, seed=7,
-            multiheads=True, pt_train_file=str(pt), num_samples_pt=len(pt_frames))
-        check("a multihead run completes and the Record says so",
-              mh["info"]["MULTIHEADS"] is True and mh["info"]["PT_TRAIN_FILE"] == str(pt)
-              and Path(mh["info"]["MODEL_FILE"]).is_file(), mh["info"].get("MODEL_FILE"))
-        check("... the replay frames carry no Hessian, so only the fine-tuning head's do "
-              "({} pt frames, {} labelled train frames)".format(len(pt_frames), mh["info"]["N_TRAIN_HESSIAN"]),
+            d, "test", "smoke_fit", LEVEL, "mh1", strict_fork=False,
+            hessian_weight=1e-3, max_epochs=3, batch_size=2, seed=7,
+            multiheads=True, pt_train_file=str(pt), pt_valid_file=str(pt_valid))
+        mi = mh["info"]
+        check("a multihead run completes and the Record says so: PT_N_FRAMES 2, PT_CONFIG_WEIGHT 3.0, 1 Replay frame per Hessian frame",
+              mi["MULTIHEADS"] is True and mi["PT_TRAIN_FILE"] == str(pt) and mi["PT_VALID_FILE"] == str(pt_valid)
+              and Path(mi["MODEL_FILE"]).is_file() and mi["PT_N_FRAMES"] == 2 and mi["PT_CONFIG_WEIGHT"] == "3.0"
+              and mi["REPLAY_PER_HESSIAN_FRAME"] == 1.0 and mi["REAL_PT_DATA_RATIO_THRESHOLD"] == 0.0, mi)
+        check("both heads' counts parsed from mace's log: pt 2 / 1, fine-tune 2 / 2",
+              (mi["PT_HEAD_TRAIN"], mi["PT_HEAD_VALID"], mi["FT_HEAD_TRAIN"], mi["FT_HEAD_VALID"]) == (2, 1, 2, 2), mi)
+        mcurves = train_run.validation_curves(mh["epochs"])
+        check("with the Replay the validation Hessian curve is NOT constant: the term acts (commit C kept the loss)",
+              mi["HESSIAN_CURVE_MOVED"] is True and len(mcurves["valid_hessian"]) >= 3, mcurves["valid_hessian"])
+        mlog = "\n".join(p.read_text(errors="replace") for p in sorted((mh["run_dir"] / "logs").glob("*.log")))
+        check("the log names the external loss in multihead mode and never the universal loss",
+              "Multiheads finetuning with the external loss" in mlog and "WeightedEnergyForcesHessianLoss" in mlog
+              and "UniversalLoss" not in mlog)
+        check("MACE_FORK_COMMIT is not commit B's (commit C or later), 40 hex",
+              mi["MACE_FORK_COMMIT"] != FORK_COMMIT_B and len(mi["MACE_FORK_COMMIT"]) == 40, mi["MACE_FORK_COMMIT"])
+        check("... the replay frames carry no Hessian, so only the fine-tuning head's do",
               all("REF_hessian" not in a.info for a in read(str(pt), index=":", format="extxyz"))
-              and mh["info"]["N_TRAIN_HESSIAN"] == 1)
+              and mi["N_TRAIN_HESSIAN"] == 2)
 
         # the default path still works on the same files
         from mace.cli.run_train import run as mace_run
@@ -183,7 +241,7 @@ def main():
         plain = Path(tmp) / "plain"
         plain.mkdir()
         argv = train_run.mace_argv(info["TRAIN_FILE"], info["VALID_FILE"], "plain", plain,
-                                   engine.model_path(), LEVEL, max_epochs=1, batch_size=2, seed=7)
+                                   engine.model_path(), LEVEL, max_epochs=1, batch_size=2, seed=7, swa=False)
         i = argv.index("--loss")
         argv = argv[:i] + ["--loss", "weighted"] + argv[i + 4:]        # drop --loss external --loss_module
         args = build_default_arg_parser().parse_args(argv)
@@ -197,7 +255,7 @@ def main():
         check("the stock loss trains on the same files (the default path is untouched)",
               (plain / "plain.model").is_file() or list(plain.glob("*.model")))
 
-    print("\n{} checks, {} failed".format(14, len(FAIL)))
+    print("\n{} checks, {} failed".format(23, len(FAIL)))
     print("PASS" if not FAIL else "FAIL")
     return 1 if FAIL else 0
 

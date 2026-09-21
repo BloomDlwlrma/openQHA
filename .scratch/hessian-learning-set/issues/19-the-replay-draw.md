@@ -4,11 +4,15 @@
 
 **Blocked by:** None. **Unblocks:** 16.
 
-**Status:** ready-for-agent
+**Status:** done 2026-09-21
 
-- [ ] `scripts/tooling/s0_spice_pt_draw.py --n N --seed S --weight W [--source ...] [--forgetting-ids ...] [--out ...]`: the permutation is `default_rng(seed).permutation(n_frames)`, the file holds the first N; `config_weight` on every frame; ids file beside it; Record `[Replay]` with `DOI, SPLIT=train, SEED, N, WEIGHT, N_MOLECULES, FRAMES_PER_MOLECULE_MAX`
-- [ ] assertion (a): SMILES overlap with the forgetting ids file -> exit 2, message names the offending molecules, no file written; assertion (b): any of the four in_distribution molecules -> exit 2 likewise; both exercised on `tests/data/spice_tiny` with a constructed overlap
-- [ ] nesting: `--n 3` from seed 0 is the first three frames of `--n 5` from seed 0 (unit)
-- [ ] `05_train.py` and `README` name this tool as the only source of a Replay file; the ratio the file means on a given Dataset is printed by `run.py` (ticket 18), not here
-- [ ] unit (`tests/unit/t_spice_pt_draw.py`): the four items above on `spice_tiny`; absence of the release refuses with the DOI
-- [ ] `.mem/notes` round note
+- [x] `scripts/tooling/s0_spice_pt_draw.py --n N --seed S --weight W [--source ...] [--forgetting-ids ...] [--out ...]`: the permutation is `default_rng(seed).permutation(n_frames)`, the file holds the first N; `config_weight` on every frame; ids file beside it; Record `[Replay]` with `DOI, SPLIT=train, SEED, N, WEIGHT, N_MOLECULES, FRAMES_PER_MOLECULE_MAX`
+- [x] assertion (a): SMILES overlap with the forgetting ids file -> exit 2, message names the offending molecules, no file written; assertion (b): any of the four in_distribution molecules -> exit 2 likewise; both exercised on `tests/data/spice_tiny` with a constructed overlap
+- [x] nesting: `--n 3` from seed 0 is the first three frames of `--n 5` from seed 0 (unit)
+- [x] `05_train.py` and `README` name this tool as the only source of a Replay file; the ratio the file means on a given Dataset is printed by `run.py` (ticket 18), not here
+- [x] unit (`tests/unit/t_spice_pt_draw.py`): the four items above on `spice_tiny`; absence of the release refuses with the DOI
+- [x] `.mem/notes` round note
+
+**Closing (2026-09-21):** `scripts/tooling/s0_spice_pt_draw.py --n N --seed S --weight W [--source] [--forgetting-ids] [--out] [--n-valid 200] [--membership-file]`. One header pass over the source records every frame's byte offset and SMILES (the 5 GB file is never parsed as atoms except for the drawn frames); RDKit sees each distinct SMILES once (`training_set.fragment_keys`, connectivity level, fragments sorted and joined -- a dimer names both partners). The permutation is `default_rng(seed).permutation(n_frames)`; the file holds its first N ELIGIBLE frames in permutation order (so `--n 3` is the prefix of `--n 5`), every frame with `config_weight`, `REF_energy` / `REF_forces`, `spice_index`, no Hessian; `<out>.ids.dat` (index, smiles, config_type, n_atoms, molecule_key, frames_of_molecule); `<out>.valid.extxyz` from the END of the permutation; `<out>.toml` `[Replay]` with DOI, SPLIT, SEED, N, WEIGHT, N_MOLECULES, FRAMES_PER_MOLECULE_MAX, the exclusion counts. Unit `t_spice_pt_draw.py` 19/19 on `spice_tiny`.
+
+**A change to the ticket's letter, flagged for the user:** the ticket says the two assertions "make the tool exit non-zero and write nothing". SPICE's test split is BY FRAME -- `data/training_sets/mace-off23_spice_index.dat` shows 15,542 of the train file's 17,132 molecules also have test frames -- so a uniform train draw checked against a 5,000-frame test draw would overlap on every seed and the tool could never write a file. The mechanism is therefore EXCLUSION: the walk over the permutation skips every frame whose molecule (any fragment) is in the forgetting draw or is one of the in_distribution four, and `check_disjoint` then asserts on what is about to be written (it fails, exit 2 and nothing written, on a constructed overlap -- exercised in the unit test -- and in production only if the exclusion itself were broken). Two further refusals: an absent forgetting ids file (the tool cannot promise (a) without it) and a permutation that runs out of eligible frames before N. The CONTEXT "Replay" entry was reworded to say "skips their frames ... and refuses to write when what it drew would still overlap". If the user prefers the letter (refuse, never skip), it is one flag away, but then no Replay can be drawn from this release.

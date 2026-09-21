@@ -36,6 +36,16 @@ at `level` yet, whatever its molecule's side (`molecule_split` in the index says
 it will go once labelled). The split is set here, written into `index.dat`, and never
 recomputed: a rebuild keeps every earlier decision and draws only what is new.
 
+THE HELD-OUT GENERATORS (`train_generators`, S0-C-54, ADR 0005; ticket 20). Only the
+frames of the generators in `train_generators` -- default `("basin",)` -- can enter
+train or valid. EVERY labelled frame of any other generator (displaced, merged, saddle)
+goes to test, whatever the frame draw or the previous index said, with
+`held_out_generator = yes` in `index.dat`: the judge reads them (the RMS-displacement
+reference rows), training never sees them. The label rule (`frame_labels.HESSIAN_
+GENERATORS`) is untouched -- what changes is who trains on what. The Record names
+`TRAIN_GENERATORS`, `HELD_OUT_GENERATORS`, `N_TRAIN_BASIN` (train frames of the training
+generators) and `N_TEST_HELD_OUT`.
+
 FILES
 -----
     <root>/<tag>/_datasets/<name>/{train,valid,test}.<level>.extxyz
@@ -91,6 +101,9 @@ FRAME_VALID_FRACTION = 0.05
 FRAME_TEST_FRACTION = 0.05
 SPLIT_MODES = ("frame", "molecule")
 SEED = 0
+#: the generators whose frames may train (S0-C-54: basin Hessians only); every other
+#: generator is held out -- its labelled frames go to test for the judge
+TRAIN_GENERATORS = ("basin",)
 #: a label file whose positions differ from the engine file's by more than this is stale
 STALE_TOL_A = 1e-6
 DATASETS = "_datasets"
@@ -155,6 +168,7 @@ INDEX_SCHEMA = {
     "k": ("Integer", None, "index within (generator, basin)"),
     "split": ("String", None, "train / valid / test / pool -- set at write time, never recomputed"),
     "molecule_split": ("String", None, "test: a whole-molecule test molecule (pinned, or drawn by molecule); train: its labelled frames go to train / valid (by molecule) or train / valid / test (by frame)"),
+    "held_out_generator": ("String", None, "yes: the frame's generator is not in TRAIN_GENERATORS, so it is in test whatever the draw (S0-C-54); no otherwise"),
     "levels": ("String", None, "levels present at this frame, ';'-joined"),
     "seed": ("Integer", None, "the frame's own draw seed (displaced), 0 otherwise"),
     "engine_params_sha256": ("String", None, "parameter fingerprint of the engine that made the frame"),
@@ -178,6 +192,11 @@ SCHEMA = {
         "VALID_FRACTION": ("Double", None, "fraction of the labelled frames drawn as valid (by frame: of every non-pinned molecule's; by molecule: of the training molecules')"),
         "TEST_FRACTION": ("Double", None, "by frame: fraction of the non-pinned labelled frames drawn as test; by molecule: fraction of the non-pinned molecules drawn as test, per stratum"),
         "PINNED": ("ArrayOfStrings", None, "the molecules always in test"),
+        "PURPOSE": ("String", None, "judge (the production Dataset: its test split is a claim about generalisation) or fit (a Dataset built with the pinned rule OFF, for measuring cost and weights only -- every number from it is interpolation within the same molecules and must be reported as such; ticket 15)"),
+        "TRAIN_GENERATORS": ("ArrayOfStrings", None, "the Frame generators whose frames may enter train and valid (S0-C-54: basin)"),
+        "HELD_OUT_GENERATORS": ("ArrayOfStrings", None, "the generators whose labelled frames all go to test (the judge's reference rows), never train or valid"),
+        "N_TRAIN_BASIN": ("Integer", None, "train frames of the training generators (every train frame, by construction)"),
+        "N_TEST_HELD_OUT": ("Integer", None, "test frames that are there because their generator is held out"),
         "N_MOLECULES": ("Integer", None, "molecules with a Frame set"),
         "N_TEST_MOLECULES": ("Integer", None, "molecules in test (pinned + drawn)"),
         "N_TRAIN_MOLECULES": ("Integer", None, "molecules whose frames feed train and valid"),
@@ -213,6 +232,7 @@ SCHEMA = {
         "N_TRAIN": ("Integer", None, "frames in train"),
         "N_VALID": ("Integer", None, "frames in valid"),
         "N_TEST": ("Integer", None, "frames in test"),
+        "N_TEST_HELD_OUT": ("Integer", None, "of the test frames, those of a held-out generator"),
         "N_POOL": ("Integer", None, "frames in pool"),
     },
     "Class": {
@@ -220,9 +240,10 @@ SCHEMA = {
         "N_MOLECULES": ("Integer", None, "molecules with a Frame set in it"),
         "N_FRAMES": ("Integer", None, "their frames"),
         "N_LABELLED": ("Integer", None, "of those, labelled at LEVEL"),
-        "N_TRAIN": ("Integer", None, "frames in train"),
+        "N_TRAIN": ("Integer", None, "frames in train (basin frames)"),
         "N_VALID": ("Integer", None, "frames in valid"),
         "N_TEST": ("Integer", None, "frames in test"),
+        "N_TEST_HELD_OUT": ("Integer", None, "of the test frames, those of a held-out generator"),
         "N_POOL": ("Integer", None, "frames in pool"),
     },
 }
@@ -466,7 +487,9 @@ def _previous_split(dataset_dir):
     if p.is_file():
         for r in dat.read_table(p):
             mols_prev[r["qm9_index"]] = r["molecule_split"]
-            if r["split"] != "pool":
+            # a held-out frame's split was the rule, not a draw: nothing to keep (a later build
+            # that trains its generator draws it fresh)
+            if r["split"] != "pool" and r.get("held_out_generator", "no") != "yes":
                 frames_prev[(r["qm9_index"], r["generator"], int(r["basin"]), int(r["k"]))] = r["split"]
     return frames_prev, mols_prev
 
@@ -492,13 +515,15 @@ def merged_file(dataset_dir, name, level):
 
 def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", valid_fraction=None,
           test_fraction=None, seed=SEED, mace_level=None, selection=None, pinned=PINNED,
-          keep_previous=True):
+          keep_previous=True, purpose=None, train_generators=TRAIN_GENERATORS):
     """The Dataset: split every Frame set of the selected molecules (`split_by`: "frame",
     the production 90/5/5 by frame, or "molecule", the smoke set's whole test molecules;
     module docstring), write the four split files, the merged `mace_<name>.<level>.extxyz`,
     `index.dat` and the Record. `selection`: rows as `select` returns them (default: read
     `select.dat` under the first tag; run `select` first). The fractions default to the
-    mode's (FRAME_* or the by-molecule ones).
+    mode's (FRAME_* or the by-molecule ones). `train_generators`: the generators whose
+    frames may train (default basin only, S0-C-54); every labelled frame of another
+    generator is routed to test as a held-out frame, before and above the draw.
 
     A rebuild KEEPS the previous `index.dat`'s decisions (`keep_previous`): a molecule's
     train/test side and every already-labelled frame's split stay what they were; only
@@ -509,6 +534,12 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", 
     t0 = time.time()
     if split_by not in SPLIT_MODES:
         raise ValueError("split_by must be one of {}, not {!r}".format(SPLIT_MODES, split_by))
+    train_generators = tuple(train_generators)
+    unknown = [g for g in train_generators if g not in frames_mod.GENERATORS]
+    if unknown or not train_generators:
+        raise ValueError("train_generators must be a non-empty subset of {}; got {!r}".format(
+            frames_mod.GENERATORS, train_generators))
+    held_out_generators = tuple(g for g in frames_mod.GENERATORS if g not in train_generators)
     by_frame = split_by == "frame"
     if valid_fraction is None:
         valid_fraction = FRAME_VALID_FRACTION if by_frame else VALID_FRACTION
@@ -570,27 +601,33 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", 
                 pick = _rng(seed, "valid", qid).choice(len(new), size=min(want, len(new)), replace=False)
                 picked = {new[i] for i in pick}
             frame_split.update((key, "valid" if key in picked else "train") for key in new)
-        counts = dict(train=0, valid=0, test=0, pool=0)
+        counts = dict(train=0, valid=0, test=0, pool=0, held_out=0)
         for key, a, lab, ef, _st in frames_here:
+            held_out = False
             if lab is None:
                 split, atoms, levels, ver = "pool", a, [mace_level], "-"
             else:
                 split = frame_split[key]
+                # the held-out generators (S0-C-54): to test, above the draw and the previous index
+                if key[0] not in train_generators:
+                    split, held_out = "test", True
                 atoms, levels, ver = lab, [mace_level, level], str(lab.info.get("orca_version", "-"))
                 versions.add(ver)
             fp = str(a.info.get("engine_params_sha256", "-"))
             fingerprints.add(fp)
             counts[split] += 1
+            counts["held_out"] += int(held_out)
             split_frames[split].append((atoms, split))
             index.append(dict(qm9_index=qid, tag=r["tag"], basin=key[1], generator=key[0], k=key[2], split=split,
-                              molecule_split=msplit, levels=";".join(levels), seed=int(a.info.get("seed", 0)),
+                              molecule_split=msplit, held_out_generator="yes" if held_out else "no",
+                              levels=";".join(levels), seed=int(a.info.get("seed", 0)),
                               engine_params_sha256=fp, orca_version=ver, in_training=r["in_training"],
                               stratum=r["stratum"], classes=classes, file="{}.{}.extxyz".format(split, level),
                               row=len(split_frames[split]) - 1, engine_file=str(ef)))
         per_mol.append(dict(QM9_INDEX=qid, TAG=r["tag"], STRATUM=r["stratum"], MOLECULE_SPLIT=msplit,
                             PINNED=qid in pinned, N_FRAMES=len(frames_here), N_LABELLED=len(labelled), N_STALE=n_stale,
-                            N_TRAIN=counts["train"], N_VALID=counts["valid"], N_TEST=counts["test"], N_POOL=counts["pool"],
-                            classes=classes))
+                            N_TRAIN=counts["train"], N_VALID=counts["valid"], N_TEST=counts["test"],
+                            N_TEST_HELD_OUT=counts["held_out"], N_POOL=counts["pool"], classes=classes))
 
     # ---- files -------------------------------------------------------------------------
     d.mkdir(parents=True, exist_ok=True)
@@ -613,11 +650,16 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", 
     cls_rows = class_rows(per_mol, (("N_MOLECULES", lambda m: 1), ("N_FRAMES", lambda m: m["N_FRAMES"]),
                                     ("N_LABELLED", lambda m: m["N_LABELLED"]), ("N_TRAIN", lambda m: m["N_TRAIN"]),
                                     ("N_VALID", lambda m: m["N_VALID"]), ("N_TEST", lambda m: m["N_TEST"]),
+                                    ("N_TEST_HELD_OUT", lambda m: m["N_TEST_HELD_OUT"]),
                                     ("N_POOL", lambda m: m["N_POOL"])))
     for m in per_mol:
         m.pop("classes")
     info = dict(NAME=str(name), TAGS=tags, LEVEL=level, MACE_LEVEL=mace_level, SEED=int(seed), SPLIT_BY=split_by,
                 VALID_FRACTION=float(valid_fraction), TEST_FRACTION=float(test_fraction), PINNED=list(pinned),
+                PURPOSE=str(purpose or ("judge" if pinned else "fit")),
+                TRAIN_GENERATORS=list(train_generators), HELD_OUT_GENERATORS=list(held_out_generators),
+                N_TRAIN_BASIN=len(split_frames["train"]),
+                N_TEST_HELD_OUT=sum(m["N_TEST_HELD_OUT"] for m in per_mol),
                 N_MOLECULES=len(mols), N_TEST_MOLECULES=len(test_mols), N_TRAIN_MOLECULES=len(mols) - len(test_mols),
                 N_FRAMES=len(index), N_LABELLED=sum(1 for row in index if row["split"] != "pool"),
                 N_TRAIN=len(split_frames["train"]), N_VALID=len(split_frames["valid"]),
@@ -677,21 +719,28 @@ def read_index(dataset_dir):
 def _write_report(path, info, split_rows, per_mol, cls_rows=()):
     rep = report.Report(PROGNAME, "Dataset {!r} at {}".format(info["NAME"], info["LEVEL"]))
     rep.section("conventions")
-    for k in ("TAGS", "LEVEL", "MACE_LEVEL", "SEED", "SPLIT_BY", "VALID_FRACTION", "TEST_FRACTION", "N_MOLECULES",
-              "N_TEST_MOLECULES", "N_TRAIN_MOLECULES", "N_FRAMES", "N_LABELLED", "N_HESSIAN_FRAMES", "N_STALE",
+    for k in ("TAGS", "LEVEL", "MACE_LEVEL", "SEED", "SPLIT_BY", "VALID_FRACTION", "TEST_FRACTION", "TRAIN_GENERATORS",
+              "HELD_OUT_GENERATORS", "N_MOLECULES", "N_TEST_MOLECULES", "N_TRAIN_MOLECULES", "N_FRAMES", "N_LABELLED",
+              "N_HESSIAN_FRAMES", "N_TRAIN_BASIN", "N_TEST_HELD_OUT", "N_STALE",
               "KEPT_PREVIOUS", "MERGED_FILE", "ENGINE_PARAMS_SHA256", "ORCA_VERSIONS"):
         rep.kv(k, info[k])
     rep.section("per split")
     rep.table(["split", "frames", "molecules", "file"],
               [[r["SPLIT"], r["N_FRAMES"], r["N_MOLECULES"], Path(r["FILE"]).name if r["FILE"] else "-"] for r in split_rows])
-    rep.section("per class (a molecule counts for every class it is in)")
-    rep.table(["class", "molecules", "frames", "labelled", "train", "valid", "test", "pool"],
+    rep.section("per class (a molecule counts for every class it is in; test = held-out generator frames + the drawn test frames)")
+    rep.table(["class", "molecules", "frames", "labelled", "train", "valid", "test", "held-out", "pool"],
               [[c["CLASS"], c["N_MOLECULES"], c["N_FRAMES"], c["N_LABELLED"], c["N_TRAIN"], c["N_VALID"], c["N_TEST"],
-                c["N_POOL"]] for c in cls_rows])
+                c["N_TEST_HELD_OUT"], c["N_POOL"]] for c in cls_rows])
     rep.section("per molecule")
-    rep.table(["qm9_index", "tag", "stratum", "split", "pinned", "frames", "labelled", "stale", "train", "valid", "test", "pool"],
+    rep.table(["qm9_index", "tag", "stratum", "split", "pinned", "frames", "labelled", "stale", "train", "valid", "test",
+               "held-out", "pool"],
               [[m["QM9_INDEX"], m["TAG"], m["STRATUM"], m["MOLECULE_SPLIT"], "yes" if m["PINNED"] else "-", m["N_FRAMES"],
-                m["N_LABELLED"], m["N_STALE"], m["N_TRAIN"], m["N_VALID"], m["N_TEST"], m["N_POOL"]] for m in per_mol])
+                m["N_LABELLED"], m["N_STALE"], m["N_TRAIN"], m["N_VALID"], m["N_TEST"], m["N_TEST_HELD_OUT"], m["N_POOL"]]
+               for m in per_mol])
+    rep.note("TRAIN_GENERATORS (S0-C-54, ADR 0005): only frames of these generators may enter train or valid; every "
+             "labelled frame of a held-out generator ({}) is in test, whatever the draw or the previous index said "
+             "(`held_out_generator = yes` in index.dat). The judge reads them as reference rows; training never "
+             "sees them.".format(", ".join(info["HELD_OUT_GENERATORS"]) or "none"))
     if info["SPLIT_BY"] == "frame":
         rep.note("SPLIT_BY frame (production, round 5 Q4): test = the pinned seven as whole molecules + TEST_FRACTION of "
                  "every other molecule's labelled frames; valid = VALID_FRACTION of those frames; train = the rest. Every "

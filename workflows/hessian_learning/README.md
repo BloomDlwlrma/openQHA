@@ -150,37 +150,67 @@ stratification keys, the structure `classes` (from `draw.dat`, else classified f
 SMILES with `configs/structure_classes.yaml`), SPICE membership, pin status; the Record has
 a `[[Class]]` table (molecules / with basins / with frames per class).
 
-## Step 05: the fine-tune (ticket 13)
+## Step 05: the fine-tune (ticket 13; tickets 18 and 21)
 
 `05_train.py` is openQHA's own entry point into the mace **fork**
 (`BloomDlwlrma/openQHA-Hessian`, branch `openqha-hessian`): it builds mace's arguments and
 calls `mace.cli.run_train.run`, the Hessian labels come from the Dataset's
-`mace_<name>.<level>.extxyz` (`REF_hessian`, fork commit A) and the loss from
-`openqha.training.phl_loss` through the fork's generic hook (commit B):
+`mace_<name>.<level>.extxyz` (`REF_hessian`, fork commit A), the loss from
+`openqha.training.phl_loss` through the fork's generic hook (commit B), kept in multihead
+mode and given the force graph at evaluation (commit C):
 
     --loss external --loss_module openqha.training.phl_loss:build
 
-Nothing here reimplements a training loop; the loss is the projected Hessian loss of
-`design-phl-loss.md` (eq. 11), derived and verified in
-`docs/tutorials/T03_openQHA_Theory_Projected_Hessian_Loss.ipynb`.
+Nothing here reimplements a training loop. **The target is the Cartesian matrix**
+(S0‑C‑53; `--mode-weighting cartesian`, the default): `L_H = ‖H_θ − H_r‖²_F / (9N²)`,
+PHL's eq. 2.1', no mass weighting, no projection — derived in
+`docs/tutorials/T05_openQHA_Theory_PHL_Finetune_EFH_to_wB97M.ipynb` and T04; `entropy` /
+`none` are the projected diagnostics of T03.
 
 ```bash
 # what would run, and the Record header -- no training
 python workflows/hessian_learning/05_train.py --tag smoke --run w1 --dry-run
 
-# the exact loss (probe = modes, eq. 10) on the smoke Dataset, two epochs
-python workflows/hessian_learning/05_train.py --tag smoke --run w1     --probe modes --hessian-weight 0.01 --max-epochs 2
+# the smoke Dataset, two epochs (the exact Cartesian loss: --probe cartesian, 3N HVPs)
+python workflows/hessian_learning/05_train.py --tag smoke --run w1 --hessian-weight 0.01 --max-epochs 2
 
-# the campaign, on one A800
-TAG=draw300 RUN=prod1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 MULTIHEADS=1     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.extxyz     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+# the Replay file, once per campaign (one seed, one file; a smaller --n is a prefix of a larger one)
+python scripts/tooling/s0_spice_test_draw.py --n 5000                         # the forgetting draw first
+python scripts/tooling/s0_spice_pt_draw.py --n 5000 --seed 0 --out $S0_RUNS_ROOT/spice/spice_pt_5000.extxyz
+
+# a scan row, on one A800
+TAG=draw300 RUN=R1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 MULTIHEADS=1 \
+    PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.extxyz PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.valid.extxyz \
+    yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
 ```
 
-**Training estimates, evaluation is exact.** During a step the Hessian term is the
-Hutchinson estimator (`--probe rademacher --n-probes 4`: `k` Hessian-vector products per
-structure, eq. 6); at validation mace is asked for the full 3N x 3N Hessian and the term
-is eq. 1 exactly, so the logged validation number is the ruler's quantity and not a
-sample. `--probe modes` makes the training term exact too, at `n_vib` HVPs -- the setting
-the smoke fit (ticket 15) measures the ceiling and the cost with.
+**Training estimates; validation estimates on fixed probes (S0‑C‑55).** During a step
+the Hessian term is the Hutchinson estimator (`--probe rademacher --n-probes 4`: `k`
+Hessian‑vector products per structure, eq. 6'); at validation the SAME estimator runs on
+four Rademacher probes fixed per frame (seeded from the frame's Label), so the
+validation Hessian curve is a cheap, unbiased, reproducible reading that enters the
+total validation loss mace's scheduler, best checkpoint and Stage Two read. The full
+matrix is the judge's tool, not the trainer's. `--probe cartesian` makes the training
+term exact (3N HVPs).
+
+**The control is explicit (ticket 21; the base's recipe).** `--lr 0.01`,
+`--scheduler-patience 20`, `--patience 50`, `--eval-interval 1`, `--ema`, Stage Two at
+`--start-swa` 3/4 of the epochs with `--swa-lr lr/40` and the Stage Two weights
+(`--swa-energy-weight 1000 --swa-forces-weight 100`, `swa_hessian_weight = w_H ×
+swa_forces_weight / forces_weight`); every value is in `config.yaml` and the Record,
+with the three validation curves (E, F, Hessian terms per epoch, epoch −1 = the base).
+
+**The Replay (CONTEXT "Replay"; tickets 18, 19).** `--multiheads --pt-train-file FILE`
+concatenates the file `s0_spice_pt_draw.py` writes — the only source of a Replay file —
+as mace's pretraining head. **The file is the size knob**: mace's `--num_samples_pt`
+acts only on its Materials‑Project download path and is never emitted; mace's
+`--real_pt_data_ratio_threshold` (default 0.1, which silently duplicates the fine‑tune
+frames when they are fewer than a tenth of the Replay) is passed as 0. The Record counts
+the file's frames (`PT_N_FRAMES`), reads their `config_weight` (`PT_CONFIG_WEIGHT`),
+parses both heads' counts from mace's log and prints `REPLAY_PER_HESSIAN_FRAME`
+(`PT_N_FRAMES / N_TRAIN_HESSIAN`), the number the scan rows R0–R4 are defined by.
+`--pt-valid-file` names the draw tool's companion `<stem>.valid.extxyz`; without it mace
+takes `--valid_fraction` (10 %) of the Replay for the pretraining head's own validation.
 
 **The fork is required, and its commit is recorded.** `05_train.py` refuses a mace that
 is not an editable checkout of the fork, or one with uncommitted changes to tracked

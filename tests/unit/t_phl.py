@@ -148,7 +148,46 @@ def main():
     except ValueError:
         check("an unknown probe mode is refused", True)
 
-    print("\n{} checks, {} failed".format(21, len(FAIL)))
+    # --- the Cartesian target (S0-C-53; ticket 21; T04 section 4 / T05 section 3) -----------------
+    L_cart = phl.cartesian_loss_full(H_t, H_r)
+    d = H_t - H_r
+    check("cartesian_loss_full = ||dH||_F^2 / (9 N^2) (1e-16); the number is ~1e-2..1e-1 eV^2/A^4 on propanal",
+          abs(L_cart - np.sum(d * d) / n3 ** 2) < 1e-16 and 1e-3 < L_cart < 1.0, L_cart)
+    vt, r, info = phl.make_probes(masses, x_r, H_r, mode="cartesian", metric="cartesian")
+    check("cartesian metric, the 3N unit probes: vt = I, r = H_r, projector = I, inv_sqrt_m = 1, denominator 9N^2, exact to 1e-12",
+          np.array_equal(vt, np.eye(n3)) and np.abs(r - H_r).max() < 1e-12 and np.array_equal(info["projector"], np.eye(n3))
+          and np.all(info["inv_sqrt_m"] == 1.0) and info["denominator"] == n3 * n3 and info["n_vib"] == n3
+          and abs(phl.estimator_from_products(vt @ H_t, r, info) - L_cart) < 1e-12 and info["metric"] == "cartesian")
+    rng = np.random.default_rng(11)
+    vals = []
+    for _ in range(4000):
+        vt, r, info = phl.make_probes(masses, x_r, H_r, mode="rademacher", k=1, rng=rng, metric="cartesian")
+        vals.append(phl.estimator_from_products(vt @ H_t, r, info))
+    vals = np.array(vals)
+    var_c = phl.estimator_variance(H_t, H_r, masses, x_r, k=1, metric="cartesian")["rademacher"]
+    se = math.sqrt(var_c / 4000)
+    check("cartesian metric, Rademacher: 4000 draws' mean within 2 s.e. of ||dH||^2/(9N^2) ({:.2f} s.e.), variance within 5 % of eq. 8's algebra".format(
+          abs(vals.mean() - L_cart) / se),
+          abs(vals.mean() - L_cart) < 2 * se and abs(vals.var() / var_c - 1) < 0.05, (vals.mean(), L_cart, vals.var(), var_c))
+    vt, r, info = phl.make_probes(masses, x_r, H_r, mode="rademacher", k=4, rng=np.random.default_rng(1), metric="cartesian")
+    check("cartesian metric, k = 4: vt is the raw +-1 draw, r = H_r v, denominator 9N^2 k",
+          set(np.unique(vt)) == {-1.0, 1.0} and np.abs(r - vt @ H_r).max() < 1e-12 and info["denominator"] == 4 * n3 * n3)
+    try:
+        phl.make_probes(masses, x_r, H_r, mode="modes", metric="cartesian")
+        check("probe=modes is refused on the cartesian metric (no reference modes there)", False)
+    except ValueError:
+        check("probe=modes is refused on the cartesian metric (no reference modes there)", True)
+    # the projected path is untouched: the same draw with metric="projected" (the default) equals
+    # the formula of ticket 11 bit for bit
+    v = np.random.default_rng(5).choice([-1.0, 1.0], size=(4, n3))
+    vt, r, info = phl.make_probes(masses, x_r, H_r, mode="rademacher", k=4, rng=np.random.default_rng(5))
+    vt_old = (v @ P) * inv_m[None, :]
+    r_old = ((vt_old @ H_r) * inv_m[None, :]) @ P
+    check("the projected path is bit-identical to ticket 11's formula (P vs L_r L_r^T at 1e-13)",
+          np.abs(vt - vt_old).max() < 1e-13 and np.abs(r - r_old).max() < 1e-9 and info["denominator"] == 4 * n_vib
+          and info["metric"] == "projected")
+
+    print("\n{} checks, {} failed".format(27, len(FAIL)))
     return 1 if FAIL else 0
 
 

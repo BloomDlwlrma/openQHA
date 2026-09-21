@@ -110,7 +110,7 @@ def main():
         check("select.dat round-trips (pinned Boolean, n_heavy Integer)",
               back[0]["pinned"] is True and back[0]["n_heavy"] == 4 and back[1]["pinned"] is False, back[0])
 
-        out = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned)
+        out = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned, train_generators=frames.GENERATORS)
         idx = out["index"]
         a_rows = [r for r in idx if r["qm9_index"] == "dsgdb9nsd_000035"]
         b_rows = [r for r in idx if r["qm9_index"] == "dsgdb9nsd_000036"]
@@ -136,18 +136,18 @@ def main():
 
         # --- reproducibility --------------------------------------------------------------
         key = lambda rows_: [(r["qm9_index"], r["generator"], r["basin"], r["k"], r["split"]) for r in rows_]   # noqa: E731
-        again = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned)
-        other = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=8, pinned=pinned,
+        again = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned, train_generators=frames.GENERATORS)
+        other = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=8, pinned=pinned, train_generators=frames.GENERATORS,
                               keep_previous=False)
         same, diff = key(again["index"]) == key(idx), key(other["index"]) != key(idx)
         check("the split is identical on a rebuild with the same seed and differs with another seed (previous index not kept)",
               same and diff and again["info"]["KEPT_PREVIOUS"], (same, diff))
         # a rebuild after MORE frames get labelled keeps every earlier decision (review 2026-09-18)
-        before = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned,
+        before = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned, train_generators=frames.GENERATORS,
                                keep_previous=False)
         prev = {(r["qm9_index"], r["generator"], r["basin"], r["k"]): r["split"] for r in before["index"] if r["split"] != "pool"}
         fake_labels(mol_a, frames.GENERATORS, mace_level)                         # propanal: now 15 of 15
-        after = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned)
+        after = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned, train_generators=frames.GENERATORS)
         now = {(r["qm9_index"], r["generator"], r["basin"], r["k"]): r["split"] for r in after["index"]}
         kept = all(now[k] == s for k, s in prev.items())
         check("after more frames are labelled, a rebuild keeps every earlier frame's split and the molecule sides; the new labels of the test molecule are test",
@@ -161,7 +161,7 @@ def main():
             a.positions[0, 0] += 0.01
             stale.append(dict(atoms=a, energy=e, forces=f, hessian=a.info["hessian"], info=dict(a.info)))
         frames._write_frames(stale_path, stale)
-        st = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned)
+        st = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned, train_generators=frames.GENERATORS)
         check("a label file whose geometry differs from the engine file's is stale: ignored, counted (3), its frames pool",
               st["info"]["N_STALE"] == 3 and st["info"]["N_POOL"] == 3
               and all(r["split"] == "pool" for r in st["index"] if r["qm9_index"] == "dsgdb9nsd_000036" and r["generator"] == "basin"),
@@ -170,7 +170,7 @@ def main():
         fake_labels(mol_a, frames.GENERATORS, mace_level, only_basin_frames=True)
         for g in ("displaced",):
             layout.frames_file(mol_a, g, LEVEL).unlink()
-        out = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned,
+        out = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned, train_generators=frames.GENERATORS,
                             keep_previous=False)
         idx = out["index"]
 
@@ -266,7 +266,7 @@ def main():
               dataset.classes_of("CCC=O") == "aldehyde" and "small_ring" in dataset.classes_of("C1COC1"),
               (dataset.classes_of("CCC=O"), dataset.classes_of("C1COC1")))
 
-        out = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=3, pinned=pinned)
+        out = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=3, pinned=pinned, train_generators=frames.GENERATORS)
         i, idx = out["info"], out["index"]
         a_rows = [r for r in idx if r["qm9_index"] == "dsgdb9nsd_000035"]
         others = [r for r in idx if r["qm9_index"] != "dsgdb9nsd_000035"]
@@ -281,12 +281,12 @@ def main():
         key = lambda rows_: {(r["qm9_index"], r["generator"], r["basin"], r["k"]): r["split"] for r in rows_}   # noqa: E731
         s0 = key(others)
         # independence: a frame's draw depends on nothing else -- drop the previous index, drop a molecule, same splits
-        alone = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=3, pinned=pinned, keep_previous=False,
+        alone = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=3, pinned=pinned, train_generators=frames.GENERATORS, keep_previous=False,
                               selection=[r for r in rows if r["qm9_index"] != "dsgdb9nsd_000037"])
         s1 = key(alone["index"])
-        again = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=3, pinned=pinned)
+        again = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=3, pinned=pinned, train_generators=frames.GENERATORS)
         s2 = key(again["index"])
-        other_seed = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=4, pinned=pinned, keep_previous=False)
+        other_seed = dataset.build(root, [TAG], "p", level=LEVEL, split_by="frame", seed=4, pinned=pinned, train_generators=frames.GENERATORS, keep_previous=False)
         s3 = key(other_seed["index"])
         check("a frame's split is its own draw: identical without the previous index and with a molecule removed; a rebuild keeps everything; another seed differs",
               all(s1[k] == s0[k] for k in s0 if k in s1) and sum(1 for k in s0 if k in s1) == 15 and len(s1) == 30
@@ -320,7 +320,7 @@ def main():
         if (d / "pool.{}.extxyz".format(LEVEL)).is_file():
             pool_ok = all("REF_energy" not in a.info for a in read(str(d / "pool.{}.extxyz".format(LEVEL)), index=":", format="extxyz"))
         by_mol = dataset.build(root, [TAG], "p", level=LEVEL, split_by="molecule", test_fraction=0.0, valid_fraction=0.2, seed=3,
-                               pinned=pinned, keep_previous=False)
+                               pinned=pinned, train_generators=frames.GENERATORS, keep_previous=False)
         check("split by molecule still works on the same tree (pinned test, others train/valid at 0.2, no frame test); pool frames carry no REF_ keys",
               by_mol["info"]["N_TEST"] == 15 and by_mol["info"]["SPLIT_BY"] == "molecule" and by_mol["info"]["N_VALID"] == 6
               and all(r["split"] != "test" for r in by_mol["index"] if r["qm9_index"] != "dsgdb9nsd_000035") and pool_ok,

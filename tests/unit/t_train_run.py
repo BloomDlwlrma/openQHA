@@ -8,6 +8,20 @@ and counts the Hessians; `check_fork` refuses a non-fork and a dirty checkout wi
 message naming the fix; the Record's schema covers every key `run_training` writes and
 `parse_results` / `parse_epochs` read mace's two output forms; `registry_entry` names
 the index and the config SHA.
+
+Ticket 18 (the Replay corrections): the argv never contains `num_samples_pt`, contains
+`--real_pt_data_ratio_threshold 0` with `--multiheads` and not without, passes
+`--pt_valid_file`; `replay_file_summary` counts a two-frame file with `config_weight = 3`
+and reads `3.0` (and `mixed`, and `1.0` without the key); `parse_head_counts` reads both
+heads' lines; the schema has the four `PT_*` keys and no `NUM_SAMPLES_PT`; `run_training`
+refuses `num_samples_pt`; `smoke_fit.replay_ratio` unchanged.
+
+Ticket 21 (the control): `mace_argv` carries `--lr`, `--scheduler_patience 20`,
+`--patience 50`, `--eval_interval 1`, `--ema`, `--swa --start_swa 3/4 --swa_lr lr/40`
+and the Stage Two weights with `swa_hessian_weight = w_H x w_F^(2) / w_F` (the rule as
+arithmetic); the target defaults to cartesian; `parse_results` / `parse_epochs` yield
+the three validation curves and `parse_stage_two_epoch` the switch; `curve_moved` tells
+a flat Hessian curve from a moving one.
 """
 import sys
 import tempfile
@@ -64,15 +78,40 @@ def main():
           == ("0.25", "modes", "7", "none"), p)
     check("the loop settings reach mace",
           (p["--max_num_epochs"], p["--batch_size"], p["--seed"], p["--device"]) == ("3", "2", "5", "cuda"))
-    check("without --multiheads the replay is off and no pt file is named",
-          p["--multiheads_finetuning"] == "False" and "--pt_train_file" not in p)
+    check("without --multiheads the replay is off, no pt file is named and no duplication threshold is emitted",
+          p["--multiheads_finetuning"] == "False" and "--pt_train_file" not in p
+          and "--real_pt_data_ratio_threshold" not in p)
+    check("num_samples_pt never appears in the argv (ticket 18)", "--num_samples_pt" not in p)
     p2 = pairs(train_run.mace_argv("tr.xyz", "va.xyz", "r", "/tmp", "/w/b.model", "l",
-                                   multiheads=True, pt_train_file="spice.xyz", num_samples_pt=99))
-    check("--multiheads adds the replay head, its file and its sample count",
+                                   multiheads=True, pt_train_file="spice.xyz", pt_valid_file="spice.valid.xyz"))
+    check("--multiheads adds the replay head, its file, its validation file and the threshold 0 -- and no sample count",
           p2["--multiheads_finetuning"] == "True" and p2["--pt_train_file"] == "spice.xyz"
-          and p2["--num_samples_pt"] == "99")
-    extra = train_run.mace_argv("t", "v", "r", "/tmp", "/b", "l", extra=["--swa", "--lr", "0.001"])
-    check("--mace-arg passes through as given", extra[-3:] == ["--swa", "--lr", "0.001"])
+          and p2["--pt_valid_file"] == "spice.valid.xyz" and p2["--real_pt_data_ratio_threshold"] == "0.0"
+          and "--num_samples_pt" not in p2, p2)
+    try:
+        train_run.mace_argv("t", "v", "r", "/tmp", "/b", "l", num_samples_pt=5)
+        check("mace_argv refuses num_samples_pt", False)
+    except TypeError:
+        check("mace_argv refuses num_samples_pt", True)
+    extra = train_run.mace_argv("t", "v", "r", "/tmp", "/b", "l", extra=["--clip_grad", "1.0"])
+    check("--mace-arg passes through as given", extra[-2:] == ["--clip_grad", "1.0"])
+    # --- the control (ticket 21) ------------------------------------------------------------------
+    pc = pairs(train_run.mace_argv("t", "v", "r", "/tmp", "/b", "l", max_epochs=100, hessian_weight=0.02,
+                                   forces_weight=100.0))
+    check("the control defaults: lr 0.01, scheduler_patience 20, patience 50, eval_interval 1, ema, swa at 75, swa_lr 0.00025",
+          (pc["--lr"], pc["--scheduler_patience"], pc["--patience"], pc["--eval_interval"]) == ("0.01", "20", "50", "1")
+          and pc["--ema"] is True and pc["--swa"] is True and pc["--start_swa"] == "75" and pc["--swa_lr"] == "0.00025", pc)
+    check("the Stage Two weights: 1000 / 100 and w_H^(2) = 0.02 x 100 / 100 = 0.02",
+          (pc["--swa_energy_weight"], pc["--swa_forces_weight"], pc["--swa_hessian_weight"]) == ("1000.0", "100.0", "0.02"), pc)
+    check("the target defaults to cartesian", pc["--hessian_mode_weighting"] == "cartesian")
+    ctl = train_run.control_settings(8, lr=0.004, swa_forces_weight=10.0, hessian_weight=0.5, forces_weight=1000.0)
+    check("control_settings as arithmetic: start_swa 6, swa_lr 1e-4, w_H^(2) = 0.5 x 10 / 1000 = 0.005",
+          ctl["START_SWA"] == 6 and abs(ctl["SWA_LR"] - 1e-4) < 1e-15 and abs(ctl["SWA_HESSIAN_WEIGHT"] - 0.005) < 1e-15, ctl)
+    check("start_swa is at least 1 (max_epochs 1); an explicit swa_hessian_weight wins",
+          train_run.control_settings(1)["START_SWA"] == 1
+          and train_run.stage_two_weights(0.5, 1000.0, 10.0, swa_hessian_weight=7.0) == 7.0)
+    pn = pairs(train_run.mace_argv("t", "v", "r", "/tmp", "/b", "l", ema=False, swa=False))
+    check("ema and swa can be switched off (no --ema, no --swa flags)", "--ema" not in pn and "--swa" not in pn and "--start_swa" not in pn)
     check("a bare flag maps to True, not to the next flag's name",
           train_run.argv_pairs(["--save_cpu", "--seed", "3"]) == {"save_cpu": True, "seed": "3"})
 
@@ -124,60 +163,151 @@ def main():
         engine.mace_fork_info = real
 
     # --- mace's two output forms ----------------------------------------------------------------
-    results = ('{"mode": "opt", "epoch": 0, "loss": 1.5, "rmse_e_per_atom": 0.02, "rmse_f": 0.5}\n'
-               '{"mode": "eval", "epoch": 0, "loss": 1.2, "rmse_e_per_atom": 0.01, "rmse_f": 0.4}\n'
+    results = ('{"mode": "eval", "epoch": null, "head": "pt_head", "loss": 9.0, "rmse_e_per_atom": 0.09, "rmse_f": 0.9}\n'
+               '{"mode": "eval", "epoch": null, "head": "Default", "loss": 1.3, "rmse_e_per_atom": 0.03, "rmse_f": 0.6, '
+               '"valid_energy_term": 2e-4, "valid_forces_term": 3e-3, "valid_hessian_term": 0.6}\n'
+               '{"mode": "opt", "epoch": 0, "loss": 1.5, "rmse_e_per_atom": 0.02, "rmse_f": 0.5}\n'
+               '{"mode": "eval", "epoch": 0, "head": "pt_head", "loss": 8.0, "rmse_e_per_atom": 0.08, "rmse_f": 0.8}\n'
+               '{"mode": "eval", "epoch": 0, "loss": 1.2, "rmse_e_per_atom": 0.01, "rmse_f": 0.4, '
+               '"valid_energy_term": 1e-4, "valid_forces_term": 2e-3, "valid_hessian_term": 0.5}\n'
+               '{"mode": "eval", "epoch": 1, "loss": 1.1, "rmse_e_per_atom": 0.01, "rmse_f": 0.4, '
+               '"valid_energy_term": 9e-5, "valid_forces_term": 1.9e-3, "valid_hessian_term": 0.4}\n'
                'not json\n')
     with tempfile.TemporaryDirectory() as td:
         (Path(td) / "run_train.txt").write_text(results)
         rows = train_run.parse_results(td)
-    check("parse_results reads both splits and converts eV to meV",
-          [r["split"] for r in rows] == ["train", "valid"] and rows[0]["rmse_f_meV_A"] == 500.0
-          and rows[1]["rmse_e_per_atom_meV"] == 10.0 and len(rows) == 2, rows)
-    log = ("2026-09-20 21:09:03.573 INFO: Epoch 1: head: Default, loss=0.05997006, "
-           "RMSE_E_per_atom=   20.92 meV, RMSE_F=   77.16 meV / A\n")
+    check("parse_results reads both splits, converts eV to meV, carries the three validation terms, keeps the "
+          "initial evaluation as epoch -1 and drops the pretraining head's rows",
+          [(r["epoch"], r["split"]) for r in rows] == [(-1, "valid"), (0, "train"), (0, "valid"), (1, "valid")]
+          and rows[1]["rmse_f_meV_A"] == 500.0 and rows[2]["rmse_e_per_atom_meV"] == 10.0
+          and (rows[2]["valid_energy"], rows[2]["valid_forces"], rows[2]["valid_hessian"]) == (1e-4, 2e-3, 0.5)
+          and rows[0]["valid_hessian"] == 0.6 and rows[1]["valid_hessian"] is None, rows)
+    curves = train_run.validation_curves(rows)
+    check("validation_curves: one point per epoch per term (the initial one first); the Hessian curve moved",
+          curves["valid_hessian"] == [(-1, 0.6), (0, 0.5), (1, 0.4)] and curves["valid_energy"] == [(-1, 2e-4), (0, 1e-4), (1, 9e-5)]
+          and train_run.curve_moved(curves["valid_hessian"]), curves)
+    check("curve_moved: a flat curve, a one-point curve and an empty one are False",
+          not train_run.curve_moved([(0, 0.5), (1, 0.5), (2, 0.5 + 1e-9)]) and not train_run.curve_moved([(0, 0.5)])
+          and not train_run.curve_moved([]))
+    log = ("2026-09-20 21:09:00.000 INFO: openQHA loss (valid): energy=- forces=9.000000e-03 hessian=- n_labelled=0 "
+           "probes=rademacher k=4 fixed target=cartesian\n"
+           "2026-09-20 21:09:00.100 INFO: Initial: head: pt_head, loss=9.0, RMSE_E_per_atom=   90.00 meV, RMSE_F=   90.00 meV / A\n"
+           "2026-09-20 21:09:01.000 INFO: openQHA loss (valid): energy=2.000000e-04 forces=3.000000e-03 hessian=6.000000e-01 "
+           "n_labelled=3 probes=rademacher k=4 fixed target=cartesian\n"
+           "2026-09-20 21:09:01.100 INFO: Initial: head: Default, loss=0.07, RMSE_E_per_atom=   30.00 meV, RMSE_F=   80.00 meV / A\n"
+           "2026-09-20 21:09:03.100 INFO: openQHA loss (valid): energy=1.000000e-04 forces=2.000000e-03 "
+           "hessian=5.000000e-01 n_labelled=3 probes=rademacher k=4 fixed target=cartesian\n"
+           "2026-09-20 21:09:03.573 INFO: Epoch 1: head: Default, loss=0.05997006, "
+           "RMSE_E_per_atom=   20.92 meV, RMSE_F=   77.16 meV / A\n"
+           "2026-09-20 21:10:00.000 INFO: Changing loss based on Stage Two Weights\n"
+           "2026-09-20 21:10:03.100 INFO: openQHA loss (valid): energy=9.000000e-05 forces=- hessian=4.000000e-01 "
+           "n_labelled=3 probes=rademacher k=4 fixed target=cartesian\n"
+           "2026-09-20 21:10:03.573 INFO: Epoch 2: head: Default, loss=0.04, "
+           "RMSE_E_per_atom=   20.00 meV, RMSE_F=   70.00 meV / A\n")
     rows = train_run.parse_epochs(log)
-    check("parse_epochs reads mace's log line as a fallback",
-          len(rows) == 1 and rows[0]["epoch"] == 1 and abs(rows[0]["loss"] - 0.05997006) < 1e-12
-          and rows[0]["rmse_f_meV_A"] == 77.16, rows)
+    check("parse_epochs reads mace's log lines as a fallback (Initial = epoch -1, pt_head dropped), the loss's own line attached",
+          len(rows) == 3 and [r["epoch"] for r in rows] == [-1, 1, 2] and abs(rows[1]["loss"] - 0.05997006) < 1e-12
+          and rows[1]["rmse_f_meV_A"] == 77.16 and rows[1]["valid_hessian"] == 0.5 and rows[1]["valid_energy"] == 1e-4
+          and rows[0]["valid_hessian"] == 0.6 and rows[0]["loss"] == 0.07
+          and rows[2]["valid_hessian"] == 0.4 and rows[2]["valid_forces"] is None, rows)
+    check("parse_stage_two_epoch: the first Epoch line after the switch (2); -1 without a switch",
+          train_run.parse_stage_two_epoch(log) == 2 and train_run.parse_stage_two_epoch("Epoch 1: loss=1") == -1)
+    heads_log = ("INFO: =============    Processing head Default     ===========\n"
+                 "INFO: Total number of configurations: train=17132, valid=850, tests=[],\n"
+                 "INFO: =============    Processing head pt_head     ===========\n"
+                 "INFO: Total number of configurations: train=5000, valid=200, tests=[],\n"
+                 "INFO: Total number of configurations in pretraining: train=5000, valid=200\n")
+    heads = train_run.parse_head_counts(heads_log)
+    check("parse_head_counts: both heads' train / valid and the pretraining summary line",
+          heads == {"Default": (17132, 850), "pt_head": (5000, 200), "pt": (5000, 200)}, heads)
+
+    # --- the Replay file (ticket 18) ------------------------------------------------------------
+    from ase.io import write as ase_write
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        fr = []
+        for i in range(2):
+            at = Atoms("H2O", positions=np.random.default_rng(i).standard_normal((3, 3)))
+            at.info["REF_energy"] = -1.0 - i
+            at.arrays["REF_forces"] = np.zeros((3, 3))
+            at.info["config_weight"] = 3.0
+            fr.append(at)
+        ase_write(str(td / "pt.xyz"), fr, format="extxyz")
+        rs = train_run.replay_file_summary(td / "pt.xyz")
+        check("replay_file_summary: two frames, config_weight 3.0 read from the headers",
+              rs["n_frames"] == 2 and rs["config_weight"] == "3.0" and rs["weights"] == {3.0}, rs)
+        fr[1].info["config_weight"] = 10.0
+        ase_write(str(td / "mixed.xyz"), fr, format="extxyz")
+        for a in fr:
+            a.info.pop("config_weight")
+        ase_write(str(td / "plain.xyz"), fr, format="extxyz")
+        check("... `mixed` for two values, `1.0` (mace's default) when no frame carries the key",
+              train_run.replay_file_summary(td / "mixed.xyz")["config_weight"] == "mixed"
+              and train_run.replay_file_summary(td / "plain.xyz")["config_weight"] == "1.0")
+    from openqha.training import smoke_fit
+    rr = smoke_fit.replay_ratio(300, 100, 5000)
+    check("smoke_fit.replay_ratio unchanged: 5000 frames over 100 Hessian frames = 50 per Hessian frame",
+          rr["REPLAY_PER_HESSIAN_FRAME"] == 50.0 and rr["PFT_REFERENCE"] == 4.0)
+    try:
+        train_run.run_training("/no/such", "t", "n", "l", "r", num_samples_pt=5)
+        check("run_training refuses num_samples_pt with the draw tool named", False)
+    except TypeError as exc:
+        check("run_training refuses num_samples_pt with the draw tool named", "s0_spice_pt_draw" in str(exc))
 
     # --- the Record's schema covers what run_training writes ---------------------------------------
     written = {"RUN", "TAG", "NAME", "LEVEL", "DATASET_DIR", "INDEX_FILE", "TRAIN_FILE", "VALID_FILE",
                "N_TRAIN", "N_TRAIN_HESSIAN", "N_VALID", "N_VALID_HESSIAN", "FOUNDATION_MODEL",
                "FOUNDATION_PARAMS_SHA256", "ENGINE_PARAMS_SHA256", "CONFIG_FILE", "CONFIG_SHA256",
                "LOSS", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "PROBE", "N_PROBES",
-               "MODE_WEIGHTING", "MAX_NUM_EPOCHS", "BATCH_SIZE", "SEED", "DEVICE", "DTYPE",
-               "MULTIHEADS", "PT_TRAIN_FILE", "NUM_SAMPLES_PT", "MACE_VERSION", "MACE_FORK",
-               "MACE_FORK_COMMIT", "N_EPOCHS", "SECONDS", "SECONDS_PER_EPOCH", "MODEL_FILE",
-               "MODEL_PARAMS_SHA256", "MODEL_N_TENSORS"}
+               "MODE_WEIGHTING", "VALID_PROBES", "MAX_NUM_EPOCHS", "BATCH_SIZE", "SEED", "DEVICE", "DTYPE",
+               "MULTIHEADS", "PT_TRAIN_FILE", "PT_VALID_FILE", "PT_N_FRAMES", "PT_CONFIG_WEIGHT", "PT_HEAD_TRAIN",
+               "PT_HEAD_VALID", "FT_HEAD_TRAIN", "FT_HEAD_VALID", "REPLAY_PER_HESSIAN_FRAME",
+               "REAL_PT_DATA_RATIO_THRESHOLD", "HESSIAN_CURVE_MOVED", "STAGE_TWO_EPOCH",
+               "LR", "SCHEDULER_PATIENCE", "PATIENCE", "EVAL_INTERVAL", "EMA", "SWA", "START_SWA", "SWA_LR",
+               "SWA_ENERGY_WEIGHT", "SWA_FORCES_WEIGHT", "SWA_HESSIAN_WEIGHT",
+               "MACE_VERSION", "MACE_FORK", "MACE_FORK_COMMIT", "N_EPOCHS", "SECONDS", "SECONDS_PER_EPOCH",
+               "MODEL_FILE", "MODEL_PARAMS_SHA256", "MODEL_N_TENSORS"}
     schema = set(train_run.SCHEMA["Calculation_Info"])
     check("every key run_training writes is in the schema", written <= schema, sorted(written - schema))
+    check("the stale NUM_SAMPLES_PT key is gone from the schema; the four PT_* keys are there",
+          "NUM_SAMPLES_PT" not in schema and {"PT_N_FRAMES", "PT_CONFIG_WEIGHT", "PT_HEAD_TRAIN", "FT_HEAD_TRAIN"} <= schema)
 
     info = dict(FOUNDATION_MODEL="MACE-OFF23_medium", RUN="w1", INDEX_FILE="/r/index.dat",
                 CONFIG_SHA256="0123456789abcdef" * 4, NAME="draw300", N_TRAIN=90, N_TRAIN_HESSIAN=30,
-                HESSIAN_WEIGHT=0.01, PROBE="rademacher", N_PROBES=4, MODE_WEIGHTING="entropy",
-                MACE_FORK_COMMIT="b" * 40, MODEL_PARAMS_SHA256="c" * 64)
+                HESSIAN_WEIGHT=0.01, PROBE="rademacher", N_PROBES=4, MODE_WEIGHTING="cartesian",
+                MACE_FORK_COMMIT="b" * 40, MODEL_PARAMS_SHA256="c" * 64, MULTIHEADS=True, PT_N_FRAMES=5000,
+                REPLAY_PER_HESSIAN_FRAME=5000 / 30, PT_CONFIG_WEIGHT="1.0")
     e = train_run.registry_entry(info)
-    check("registry_entry: name, filename, the index + config SHA as source, the fingerprint",
+    check("registry_entry: name, filename, the index + config SHA as source, the fingerprint, the Replay named",
           e["name"] == "MACE-OFF23_medium-w1" and e["filename"] == "MACE-OFF23_medium-w1.model"
           and "/r/index.dat" in e["source"] and "0123456789abcdef" in e["source"]
-          and e["params_sha256"] == "c" * 64 and "w_H 0.01" in e["note"], e)
+          and e["params_sha256"] == "c" * 64 and "w_H 0.01" in e["note"] and "Replay 5000 frames" in e["note"]
+          and "target cartesian" in e["note"], e)
 
     # --- the Record writes and reads back ------------------------------------------------------------
     with tempfile.TemporaryDirectory() as td:
         full = dict(info)
         for k in schema - set(full) - {"PROGNAME", "VERSION", "STATUS"}:
             full[k] = 0 if "N_" in k or "SECONDS" in k or "WEIGHT" in k else "x"
-        full["MULTIHEADS"] = False
+        for k in ("MULTIHEADS", "EMA", "SWA", "HESSIAN_CURVE_MOVED"):
+            full[k] = False
+        for k in ("PT_CONFIG_WEIGHT", "VALID_PROBES", "MODE_WEIGHTING"):
+            full[k] = "x"
         train_run.write_record(td, full, [dict(epoch=0, split="train", loss=1.0,
-                                               rmse_e_per_atom_meV=2.0, rmse_f_meV_A=3.0)])
+                                               rmse_e_per_atom_meV=2.0, rmse_f_meV_A=3.0),
+                                          dict(epoch=0, split="valid", loss=1.0, rmse_e_per_atom_meV=2.0,
+                                               rmse_f_meV_A=3.0, valid_energy=1e-4, valid_forces=2e-3,
+                                               valid_hessian=0.5)])
         rec = prop.load(Path(td) / "train.toml")
-        check("train.toml round-trips with NORMAL TERMINATION and the epoch block",
+        check("train.toml round-trips with NORMAL TERMINATION and the epoch block (with the three validation columns)",
               rec["Calculation_Status"]["STATUS"] == prop.NORMAL_TERMINATION
-              and rec["Calculation_Info"]["RUN"] == "w1" and len(rec["Epoch"]) == 1, rec.get("Calculation_Status"))
-        check("train.out and train.dat are written",
-              (Path(td) / "train.out").is_file() and (Path(td) / "train.dat").is_file())
+              and rec["Calculation_Info"]["RUN"] == "w1" and len(rec["Epoch"]) == 2
+              and rec["Epoch"][1]["VALID_HESSIAN"] == 0.5, rec.get("Calculation_Status"))
+        check("train.out and train.dat are written; the flat-curve warning is in the report",
+              (Path(td) / "train.out").is_file() and (Path(td) / "train.dat").is_file()
+              and "did not move" in (Path(td) / "train.out").read_text(encoding="utf-8"))
 
-    print("\n{} checks, {} failed".format(21, len(FAIL)))
+    print("\n{} checks, {} failed".format(40, len(FAIL)))
     return 1 if FAIL else 0
 
 
