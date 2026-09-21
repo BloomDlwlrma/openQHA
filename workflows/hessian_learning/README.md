@@ -12,7 +12,8 @@ touches; the Slurm log is the Batch's report.
 | 02 | `02_frames.py` | `openqha.data.frames.generate` | `<molecule>/frames/<generator>.<mace level>.extxyz`, `frames/frames.{out,toml}` |
 | 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/frames/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
 | 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz` (REF_* keys), `mace_<name>.<level>.extxyz`, `index.dat` (classes), `dataset.{out,toml}` ([[Class]]), `molecules-<name>.h5` |
-| 05, 06 | `05_train.py`, `06_judge.py` | stubs: refuse until round 2 is ruled | |
+| 05 | `05_train.py` | `openqha.training.run.run_training` → `mace.cli.run_train.run` (the fork) | `<root>/<tag>/_datasets/<name>/train/<run>/` — mace's own files (`<run>.model`, `checkpoints/`, `logs/`, `results/`) plus `config.yaml` and the Record `train.{out,toml,dat}` (settings, epoch table, the base and fine-tuned fingerprints, the config SHA, the mace fork's commit) |
+| 06 | `06_judge.py` | stub: ticket 14 | |
 
 `run.sh --tag T [--tag T2] [--name NAME] [--limit N] [--stratify] [--with-labels]` runs
 01 → 02 → (03 with `--with-labels`, else skipped) → 04 here; the Dataset lives under the
@@ -143,6 +144,46 @@ whole draw — plus every branch‑A‑finished molecule under the tags. Each ro
 stratification keys, the structure `classes` (from `draw.dat`, else classified from the
 SMILES with `configs/structure_classes.yaml`), SPICE membership, pin status; the Record has
 a `[[Class]]` table (molecules / with basins / with frames per class).
+
+## Step 05: the fine-tune (ticket 13)
+
+`05_train.py` is openQHA's own entry point into the mace **fork**
+(`BloomDlwlrma/openQHA-Hessian`, branch `openqha-hessian`): it builds mace's arguments and
+calls `mace.cli.run_train.run`, the Hessian labels come from the Dataset's
+`mace_<name>.<level>.extxyz` (`REF_hessian`, fork commit A) and the loss from
+`openqha.training.phl_loss` through the fork's generic hook (commit B):
+
+    --loss external --loss_module openqha.training.phl_loss:build
+
+Nothing here reimplements a training loop; the loss is the projected Hessian loss of
+`design-phl-loss.md` (eq. 11), derived and verified in
+`docs/tutorials/T03_openQHA_Theory_Projected_Hessian_Loss.ipynb`.
+
+```bash
+# what would run, and the Record header -- no training
+python workflows/hessian_learning/05_train.py --tag smoke --run w1 --dry-run
+
+# the exact loss (probe = modes, eq. 10) on the smoke Dataset, two epochs
+python workflows/hessian_learning/05_train.py --tag smoke --run w1     --probe modes --hessian-weight 0.01 --max-epochs 2
+
+# the campaign, on one A800
+TAG=draw300 RUN=prod1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 MULTIHEADS=1     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.extxyz     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+```
+
+**Training estimates, evaluation is exact.** During a step the Hessian term is the
+Hutchinson estimator (`--probe rademacher --n-probes 4`: `k` Hessian-vector products per
+structure, eq. 6); at validation mace is asked for the full 3N x 3N Hessian and the term
+is eq. 1 exactly, so the logged validation number is the ruler's quantity and not a
+sample. `--probe modes` makes the training term exact too, at `n_vib` HVPs -- the setting
+the smoke fit (ticket 15) measures the ceiling and the cost with.
+
+**The fork is required, and its commit is recorded.** `05_train.py` refuses a mace that
+is not an editable checkout of the fork, or one with uncommitted changes to tracked
+files: a potential whose loss cannot be reproduced from a commit is not a product
+(`--no-strict-fork` overrides it for experiments, and the Record says so).
+`--register` prints the `ENGINES` entry for the fine-tuned model (ticket 01's recipe:
+the Dataset's `index.dat` plus the config SHA as its `source`), `--register-copy` also
+puts the file into `data/potentials/`.
 
 ## Step 04: the Dataset (rounds 3–4 Q3/Q6 (b); round 5 Q4, ticket 07)
 
