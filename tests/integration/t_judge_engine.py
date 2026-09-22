@@ -15,6 +15,17 @@ itself:
     where MACE-OFF23's curvature error lives (S0-C-41). A judge that passed it here would
     not be measuring what the fine-tune is for.
 
+Ticket 22 (2026-09-22, S0-C-58/59): the gate is the Hessian MATRIX against the Label,
+engine vs base (||dH||^2/(9N^2), the training target); the low-mode line and the entropy
+are computed from it and are reference rows, like the RMS bins and the MD ramp; the 0.9x
+potential (Hessian x0.81) FAILs the Hessian gate and the verdict, the base against itself
+reads exactly 0 and PASSes; the fixture's four displaced frames
+(E/F labels, no Hessian; rms 0.058-0.11 A) are held-out frames that populate the
+displacement bins with E/F errors on the base model; a real MD ramp with `max_K 20`,
+5 K steps of 0.05 ps on the molecule survives on the base (the `[Ramp]` rows, the
+reference line '-' without a base... engine == base here, so PASS); the Record holds
+`[[Displacement]]` and `[[Ramp]]`.
+
 SKIPs without the model.
 """
 import sys
@@ -48,6 +59,7 @@ def check(label, ok, detail=""):
 def main():
     from openqha.data import dataset, frames
     from openqha.potentials import engine
+    from openqha.store import property as prop
     from openqha.training import judge, phl
     try:
         calc, name, prov = engine.calculator(device="cpu")
@@ -62,11 +74,21 @@ def main():
         from openqha.data import dataset as dataset_mod
         d = Path(dataset_mod.datasets_dir(Path(tmp), "smoke", "smoke"))
         d.mkdir(parents=True)
-        dataset._write_split(d / "test.{}.extxyz".format(LEVEL), [(a, "test") for a in ref], reference=True)
+        disp = frames.read_frames(FIX / "displaced.{}.extxyz".format(LEVEL))
+        for a in disp:                                             # held-out frames: E/F labels only (S0-C-54)
+            a.info.pop("hessian", None)
+        dataset._write_split(d / "test.{}.extxyz".format(LEVEL), [(a, "test") for a in ref] + [(a, "test") for a in disp],
+                             reference=True)
 
         rows, anh = judge.frame_rows(d, "smoke", LEVEL, calc, base_calc=calc, splits=("test",),
                                      index=[dict(qm9_index="dsgdb9nsd_000044", classes="epoxide;small_ring")])
         r = rows[0]
+        check("five rows: the basin frame with a Hessian and four displaced E/F-only frames, bins '<0.08' / '<0.15'",
+              len(rows) == 5 and rows[0]["has_hessian"] and all(not x["has_hessian"] for x in rows[1:])
+              and all(x["hessian_mae"] is None and x["e_err_mev_per_atom"] is not None and x["f_rmse_mev_a"] is not None
+                      for x in rows[1:])
+              and {x["rms_bin"] for x in rows[1:]} <= {"<0.08", "<0.15"} and rows[0]["rms_bin"] == "0",
+              [(x["generator"], x["rms_bin"], x["has_hessian"]) for x in rows])
         exact = phl.projected_loss_full(mace_basin.info["hessian"], ref[0].info["hessian"],
                                         ref[0].get_masses(), ref[0].positions)
         check("the judge's ||A||_F^2/n_vib on the basin frame = the fixture's 2.8166e-2 (1e-6 relative)",
@@ -98,9 +120,16 @@ def main():
         check("A5 through the judge: H_r := H_base gives ~0 loss and ~0 frequency error",
               srows[0]["loss_exact"] < 1e-12 and srows[0]["freq_mae_cm"] < 1e-3, srows[0])
 
+        ramp = dict(max_K=20.0, step_K=5.0, step_ps=0.05, seed=1)        # 4 stages x 50 steps: the machinery, not the physics
+        closed = judge.run(Path(tmp), "smoke", "smoke", LEVEL, calc, name, base_calc=calc, base_engine=name,
+                           run_name="base_closed", splits=("test",), write=True)
+        check("the default judge run has the gate CLOSED (S0-C-60): VERDICT = REPORTED, GATE_OPEN false, every row still carries its result",
+              closed["info"]["VERDICT"] == "REPORTED" and closed["info"]["GATE_OPEN"] is False
+              and {l["LINE"]: l["RESULT"] for l in closed["verdict"]}["held_out_low_mode_mae_cm"] == "FAIL"
+              and "CLOSED" in (closed["run_dir"] / "judge.out").read_text(encoding="utf-8"), closed["info"]["VERDICT"])
         out = judge.run(Path(tmp), "smoke", "smoke", LEVEL, calc, name, base_calc=calc, base_engine=name,
                         run_name="base", splits=("test",), engine_params_sha256=prov["params_sha256"],
-                        base_params_sha256=prov["params_sha256"], write=True)
+                        base_params_sha256=prov["params_sha256"], write=True, ramp=ramp, gate=True)
         lines = {l["LINE"]: l for l in out["verdict"]}
         # The must-pass of the ticket is the NO-DEGRADATION line (base against base) and
         # the self-label zero above -- NOT the low-mode line. On this molecule the base
@@ -108,29 +137,54 @@ def main():
         # is the judge working: 2-methyloxirane is an out-of-distribution ring, exactly
         # where MACE-OFF23's curvature error lives (S0-C-41: -57 cm^-1 on the lowest mode
         # of one of the three rings). A judge that passed the base model here would be
-        # measuring nothing the fine-tune is for.
-        check("must-pass: judged against ITSELF no line FAILs (there is no degradation)",
-              all(l["RESULT"] != "FAIL" for l in out["verdict"] if l["LINE"] != "held_out_low_mode_mae_cm"),
-              [(l["LINE"], l["RESULT"]) for l in out["verdict"]])
-        check("the low-mode line is measured and the base model FAILS it on this ring "
-              "(the error the fine-tune exists to fix)",
-              lines["held_out_low_mode_mae_cm"]["RESULT"] == "FAIL"
+        # measuring nothing the fine-tune is for. Since ticket 22 that line is a REFERENCE
+        # row: reported, never in the verdict.
+        check("must-pass: judged against ITSELF the Hessian gate reads exactly 0 (ratio - 1), no gate row FAILs, VERDICT PASS",
+              abs(lines["held_out_hessian_cartesian"]["VALUE"]) < 1e-12 and lines["held_out_hessian_cartesian"]["GATE"] == "yes"
+              and all(l["RESULT"] != "FAIL" for l in out["verdict"] if l["GATE"] == "yes") and out["info"]["VERDICT"] == "PASS",
+              [(l["LINE"], l["GATE"], l["RESULT"]) for l in out["verdict"]])
+        check("the low-mode REFERENCE row is measured and the base model reads FAIL on it on this ring "
+              "(12.7 cm^-1 against 8.5: the error the fine-tune exists to fix), without moving the verdict",
+              lines["held_out_low_mode_mae_cm"]["GATE"] == "no" and lines["held_out_low_mode_mae_cm"]["RESULT"] == "FAIL"
               and lines["held_out_low_mode_mae_cm"]["VALUE"] > 8.5, lines["held_out_low_mode_mae_cm"])
         check("... and the line names the Label's own grid noise, so nobody reads a 12.7 "
               "against a 24 cm^-1 floor as settled",
               "grid noise" in lines["held_out_low_mode_mae_cm"]["NOTE"])
-        check("... the Record is on disk (judge.out / .toml / .dat)",
-              all((out["run_dir"] / ("judge" + e)).is_file() for e in (".out", ".toml", ".dat")))
-        print("    verdict lines: " + ", ".join("{} {}".format(l["LINE"], l["RESULT"]) for l in out["verdict"]))
+        check("... the Record is on disk (judge.out / .toml / .dat) with [[Displacement]] and [[Ramp]]",
+              all((out["run_dir"] / ("judge" + e)).is_file() for e in (".out", ".toml", ".dat"))
+              and len(prop.load(out["run_dir"] / "judge.toml")["Displacement"]) >= 2
+              and len(prop.load(out["run_dir"] / "judge.toml")["Ramp"]) == 2)
+        disp_rows = {(x["DISTRIBUTION"], x["RMS_BIN"]): x for x in out["displacement"]}
+        held = [x for k, x in disp_rows.items() if k[1] != "0"]
+        check("the displacement bins: the basin bin (1 Hessian frame) and the held-out bins (4 E/F frames, no H sample), "
+              "engine E/F errors equal the base's (it IS the base)",
+              disp_rows[("out_of_molecule", "0")]["N_HESSIAN"] == 1 and sum(x["N_FRAMES"] for x in held) == 4
+              and all(x["N_HESSIAN"] == 0 and x["HESSIAN_MAE"] is None for x in held)
+              and all(abs(x["E_MAE_MEV_PER_ATOM"] - x["BASE_E_MAE_MEV_PER_ATOM"]) < 1e-9 for x in held)
+              and all(x["F_RMSE_MEV_A"] > 0 for x in held), out["displacement"])
+        print("    held-out bins on the base: " + "; ".join("{} {} frames E {:.2f} meV/atom F {:.1f} meV/A".format(
+            x["RMS_BIN"], x["N_FRAMES"], x["E_MAE_MEV_PER_ATOM"], x["F_RMSE_MEV_A"]) for x in held))
+        rr = {x["WHICH"]: x for x in out["ramp"]}
+        check("the MD ramp (asked for explicitly) ran on the pinned molecule for engine and base (4 stages x 50 steps at 1 fs), "
+              "both survive to 20 K, the reference line reads PASS (engine == base) and does not gate",
+              set(rr) == {"engine", "base"} and all(x["SURVIVED"] and x["FAIL_T_K"] == 20.0 and x["N_STEPS"] == 200 for x in rr.values())
+              and lines["md_ramp_K"]["GATE"] == "no" and lines["md_ramp_K"]["RESULT"] == "PASS"
+              and out["info"]["RAMP_MAX_K"] == 20.0 and out["info"]["N_RAMP_MOLECULES"] == 1, (rr, lines.get("md_ramp_K")))
+        print("    ramp: engine max ratio {:.3f} min ratio {:.3f} in {:.1f} s; base {:.3f} / {:.3f}".format(
+            rr["engine"]["MAX_RATIO"], rr["engine"]["MIN_RATIO"], rr["engine"]["SECONDS"], rr["base"]["MAX_RATIO"], rr["base"]["MIN_RATIO"]))
+        print("    verdict lines: " + ", ".join("{} [{}] {}".format(l["LINE"], l["GATE"], l["RESULT"]) for l in out["verdict"]))
 
         # must-fail: every frequency x0.9
         bad = judge.run(Path(tmp), "smoke", "smoke", LEVEL, judge.ScaledCalculator(calc, 0.9), name,
                         base_calc=calc, base_engine=name, run_name="base_x0.9", splits=("test",),
-                        scale=0.9, write=True)
+                        scale=0.9, write=True, ramp=None, gate=True)
         blines = {l["LINE"]: l for l in bad["verdict"]}
-        check("must-fail: the 0.9x-scaled potential FAILs the low-mode line",
-              blines["held_out_low_mode_mae_cm"]["RESULT"] == "FAIL" and bad["info"]["VERDICT"] == "FAIL",
-              blines["held_out_low_mode_mae_cm"])
+        check("must-fail: the 0.9x-scaled potential (Hessian x0.81) FAILs the Hessian GATE row and the VERDICT (S0-C-59); "
+              "its low-mode reference row reads FAIL too",
+              blines["held_out_hessian_cartesian"]["RESULT"] == "FAIL" and blines["held_out_hessian_cartesian"]["VALUE"] > 1.0
+              and blines["held_out_low_mode_mae_cm"]["RESULT"] == "FAIL" and blines["held_out_low_mode_mae_cm"]["GATE"] == "no"
+              and bad["info"]["VERDICT"] == "FAIL" and bad["info"]["VERDICT"] == judge.verdict_of(bad["verdict"]),
+              [(l["LINE"], l["GATE"], l["RESULT"], l["VALUE"]) for l in bad["verdict"]])
         print("    scaled 0.9: low-mode MAE {:.2f} cm^-1 against the base model's {:.2f}".format(
             blines["held_out_low_mode_mae_cm"]["VALUE"], lines["held_out_low_mode_mae_cm"]["VALUE"]))
         check("... and its ||A||^2/n is far worse than the base model's",
@@ -144,7 +198,7 @@ def main():
             check("a judge run with no labelled frame REFUSES (it must not answer PASS)",
                   "nothing to judge" in str(exc), str(exc))
 
-    print("\n{} checks, {} failed".format(11, len(FAIL)))
+    print("\n{} checks, {} failed".format(15, len(FAIL)))
     print("PASS" if not FAIL else "FAIL")
     return 1 if FAIL else 0
 

@@ -146,8 +146,15 @@ under the molecule directory's `frames/` folder; identical positions across the 
 of one generator, checked (a reference label whose `.hess` geometry differs in shape by more than 1e-7 A
 from the engine file is refused). A Frame set has a Record like any Calculation (what
 was generated, what was dropped and why, the seeds, the engine identity) and one Record
-per reference Level labelled (`labels.<level>`: what was labelled, reused or refused,
-ORCA's wall time and memory per frame, the noise floor of every Hessian). A reference
+per reference Level labelled (`labels.<level>`: what was labelled, reused, refused or
+failed, ORCA's wall time and memory per frame, the noise floor of every Hessian). A frame's
+reference job is attempted ONCE and bounded (`TIMEOUT_S`, 8 h): a job that did not terminate
+normally leaves its `.out` and is a failed frame -- read, not rerun, until a human asks
+(`--retry`); a job cut before anything came back (walltime, a dead node) left nothing and is
+rerun whole -- no unit checkpoints or resumes (round 11, S0-G-96). While it runs the frame is
+held by a `.running` lock that names its Slurm job and is touched every minute; another
+process treats the frame as held only while Slurm does not call that job dead AND the lock
+was touched within 30 min. A reference
 label is a single point at the frame's fixed geometry -- energy, gradient and analytic
 Hessian -- never an optimisation.
 _Avoid_: trajectory, ensemble (that is a thermodynamic average), training file
@@ -200,10 +207,19 @@ The step that decides whether a potential is better, reading only shipped paths:
 Cartesian Hessian from the engine's own `get_hessian` against the reference Label through
 `hessian_compare`, never the training loss's estimator. It reports per structure class and
 per distribution, sets anharmonic modes aside from the entropy tier, reads the
-thermochemistry from the msRRHO Records rather than recomputing it, and ends in PASS / FAIL
-lines with a threshold each. It is calibrated in both directions: the base model against
-itself must not fail a no-degradation line, and a deliberately scaled potential must fail
-the low-mode line.
+thermochemistry from the msRRHO Records rather than recomputing it, and ends in one line
+per row. GATE rows decide the verdict (S0-C-58/59): the Hessian MATRIX itself against the
+Label on the held-out Hessian frames -- the training target's own number, engine no worse
+than base -- the in_distribution no-degradation, the forgetting line. Everything computed
+FROM the matrix afterwards is post-processing and a REFERENCE row, measured against a
+number and reported, never gated: the low-mode frequency line, the msRRHO entropy at the
+engine's own minima, the Held-out generator's frames binned by RMS displacement (H, E, F
+against the base), the MD temperature ramp (run only when asked for). The gate is CLOSED
+for now (S0-C-60): every row is reported against its number and the verdict reads
+`REPORTED`; `--gate` reopens it. It is calibrated in both directions with the gate open:
+the base model against itself reads exactly 0 on the Hessian gate and must not fail a gate
+row, and a deliberately scaled potential must fail the Hessian gate and with it the
+verdict.
 _Avoid_: evaluation (alone), validation (that is inside training), benchmark
 
 **Workflow**:
