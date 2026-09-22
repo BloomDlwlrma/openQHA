@@ -253,6 +253,18 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
             rec["wall_seconds"] = rec.get("seconds")
             rec["shake_used"] = c["shake"]
             rec["used_shake_fallback"] = False
+            # A retry directory beside it without an ensemble: the fallback ran and
+            # failed in an earlier invocation (ticket 26); say so, read off the disk.
+            fb_to = int((c.get("shake_fallback") or {}).get("to", 1))
+            retry_dir = Path("{}_shake{}".format(workdir, fb_to))
+            if retry_dir.is_dir() and not (retry_dir / "crest_conformers.xyz").is_file():
+                out = retry_dir / "crest.out"
+                rec["fallback_failed"] = dict(
+                    workdir=str(retry_dir), shake=fb_to, terminated_normally=False,
+                    last_line=crest._last_line(out.read_text(encoding="utf-8", errors="replace")[-4000:]) if out.is_file() else "-",
+                    note="read back from disk beside a reused run")
+                rec["fallback_reason"] = ("the retry at shake={} left no ensemble ({}); the published run's "
+                                          "ensemble is reused".format(fb_to, rec["fallback_failed"]["last_line"]))
             return rec
         if not ok:
             raise RuntimeError(
@@ -296,6 +308,9 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
     if rec.get("first_attempt"):
         rec["first_attempt"]["workdir"] = str(workdir)
         rec["first_attempt"]["ran_in"] = str(scratch)
+    if rec.get("fallback_failed"):                       # the retry's directory was moved too
+        rec["fallback_failed"]["workdir"] = str(final_shake)
+        rec["fallback_failed"]["ran_in"] = str(scratch_shake)
     return rec
 
 
@@ -610,11 +625,14 @@ def check_criteria(record, cfg_shake_fallback=None):
             bad_sigma or "none", flips))
 
     # 10 (new) -- the published protocol actually ran, or the fallback is declared.
+    ff = c.get("fallback_failed") or {}
     add(10, "published dynamics protocol, or a declared fallback",
         c.get("n_terminated_early", 0) == 0,
-        "terminated EARLY {}; shake used {}; fell back {}".format(
+        "terminated EARLY {}; shake used {}; fell back {}{}".format(
             c.get("n_terminated_early"), c.get("shake_used"),
-            c.get("used_shake_fallback")))
+            c.get("used_shake_fallback"),
+            "; the retry at shake={} FAILED ({}) -- the published run's ensemble is used".format(
+                ff.get("shake"), ff.get("last_line")) if ff else ""))
 
     # 12 (new, 2026-09-04) -- the deduplication did not merge anything the energy
     # criterion should have stopped, and the criterion in force is recorded.
@@ -714,10 +732,24 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
 
     ens = Path(crest_rec["workdir"]) / "crest_conformers.xyz"
     if not ens.exists():
-        raise FileNotFoundError(
-            "CREST produced no ensemble at {}. Its own report: terminated_normally="
-            "{}, terminated EARLY={}".format(ens, crest_rec.get("terminated_normally"),
-                                             crest_rec.get("n_terminated_early")))
+        msg = ("CREST produced no ensemble at {}. Its own report: terminated_normally="
+               "{}, terminated EARLY={}".format(ens, crest_rec.get("terminated_normally"),
+                                                crest_rec.get("n_terminated_early")))
+        # One attempt per molecule (ticket 26, the frames' rule of ticket 24): the marker
+        # keeps this molecule out of the next round's list; a human reads it and reruns.
+        from openqha.store import basins as _basins
+        first = crest_rec.get("first_attempt") or {}
+        _basins.write_failed(layout.records_dir(molecule), "\n".join([
+            "branch A failed for {} under tag {} on {}".format(qid or name, args.tag, time.strftime("%Y-%m-%dT%H:%M:%S")),
+            msg,
+            "first attempt: {} (shake {}, terminated EARLY {}, {} s)".format(
+                first.get("workdir", crest_rec.get("workdir")), first.get("shake", crest_rec.get("shake_used")),
+                first.get("n_terminated_early", crest_rec.get("n_terminated_early")), first.get("seconds", crest_rec.get("seconds"))),
+            "last line of the failing CREST: {}".format(crest._last_line(crest_rec.get("tail"))),
+            "not rerun by any round. To rerun by hand (the marker is cleared on success):",
+            "    python scripts/production/s0_A_pipeline.py --species {} --tag {} --threads 4 --hessian-mode analytic".format(
+                qid or name, args.tag)]) + "\n")
+        raise FileNotFoundError(msg)
     # ---- stop here rather than build basins out of numbers CREST could not rank -------
     # Both of these were survivable-looking on 2026-09-09 and neither was survivable:
     # CREST said `terminated normally`, and the ensemble it handed over had 1814 frames
@@ -810,9 +842,10 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
     # .property.txt shape (status, inputs, the result blocks a later step reads) and
     # nothing else. The Report first, the Property file last: STATUS = NORMAL TERMINATION
     # is the completion marker, so it must be the last thing written.
-    from openqha.store import branch_a_property
+    from openqha.store import branch_a_property, basins as _basins
     write_branch_a_report(record, outdir / branch_a_property.REPORT)
     unknown = branch_a_property.write(outdir / branch_a_property.FILE, record)
+    _basins.clear_failed(outdir)                      # a success wipes an earlier failure's marker
     if unknown:
         raise RuntimeError("branchA.toml: keys outside the schema {}; add them to "
                            "openqha.store.branch_a_property.SCHEMA".format(unknown))

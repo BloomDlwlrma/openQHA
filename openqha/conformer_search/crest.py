@@ -416,6 +416,15 @@ def run_with_shake_fallback(workdir, input_xyz, shake=2, fallback_to=1,
     molecule can never be mistaken for one that ran the published protocol. A
     condition that cannot be read off the product has already cost this repo one
     dataset (defect 57).
+
+    **The retry can be worse than the published run** (ticket 26, 2026-09-22): on a
+    strained bicyclic (dsgdb9nsd_003375, ethynyl-housane) the SHAKE=2 run terminated
+    normally with an ensemble and a few `terminated EARLY`, while the SHAKE=1 retry died
+    in CREST's trial MTD (`Automatic MD restart failed 6 times! ERROR STOP`) -- fewer
+    constraints, less integrable. When the retry leaves no ensemble and the first attempt
+    has one, the FIRST attempt's record is returned, with `fallback_failed` naming the
+    retry and its last line; criterion 10 then declares the early terminations. Only when
+    neither attempt has an ensemble is the retry's record (its failure) returned.
     """
     rec = run(workdir, input_xyz, shake=shake, **kwargs)
     rec["shake_used"] = shake
@@ -425,6 +434,18 @@ def run_with_shake_fallback(workdir, input_xyz, shake=2, fallback_to=1,
 
     retry_dir = Path("{}_shake{}".format(workdir, fallback_to))
     retry = run(retry_dir, input_xyz, shake=fallback_to, **kwargs)
+    if not _has_ensemble(retry) and _has_ensemble(rec):
+        rec["fallback_failed"] = dict(
+            workdir=str(retry_dir), shake=fallback_to,
+            terminated_normally=bool(retry.get("terminated_normally")),
+            n_terminated_early=retry.get("n_terminated_early"),
+            seconds=retry.get("seconds"), last_line=_last_line(retry.get("tail")))
+        rec["fallback_reason"] = (
+            "published protocol (shake={}) reported {} `terminated EARLY`; the retry at "
+            "shake={} produced no ensemble ({}). The published run's ensemble is used and "
+            "its early terminations are declared (criterion 10).".format(
+                shake, rec.get("n_terminated_early"), fallback_to, rec["fallback_failed"]["last_line"]))
+        return rec
     retry["shake_used"] = fallback_to
     retry["used_shake_fallback"] = True
     retry["first_attempt"] = dict(
@@ -438,6 +459,19 @@ def run_with_shake_fallback(workdir, input_xyz, shake=2, fallback_to=1,
         "protocol and must be reported separately.".format(
             shake, rec.get("n_terminated_early"), fallback_to))
     return retry
+
+
+def _has_ensemble(rec):
+    """CREST terminated normally and left `crest_conformers.xyz` in its work directory."""
+    try:
+        return bool(rec.get("terminated_normally")) and (Path(rec["workdir"]) / "crest_conformers.xyz").is_file()
+    except (KeyError, TypeError, OSError):
+        return False
+
+
+def _last_line(tail):
+    lines = [l.strip() for l in str(tail or "").splitlines() if l.strip()]
+    return lines[-1] if lines else "-"
 
 
 def record_from_dir(workdir, settings=None, seconds=None, returncode=None):

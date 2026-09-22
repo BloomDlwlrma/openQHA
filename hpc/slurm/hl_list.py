@@ -39,11 +39,13 @@ def main():
     args.name = args.name or args.tag
     root = config.runs_root(config.load())
     drawn = [r["qm9_index"] for r in sc.read_draw(root, args.tag, args.name)]
-    todo = []
+    todo, n_failed = [], 0
     for qid in drawn:
         mol = basins.molecule_for(qid, args.tag, root=root)
         if args.stage == "branchA":
-            if not basins.done(qid, args.tag, root=root):
+            if basins.failed(qid, args.tag, root=root):
+                n_failed += 1                           # ran and failed: a human's decision (ticket 26)
+            elif not basins.done(qid, args.tag, root=root):
                 todo.append(qid)
         else:
             if basins.done(qid, args.tag, root=root) and not (layout.frames_dir(mol) / (frames.STEP + ".toml")).is_file():
@@ -52,8 +54,9 @@ def main():
     if args.limit:
         mine = mine[:args.limit]
     Path(args.out).write_text("".join(q + "\n" for q in mine), encoding="utf-8")
-    print("{}: {} drawn, {} pending, {} for task {}/{} -> {}".format(
-        args.stage, len(drawn), len(todo), len(mine), args.array_id, args.array_n, args.out))
+    print("{}: {} drawn, {} pending, {} for task {}/{} -> {}{}".format(
+        args.stage, len(drawn), len(todo), len(mine), args.array_id, args.array_n, args.out,
+        "; {} failed earlier (_records/branchA.failed; not rerun)".format(n_failed) if n_failed else ""))
     return 0
 
 

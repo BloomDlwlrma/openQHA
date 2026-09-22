@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "tooling"))
 from t_frames import Harmonic, check, make_molecule, FAIL           # noqa: E402
 
 from openqha.data import dataset, frame_labels, frames, structure_classes as sc   # noqa: E402
-from openqha.store import dat, layout                                 # noqa: E402
+from openqha.store import basins, dat, layout                                 # noqa: E402
 import s0_hl_progress as hp                                           # noqa: E402
 
 LEVEL = "wb97m-d3bj_def2-tzvppd"
@@ -83,8 +83,13 @@ def main():
                 dict(qm9_index="dsgdb9nsd_000036", smiles="CCC=O", n_heavy=4, classes="aldehyde;ketone", in_training=False, pinned=False),
                 dict(qm9_index="dsgdb9nsd_000100", smiles="C1COC1", n_heavy=4, classes="small_ring", in_training=False, pinned=False)]
         dat.write_table(d / "draw.dat", rows, list(sc.ROW_SCHEMA), sc.ROW_SCHEMA)
+        # the third molecule ran branch A and failed: the marker, no Property file (ticket 26)
+        basins.write_failed(layout.records_dir(layout.molecule_dir(root, TAG, "dsgdb9nsd_000100")), "branch A failed: no ensemble")
         fresh = hp.progress(root, [TAG], "p", LEVEL)
         t = fresh["total"]
+        check("ticket 26: a molecule with _records/branchA.failed counts as A failed 1, branch A 0 (small_ring)",
+              t["A_failed"] == 1 and fresh["classes"]["small_ring"]["A_failed"] == 1 and fresh["classes"]["small_ring"]["branchA"] == 0
+              and fresh["classes"]["aldehyde"]["A_failed"] == 0, (t["A_failed"], fresh["classes"].get("small_ring")))
         check("a fresh draw: 3 drawn, 2 with branch A, 1 Frame set of 15 frames, none labelled, none running; per class from the draw's classes",
               (t["drawn"], t["branchA"], t["frame_sets"], t["frames"], t["labelled"], t["unlabelled"], t["running"]) == (3, 2, 1, 15, 0, 15, 0)
               and fresh["classes"]["aldehyde"]["drawn"] == 2 and fresh["classes"]["small_ring"]["branchA"] == 0

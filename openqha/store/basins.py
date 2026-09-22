@@ -91,6 +91,36 @@ def done(qid, tag, cfg=None, root=None):
     return status(qid, tag, cfg, root) == prop.NORMAL_TERMINATION and exists(qid, tag, cfg, root)
 
 
+#: branch A's failure marker (ticket 26): written beside where branchA.toml would be when
+#: CREST left no ensemble; the campaign lists (hl_list.py) leave the molecule alone until a
+#: human reruns it by hand, and a success removes the marker. One attempt per unit, as
+#: the frames' `.out` without the terminal line (ticket 24).
+FAILED = "branchA.failed"
+
+
+def failed_path(qid, tag, cfg=None, root=None):
+    return layout.records_dir(molecule_for(qid, tag, cfg, root)) / FAILED
+
+
+def failed(qid, tag, cfg=None, root=None):
+    """True when branch A ran for this molecule and left its failure marker (and no
+    completed Property file since)."""
+    return failed_path(qid, tag, cfg, root).is_file() and not done(qid, tag, cfg, root)
+
+
+def write_failed(records_dir, text):
+    records_dir = Path(records_dir)
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / FAILED).write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+
+
+def clear_failed(records_dir):
+    try:
+        (Path(records_dir) / FAILED).unlink()
+    except OSError:
+        pass
+
+
 def tags_for(qid, cfg=None, root=None):
     """The tags under which this molecule HAS basins, sorted -- for the message a reader
     gets when it asks for the wrong tag (on 2026-09-11 that one `ls` was the whole fix)."""

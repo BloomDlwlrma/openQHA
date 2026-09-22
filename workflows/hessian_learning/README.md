@@ -94,7 +94,7 @@ it is; `TIMEOUT_S` (default 28800) bounds one ORCA job.
 
 | stage | script | worker per line | layout |
 |---|---|---|---|
-| A branch A | `hl_branchA.slurm` | `hl_branchA_worker.sh` → `s0_A_pipeline.py --species` | 16 × 4 (CREST `-T 4`) |
+| A branch A | `hl_branchA.slurm` | `hl_branchA_worker.sh` → `s0_A_pipeline.py --species` | 16 × 4 (CREST `-T 4`); one attempt per molecule: no ensemble → `_records/branchA.failed`, not rerun (ticket 26) |
 | 02 frames | `hl_frames.slurm` | `02_frames.py --species` (MACE, CPU) | **64 × 1** (MACE is single-threaded) |
 | 03 labels | `hl_labels.slurm` | `hl_label_worker.sh` → `python -m openqha.data.frame_labels` | 16 × 4 ORCA ranks, `%maxcore 6000` |
 

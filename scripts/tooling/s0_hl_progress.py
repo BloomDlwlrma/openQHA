@@ -2,7 +2,8 @@
 
 TOOLING. For every molecule of the draw (`draw.dat`; else `select.dat`; else every
 molecule under the tag with branch A) it reads what is on disk -- branch A done
-(`basins.done`), a Frame set Record (`frames/frames.toml`, its kept frames), the frames
+(`basins.done`), branch A's failure marker (`_records/branchA.failed`, ticket 26: ran, no
+ensemble, not rerun), a Frame set Record (`frames/frames.toml`, its kept frames), the frames
 whose ORCA job at `--level` is finished (`frame_labels.finished` on the file group in
 `frames/`), the frames whose ORCA ran and FAILED (a `.out` without the terminal line;
 not rerun, a human's `--retry` -- ticket 24), the frames another job holds (`.running`
@@ -33,7 +34,7 @@ from openqha import config                                      # noqa: E402
 from openqha.data import dataset, frame_labels, frames as frames_mod   # noqa: E402
 from openqha.store import basins, dat, layout                   # noqa: E402
 
-COLUMNS = ("drawn", "branchA", "frame_sets", "frames", "labelled", "failed", "unlabelled", "running")
+COLUMNS = ("drawn", "branchA", "A_failed", "frame_sets", "frames", "labelled", "failed", "unlabelled", "running")
 
 
 def molecules(root, tags, name):
@@ -58,8 +59,9 @@ def molecules(root, tags, name):
 
 def molecule_progress(qid, tag, mol, level, root):
     """One molecule's counters (COLUMNS without `drawn`), from disk."""
-    row = dict(branchA=0, frame_sets=0, frames=0, labelled=0, failed=0, unlabelled=0, running=0)
+    row = dict(branchA=0, A_failed=0, frame_sets=0, frames=0, labelled=0, failed=0, unlabelled=0, running=0)
     if not basins.done(qid, tag, root=root):
+        row["A_failed"] = int(basins.failed(qid, tag, root=root))      # branch A ran and left its marker (ticket 26)
         return row
     row["branchA"] = 1
     rec = layout.frames_dir(mol) / (frames_mod.STEP + ".toml")
@@ -108,17 +110,18 @@ def main():
     root = config.runs_root(config.load())
     name = args.name or args.tag[0]
     out = progress(root, args.tag, name, args.level)
-    fmt = "{:22s} {:>6} {:>7} {:>10} {:>7} {:>8} {:>6} {:>10} {:>7}"
+    fmt = "{:22s} {:>6} {:>7} {:>8} {:>10} {:>7} {:>8} {:>6} {:>10} {:>7}"
     print("progress of {!r} at {} ({} molecules from {})".format(name, args.level, out["molecules"], out["source"]))
-    print(fmt.format("class", "drawn", "branchA", "frame sets", "frames", "labelled", "failed", "unlabelled", "running"))
+    print(fmt.format("class", "drawn", "branchA", "A failed", "frame sets", "frames", "labelled", "failed", "unlabelled", "running"))
     for cls in sorted(out["classes"]):
         r = out["classes"][cls]
         print(fmt.format(cls, *[r[c] for c in COLUMNS]))
     t = out["total"]
     print(fmt.format("TOTAL", *[t[c] for c in COLUMNS]))
     done = t["labelled"] / t["frames"] * 100 if t["frames"] else 0.0
-    print("{:.1f} % of the frames labelled; {} failed (not rerun: read the .out, then --retry); {} unlabelled with no job on disk; {:.1f} s".format(
-        done, t["failed"], t["unlabelled"], time.time() - t0))
+    print("{:.1f} % of the frames labelled; {} failed (not rerun: read the .out, then --retry); {} unlabelled with no job on disk; "
+          "branch A failed {} (not rerun: read _records/branchA.failed, then s0_A_pipeline --species by hand); {:.1f} s".format(
+        done, t["failed"], t["unlabelled"], t["A_failed"], time.time() - t0))
     return 0
 
 
