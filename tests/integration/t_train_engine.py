@@ -213,9 +213,13 @@ def main():
         ase_write(str(pt_valid), pt_frames[2:3], format="extxyz")
         mh = train_run.run_training(
             d, "test", "smoke_fit", LEVEL, "mh1", strict_fork=False,
-            hessian_weight=1e-3, max_epochs=3, batch_size=2, seed=7,
+            hessian_weight="balance", max_epochs=3, batch_size=2, seed=7,
             multiheads=True, pt_train_file=str(pt), pt_valid_file=str(pt_valid))
         mi = mh["info"]
+        check("w_H = balance (S0-C-60): the rule and the three base-model terms are in the Record and w_H = w_F L_F / L_H",
+              mi["HESSIAN_WEIGHT_RULE"] == "balance" and mi["BALANCE_L_H"] > 0
+              and abs(mi["HESSIAN_WEIGHT"] - 100.0 * mi["BALANCE_L_F"] / mi["BALANCE_L_H"]) < 1e-9
+              and abs(mi["SWA_HESSIAN_WEIGHT"] - mi["HESSIAN_WEIGHT"]) < 1e-12, (mi["HESSIAN_WEIGHT"], mi["BALANCE_L_F"], mi["BALANCE_L_H"]))
         check("a multihead run completes and the Record says so: PT_N_FRAMES 2, PT_CONFIG_WEIGHT 3.0, 1 Replay frame per Hessian frame",
               mi["MULTIHEADS"] is True and mi["PT_TRAIN_FILE"] == str(pt) and mi["PT_VALID_FILE"] == str(pt_valid)
               and Path(mi["MODEL_FILE"]).is_file() and mi["PT_N_FRAMES"] == 2 and mi["PT_CONFIG_WEIGHT"] == "3.0"
@@ -255,7 +259,7 @@ def main():
         check("the stock loss trains on the same files (the default path is untouched)",
               (plain / "plain.model").is_file() or list(plain.glob("*.model")))
 
-    print("\n{} checks, {} failed".format(23, len(FAIL)))
+    print("\n{} checks, {} failed".format(24, len(FAIL)))
     print("PASS" if not FAIL else "FAIL")
     return 1 if FAIL else 0
 

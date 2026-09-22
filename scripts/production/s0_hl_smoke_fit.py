@@ -159,16 +159,17 @@ def main():
 
     if "balance" in stages or "scan" in stages:
         print("\n--- the epoch-0 balance (the base model, before a single step) ---")
-        for weighting in ("entropy", "none"):
+        for weighting in ("cartesian", "entropy", "none"):
             b = smoke_fit.epoch_zero_balance(calc, train_file, energy_weight=args.energy_weight,
-                                             forces_weight=args.forces_weight, mode_weighting=weighting)
+                                             forces_weight=args.forces_weight, mode_weighting=weighting,
+                                             probe="cartesian" if weighting == "cartesian" else "modes")
             balance_rows.append(dict(MODE_WEIGHTING=weighting, N_FRAMES=b["N_FRAMES"],
                                      N_HESSIAN_FRAMES=b["N_HESSIAN_FRAMES"], L_E=b["L_E"], L_F=b["L_F"],
                                      L_H=b["L_H"], WE_LE=b["WE_LE"], WF_LF=b["WF_LF"],
                                      HESSIAN_WEIGHT_BALANCED=b["HESSIAN_WEIGHT_BALANCED"]))
             print("  {:8s}  L_E {:.4e}  L_F {:.4e}  L_H {:.4e}   w_F L_F {:.4e}   ->  w_H = {:.4g}".format(
                 weighting, b["L_E"], b["L_F"], b["L_H"], b["WF_LF"], b["HESSIAN_WEIGHT_BALANCED"]))
-            if weighting == "entropy":
+            if weighting == "cartesian":                     # the production target (S0-C-53); the others are diagnostics
                 balanced = b["HESSIAN_WEIGHT_BALANCED"]
         print("  (the Cartesian 0.25-0.30 band of PHL / Rodriguez does not transfer under mass weighting:"
               " design section 2.6)")

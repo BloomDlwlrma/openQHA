@@ -32,6 +32,12 @@ heads' counts from mace's log and prints the ratio as replay frames per Hessian 
 `--valid_fraction` of the replay file for the pretraining head's OWN validation unless
 `--pt_valid_file` names one; the draw tool writes that companion file and it is passed.
 
+THE WEIGHT (S0-C-60). `hessian_weight="balance"` makes the driver measure, on the BASE
+model and the run's own train file before the first step, the epoch-0 balance
+`w_H = w_F L_F / L_H` with `L_H` the Cartesian target (`smoke_fit.epoch_zero_balance`,
+`mode_weighting = cartesian`) and train with that value; the Record keeps the rule, the
+three terms and the resolved `HESSIAN_WEIGHT`. A number is used as given.
+
 THE CONTROL (S0-C-55; the base's recipe, MACE-OFF23): every flag that steers the loop
 is emitted explicitly and recorded -- `--lr`, `--scheduler_patience`, `--patience`,
 `--eval_interval`, `--ema`, `--swa --start_swa --swa_lr` with the Stage Two weights
@@ -111,7 +117,11 @@ SCHEMA = {
         "LOSS": ("String", None, "the loss module and factory (mace's --loss external)"),
         "ENERGY_WEIGHT": ("Double", None, "w_E of eq. 11 (Stage One)"),
         "FORCES_WEIGHT": ("Double", None, "w_F of eq. 11 (Stage One)"),
-        "HESSIAN_WEIGHT": ("Double", None, "w_H of eq. 11 (Stage One)"),
+        "HESSIAN_WEIGHT": ("Double", None, "w_H of eq. 11 (Stage One); the resolved value when the rule is balance"),
+        "HESSIAN_WEIGHT_RULE": ("String", None, "given (a number on the command line) or balance (w_F L_F / L_H on the base model over the train file, Cartesian L_H; S0-C-60)"),
+        "BALANCE_L_E": ("Double", None, "the base model's per-atom energy MSE on the train file (balance rule only, else 0)"),
+        "BALANCE_L_F": ("Double", None, "the base model's force MSE on the train file (balance rule only, else 0)"),
+        "BALANCE_L_H": ("Double", None, "the base model's Cartesian Hessian loss ||dH||^2/(9N^2) on the train file's Hessian frames (balance rule only, else 0)"),
         "PROBE": ("String", None, "rademacher / gaussian / modes / cartesian (Algorithm 1): the training probes"),
         "N_PROBES": ("Integer", None, "probes per structure per step (k of eq. 6)"),
         "MODE_WEIGHTING": ("String", None, "the target: cartesian (the raw matrix, S0-C-53, default), entropy or none (the projected diagnostics)"),
@@ -291,6 +301,19 @@ def control_settings(max_epochs, lr=None, scheduler_patience=DEFAULT_SCHEDULER_P
         SWA_ENERGY_WEIGHT=float(swa_energy_weight), SWA_FORCES_WEIGHT=float(swa_forces_weight),
         SWA_HESSIAN_WEIGHT=stage_two_weights(hessian_weight, forces_weight, swa_forces_weight, swa_hessian_weight),
     )
+
+
+def hessian_weight_balance(foundation_name, train_file, energy_weight=1.0, forces_weight=100.0, device="cpu"):
+    """The epoch-0 balance on the BASE model over `train_file` with the Cartesian target
+    (`smoke_fit.epoch_zero_balance`): w_H = w_F L_F / L_H. Refuses a train file without a
+    Hessian frame (there is nothing to balance against)."""
+    from . import smoke_fit
+    calc, _name, _prov = engine.calculator(device=device, name=foundation_name)
+    b = smoke_fit.epoch_zero_balance(calc, train_file, energy_weight=energy_weight, forces_weight=forces_weight,
+                                     probe="cartesian", mode_weighting="cartesian")
+    if not b["HESSIAN_WEIGHT_BALANCED"]:
+        raise ValueError("no Hessian frame in {} (or L_H = 0): the balance rule has nothing to balance".format(train_file))
+    return b
 
 
 def mace_argv(train_file, valid_file, run, work_dir, foundation, level, *, energy_weight=1.0,
@@ -539,6 +562,13 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
     fp_base = engine.parameter_fingerprint(path=foundation_path)
 
     files, counts = split_files(dataset_dir, name, level, run_dir)
+    settings = dict(settings)
+    rule, balance = "given", dict(L_E=0.0, L_F=0.0, L_H=0.0)
+    if str(settings.get("hessian_weight", 1.0)) == "balance":
+        rule = "balance"
+        balance = hessian_weight_balance(foundation_name, files["train"], settings.get("energy_weight", 1.0),
+                                         settings.get("forces_weight", 100.0), settings.get("device", "cpu"))
+        settings["hessian_weight"] = balance["HESSIAN_WEIGHT_BALANCED"]
     argv = mace_argv(files["train"], files["valid"], run, run_dir, foundation_path, level, **settings)
     config_file = run_dir / "config.yaml"
     config_file.write_text("\n".join("{}: {}".format(k, v) for k, v in argv_pairs(argv).items()) + "\n",
@@ -573,6 +603,9 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
         ENERGY_WEIGHT=float(settings.get("energy_weight", 1.0)),
         FORCES_WEIGHT=float(settings.get("forces_weight", 100.0)),
         HESSIAN_WEIGHT=float(settings.get("hessian_weight", 1.0)),
+        HESSIAN_WEIGHT_RULE=rule,
+        BALANCE_L_E=float(balance["L_E"] or 0.0), BALANCE_L_F=float(balance["L_F"] or 0.0),
+        BALANCE_L_H=float(balance["L_H"] or 0.0),
         PROBE=str(settings.get("probe", "rademacher")),
         N_PROBES=int(settings.get("n_probes", 4)),
         MODE_WEIGHTING=str(settings.get("mode_weighting", phl_loss.DEFAULT_MODE_WEIGHTING)),
@@ -682,9 +715,12 @@ def _write_report(path, info, epochs):
               "VALID_FILE", "N_VALID", "N_VALID_HESSIAN"):
         rep.kv(k, info.get(k))
     rep.section("the loss (eq. 11; the Cartesian target S0-C-53; T04 / T05)")
-    for k in ("LOSS", "MODE_WEIGHTING", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "PROBE", "N_PROBES",
-              "VALID_PROBES"):
+    for k in ("LOSS", "MODE_WEIGHTING", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "HESSIAN_WEIGHT_RULE",
+              "BALANCE_L_E", "BALANCE_L_F", "BALANCE_L_H", "PROBE", "N_PROBES", "VALID_PROBES"):
         rep.kv(k, info.get(k))
+    if info.get("HESSIAN_WEIGHT_RULE") == "balance":
+        rep.note("HESSIAN_WEIGHT = FORCES_WEIGHT x BALANCE_L_F / BALANCE_L_H: the Hessian term enters the epoch-0 gradient "
+                 "with the force term's share on the base model (S0-C-60; T05 section 5).")
     rep.section("the Replay (CONTEXT Replay; S0-C-56/57)")
     for k in ("MULTIHEADS", "PT_TRAIN_FILE", "PT_VALID_FILE", "PT_N_FRAMES", "PT_CONFIG_WEIGHT", "PT_HEAD_TRAIN",
               "PT_HEAD_VALID", "FT_HEAD_TRAIN", "FT_HEAD_VALID", "REPLAY_PER_HESSIAN_FRAME",

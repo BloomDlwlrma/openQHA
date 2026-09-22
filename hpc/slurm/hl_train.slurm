@@ -45,7 +45,7 @@ RUN="${RUN:?RUN not set (the run name; the directory is <dataset>/train/<run>/)}
 LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
 PROBE="${PROBE:-rademacher}"
 N_PROBES="${N_PROBES:-4}"
-HESSIAN_WEIGHT="${HESSIAN_WEIGHT:-1.0}"
+HESSIAN_WEIGHT="${HESSIAN_WEIGHT:-balance}"      # a number, or balance = w_F L_F / L_H on the base (S0-C-60)
 ENERGY_WEIGHT="${ENERGY_WEIGHT:-1.0}"
 FORCES_WEIGHT="${FORCES_WEIGHT:-100.0}"
 MODE_WEIGHTING="${MODE_WEIGHTING:-cartesian}"      # the target (S0-C-53); entropy / none are diagnostics

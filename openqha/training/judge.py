@@ -800,13 +800,15 @@ def verdict_of(lines, gate=True):
 def run(root, tag, name, level, calc, engine_name, base_calc=None, base_engine=None, run_name=None,
         splits=("test",), scale=1.0, spice_file=None, thresholds=None, progress=None,
         engine_params_sha256=None, base_params_sha256=None, reference_level=None, write=True,
-        ramp=None, ramp_molecules=None, train_record=None, gate=False):
+        ramp=None, ramp_molecules=None, train_record=None, gate=False, thermo_tag=None):
     """The whole judge: frames, aggregation, the entropy tier, forgetting, the reference
     bins, the MD ramp (`ramp`: a dict of `ramp_one` settings, None = not run;
     `ramp_molecules`: default the pinned molecules present), the verdict, and the Record
     under `<dataset>/judge/<run>/`. `train_record`: the fine-tune's train.toml whose
     validation curves head the report. `gate`: False (S0-C-60, the default) reports every
-    row and decides nothing (`VERDICT = REPORTED`); True lets the gate rows decide."""
+    row and decides nothing (`VERDICT = REPORTED`); True lets the gate rows decide.
+    `thermo_tag`: the tag whose molecule directories hold the engine's msRRHO Records (a
+    fine-tuned engine has its own branch A under its own tag); default the campaign tag."""
     import time
     t0 = time.time()
     dataset_dir = Path(dataset_mod.datasets_dir(root, tag, name))
@@ -825,7 +827,7 @@ def run(root, tag, name, level, calc, engine_name, base_calc=None, base_engine=N
     dist_rows, cls_rows = aggregate(rows)
     disp_rows = aggregate_displacement(rows)
     molecules = sorted({r["qm9_index"] for r in rows})
-    thermo_rows = thermochemistry(root, tag, molecules, engine_name, reference_level or level,
+    thermo_rows = thermochemistry(root, thermo_tag or tag, molecules, engine_name, reference_level or level,
                                   anharmonic_rows=anharmonic)
     forget_row = forgetting(calc, base_calc, spice_file) if (spice_file and base_calc is not None) else None
     ramp_rows = []

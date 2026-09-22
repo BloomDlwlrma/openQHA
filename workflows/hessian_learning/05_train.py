@@ -8,10 +8,10 @@ fork commit A), the loss from `openqha.training.phl_loss` (`--loss external
 evaluation (commit C). Nothing here reimplements a training loop.
 
     python workflows/hessian_learning/05_train.py --tag smoke --run w1 --dry-run
-    python workflows/hessian_learning/05_train.py --tag smoke --run w1 --hessian-weight 0.01 --max-epochs 2
-    python workflows/hessian_learning/05_train.py --tag draw300 --run R1 --device cuda \
-        --hessian-weight 0.01 --n-probes 4 --multiheads \
-        --pt-train-file spice_pt_5000.extxyz --pt-valid-file spice_pt_5000.valid.extxyz
+    python workflows/hessian_learning/05_train.py --tag smoke --run w1 --max-epochs 2             # w_H = balance (default)
+    # the production row R4 (S0-C-60): Replay = 4 x N_TRAIN_HESSIAN at config_weight 10, drawn by s0_spice_pt_draw.py
+    python workflows/hessian_learning/05_train.py --tag draw300 --run R4 --device cuda --max-epochs 100 \
+        --multiheads --pt-train-file $S0_RUNS_ROOT/spice/spice_pt_R4.extxyz --pt-valid-file $S0_RUNS_ROOT/spice/spice_pt_R4.valid.extxyz
 
 THE TARGET is the Cartesian matrix (`--mode-weighting cartesian`, the default; S0-C-53);
 validation uses four Rademacher probes fixed per frame (S0-C-55) and every control flag
@@ -56,6 +56,10 @@ from openqha.data import dataset, frame_labels               # noqa: E402
 from openqha.training import phl, phl_loss, run as train_run  # noqa: E402
 
 
+def _weight(text):
+    return "balance" if str(text).strip().lower() == "balance" else float(text)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", required=True, help="the campaign tag (the Dataset lives under it)")
@@ -66,7 +70,9 @@ def main():
     # the loss (design-phl-loss.md eq. 11; T03)
     ap.add_argument("--energy-weight", type=float, default=1.0)
     ap.add_argument("--forces-weight", type=float, default=100.0)
-    ap.add_argument("--hessian-weight", type=float, default=1.0, help="w_H; the smoke fit (ticket 15) measures it")
+    ap.add_argument("--hessian-weight", type=_weight, default="balance",
+                    help="w_H: a number, or `balance` (default; S0-C-60) = w_F L_F / L_H measured on the base model over the "
+                         "run's train file with the Cartesian target before the first step")
     ap.add_argument("--probe", choices=phl.PROBE_MODES, default="rademacher",
                     help="rademacher/gaussian: k probes per structure (eq. 6); cartesian: the exact loss (3N probes); "
                          "modes: exact on the projected diagnostics only")
@@ -133,9 +139,12 @@ def main():
     print("  dataset      {} at {}".format(info["NAME"], info["LEVEL"]))
     print("  train        {} frames, {} with a reference Hessian".format(info["N_TRAIN"], info["N_TRAIN_HESSIAN"]))
     print("  valid        {} frames, {} with a reference Hessian".format(info["N_VALID"], info["N_VALID_HESSIAN"]))
-    print("  loss         w_E {} w_F {} w_H {}; probe {} k={}; target {}; validation {}".format(
-        info["ENERGY_WEIGHT"], info["FORCES_WEIGHT"], info["HESSIAN_WEIGHT"], info["PROBE"],
+    print("  loss         w_E {} w_F {} w_H {} ({}); probe {} k={}; target {}; validation {}".format(
+        info["ENERGY_WEIGHT"], info["FORCES_WEIGHT"], info["HESSIAN_WEIGHT"], info["HESSIAN_WEIGHT_RULE"], info["PROBE"],
         info["N_PROBES"], info["MODE_WEIGHTING"], info["VALID_PROBES"]))
+    if info["HESSIAN_WEIGHT_RULE"] == "balance":
+        print("  balance      base model on the train file: L_E {:.3e} L_F {:.3e} L_H {:.3e} -> w_H = w_F L_F / L_H".format(
+            info["BALANCE_L_E"], info["BALANCE_L_F"], info["BALANCE_L_H"]))
     print("  control      lr {} scheduler_patience {} patience {} eval_interval {} ema {} swa {} start_swa {} swa_lr {}".format(
         info["LR"], info["SCHEDULER_PATIENCE"], info["PATIENCE"], info["EVAL_INTERVAL"], info["EMA"], info["SWA"],
         info["START_SWA"], info["SWA_LR"]))

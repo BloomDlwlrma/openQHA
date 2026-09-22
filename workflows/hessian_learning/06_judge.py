@@ -78,6 +78,9 @@ def main():
     ap.add_argument("--ramp-molecules", nargs="+", default=None, metavar="QM9",
                     help="molecules to ramp (default: the pinned molecules present in the judged frames)")
     ap.add_argument("--gate", action="store_true", help="let the gate rows decide the VERDICT (closed by default, S0-C-60)")
+    ap.add_argument("--thermo-tag", default=None,
+                    help="the tag whose molecule directories hold this engine's msRRHO Records (S0_ENGINE=<engine> branch A under "
+                         "its own tag); default: the campaign tag")
     ap.add_argument("--train-record", default=None,
                     help="the fine-tune's train.toml (default: found from the engine name <base>-<run> under the Dataset)")
     args = ap.parse_args()
@@ -114,7 +117,7 @@ def main():
                     engine_params_sha256=prov.get("params_sha256"),
                     base_params_sha256=base_prov.get("params_sha256"),
                     progress=None if args.quiet else (lambda s: print("  ...", s, end="\r", flush=True)),
-                    ramp=ramp, ramp_molecules=args.ramp_molecules, train_record=train_record, gate=args.gate)
+                    ramp=ramp, ramp_molecules=args.ramp_molecules, train_record=train_record, gate=args.gate, thermo_tag=args.thermo_tag)
     if not args.quiet:
         print(" " * 70, end="\r")
     info = out["info"]

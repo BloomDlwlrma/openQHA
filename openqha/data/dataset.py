@@ -104,6 +104,9 @@ SEED = 0
 #: the generators whose frames may train (S0-C-54: basin Hessians only); every other
 #: generator is held out -- its labelled frames go to test for the judge
 TRAIN_GENERATORS = ("basin",)
+#: the production row R4 (S0-C-60): Replay frames = this x the train frames with a Hessian
+REPLAY_PER_HESSIAN_FRAME_R4 = 4
+REPLAY_CONFIG_WEIGHT_R4 = 10.0
 #: a label file whose positions differ from the engine file's by more than this is stale
 STALE_TOL_A = 1e-6
 DATASETS = "_datasets"
@@ -207,6 +210,8 @@ SCHEMA = {
         "N_TEST": ("Integer", None, "frames in test"),
         "N_POOL": ("Integer", None, "frames in pool (unlabelled)"),
         "N_HESSIAN_FRAMES": ("Integer", None, "labelled frames carrying a reference Hessian (basin / merged / saddle)"),
+        "N_TRAIN_HESSIAN": ("Integer", None, "train frames carrying a reference Hessian: the number the production Replay is 4x of (S0-C-60)"),
+        "REPLAY_R4_FRAMES": ("Integer", None, "4 x N_TRAIN_HESSIAN: the Replay size of the production row R4 (s0_spice_pt_draw.py --n)"),
         "N_STALE": ("Integer", None, "label frames ignored because their geometry differs from the engine file's (a rerun of branch A / 02 after 03)"),
         "MERGED_FILE": ("String", None, "the single xyz of the three labelled splits (mace_<name>.<level>.extxyz), or - when nothing is labelled"),
         "KEPT_PREVIOUS": ("Boolean", None, "a previous index.dat existed and its splits were kept"),
@@ -665,6 +670,8 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", 
                 N_TRAIN=len(split_frames["train"]), N_VALID=len(split_frames["valid"]),
                 N_TEST=len(split_frames["test"]), N_POOL=len(split_frames["pool"]),
                 N_HESSIAN_FRAMES=sum(1 for a, _s in labelled_all if a.info.get("hessian") is not None),
+                N_TRAIN_HESSIAN=sum(1 for a, _s in split_frames["train"] if a.info.get("hessian") is not None),
+                REPLAY_R4_FRAMES=REPLAY_PER_HESSIAN_FRAME_R4 * sum(1 for a, _s in split_frames["train"] if a.info.get("hessian") is not None),
                 N_STALE=sum(m["N_STALE"] for m in per_mol), KEPT_PREVIOUS=bool(prev_frames or prev_mols),
                 MERGED_FILE=str(merged) if labelled_all else "-",
                 ENGINE_PARAMS_SHA256=sorted(fingerprints), ORCA_VERSIONS=sorted(versions), SECONDS=time.time() - t0)
@@ -721,7 +728,7 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
     rep.section("conventions")
     for k in ("TAGS", "LEVEL", "MACE_LEVEL", "SEED", "SPLIT_BY", "VALID_FRACTION", "TEST_FRACTION", "TRAIN_GENERATORS",
               "HELD_OUT_GENERATORS", "N_MOLECULES", "N_TEST_MOLECULES", "N_TRAIN_MOLECULES", "N_FRAMES", "N_LABELLED",
-              "N_HESSIAN_FRAMES", "N_TRAIN_BASIN", "N_TEST_HELD_OUT", "N_STALE",
+              "N_HESSIAN_FRAMES", "N_TRAIN_HESSIAN", "REPLAY_R4_FRAMES", "N_TRAIN_BASIN", "N_TEST_HELD_OUT", "N_STALE",
               "KEPT_PREVIOUS", "MERGED_FILE", "ENGINE_PARAMS_SHA256", "ORCA_VERSIONS"):
         rep.kv(k, info[k])
     rep.section("per split")
