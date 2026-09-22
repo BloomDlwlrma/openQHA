@@ -20,11 +20,13 @@ scp data/qm9/curated_qm9.h5 tianhe:~/openQHA-main/data/qm9/
 # it is asked for -- 6,458 files for the campaign, not 133,661
 ```
 
-The rules this page follows (rulings 2026-09-18 … 20): nothing runs on the login node
-except the second-long steps; every test is a `debug` job; a submitted job is plain bash +
-`xargs`, no parsl (parsl only in the ALF mode, §6); one campaign is one tag
-(`TAG=draw300`, the Dataset has the same name); the molecule tree is flat
-(`<root>/draw300/<qid>/`), a frame's ORCA files are `frames/orca.<level>.<frame>.*`.
+The rules this page follows (rulings 2026-09-18 … 22): nothing runs on the login node
+except the second-long steps and, for step 03, the parsl **driver** in `tmux` — a process
+that polls `squeue` and submits blocks, no chemistry; every test is a `debug` job; a job
+submitted by hand is plain bash + `xargs`, no parsl inside it (the driver's blocks are
+parsl's own one-node jobs); one campaign is one tag (`TAG=draw300`, the Dataset has the
+same name); the molecule tree is flat (`<root>/draw300/<qid>/`), a frame's ORCA files are
+`frames/orca.<level>.<frame>.*`; a frame is attempted once (§3).
 
 ---
 
@@ -42,20 +44,70 @@ TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frame
 python workflows/hessian_learning/01_select.py --tag draw300
 TAG=draw300 LIMIT_FRAMES=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm
 
-# the campaign: arrays of 12 one-node tasks, the list split round-robin, finished work skipped
-TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm
-TAG=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm
-python workflows/hessian_learning/01_select.py --tag draw300                  # the whole draw, with basins / frames present
-TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # round 1 of 3 (§3)
-python scripts/tooling/s0_hl_progress.py --tag draw300                        # any time, seconds
-TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # round 2, when round 1 has ended
-TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # round 3 -- until task 0's assemble exits 0
-python workflows/hessian_learning/04_dataset.py --tag draw300 --export openreact   # the Dataset (by frame, 90/5/5), the merged xyz, the HDF5
+# the campaign, six commands, each stage sized to its cost (§2) and started by hand when the
+# one before is done (s0_hl_progress says when; every stage lists its own pending work from
+# disk, so a wrong order only runs empty)
+TIMEOUT_S=14400 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm   # 1  A: 12 submissions, ~10 h
+TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm                        # 2  02: 2 submissions, ~1 h, after A
+python workflows/hessian_learning/01_select.py --tag draw300                                     # 3  01: select.dat, seconds, after 02
+tmux new -s hl-labels                                                                            # 4  a session the driver survives logout in
+python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu \
+    --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw300_$(date +%F_%H%M).log
+                                                                                                 # 5  03: the parsl driver, <= 12 blocks of 3 days, ~8 days
+python workflows/hessian_learning/04_dataset.py --tag draw300 --split-by molecule --export openreact   # 6  04: after the driver ends
+python scripts/tooling/s0_hl_progress.py --tag draw300                                           # any time, seconds
 ```
 
-The order that buys nothing blind: branch A and 02 for the WHOLE draw first (a day),
-then `01_select` and `s0_hl_progress` give the exact frame count, and the labels array
-goes in with a cost you have read off, not guessed.
+(inside the tmux session, before command 5: `export OPENQHA_PARTITION=deimos; source hpc/env/common.sh && source hpc/env/tianhe.sh` — a new tmux shell is bare.)
+
+**Why this shape and not a chain of arrays** (ruling 2026-09-22, round 11). The tenant's
+quota on TianheXY-CN, read off the portal on 2026-09-21:
+
+| | submitted jobs | nodes | running jobs |
+|---|---:|---:|---:|
+| this user | 32 | unlimited | unlimited |
+| tenant `hku2021_fos4` (shared by the group) | **32** | **32** | **32** |
+
+Slurm counts **every array task as a submission**: `--array=0-11` pending is 12 of the 32.
+Three pre-queued rounds of labels (36) are refused outright (`AssocMaxSubmitJobLimit`), and a
+`--dependency` chain of 12-node arrays holds 26 of the group's 32 for days, most of them
+idle in `PD (Dependency)`. So: branch A is one array (12; ~10 h, no rounds needed), 02 is two
+nodes (~108 core-h in all), and step 03 — the only stage that needs rounds — is driven by
+parsl from the login node: `init_blocks=0, min_blocks=0, max_blocks=12` in
+`hpc/resource_configs/tianhe_cpu.py` (role `labels`, 16 × 4 per node), a block is submitted
+only while frames are waiting and released as the queue drains, a block that dies at its
+3-day time limit is replaced while frames remain, and the frames it had in flight are rerun
+whole (§3) on another block within a minute. The queue never holds more than 12 of this
+campaign's jobs. The chain-job alternative — `--signal=B:USR1@900` and a `trap` that
+resubmits the array from inside, plus `01_select` inside `hl_labels.slurm` — was designed
+and set aside: parsl already does both.
+
+**The tmux gate, five minutes, before command 5.** Three things about this route have never
+run on TianheXY-CN; one debug frame measures all three:
+
+```bash
+command -v tmux || echo no-tmux          # no tmux: `screen -S hl-gate` (Ctrl+a d / screen -r) does the same job
+tmux new -s hl-gate
+export OPENQHA_PARTITION=deimos; source hpc/env/common.sh && source hpc/env/tianhe.sh
+python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu --debug --limit-frames 1
+```
+
+| what the gate shows | what it means |
+|---|---|
+| `squeue -u $USER` has one `parsl.*` block on `debug`; within minutes one `<qid> <frame> labelled <s> <MB>` line; the driver exits 0 | the route works: the block was submitted, the compute node's HTEX worker reached the driver's interchange on the login node, a label came back — run command 5 |
+| the block runs but the driver sits at the frame list for > 5 min, then the block ends with nothing labelled | the worker could not connect back: `tianhe_cpu.config` sets no `address=` and HTEX guessed the login node's hostname, which on a multi-homed login node with the proxy set-up may not be the interface the compute nodes reach. Fix, one line after the measurement: `HighThroughputExecutor(address=address_by_interface("<nic>"), …)` in `tianhe_cpu.py`, the interface from `ip -4 addr` on the login node that the compute network routes to — then the gate again |
+| `sbatch` refused (`AssocMaxSubmitJobLimit`, partition) | the group is at its 32; wait or ask, nothing to fix here |
+
+**Living with the driver.** `Ctrl+b d` leaves the session (the driver keeps running);
+`tmux attach -t hl-labels` returns; `Ctrl+b [` scrolls the log (`q` back). To stop it:
+attach, `Ctrl+C` — parsl cancels its blocks on the way out — then `squeue -u $USER` and
+`scancel` anything named `parsl.*` that is left. `tmux kill-session -t hl-labels` from
+outside kills the driver without that clean-up. A driver that died (a login-node reboot,
+a kill) is simply started again with command 5: it lists the frames without an ORCA job,
+skips finished and failed ones, and takes over the frames whose blocks Slurm calls dead
+(§3). The progress table (§5) is the same in either route. The tenant has several login
+nodes; a `tmux ls` that shows nothing may mean the session lives on another one
+(`pgrep -u $USER tmux` there).
 
 The gate's labels job on 19-atom molecules is the first real measurement of the
 Hessian and gradient job times (§2): if its table shows `FAILED` with an ORCA timeout
@@ -96,8 +148,9 @@ merged / saddle: `EnGrad Freq`) and ~12 gradient jobs (displaced: `EnGrad`; roun
 
 The formula behind the 03 rows, for N molecules with F frames each at T per frame on
 P cores: `N × F × T × P / 768` hours of 12 nodes. The gate's log (§4) gives T for both
-job kinds on the draw's own molecules; write them into the last column, and if the
-Hessian is over 80 min the rounds become four.
+job kinds on the draw's own molecules; write them into the last column; the driver's
+first blocks (§1, command 5) fill the campaign column, and if the Hessian is over 80 min
+the driver simply runs longer — there is no round count to change.
 
 Storage, kept (no `.gbw`, `.loc`, `property.txt`; round 5 Q8): ~0.35 MB per frame
 (`inp` + full `out` + `hess` or `engrad`; a 19-atom `.hess` is ~0.15 MB) → **~35 GB** for
@@ -106,22 +159,26 @@ Storage, kept (no `.gbw`, `.loc`, `property.txt`; round 5 Q8): ~0.35 MB per fram
 twice that) and 2.6 GB of HDF5. Node-local scratch holds ORCA's integrals during a job
 (GB per analytic Hessian) and is removed with the run directory.
 
-## 3. The 3 × 3-day scheme for the labels
+## 3. The frames' states; the sbatch rounds as the fallback route
 
-`deimos` allows 7 days, but a 3-day walltime queues faster and loses at most 3 days of
-one node to a crash. Each round is the same command:
+**The fallback: labels as sbatch arrays.** If the tmux gate (§1) fails and the fix is not at
+hand, step 03 runs as rounds of the array script — the same on-disk state, the same
+per-frame worker, no parsl:
 
 ```bash
-TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm
+TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # a round; the next when this one has ENDED
 ```
 
-What one round does: each of the 12 tasks lists the PENDING frames of the selection at
-its start (`03_labels.py --list`: no ORCA job on disk, not held by another process), takes
-every 12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a time under `taskset`.
-At the end task 0 assembles every molecule's label files and builds the Dataset; its exit
-code is **0 when no frame is without an ORCA job, 1 otherwise** — that is the signal for
-the next round. So the three rounds are three identical submissions, and a fourth is the
-same again. Nothing is lost, nothing is repeated, no state but the files.
+`deimos` allows 7 days, but a 3-day walltime queues faster and loses at most 3 days of one
+node to a crash; ~8 days of labels are three rounds. Each of the 12 tasks lists the PENDING
+frames of the selection at its start (`03_labels.py --list`: no ORCA job on disk, not held
+by another process), takes every 12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a
+time under `taskset`. At the end task 0 assembles every molecule's label files and builds
+the Dataset; its exit code is **0 when no frame is without an ORCA job, 1 otherwise** — the
+signal for the next round, which is the same command again, until task 0's assemble exits 0. The rounds are submitted one
+at a time, by hand, each when the previous has ended: pre-queued they would take 36 of the
+tenant's 32 submissions (§1), and a `--dependency` chain would hold them idle for days. The
+two routes can even overlap — the lock below partitions the frames between them.
 
 **A frame's three states, and the lock** (ticket 24, round 11, S0-G-96). Every frame is
 attempted **once**, bounded by `TIMEOUT_S` (8 h per ORCA job, `hl_labels.slurm`; 3× the
@@ -155,7 +212,7 @@ Logs land in `logs/slurm/` of the checkout (the directory the job was submitted 
 | A | `branchA: N drawn, M pending, K for task i/n -> list` at the top; one `qid rc=0 S s [PASS] …` per molecule; last: `== A  K done, 0 not done, of K in this task; wall W s` | `not done` > 0 → open `$S0_SCRATCH/branchA_<qid>.log` of that molecule; a CREST that ran out of `TIMEOUT_S` (3600) is normal for a few and is simply rerun by the next submission |
 | 02 | one `qid rc=0 S s` per molecule; last: `== 02  K Frame sets written, 0 not, of K in this task; wall W s` | `not` > 0 → the molecule's `02_frames.py --species` on debug, read its Record |
 | 03 | `frames  T pending, K for this task`; `timeout    ORCA per frame TIMEOUT_S=28800 s`; one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `failed` (earlier, not rerun) / `running` / `FAILED …` (now)); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table with its `failed` count, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` whose ORCA `.out` ends with the `TIMEOUT_S` trailer (the Hessian is bigger than estimated: read it, `--retry` with a larger `TIMEOUT_S` if it deserves one); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
-| 04 | `dataset 'draw300' at <level> (split by frame): N molecules (7 test), F frames: train … valid … test … pool …; H with a Hessian`; `per class:` table; `merged …/mace_draw300.<level>.extxyz` | `pool` > 0 after the last round → frames still unlabelled: another round |
+| 04 | `dataset 'draw300' at <level> (split by frame): N molecules (7 test), F frames: train … valid … test … pool …; H with a Hessian`; `per class:` table; `merged …/mace_draw300.<level>.extxyz` | `pool` > 0 after the driver ended → frames still without a job (its blocks were cut, or the driver died): run command 5 again; frames the Batch table calls `failed` stay out until a human `--retry`s them |
 
 The per-frame `<s>` of the gate's 03 log, averaged over `basin_*` (Hessian) and
 `displaced_*` (gradient) frames, is the measured column of §2.
@@ -170,27 +227,21 @@ frames total / labelled / **failed** / unlabelled / running — read from disk (
 the Frame set Record, the finished file groups, the `.out`s without the terminal line, the
 `.running` locks — `squeue` is asked only about the job a lock names). When `unlabelled`
 is 0 the campaign's computing is done and `failed` is the list a human reads (§3's table);
-when `running` is 0 and `unlabelled` is not, no job is working on it and a round is due.
+when `running` is 0 and `unlabelled` is not, no job is working on it: the driver has ended
+or died — start it again (§1, command 5), or submit a round of the fallback (§3).
 `01_select.py --tag draw300` prints the same facts per molecule (`select.out`) with the
 classes column.
 
-A killed array of any stage is resubmitted **as it is**: every stage script lists only
-what is not on disk (`basins.done`, the Frame set Record, the ORCA job), leaves a held
-frame to its holder and takes over a dead one (§3). There is no state to reset and no
-file to delete. Two rounds of the same stage at once are safe but pointless: the locks
-partition the frames between them.
+A killed array of any stage is resubmitted **as it is**, and a dead driver is started
+again as it was: every stage lists only what is not on disk (`basins.done`, the Frame set
+Record, the ORCA job), leaves a held frame to its holder and takes over a dead one (§3).
+There is no state to reset and no file to delete. Two rounds of the same stage at once, or
+a round beside the driver, are safe but pointless: the locks partition the frames between
+them.
 
-## 6. The ALF mode (parsl, for a campaign nobody wants to resubmit by hand)
+## 6. The ALF mode
 
-The same on-disk state, driven from the login node in `tmux`: a `SlurmProvider` submits
-up to `--max-blocks` one-node blocks with `sbatch` as the queue demands and releases them
-as it drains (`hpc/resource_configs/tianhe_cpu.py`, role `labels`, per
-`alframework/parsl_resource_configs`). The two modes can be mixed: what one labels, the
-other skips.
-
-```bash
-tmux new -s hl-labels
-python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu \
-    --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw300_$(date +%F_%H%M).log
-# Ctrl+b d detaches; tmux attach -t hl-labels returns; squeue -u $USER shows the blocks
-```
+Is the campaign's own route for step 03 since 2026-09-22 and lives in §1 (commands 4–5,
+the tmux gate, living with the driver): a `SlurmProvider` submitting up to `--max-blocks`
+one-node blocks as the queue demands and releasing them as it drains
+(`hpc/resource_configs/tianhe_cpu.py`, role `labels`, per `alframework/parsl_resource_configs`).

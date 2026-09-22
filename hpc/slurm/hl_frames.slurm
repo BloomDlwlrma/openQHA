@@ -11,7 +11,7 @@
 #
 #     cd $HOME/openQHA-main
 #     TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm   # the gate
-#     TAG=draw300 sbatch --array=0-11 --time=04:00:00 hpc/slurm/hl_frames.slurm               # the campaign
+#     TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm                # the campaign: 2 nodes, ~1 h (ticket 25)
 #
 # Molecules with a Frame-set Record are skipped, so a resubmission continues.
 # =======================================================================================

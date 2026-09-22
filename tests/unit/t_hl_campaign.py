@@ -122,11 +122,25 @@ def main():
                      and "3-00:00:00" not in l)
     check("the campaign page carries every campaign sbatch command of the stage scripts' headers (gate + array), and states no sbatch the headers do not know (the 3-day rounds and the 3 h gate rerun excepted)",
           not missing and not foreign and len(page) >= 6, (missing, foreign, len(page)))
-    check("the page names the progress script, the three rounds, the exit-code signal, the resubmit-as-is rule, "
-          "TIMEOUT_S = 28800, the failed state and --retry (ticket 24)",
-          all(s in PAGE.read_text(encoding="utf-8") for s in ("s0_hl_progress.py --tag draw300", "round 3", "assemble exits 0",
-                                                              "resubmitted **as it is**", "3-00:00:00", "TIMEOUT_S=28800",
-                                                              "**failed**", "--retry", "touched within 30 min")))
+    text = PAGE.read_text(encoding="utf-8")
+    check("the page names the progress script, the exit-code signal, the resubmit-as-is rule, TIMEOUT_S = 28800, "
+          "the failed state and --retry (ticket 24)",
+          all(s in text for s in ("s0_hl_progress.py --tag draw300", "assemble exits 0", "resubmitted **as it is**",
+                                  "3-00:00:00", "TIMEOUT_S=28800", "**failed**", "--retry", "touched within 30 min")))
+    sequence = ("TIMEOUT_S=14400 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm",
+                "TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm",
+                "python workflows/hessian_learning/01_select.py --tag draw300",
+                "tmux new -s hl-labels",
+                "03_labels.py --tag draw300 --resource tianhe_cpu",
+                "--max-blocks 12 --walltime 3-00:00:00",
+                "04_dataset.py --tag draw300 --split-by molecule")
+    check("ticket 25: the page carries the six-command production sequence (A array, 02 on two nodes, 01, tmux, the parsl driver "
+          "with 12 blocks of 3 days, 04), the quota (32 submissions, every array task counted), the tmux gate and its "
+          "three outcomes, the sbatch rounds as the fallback",
+          all(s in text for s in sequence) and "| tenant `hku2021_fos4`" in text and "every array task as a submission" in text
+          and "--resource tianhe_cpu --debug --limit-frames 1" in text and "address_by_interface" in text
+          and "AssocMaxSubmitJobLimit" in text and "fallback" in text and "command -v tmux" in text,
+          [s for s in sequence if s not in text])
 
     print("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL))
     return 0 if not FAIL else 1

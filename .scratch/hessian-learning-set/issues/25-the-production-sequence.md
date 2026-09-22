@@ -49,7 +49,13 @@ recorded as considered, not built.
 `failed` column; both are 24's). The tmux gate itself needs nothing and can run before 24.
 **Unblocks:** the labels campaign run.
 
-- [ ] page §1 rewritten; §6 merged; quota table; the tmux gate with its three outcomes
-- [ ] README step 03 paragraph
-- [ ] `t_hl_campaign` PASS (sequence commands present, header cross-check)
+**Status:** implemented 2026-09-22 (docs + test); the tianhe gate is the user's.
+
+- [x] page §1 rewritten (six commands with sizes and submission counts, the quota table, why not a chain, the
+      tmux gate and its three outcomes, living with the driver); §3 = the frames' states + the sbatch rounds as the
+      fallback (the header's array command kept there, submitted one round at a time); §4 row 04, §5 wording, §6 a pointer
+- [x] README step 03: the pointer paragraph and the ALF paragraph rewritten (the driver is the route, the array the fallback)
+- [x] `t_hl_campaign` PASS: the six commands, the quota words, the gate command, `address_by_interface`, the fallback;
+      the header cross-check made `hl_frames.slurm`'s header comment say `--array=0-1` too (the one stage-script line
+      touched: a comment; the parsl command is not an sbatch and is not cross-checked)
 - [ ] tianhe (user): the tmux gate's result pasted -> `address=` decided; then the driver

@@ -76,9 +76,13 @@ python workflows/hessian_learning/03_labels.py --tag rings --species dsgdb9nsd_0
 ### On tianhe (TianheXY‑C; rulings 2026‑09‑18 / 2026‑09‑19)
 
 **The campaign is run from [`docs/hessian_learning_campaign.md`](../../docs/hessian_learning_campaign.md)**
-(ticket 08): the sequence, the cost table with its measured column, the 3 × 3‑day
-resubmission scheme, what each log's last lines must say, the progress table
-(`scripts/tooling/s0_hl_progress.py --tag draw300`). What follows is the mechanism.
+(tickets 08, 25): the six‑command sequence — branch A and 02 as sbatch arrays sized to
+their cost, `01_select`, then step 03 as a **parsl driver in `tmux`** on the login node
+(`--resource tianhe_cpu --max-blocks 12`, the only stage that needs rounds; the tenant's
+32‑submission quota counts every array task, so rounds are not pre‑queued), then 04 — with
+the five‑minute tmux gate, the cost table with its measured column, what each log's last
+lines must say, the progress table (`scripts/tooling/s0_hl_progress.py --tag draw300`).
+What follows is the mechanism.
 
 **A submitted job is plain bash + `xargs`, no parsl** — the hkuhpc shape
 (`qm9_reaction_eng/docs/bash_orca_remain_workflow_lecture.md`): a task list, `awk` gives
@@ -127,14 +131,15 @@ line per molecule/frame, the summary line (`N done, N not, wall`). Measured 2026
 a debug node: branch A 460–590 s per molecule (16 at once), a 10‑atom wB97M‑D3BJ/
 def2‑TZVPPD Hessian label 245–305 s and 75–92 MB per rank under 16‑way contention.
 
-**The ALF mode** (parsl, for a campaign nobody wants to resubmit by hand): the driver on
-the login node in `tmux`, `SlurmProvider` submitting up to `--max-blocks` one‑node
-blocks with `sbatch` as the queue demands and releasing them as it drains — the same
-on‑disk state, so the two modes can be mixed:
+**The campaign's route for 03 is the parsl driver** (the ALF mode): on the login node in
+`tmux`, `SlurmProvider` submitting up to `--max-blocks` one‑node blocks with `sbatch` as the
+queue demands and releasing them as it drains; a block cut at its time limit is replaced
+and its frames in flight rerun whole. The sbatch array above is the fallback if the tmux
+gate fails, and the same on‑disk state lets the two overlap:
 ```bash
-tmux new -s hl-labels
+tmux new -s hl-labels        # then source hpc/env/common.sh + tianhe.sh inside it
 python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu \
-    --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw_$(date +%F_%H%M).log
+    --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw300_$(date +%F_%H%M).log
 # Ctrl+b d detaches; tmux attach -t hl-labels returns; squeue -u $USER shows the blocks
 ```
 
@@ -161,6 +166,43 @@ whole draw — plus every branch‑A‑finished molecule under the tags. Each ro
 stratification keys, the structure `classes` (from `draw.dat`, else classified from the
 SMILES with `configs/structure_classes.yaml`), SPICE membership, pin status; the Record has
 a `[[Class]]` table (molecules / with basins / with frames per class).
+
+## The production row R4, end to end (S0-C-60; tickets 16, 18-22)
+
+One row is trained: Replay = **4 × the train frames that carry a Hessian**, every Replay
+frame at `config_weight = 10`, `w_H` = the epoch-0 balance measured on the base model over
+the run's own train file (the default of `05_train.py`), everything else the defaults of
+ticket 21. The judge reports every row and decides nothing (the gate is closed).
+
+```bash
+# 1. labels (ticket 08) -> the Dataset: basin frames train and validate, the other generators are held out
+python workflows/hessian_learning/04_dataset.py --tag draw300 --name draw300 --train-generators basin
+#    ... prints N_TRAIN_HESSIAN and REPLAY_R4_FRAMES = 4 x N_TRAIN_HESSIAN (also in dataset.toml)
+
+# 2. the two SPICE draws (the release is on tianhe): the forgetting set, then the Replay of exactly that size
+python scripts/tooling/s0_spice_test_draw.py --n 5000
+python scripts/tooling/s0_spice_pt_draw.py --n <REPLAY_R4_FRAMES> --seed 0 --weight 10 --out $S0_RUNS_ROOT/spice/spice_pt_R4.extxyz
+#    ... writes spice_pt_R4.extxyz (+ .ids.dat, .toml) and spice_pt_R4.valid.extxyz
+
+# 3. the fine-tune (one A800): w_H = balance is the default; the Record prints REPLAY_PER_HESSIAN_FRAME = 4.0
+TAG=draw300 RUN=R4 MAX_EPOCHS=100 MULTIHEADS=1 PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_R4.extxyz \
+    PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_R4.valid.extxyz yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+
+# 4. register R4 as an engine (needed before anything can run WITH it), then its own minima and msRRHO for the seven
+python workflows/hessian_learning/05_train.py --tag draw300 --run R4 --register-copy   # prints the ENGINES entry to paste
+S0_ENGINE=MACE-OFF23_medium-R4 python scripts/production/s0_A_pipeline.py --tag r4 --species dsgdb9nsd_000035   # x 7
+S0_ENGINE=MACE-OFF23_medium-R4 python scripts/production/s0_thermo_msrrho.py --tag r4 --species dsgdb9nsd_000035 --step mace
+#    (--step reference reuses the ORCA basins of the smoke tags; --step compare writes MODEL_ERROR_S_REF under tag r4)
+
+# 5. the judge, gate closed: every row against its number, VERDICT = REPORTED
+python workflows/hessian_learning/06_judge.py --tag draw300 --engine MACE-OFF23_medium-R4 \
+    --spice-file data/training_sets/spice_test_5000.extxyz --thermo-tag r4
+#    the MD ramp only afterwards, if wanted:  ... --run R4_ramp --ramp --ramp-max-K 600
+```
+
+The smoke run on the tianhe test set (one day of CREST + one day of ORCA) is the same
+five steps with `--tag smoke` and `MAX_EPOCHS=20`; its Record's `SECONDS_PER_EPOCH` sets
+the walltime of step 3.
 
 ## Step 05: the fine-tune (ticket 13; tickets 18 and 21)
 
