@@ -45,6 +45,12 @@ export NPROCS="${NPROCS:-4}"
 # %maxcore is per RANK: 0.75 x the node's memory / cores (512 GB / 64 = 8 GB -> 6000 MB),
 # so CONCURRENCY x NPROCS ranks together stay below what the allocation holds.
 export MAXCORE="${MAXCORE:-6000}"
+# One attempt per frame, bounded (round 11, S0-G-96): ORCA is killed after TIMEOUT_S and
+# the frame is FAILED (its .out ends with the openQHA trailer); no round reruns it -- read
+# it, then `python -m openqha.data.frame_labels <mol> <gen> <b> <k> --retry`. 8 h = 3x the
+# 19-atom analytic Hessian's estimated upper end. A frame CUT by the walltime has no .out
+# and is rerun whole by the next round.
+export TIMEOUT_S="${TIMEOUT_S:-28800}"
 CONCURRENCY="${CONCURRENCY:-$(( CORES / NPROCS ))}"
 [ "$CONCURRENCY" -ge 1 ] || CONCURRENCY=1
 LIMIT_FRAMES="${LIMIT_FRAMES:-}"
@@ -80,6 +86,7 @@ TOTAL=$(wc -l < "$LIST")
 MINE="$LIST.task$ARRAY_ID"
 awk -v id="$ARRAY_ID" -v n="$ARRAY_N" '(NR - 1) % n == id' "$LIST" > "$MINE"
 echo "frames     $TOTAL pending, $(wc -l < "$MINE") for this task"
+echo "timeout    ORCA per frame TIMEOUT_S=$TIMEOUT_S s; a failed frame is not rerun (--retry by hand)"
 
 # ---- 3. the work: one worker per line, a core range per slot (hkuhpc's awk + xargs) ------
 echo; echo "== 03 labels"
@@ -97,6 +104,6 @@ if [ "$ARRAY_ID" = 0 ]; then
     rc=${PIPESTATUS[0]}
     echo; echo "== 04 Dataset"
     python -u workflows/hessian_learning/04_dataset.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --export openreact 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
-    echo; echo "== assemble exit $rc (1 = frames still unlabelled: resubmit); Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
+    echo; echo "== assemble exit $rc (1 = frames with no ORCA job yet: resubmit; failed frames are not rerun); Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
     exit "$rc"
 fi

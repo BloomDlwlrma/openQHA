@@ -4,11 +4,13 @@ TOOLING. For every molecule of the draw (`draw.dat`; else `select.dat`; else eve
 molecule under the tag with branch A) it reads what is on disk -- branch A done
 (`basins.done`), a Frame set Record (`frames/frames.toml`, its kept frames), the frames
 whose ORCA job at `--level` is finished (`frame_labels.finished` on the file group in
-`frames/`), the frames another job holds a fresh `.running` claim on -- and prints one
-row per structure class and the total: molecules drawn / branch A / Frame sets, frames
-total / labelled / unlabelled / running. Nothing is read from `squeue`: what Slurm thinks
-is running is not the question; what is on disk is. Login-node cheap: a few `stat`s per
-molecule, no MACE, no extxyz parsed.
+`frames/`), the frames whose ORCA ran and FAILED (a `.out` without the terminal line;
+not rerun, a human's `--retry` -- ticket 24), the frames another job holds (`.running`
+lock: its job alive by `squeue`, its heartbeat fresh) -- and prints one row per structure
+class and the total: molecules drawn / branch A / Frame sets, frames total / labelled /
+failed / unlabelled / running. `squeue` is asked only about the job named in a lock; what
+is on disk is the question. Login-node cheap: a few `stat`s per molecule, no MACE, no
+extxyz parsed.
 
     python scripts/tooling/s0_hl_progress.py --tag draw300
     python scripts/tooling/s0_hl_progress.py --tag rings --tag propanal --name smoke --level hf_cc-pvtz
@@ -31,7 +33,7 @@ from openqha import config                                      # noqa: E402
 from openqha.data import dataset, frame_labels, frames as frames_mod   # noqa: E402
 from openqha.store import basins, dat, layout                   # noqa: E402
 
-COLUMNS = ("drawn", "branchA", "frame_sets", "frames", "labelled", "unlabelled", "running")
+COLUMNS = ("drawn", "branchA", "frame_sets", "frames", "labelled", "failed", "unlabelled", "running")
 
 
 def molecules(root, tags, name):
@@ -56,7 +58,7 @@ def molecules(root, tags, name):
 
 def molecule_progress(qid, tag, mol, level, root):
     """One molecule's counters (COLUMNS without `drawn`), from disk."""
-    row = dict(branchA=0, frame_sets=0, frames=0, labelled=0, unlabelled=0, running=0)
+    row = dict(branchA=0, frame_sets=0, frames=0, labelled=0, failed=0, unlabelled=0, running=0)
     if not basins.done(qid, tag, root=root):
         return row
     row["branchA"] = 1
@@ -70,6 +72,8 @@ def molecule_progress(qid, tag, mol, level, root):
         stem = layout.orca_frame_stem(level, g, b, k)
         if frame_labels.finished(folder, stem, hessian=frame_labels.wants_hessian(g)):
             row["labelled"] += 1
+        elif frame_labels.failed(folder, stem):
+            row["failed"] += 1
         else:
             row["unlabelled"] += 1
             if frame_labels.running_elsewhere(folder, stem):
@@ -104,16 +108,17 @@ def main():
     root = config.runs_root(config.load())
     name = args.name or args.tag[0]
     out = progress(root, args.tag, name, args.level)
-    fmt = "{:22s} {:>6} {:>7} {:>10} {:>7} {:>8} {:>10} {:>7}"
+    fmt = "{:22s} {:>6} {:>7} {:>10} {:>7} {:>8} {:>6} {:>10} {:>7}"
     print("progress of {!r} at {} ({} molecules from {})".format(name, args.level, out["molecules"], out["source"]))
-    print(fmt.format("class", "drawn", "branchA", "frame sets", "frames", "labelled", "unlabelled", "running"))
+    print(fmt.format("class", "drawn", "branchA", "frame sets", "frames", "labelled", "failed", "unlabelled", "running"))
     for cls in sorted(out["classes"]):
         r = out["classes"][cls]
         print(fmt.format(cls, *[r[c] for c in COLUMNS]))
     t = out["total"]
     print(fmt.format("TOTAL", *[t[c] for c in COLUMNS]))
     done = t["labelled"] / t["frames"] * 100 if t["frames"] else 0.0
-    print("{:.1f} % of the frames labelled; {:.1f} s".format(done, time.time() - t0))
+    print("{:.1f} % of the frames labelled; {} failed (not rerun: read the .out, then --retry); {} unlabelled with no job on disk; {:.1f} s".format(
+        done, t["failed"], t["unlabelled"], time.time() - t0))
     return 0
 
 

@@ -41,6 +41,7 @@ TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
 SPECIES="${SPECIES:-dsgdb9nsd_000018 dsgdb9nsd_000019 dsgdb9nsd_000035 dsgdb9nsd_000036 dsgdb9nsd_000044 dsgdb9nsd_000046 dsgdb9nsd_000048}"
 LIMIT_FRAMES="${LIMIT_FRAMES:-16}"
+export TIMEOUT_S="${TIMEOUT_S:-28800}"      # ORCA per frame; a killed frame is failed, not rerun (ticket 24)
 LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
 
 # ---- 1. site environment ---------------------------------------------------------------

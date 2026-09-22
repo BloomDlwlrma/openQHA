@@ -8,10 +8,12 @@
 # both inside `frame_labels.label_one`), the ORCA ranks pinned to the slot's cores with
 # `taskset` (HL_TASKSET=0 leaves placement to the OS), scratch on the node-local
 # S0_SCRATCH, the full .out and .hess copied back, success judged by ORCA's terminal
-# line. Prints one line per frame; exit 1 only when ORCA did not terminate.
+# line. Prints one line per frame; exit 1 only when ORCA did not terminate now (the frame
+# is then FAILED and no round reruns it -- ticket 24), 143 when the job was cut.
 mol="$1"; gen="$2"; basin="$3"; k="$4"; cores="$5"
 cmd=(python -m openqha.data.frame_labels "$mol" "$gen" "$basin" "$k"
-     --level "${LEVEL:-wb97m-d3bj_def2-tzvppd}" --nprocs "${NPROCS:-4}" --maxcore "${MAXCORE:-6000}")
+     --level "${LEVEL:-wb97m-d3bj_def2-tzvppd}" --nprocs "${NPROCS:-4}" --maxcore "${MAXCORE:-6000}"
+     --timeout "${TIMEOUT_S:-28800}")
 if [ "${HL_TASKSET:-1}" = 1 ] && command -v taskset >/dev/null 2>&1 && [ -n "$cores" ]; then
     exec taskset -c "$cores" "${cmd[@]}"
 else

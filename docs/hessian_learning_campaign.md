@@ -116,16 +116,32 @@ TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm
 ```
 
 What one round does: each of the 12 tasks lists the PENDING frames of the selection at
-its start (`03_labels.py --list`: no finished job, no fresh `.running` claim), takes every
-12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a time under `taskset`; a frame
-is claimed with `frames/<stem>.running` while ORCA runs and the claim is removed after.
+its start (`03_labels.py --list`: no ORCA job on disk, not held by another process), takes
+every 12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a time under `taskset`.
 At the end task 0 assembles every molecule's label files and builds the Dataset; its exit
-code is **0 when nothing is left unlabelled, 1 otherwise** — that is the signal for the
-next round. A round that hits its walltime dies mid-frame: the frames in flight have a
-`.out` without the terminal line and a stale claim; the next round lists them as pending
-(a claim older than 2 h is ignored), reruns them, and skips everything finished. So the
-three rounds are three identical submissions, and a fourth is the same again. Nothing is
-lost, nothing is repeated, no state but the files.
+code is **0 when no frame is without an ORCA job, 1 otherwise** — that is the signal for
+the next round. So the three rounds are three identical submissions, and a fourth is the
+same again. Nothing is lost, nothing is repeated, no state but the files.
+
+**A frame's three states, and the lock** (ticket 24, round 11, S0-G-96). Every frame is
+attempted **once**, bounded by `TIMEOUT_S` (8 h per ORCA job, `hl_labels.slurm`; 3× the
+19-atom analytic Hessian's estimated upper end):
+
+| on disk | state | the next round |
+|---|---|---|
+| `<stem>.out` with `****ORCA TERMINATED NORMALLY****` and the `.hess` / `.engrad` | **finished** | skipped |
+| `<stem>.out` without that line (a crash; or the `TIMEOUT_S` kill, whose `.out` ends with `openQHA: ORCA killed after TIMEOUT_S=28800 s`) | **failed** | **not rerun** — the reader judges from the worker's `FAILED` line in the Slurm `.out`, the `.err`, and the ORCA `.out`; `python -m openqha.data.frame_labels <molecule> <generator> <basin> <k> --retry` is the human's rerun |
+| no `<stem>.out` | never run, or **cut** (walltime, SIGKILL, a dead node: the node-local run directory is gone, nothing came back) | rerun whole — nothing resumes, ORCA's `.gbw` never leaves the node |
+
+While ORCA runs the frame is held by `frames/<stem>.running`, which names the Slurm job
+and is touched every minute by the worker. Another process treats the frame as held only
+while **Slurm does not call that job dead** (`squeue -j`: COMPLETING or any terminal state
+frees it at once; no answer = no opinion) **and the lock was touched within 30 min** (a
+worker that died alone inside a living job stops touching). A walltime kill's SIGTERM is
+turned into an exception inside the worker, so the lock is released on the spot and the
+frame in flight leaves no `.out`. Two rounds or a round and the tmux driver (§6) can
+therefore overlap without labelling the same frame twice, and a block that dies at its
+time limit hands its frames to the next one within a minute.
 
 If round 1's per-frame times (§4) say the campaign is shorter or longer than 8 days,
 change nothing but the number of rounds.
@@ -138,7 +154,7 @@ Logs land in `logs/slurm/` of the checkout (the directory the job was submitted 
 |---|---|---|
 | A | `branchA: N drawn, M pending, K for task i/n -> list` at the top; one `qid rc=0 S s [PASS] …` per molecule; last: `== A  K done, 0 not done, of K in this task; wall W s` | `not done` > 0 → open `$S0_SCRATCH/branchA_<qid>.log` of that molecule; a CREST that ran out of `TIMEOUT_S` (3600) is normal for a few and is simply rerun by the next submission |
 | 02 | one `qid rc=0 S s` per molecule; last: `== 02  K Frame sets written, 0 not, of K in this task; wall W s` | `not` > 0 → the molecule's `02_frames.py --species` on debug, read its Record |
-| 03 | `frames  T pending, K for this task`; one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `running` / `FAILED …`); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` with a timeout tail (raise `--time`, or the Hessian is bigger than estimated); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
+| 03 | `frames  T pending, K for this task`; `timeout    ORCA per frame TIMEOUT_S=28800 s`; one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `failed` (earlier, not rerun) / `running` / `FAILED …` (now)); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table with its `failed` count, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` whose ORCA `.out` ends with the `TIMEOUT_S` trailer (the Hessian is bigger than estimated: read it, `--retry` with a larger `TIMEOUT_S` if it deserves one); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
 | 04 | `dataset 'draw300' at <level> (split by frame): N molecules (7 test), F frames: train … valid … test … pool …; H with a Hessian`; `per class:` table; `merged …/mace_draw300.<level>.extxyz` | `pool` > 0 after the last round → frames still unlabelled: another round |
 
 The per-frame `<s>` of the gate's 03 log, averaged over `basin_*` (Hessian) and
@@ -150,17 +166,19 @@ The per-frame `<s>` of the gate's 03 log, averaged over `basin_*` (Hessian) and
 python scripts/tooling/s0_hl_progress.py --tag draw300          # seconds on the login node
 ```
 One row per structure class and the total: molecules drawn / branch A done / Frame sets;
-frames total / labelled / unlabelled / running — read from disk (`basins.done`, the Frame
-set Record, the finished file groups, fresh `.running` claims), never from `squeue`. When
-`unlabelled` is 0 the campaign is done; when `running` is 0 and `unlabelled` is not, no
-job is working on it and a round is due. `01_select.py --tag draw300` prints the same
-facts per molecule (`select.out`) with the classes column.
+frames total / labelled / **failed** / unlabelled / running — read from disk (`basins.done`,
+the Frame set Record, the finished file groups, the `.out`s without the terminal line, the
+`.running` locks — `squeue` is asked only about the job a lock names). When `unlabelled`
+is 0 the campaign's computing is done and `failed` is the list a human reads (§3's table);
+when `running` is 0 and `unlabelled` is not, no job is working on it and a round is due.
+`01_select.py --tag draw300` prints the same facts per molecule (`select.out`) with the
+classes column.
 
 A killed array of any stage is resubmitted **as it is**: every stage script lists only
-what is not on disk (`basins.done`, the Frame set Record, the finished ORCA job), respects
-a fresh claim, takes over a stale one. There is no state to reset and no file to delete.
-The one thing not to do: run two rounds of the same stage at once — they would share
-the pending list and, apart from the claims, race for the same frames.
+what is not on disk (`basins.done`, the Frame set Record, the ORCA job), leaves a held
+frame to its holder and takes over a dead one (§3). There is no state to reset and no
+file to delete. Two rounds of the same stage at once are safe but pointless: the locks
+partition the frames between them.
 
 ## 6. The ALF mode (parsl, for a campaign nobody wants to resubmit by hand)
 

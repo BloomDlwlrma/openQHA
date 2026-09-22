@@ -19,9 +19,13 @@ WHAT IS WRITTEN
         (`EnGrad`, an `.engrad`, no Hessian -- round 5, Q7 (b)). ORCA itself runs as
         `job.*` in a run directory -- the node-local `scratch`, or `frames/.<stem>/`
         without one -- and the KEEP kinds are copied back under the stem, the run
-        directory removed. A finished frame (terminal line in the `.out` and its product
-        file) is skipped on a rerun, an unfinished one is rerun -- that is how a Batch
-        resumes.
+        directory removed. Three states on a rerun (ticket 24, round 11): a FINISHED
+        frame (terminal line in the `.out` and its product file) is skipped; a FAILED one
+        (a `.out` without the terminal line: ORCA crashed or hit `timeout_s`) is NOT rerun
+        -- one attempt per frame, the reader judges from the `.out` and the worker's line,
+        `--retry` is the human's rerun; a frame with no `.out` was never run, or was CUT
+        (walltime, SIGKILL, node death) before anything came back, and is rerun whole. No
+        unit resumes: ORCA's `.gbw` stays in the run directory.
     <molecule>/frames/<generator>.<level>.extxyz
         the labelled frames: positions VERBATIM from the MACE file, `energy` (eV),
         `forces` (eV/A), `hessian` (3N x 3N flattened, eV/A^2) from ORCA. A frame whose
@@ -51,7 +55,9 @@ is given (`S0_SCRATCH` on a cluster); only KEEP is copied back to the molecule t
 import os
 import re
 import shutil
+import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -87,11 +93,23 @@ KEEP = (".inp", ".out", ".hess", ".engrad")
 HESSIAN_GENERATORS = ("basin", "merged", "saddle")
 STEM = "job"
 TERMINAL = "****ORCA TERMINATED NORMALLY****"
-#: a frame is claimed with `<stem>.running` beside its files while ORCA runs; a claim
-#: older than LOCK_MAX_AGE_S (a killed job) is ignored. Two Batches over one selection then
-#: partition the frames instead of labelling the same ones (two debug jobs did, 2026-09-19).
+#: a frame is claimed with `<stem>.running` beside its files while ORCA runs, so two
+#: Batches over one selection partition the frames instead of labelling the same ones (two
+#: debug jobs did, 2026-09-19). The lock names its job (`SLURM_JOB_ID`, or `pid<n>`) and the
+#: holder touches it every HEARTBEAT_S from a daemon thread. Another process treats the
+#: frame as held only when BOTH hold (round 11, S0-G-96): Slurm does not call the job dead
+#: (`squeue -j`, states in DEAD_STATES; no answer = no opinion) AND the lock was touched
+#: within LOCK_MAX_AGE_S. A walltime kill (SIGTERM) releases the lock at once through the
+#: handler in `label_one`; a SIGKILL or a dead node leaves it, and either rule frees it.
 LOCK = ".running"
-LOCK_MAX_AGE_S = 2 * 3600
+HEARTBEAT_S = 60
+LOCK_MAX_AGE_S = 30 * 60
+SQUEUE_TIMEOUT_S = 20
+#: COMPLETING is every job's way out, normal or not: its processes are already gone.
+DEAD_STATES = frozenset(("COMPLETING", "COMPLETED", "FAILED", "TIMEOUT", "CANCELLED", "NODE_FAIL",
+                         "OUT_OF_MEMORY", "PREEMPTED", "BOOT_FAIL", "DEADLINE", "REVOKED", "SPECIAL_EXIT"))
+#: appended to a `.out` whose ORCA was killed at `timeout_s`, so the frame reads as failed
+TIMEOUT_TRAILER = "openQHA: ORCA killed after TIMEOUT_S={:.0f} s"
 
 SCHEMA = {
     "Calculation_Info": {
@@ -112,7 +130,8 @@ SCHEMA = {
         "N_COMPUTED": ("Integer", None, "frames ORCA ran in this call"),
         "N_REUSED": ("Integer", None, "frames whose finished ORCA job was on disk before this call"),
         "N_REFUSED": ("Integer", None, "finished jobs whose geometry did not match the MACE file"),
-        "N_UNLABELLED": ("Integer", None, "frames with no finished ORCA job (failed or not yet run)"),
+        "N_FAILED": ("Integer", None, "frames whose ORCA job ran and did not terminate normally (a .out without the terminal line); not rerun -- a human's decision (ticket 24)"),
+        "N_UNLABELLED": ("Integer", None, "frames with no ORCA job on disk: never run, or cut before anything came back; the next round runs them"),
         "SECONDS_PER_FRAME": ("Double", "s", "mean ORCA wall time of the labelled frames (TOTAL RUN TIME)"),
         "MAX_MEMORY_MB": ("Double", "MB", "largest 'Maximum memory used' ORCA reported over all frames, per rank"),
         "NOISE_FLOOR_MAX_CM": ("Double", "cm^-1", "largest rigid-block value over the labelled BASIN frames (the noise floor); displaced frames are excluded, their block holds the gradient term"),
@@ -140,8 +159,8 @@ SCHEMA = {
         "SECONDS": ("Double", "s", "ORCA's TOTAL RUN TIME of the job"),
         "MEMORY_MB": ("Double", "MB", "largest 'Maximum memory used' line of the .out, per rank"),
         "ORCA_VERSION": ("String", None, "Program Version of the .out"),
-        "STATUS": ("String", None, "labelled / reused / refused / unlabelled"),
-        "REASON": ("String", None, "why refused or unlabelled, or -"),
+        "STATUS": ("String", None, "labelled / reused / refused / failed / unlabelled"),
+        "REASON": ("String", None, "why refused, failed or unlabelled, or -"),
         "OUT": ("String", None, "the ORCA .out"),
     },
 }
@@ -210,6 +229,14 @@ def finished(folder, stem, hessian=True):
     return product.is_file() and out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")
 
 
+def failed(folder, stem):
+    """True when ORCA ran for the frame and did not terminate normally: a `<stem>.out` without
+    the terminal line (a crash, or the `timeout_s` kill with its TIMEOUT_TRAILER). Such a
+    frame is not rerun by a Batch (one attempt, round 11 Q3); `label_one(retry=True)` is."""
+    out = Path(folder) / (stem + ".out")
+    return out.is_file() and TERMINAL not in out.read_text(encoding="utf-8", errors="replace")
+
+
 def engrad_positions(path, natoms):
     """The atomic numbers and coordinates (bohr) at the end of an ORCA `.engrad`."""
     vals = [l.strip() for l in Path(path).read_text(encoding="utf-8").split("\n") if l.strip() and not l.strip().startswith("#")]
@@ -226,18 +253,57 @@ def lock_file(folder, stem):
     return Path(folder) / (stem + LOCK)
 
 
+_squeue_cache = {}          #: job id -> (asked_at, alive): one squeue per job id per minute
+
+
+def _owner(lock):
+    """The job id `_claim` wrote into the lock, or None when the lock cannot be read."""
+    try:
+        return lock.read_text(encoding="utf-8").split()[0]
+    except (OSError, IndexError):
+        return None
+
+
+def _job_alive(job_id, ttl_s=60):
+    """Slurm's word on the job that wrote a lock: True (a state not in DEAD_STATES), False
+    (dead, finished, purged, unknown to squeue), or None when Slurm cannot be asked -- a
+    `pid` owner (a workstation), no `squeue` on PATH, squeue failing or past
+    SQUEUE_TIMEOUT_S. None is "no opinion", never "dead". A dead list rather than an
+    alive list: a state this code has never seen counts as alive and the heartbeat decides."""
+    if not job_id or not str(job_id).isdigit() or shutil.which("squeue") is None:
+        return None
+    hit = _squeue_cache.get(job_id)
+    if hit and time.time() - hit[0] < ttl_s:
+        return hit[1]
+    try:
+        r = subprocess.run(["squeue", "-h", "-j", str(job_id), "-o", "%T"],
+                           capture_output=True, text=True, timeout=SQUEUE_TIMEOUT_S)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    state = r.stdout.strip().split()
+    alive = r.returncode == 0 and bool(state) and state[0] not in DEAD_STATES
+    _squeue_cache[job_id] = (time.time(), alive)
+    return alive
+
+
 def running_elsewhere(folder, stem, max_age_s=LOCK_MAX_AGE_S):
-    """True when another process holds a fresh claim on this frame."""
+    """True when another process holds this frame: a lock whose job Slurm does not call
+    dead AND whose heartbeat is younger than `max_age_s`. No lock, a dead job, or a lock
+    not touched for `max_age_s` (its python died alone) -> False. Without Slurm to ask,
+    the heartbeat alone decides."""
     lock = lock_file(folder, stem)
     try:
-        return lock.is_file() and (time.time() - lock.stat().st_mtime) < max_age_s
+        age = time.time() - lock.stat().st_mtime
     except OSError:
-        return False
+        return False                                          # no lock: free
+    if _job_alive(_owner(lock)) is False:
+        return False                                          # Slurm: that job is gone
+    return age < max_age_s                                    # alive or unknown: the heartbeat
 
 
 def _claim(folder, stem):
     """Claim the frame: the lock file names the job (Slurm id or pid). Returns False when
-    a fresh claim by someone else is there."""
+    someone else holds the frame (`running_elsewhere`)."""
     Path(folder).mkdir(parents=True, exist_ok=True)
     if running_elsewhere(folder, stem):
         return False
@@ -249,6 +315,59 @@ def _claim(folder, stem):
 def _release(folder, stem):
     try:
         lock_file(folder, stem).unlink()
+    except OSError:
+        pass
+
+
+class _Heartbeat:
+    """Touches the lock every HEARTBEAT_S while ORCA runs, from a daemon thread, so the
+    lock's mtime reads "alive now" rather than "claimed then". Dies with the process --
+    which is the point: a SIGKILLed holder stops touching and its lock ages out."""
+
+    def __init__(self, lock, period_s=None):
+        self.lock, self.period_s = Path(lock), period_s or HEARTBEAT_S
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, name="lock-heartbeat", daemon=True)
+
+    def _run(self):
+        while not self.stop.wait(self.period_s):
+            try:
+                os.utime(self.lock)
+            except OSError:
+                return                                        # the lock is gone: nothing to keep alive
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop.set()
+        self.thread.join(timeout=5)
+
+
+def _terminated(signum, frame):
+    """SIGTERM as an exception, so `finally: _release` runs; 143 is the shell's own code."""
+    raise SystemExit(128 + signum)
+
+
+def _install_sigterm():
+    """Route SIGTERM to `_terminated` for the time a lock is held. Only the main thread may
+    set handlers; elsewhere the heartbeat and Slurm's word are the lock's whole defence.
+    Returns what to hand back to `_restore_sigterm`."""
+    if threading.current_thread() is not threading.main_thread():
+        return None
+    return signal.signal(signal.SIGTERM, _terminated)
+
+
+def _restore_sigterm(previous):
+    if previous is not None:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _append_line(path, line):
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n" + line + "\n")
     except OSError:
         pass
 
@@ -360,18 +479,24 @@ def parse_label(folder, atoms, stem):
 
 # ====================================================================== one frame
 def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCORE_MB,
-              scratch=None, timeout_s=None, runner=None, mace_level_name=None, charge=0, mult=1):
+              scratch=None, timeout_s=None, runner=None, mace_level_name=None, charge=0, mult=1, retry=False):
     """ORCA on one frame. Returns the parsed label plus `status` ("labelled" when ORCA ran
     now, "reused" when its finished job was on disk, "refused" on a geometry mismatch,
-    "running" when another Batch holds a fresh claim on the frame -- nothing is parsed
-    then) and the wall seconds of this call. Raises when ORCA does not terminate normally --
-    the caller (a Batch task) records that; the `.out` stays for reading.
+    "failed" when a `.out` without the terminal line is on disk and `retry` is False --
+    the frame ran once and is a human's decision now, nothing runs; "running" when
+    another process holds the frame -- nothing is parsed in the last two) and the wall
+    seconds of this call. Raises when ORCA does not terminate normally -- the caller (a
+    Batch task) records that; the `.out` comes back for reading and the frame is failed.
 
     ORCA runs as `job.*` in a run directory -- `scratch/<molecule>/<frame tag>/` (node-
     local) when `scratch` is given, `frames/.<stem>/` otherwise; the KEEP kinds are
-    copied back as `frames/<stem>.<ext>` and the run directory removed (the `.out`
-    comes back on a failure too, for reading). `runner`: a callable
-    (inp, out, cwd, timeout_s) -> rc replacing the ORCA binary (tests)."""
+    copied back as `frames/<stem>.<ext>` and the run directory removed. While ORCA runs the
+    lock is held (`_claim`), touched by `_Heartbeat`, and SIGTERM is routed to an exception
+    so a walltime kill releases it. `timeout_s` kills ORCA and marks the `.out` with
+    TIMEOUT_TRAILER (a failure). A kill by signal (rc < 0, or the SIGTERM handler) is a CUT:
+    nothing is copied back, anything half-copied is removed, `SystemExit(143)` propagates --
+    the frame has no `.out`, reads as never run, and is rerun whole (round 11 Q0).
+    `runner`: a callable (inp, out, cwd, timeout_s) -> rc replacing the ORCA binary (tests)."""
     molecule = Path(molecule)
     folder = layout.frames_dir(molecule)
     t0 = time.time()
@@ -381,27 +506,49 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
     keywords, blocks, _route = keyword_line(level, hessian=hessian)
     status = "reused"
     if not finished(folder, stem, hessian=hessian):
-        if not _claim(folder, stem):
-            return dict(status="running", generator=generator, basin=int(basin), k=int(k), keywords=keywords,
+        def skipped(why):
+            return dict(status=why, generator=generator, basin=int(basin), k=int(k), keywords=keywords,
                         wall_seconds=time.time() - t0, workdir=str(folder), stem=stem,
                         out=str(folder / (stem + ".out")),
                         seconds=None, memory_mb=None, hessian_route="-", noise_floor_cm=float("nan"), orca_version="-")
+        if failed(folder, stem) and not retry:
+            return skipped("failed")
+        if not _claim(folder, stem):
+            return skipped("running")
         status = "labelled"
         rundir = Path(scratch) / molecule.name / frame_tag(generator, basin, k) if scratch else folder / ("." + stem)
         rundir.mkdir(parents=True, exist_ok=True)
         inp, out = rundir / (STEM + ".inp"), rundir / (STEM + ".out")
         inp.write_text(orca.input_text(atoms.get_chemical_symbols(), atoms.get_positions(), keywords,
                                        nprocs, maxcore, charge, mult, blocks), encoding="utf-8")
+        previous = _install_sigterm()
         try:
-            rc = (runner or _run_orca)(inp, out, rundir, timeout_s)
+            with _Heartbeat(lock_file(folder, stem)):
+                try:
+                    rc = (runner or _run_orca)(inp, out, rundir, timeout_s)
+                except subprocess.TimeoutExpired:
+                    rc = "timeout"                            # ORCA was killed; the frame is a failure
+                    _append_line(out, TIMEOUT_TRAILER.format(timeout_s))
+            if isinstance(rc, int) and rc < 0:
+                raise SystemExit(128 - rc)                    # killed by a signal: a cut, not a failure
             text = out.read_text(encoding="utf-8", errors="replace") if out.is_file() else ""
             for ext in KEEP:
                 f = rundir / (STEM + ext)
                 if f.is_file():
                     shutil.copy2(f, folder / (stem + ext))
             shutil.rmtree(rundir, ignore_errors=True)
+        except BaseException as exc:
+            if not isinstance(exc, Exception):                # SystemExit / KeyboardInterrupt: a cut leaves nothing
+                for ext in KEEP:
+                    try:
+                        (folder / (stem + ext)).unlink()
+                    except OSError:
+                        pass
+                shutil.rmtree(rundir, ignore_errors=True)        # a dead run's directory (node-local: gone anyway)
+            raise
         finally:
             _release(folder, stem)
+            _restore_sigterm(previous)
         if TERMINAL not in text:
             raise RuntimeError("ORCA did not finish normally for {} of {} (rc {}). Tail:\n{}".format(
                 frame_tag(generator, basin, k), molecule.name, rc, "\n".join(text.split("\n")[-25:])))
@@ -444,7 +591,11 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
                    MEMORY_MB=float("nan"), ORCA_VERSION="-", STATUS="unlabelled", REASON="-",
                    OUT=str(folder / (stem + ".out")))
         if not finished(folder, stem, hessian=wants_hessian(g)):
-            row["REASON"] = "no finished ORCA job {} in {}".format(stem, folder)
+            if failed(folder, stem):
+                row.update(STATUS="failed", REASON="ORCA did not terminate normally ({}); not rerun -- read it, then --retry".format(
+                    Path(row["OUT"]).name))
+            else:
+                row["REASON"] = "no ORCA job {} in {} (never run, or cut)".format(stem, folder)
             rows.append(row)
             continue
         try:
@@ -500,6 +651,7 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
                 N_COMPUTED=sum(1 for r in rows if r["STATUS"] == "labelled"),
                 N_REUSED=sum(1 for r in rows if r["STATUS"] == "reused"),
                 N_REFUSED=sum(1 for r in rows if r["STATUS"] == "refused"),
+                N_FAILED=sum(1 for r in rows if r["STATUS"] == "failed"),
                 N_UNLABELLED=sum(1 for r in rows if r["STATUS"] == "unlabelled"),
                 SECONDS_PER_FRAME=float(np.mean(secs)) if secs else float("nan"),
                 MAX_MEMORY_MB=float(max(mems)) if mems else float("nan"),
@@ -522,7 +674,8 @@ def record_path(molecule, level=DEFAULT_LEVEL):
 def run(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxcore=MAXCORE_MB,
         scratch=None, timeout_s=None, runner=None, progress=None):
     """Every frame of one molecule in sequence, then `assemble`. A frame whose ORCA fails
-    is reported (`unlabelled`), not fatal: the Record says which, and a rerun retries it."""
+    is reported (`failed`), not fatal: the Record says which; a rerun skips it (one attempt,
+    round 11 Q3) unless `label_one(retry=True)` is asked for that frame."""
     molecule = Path(molecule)
     mlevel = mace_level(molecule)
     computed, failures = [], []
@@ -535,9 +688,11 @@ def run(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxcore=M
             if progress:
                 progress("FAILED  {} {}: {}".format(molecule.name, frame_tag(g, b, k), str(exc)[:120]))
             continue
-        if lab["status"] == "running":
+        if lab["status"] in ("running", "failed"):
             if progress:
-                progress("{} {} running elsewhere, skipped".format(molecule.name, frame_tag(g, b, k)))
+                progress("{} {} {}".format(molecule.name, frame_tag(g, b, k),
+                                           "running elsewhere, skipped" if lab["status"] == "running"
+                                           else "failed earlier, not rerun (--retry)"))
             continue
         if lab["status"] == "labelled":
             computed.append(frame_tag(g, b, k))
@@ -553,7 +708,7 @@ def _write_report(path, info, gen_rows, rows):
     rep = report.Report(PROGNAME, "reference E-F-H labels of {} at {}".format(info["QM9_INDEX"], info["LEVEL"]))
     rep.section("conventions")
     for k in ("LEVEL", "KEYWORDS", "HESSIAN_ROUTE", "ORCA_VERSION", "NPROCS", "MAXCORE_MB", "MACE_LEVEL",
-              "POSITION_TOL_A", "N_FRAMES", "N_LABELLED", "N_HESSIAN_FRAMES", "N_GRADIENT_FRAMES", "N_COMPUTED", "N_REUSED", "N_REFUSED", "N_UNLABELLED",
+              "POSITION_TOL_A", "N_FRAMES", "N_LABELLED", "N_HESSIAN_FRAMES", "N_GRADIENT_FRAMES", "N_COMPUTED", "N_REUSED", "N_REFUSED", "N_FAILED", "N_UNLABELLED",
               "SECONDS_PER_FRAME", "MAX_MEMORY_MB", "NOISE_FLOOR_MAX_CM"):
         rep.kv(k, info[k])
     rep.section("per generator")
@@ -573,8 +728,11 @@ def _write_report(path, info, gen_rows, rows):
              "frame (a few cm^-1 to ~30 for an analytic Hessian), the gradient term at a displaced frame. 'com' is "
              "the centre-of-mass translation ORCA applied in the .hess, removed before the geometry check. A "
              "refused frame's .hess geometry differs in shape from the MACE file: the two levels "
-             "of a frame must sit at one geometry or the Dataset compares different points. The full .out of "
-             "every job is kept as frames/orca.<level>.<frame>.out.")
+             "of a frame must sit at one geometry or the Dataset compares different points. A failed frame's "
+             "ORCA ran once and did not terminate normally (its .out says why; a timeout ends with the "
+             "TIMEOUT_S trailer); it is not rerun by a Batch -- read it, then `python -m openqha.data.frame_labels "
+             "<molecule> <generator> <basin> <k> --retry`. An unlabelled frame has no ORCA job on disk and the "
+             "next round runs it. The full .out of every job is kept as frames/orca.<level>.<frame>.out.")
     rep.write(path, step=STEP)
 
 
@@ -583,10 +741,12 @@ def main(argv=None):
     """One frame from the command line -- the `xargs` worker of hpc/slurm/hl_labels.slurm
     (the hkuhpc shape: a task list, one process per line, idempotent, judged by the
     terminal line). Prints one line `<tag> <status> <seconds> <MB>`; exit 0 when the frame
-    is labelled, reused, refused or running elsewhere, 1 when ORCA failed.
+    is labelled, reused, refused, failed earlier (not rerun) or running elsewhere, 1 when
+    ORCA failed now, 143 when the job was cut (SIGTERM). `--timeout` defaults to the
+    environment's `TIMEOUT_S` (hl_labels.slurm: 28800 s); `--retry` reruns a failed frame.
 
         python -m openqha.data.frame_labels <molecule dir> <generator> <basin> <k> \
-            [--level L] [--nprocs 4] [--maxcore 6000] [--scratch DIR]
+            [--level L] [--nprocs 4] [--maxcore 6000] [--scratch DIR] [--timeout S] [--retry]
     """
     import argparse
     ap = argparse.ArgumentParser(description=main.__doc__)
@@ -598,12 +758,14 @@ def main(argv=None):
     ap.add_argument("--nprocs", type=int, default=NPROCS)
     ap.add_argument("--maxcore", type=int, default=MAXCORE_MB)
     ap.add_argument("--scratch", default=os.environ.get("S0_SCRATCH") or None)
-    ap.add_argument("--timeout", type=float, default=None)
+    ap.add_argument("--timeout", type=float, default=float(os.environ["TIMEOUT_S"]) if os.environ.get("TIMEOUT_S") else None,
+                    help="seconds ORCA may run before it is killed and the frame marked failed (default: $TIMEOUT_S)")
+    ap.add_argument("--retry", action="store_true", help="rerun a frame whose earlier ORCA did not terminate normally")
     a = ap.parse_args(argv)
     tag = "{} {}".format(Path(a.molecule).name, frame_tag(a.generator, a.basin, a.k))
     try:
         lab = label_one(a.molecule, a.level, a.generator, a.basin, a.k, nprocs=a.nprocs, maxcore=a.maxcore,
-                        scratch=a.scratch, timeout_s=a.timeout)
+                        scratch=a.scratch, timeout_s=a.timeout, retry=a.retry)
     except Exception as exc:
         print("{} FAILED {}: {}".format(tag, type(exc).__name__, str(exc).strip().splitlines()[-1][:200] if str(exc).strip() else ""), flush=True)
         return 1

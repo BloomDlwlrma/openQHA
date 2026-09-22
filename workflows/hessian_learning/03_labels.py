@@ -65,17 +65,19 @@ from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels, frames       # noqa: E402
 from openqha.store import basins as basin_reader, layout     # noqa: E402
 
-COMPLETION = "<molecule>/frames/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists"
+COMPLETION = "<molecule>/frames/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists; a .out without that line is a failed frame, not rerun"
 
 
 # ======================================================================================
 # The task. It runs in a worker process, so it must be self-contained.
 # ======================================================================================
-def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, repo_root, env=None):
+def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, repo_root, env=None, timeout_s=None):
     """One frame's ORCA job in a worker: `frame_labels.label_one` with the node-local
-    scratch (`S0_SCRATCH`, set by hpc/env/*.sh) when there is one. Returns the Batch
-    row; an exception is caught and returned as `error` so one frame never loses the
-    batch."""
+    scratch (`S0_SCRATCH`, set by hpc/env/*.sh) when there is one and `timeout_s` (the
+    driver's `--timeout`, else the environment's `TIMEOUT_S`). Returns the Batch row; an
+    exception is caught and returned as `error` so one frame never loses the batch. A
+    `SystemExit` (the frame was CUT: SIGTERM at a block's time limit) is not an Exception
+    and propagates -- parsl then reruns the task on another block (ticket 24)."""
     import os as _os
     import sys as _sys
     import time as _time
@@ -88,8 +90,10 @@ def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, 
                rc=None, seconds=None, status=None, record=None)
     try:
         scratch = _os.environ.get("S0_SCRATCH") or None
+        if timeout_s is None and _os.environ.get("TIMEOUT_S"):
+            timeout_s = float(_os.environ["TIMEOUT_S"])
         lab = _fl.label_one(molecule_dir, level, generator, basin, k, nprocs=int(nprocs), maxcore=int(maxcore),
-                            scratch=scratch)
+                            scratch=scratch, timeout_s=timeout_s)
         row.update(rc=0, seconds=lab["seconds"] if lab["seconds"] is not None else lab["wall_seconds"],
                    status=lab["status"], record=lab["out"], route=lab["hessian_route"],
                    memory_mb=lab["memory_mb"], floor_cm=lab["noise_floor_cm"], orca_version=lab["orca_version"],
@@ -117,21 +121,29 @@ def choose(mols, limit, stratify):
 
 
 def pending(mols, level, generators):
-    """(molecule, generator, basin, k) for every kept frame without a finished job, and
-    the counts per molecule."""
+    """(molecule, generator, basin, k) for every kept frame with NO ORCA job on disk, and
+    per molecule (frames, finished, failed). A finished frame is skipped; a failed one (a
+    `.out` without the terminal line) is skipped too -- one attempt per frame, the reader
+    judges, `python -m openqha.data.frame_labels ... --retry` reruns it (round 11 Q3); a
+    frame another process holds (`running_elsewhere`: its job alive and its heartbeat
+    fresh) is left to it."""
     todo, counts = [], {}
     for mol in mols:
-        n_all = n_done = 0
+        n_all = n_done = n_failed = 0
+        folder = layout.frames_dir(mol)
         for g, b, k in frame_labels.frame_list(mol, generators):
             n_all += 1
             stem = layout.orca_frame_stem(level, g, b, k)
-            if frame_labels.finished(layout.frames_dir(mol), stem, hessian=frame_labels.wants_hessian(g)):
+            if frame_labels.finished(folder, stem, hessian=frame_labels.wants_hessian(g)):
                 n_done += 1
                 continue
-            if frame_labels.running_elsewhere(layout.frames_dir(mol), stem):
-                continue                                   # another Batch holds it (its lock is fresh)
+            if frame_labels.failed(folder, stem):
+                n_failed += 1
+                continue
+            if frame_labels.running_elsewhere(folder, stem):
+                continue                                   # another process holds it
             todo.append((mol, g, b, k))
-        counts[mol.name] = (n_all, n_done)
+        counts[mol.name] = (n_all, n_done, n_failed)
     return todo, counts
 
 
@@ -164,7 +176,9 @@ def main():
                          "the xargs worker of hpc/slurm/hl_labels.slurm, and stop")
     ap.add_argument("--assemble", action="store_true",
                     help="run no ORCA: assemble every chosen molecule's files and Record from the finished jobs on disk")
-    ap.add_argument("--timeout", type=float, default=None, help="seconds per ORCA job")
+    ap.add_argument("--timeout", type=float, default=None,
+                    help="seconds per ORCA job before it is killed and the frame marked failed (default: $TIMEOUT_S, "
+                         "28800 in hl_labels.slurm; round 11 Q2)")
     args = ap.parse_args()
 
     cfg = config.load()
@@ -202,16 +216,21 @@ def main():
     print("molecules    {} ({})".format(len(mols), "given" if args.species else
                                          "selection {!r}".format(args.name) if args.name else
                                          "every Frame set under tag {!r}".format(args.tag)))
-    print("frames       {} to label, {} finished already   ({})".format(
-        len(todo), sum(d for _a, d in counts.values()), COMPLETION))
-    print("resume       finished frames are skipped; the Record per molecule is rewritten by assemble")
+    print("frames       {} to label, {} finished already, {} failed earlier (not rerun; --retry per frame)   ({})".format(
+        len(todo), sum(d for _a, d, _f in counts.values()), sum(f for _a, _d, f in counts.values()), COMPLETION))
+    print("timeout      {} s per ORCA job".format(args.timeout if args.timeout is not None else
+                                                 os.environ.get("TIMEOUT_S", "none")))
+    print("resume       finished and failed frames are skipped; a cut frame (no .out) is rerun whole; "
+          "the Record per molecule is rewritten by assemble")
     print()
     print("frame list:")
     for mol, g, b, k in todo:
         print("  {}  {}".format(mol.name, frame_labels.frame_tag(g, b, k)))
-    for name, (n_all, n_done) in counts.items():
+    for name, (n_all, n_done, n_failed) in counts.items():
         if n_all == n_done:
             print("  {}  all {} frames finished".format(name, n_all))
+        elif n_all == n_done + n_failed:
+            print("  {}  {} frames finished, {} failed -- nothing pending".format(name, n_done, n_failed))
     print()
     if args.dry_run:
         print(json.dumps(dict(level=args.level, keywords=keywords, resource=described, n_molecules=len(mols),
@@ -233,7 +252,8 @@ def main():
         pass
     elif todo and args.local:
         for mol, g, b, k in todo:
-            r = label_frame_task(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough)
+            r = label_frame_task(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough,
+                                 timeout_s=args.timeout)
             results.append(r)
             print("  {}  {}  {}  {}".format(r["species"], r["frame"], r["status"], r.get("error_line", "")), flush=True)
     elif todo:
@@ -261,7 +281,8 @@ def main():
         _labels.check(pcfg, expect=label)
         print("executor     {}   mode {}".format(label, getattr(res, "LAST_MODE", None) or "local"), flush=True)
         app = python_app(label_frame_task, executors=[label])
-        futures = [app(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough)
+        futures = [app(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough,
+                       timeout_s=args.timeout)
                    for mol, g, b, k in todo]
         for f in futures:
             try:
@@ -290,8 +311,8 @@ def main():
             continue
         i = out["info"]
         summaries.append(i)
-        print("  {}  labelled {}/{} (computed {}, reused {}, refused {}, unlabelled {})  {:.0f} s/frame  {:.0f} MB  floor max {:.2f} cm^-1  {}".format(
-            i["QM9_INDEX"], i["N_LABELLED"], i["N_FRAMES"], i["N_COMPUTED"], i["N_REUSED"], i["N_REFUSED"], i["N_UNLABELLED"],
+        print("  {}  labelled {}/{} (computed {}, reused {}, refused {}, failed {}, unlabelled {})  {:.0f} s/frame  {:.0f} MB  floor max {:.2f} cm^-1  {}".format(
+            i["QM9_INDEX"], i["N_LABELLED"], i["N_FRAMES"], i["N_COMPUTED"], i["N_REUSED"], i["N_REFUSED"], i["N_FAILED"], i["N_UNLABELLED"],
             i["SECONDS_PER_FRAME"], i["MAX_MEMORY_MB"], i["NOISE_FLOOR_MAX_CM"], out["record"]), flush=True)
 
     from openqha.store import batch_table as _bt
@@ -300,18 +321,22 @@ def main():
         r["record"] = r.get("record")
         r["STATUS"] = r.get("status")
     _bt.print_table(results, extra=(("frame", 18, "<"), ("route", 9, "<"), ("memory_mb", 9, ">"), ("floor_cm", 8, ">")))
-    ok = [r for r in results if r.get("status") in ("labelled", "reused", "running")]
+    ok = [r for r in results if r.get("status") in ("labelled", "reused", "running", "failed")]
     single = sorted(r["seconds"] for r in ok if r.get("seconds") is not None)
     print()
     print("wall_seconds_for_the_whole_batch  {:.1f}".format(wall))
     print("single_task_seconds_median        {:.1f}".format(single[len(single) // 2] if single else float("nan")))
     for l in _bt.footer(wall, len(ok), len(results), what="frames labelled in this Batch"):
         print(l)
+    n_fail, n_ref = sum(i["N_FAILED"] for i in summaries), sum(i["N_REFUSED"] for i in summaries)
     if args.assemble:
-        return 0 if all(i["N_UNLABELLED"] + i["N_REFUSED"] == 0 for i in summaries) else 1
-    print("molecules fully labelled          {}/{}  ({} frames still unlabelled or refused over the chosen molecules)".format(
+        # 0 = nothing pending: no frame without an ORCA job. Failed and refused frames are
+        # not pending -- they are a human's decision (--retry) and are counted above.
+        print("frames failed (not rerun) {}, refused {} over the chosen molecules".format(n_fail, n_ref))
+        return 0 if all(i["N_UNLABELLED"] == 0 for i in summaries) else 1
+    print("molecules fully labelled          {}/{}  ({} frames still unlabelled; {} failed -- not rerun, {} refused)".format(
         sum(1 for i in summaries if i["N_LABELLED"] == i["N_FRAMES"]), len(mols),
-        sum(i["N_UNLABELLED"] + i["N_REFUSED"] for i in summaries)))
+        sum(i["N_UNLABELLED"] for i in summaries), n_fail, n_ref))
     # the exit status is THIS Batch's: every frame it attempted labelled (a --limit-frames
     # debug job that labelled its one frame is a success; the rest of the molecule is
     # information, printed above)

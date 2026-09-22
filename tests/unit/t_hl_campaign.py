@@ -3,7 +3,7 @@
 `s0_hl_progress.progress` on a fake tree -- a draw of three molecules: one with branch A,
 a Frame set and some finished ORCA file groups plus a fresh `.running` claim, one with
 branch A only, one branch A never ran for -- counts drawn / branch A / Frame sets /
-frames / labelled / unlabelled / running per class and in total from disk alone; a fresh
+frames / labelled / failed / unlabelled / running per class and in total from disk alone; a fresh
 draw (nothing computed) gives the drawn count with zeros elsewhere. And the campaign page
 (`docs/hessian_learning_campaign.md`) carries every `sbatch` command the stage scripts'
 headers state, and every `sbatch` command it states is one of theirs -- as
@@ -96,8 +96,8 @@ def main():
         (layout.frames_dir(mol_a) / (layout.orca_frame_stem(LEVEL, "displaced", 2, 0) + ".out")).write_text("started\n", encoding="utf-8")
         later = hp.progress(root, [TAG], "p", LEVEL)
         t = later["total"]
-        check("after four finished file groups, one fresh claim and one unfinished .out: labelled 4, unlabelled 11, running 1 (the claim only); a .out without the terminal line is not finished",
-              (t["frames"], t["labelled"], t["unlabelled"], t["running"]) == (15, 4, 11, 1)
+        check("after four finished file groups, one fresh claim and one .out without the terminal line: labelled 4, failed 1 (that .out), unlabelled 10, running 1 (the claim only)",
+              (t["frames"], t["labelled"], t["failed"], t["unlabelled"], t["running"]) == (15, 4, 1, 10, 1)
               and later["classes"]["aldehyde"]["labelled"] == 4 and later["classes"]["ketone"]["labelled"] == 0, t)
         # without a draw: the selection, then the tags
         (d / "draw.dat").unlink()
@@ -122,9 +122,11 @@ def main():
                      and "3-00:00:00" not in l)
     check("the campaign page carries every campaign sbatch command of the stage scripts' headers (gate + array), and states no sbatch the headers do not know (the 3-day rounds and the 3 h gate rerun excepted)",
           not missing and not foreign and len(page) >= 6, (missing, foreign, len(page)))
-    check("the page names the progress script, the three rounds, the exit-code signal and the resubmit-as-is rule",
+    check("the page names the progress script, the three rounds, the exit-code signal, the resubmit-as-is rule, "
+          "TIMEOUT_S = 28800, the failed state and --retry (ticket 24)",
           all(s in PAGE.read_text(encoding="utf-8") for s in ("s0_hl_progress.py --tag draw300", "round 3", "assemble exits 0",
-                                                              "resubmitted **as it is**", "3-00:00:00")))
+                                                              "resubmitted **as it is**", "3-00:00:00", "TIMEOUT_S=28800",
+                                                              "**failed**", "--retry", "touched within 30 min")))
 
     print("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL))
     return 0 if not FAIL else 1

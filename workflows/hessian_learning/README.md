@@ -57,6 +57,17 @@ once (Eh → eV, Eh/bohr → eV/Å, Eh/bohr² → eV/Å²); positions in the lab
 the MACE file's verbatim, and a `.hess` geometry whose shape is more than 1e‑7 Å away is refused (ORCA writes the `.hess` in the centre‑of‑mass frame; the translation is removed and reported; the residual is ORCA's print precision, ~1e‑8 Å). The
 full `.out` of every job is kept.
 
+**One attempt per frame** (ticket 24, S0‑G‑96): an ORCA job that did not terminate normally
+— a crash, or the `TIMEOUT_S` kill (8 h; its `.out` ends with an `openQHA: ORCA killed
+after TIMEOUT_S=…` line) — leaves a **failed** frame that no round reruns; the reader judges
+from the `.out` and the worker's `FAILED` line, and `python -m openqha.data.frame_labels
+<molecule> <generator> <basin> <k> --retry` is the human's rerun. A frame **cut** before
+anything came back (walltime, a dead node) has no `.out` and is rerun whole; nothing
+resumes. While ORCA runs the frame is held by `frames/<stem>.running` — the lock names its
+Slurm job and is touched every minute; it counts as held only while Slurm does not call
+that job dead **and** it was touched within 30 min, and a walltime SIGTERM releases it at
+once (`frame_labels.running_elsewhere`, `_Heartbeat`).
+
 ```bash
 python workflows/hessian_learning/03_labels.py --tag rings --all --dry-run          # the frame list
 python workflows/hessian_learning/03_labels.py --tag rings --species dsgdb9nsd_000048 --local   # here, no Parsl
@@ -74,7 +85,8 @@ resubmission scheme, what each log's last lines must say, the progress table
 each slot a core range, `xargs -P 16` runs an idempotent worker under `taskset` on the
 node‑local scratch, the terminal line decides; many nodes = a Slurm **array**, the list
 split round‑robin. Nothing runs on the login node. Every stage script skips what is on
-disk, so a killed or time‑limited job is resubmitted as it is.
+disk (finished and failed frames alike), so a killed or time‑limited job is resubmitted as
+it is; `TIMEOUT_S` (default 28800) bounds one ORCA job.
 
 | stage | script | worker per line | layout |
 |---|---|---|---|

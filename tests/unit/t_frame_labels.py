@@ -12,15 +12,25 @@ NumFreq (numerical); the labelled extxyz holds the MACE file's positions verbati
 projected frequencies reproduce the .hess file's own to < 0.5 cm^-1; the noise floor is
 read before projection and is a few cm^-1 for the analytic matrix; a frame whose .hess
 geometry is 1e-6 A off the MACE file is refused and not written; a finished job is reused
-(the runner is not called again) and an unfinished one rerun; the Record's counts add
+(the runner is not called again), a FAILED one (a .out without the terminal line) is not
+rerun unless `retry=True` (one attempt per frame, round 11 Q3), a frame with no .out is;
+the lock (ticket 24): held only while Slurm does not call its job dead AND its heartbeat
+is fresh (a fake `squeue` on PATH answers RUNNING / COMPLETING / exit 1; without `squeue`
+the heartbeat alone), the holder touches it every HEARTBEAT_S, a SIGTERM during ORCA
+releases it and leaves no .out (a cut, `SystemExit(143)`), a `timeout_s` kill leaves a
+.out ending with the TIMEOUT_S trailer (a failure); the Record's counts add
 up and its STATUS is NORMAL TERMINATION; the tianhe `labels` role is 16 x 4 with maxcore
 6000 and the executor label is registered; hpc/env/orca.sh exists and exports the three
 variables; `orca.subprocess_env` prepends S0_ORCA_PATH / S0_ORCA_LIB.
 """
 import os
 import shutil
+import signal
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -210,24 +220,153 @@ def main():
         except RuntimeError as exc:
             raised = "did not finish normally" in str(exc)
         out4 = frame_labels.run(mol, LEVEL, generators=("basin",), runner=fake4)
-        check("an ORCA that does not terminate raises (the .out stays); run() records the failure and assembles the rest",
-              raised and len(out4["failures"]) == 1 and out4["info"]["N_UNLABELLED"] == 1 and out4["info"]["N_REUSED"] == 1
+        r4 = {(r["BASIN"], r["K"]): r for r in out4["frames"]}
+        check("an ORCA that does not terminate raises (the .out stays) and the frame is FAILED: run() does not rerun it (runner called once), "
+              "the Record counts N_FAILED 1 / N_UNLABELLED 0 with the reason naming the .out",
+              raised and fake4.calls == 1 and not out4["failures"] and out4["info"]["N_FAILED"] == 1
+              and out4["info"]["N_UNLABELLED"] == 0 and out4["info"]["N_REUSED"] == 1
+              and r4[(2, 0)]["STATUS"] == "failed" and "not rerun" in r4[(2, 0)]["REASON"]
               and layout.orca_frame_file(mol, LEVEL, "basin", 2, 0, ".out").is_file()
               and not (layout.frames_dir(mol) / ("." + layout.orca_frame_stem(LEVEL, "basin", 2, 0))).exists(),
-              (raised, out4["failures"], out4["info"]["N_UNLABELLED"]))
+              (raised, fake4.calls, out4["failures"], out4["info"]["N_FAILED"], out4["info"]["N_UNLABELLED"]))
+        lab4b = frame_labels.label_one(mol, LEVEL, "basin", 2, 0, runner=fake4, mace_level_name=mlevel)
+        fake4c = FakeOrca()
+        lab4c = frame_labels.label_one(mol, LEVEL, "basin", 2, 0, runner=fake4c, mace_level_name=mlevel, retry=True)
+        check("label_one on a failed frame returns status failed without running; retry=True reruns it (the fixture .hess is basin 0's geometry, so basin 2 is refused -- it ran)",
+              lab4b["status"] == "failed" and fake4.calls == 1 and lab4c["status"] == "refused" and fake4c.calls == 1,
+              (lab4b["status"], fake4.calls, lab4c["status"], fake4c.calls))
 
-        # --- a frame claimed by another Batch is skipped; a stale claim is not ------------
-        lock = frame_labels.lock_file(layout.frames_dir(mol), layout.orca_frame_stem(LEVEL, "displaced", 1, 0))
+        # --- the timeout kill leaves a .out with the trailer: a failure, not a cut ----------
+        def timeout_runner(inp, out, cwd, timeout_s=None):
+            Path(out).write_text("ORCA started\nSCF iteration 12\n", encoding="utf-8")
+            raise subprocess.TimeoutExpired(cmd="orca", timeout=timeout_s)
+        stem_t = layout.orca_frame_stem(LEVEL, "displaced", 2, 0)
+        try:
+            frame_labels.label_one(mol, LEVEL, "displaced", 2, 0, runner=timeout_runner, mace_level_name=mlevel, timeout_s=7)
+            t_raised = False
+        except RuntimeError as exc:
+            t_raised = "TIMEOUT_S=7" in str(exc)
+        out_t = layout.frames_dir(mol) / (stem_t + ".out")
+        check("timeout_s: TimeoutExpired is caught, the partial .out comes back ending with the TIMEOUT_S trailer, label_one raises with it, the frame is failed and the lock released",
+              t_raised and out_t.is_file() and out_t.read_text(encoding="utf-8").rstrip().endswith("openQHA: ORCA killed after TIMEOUT_S=7 s")
+              and frame_labels.failed(layout.frames_dir(mol), stem_t)
+              and not frame_labels.lock_file(layout.frames_dir(mol), stem_t).exists(), (t_raised, out_t.is_file()))
+
+        # --- the lock without Slurm: the heartbeat age alone -------------------------------
+        folder = layout.frames_dir(mol)
+        path0 = os.environ.get("PATH", "")
+        nosq = Path(tmp) / "nosqueue"
+        nosq.mkdir()
+        for tool in ("python", "python3", "bash", "sh", "cp", "echo"):
+            found = shutil.which(tool)
+            if found and not (nosq / tool).exists():
+                os.symlink(found, nosq / tool)
+        os.environ["PATH"] = str(nosq)                                # a PATH without squeue
+        frame_labels._squeue_cache.clear()
+        lock = frame_labels.lock_file(folder, layout.orca_frame_stem(LEVEL, "displaced", 1, 0))
         lock.write_text("999 now\n", encoding="utf-8")
         fake6 = FakeOrca()
         lab6 = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
         calls_after_claim = fake6.calls
-        os.utime(lock, (1, 1))                                      # a lock from 1970: stale
+        os.utime(lock, (time.time() - 40 * 60,) * 2)                 # no heartbeat for 40 min
         lab6b = frame_labels.label_one(mol, LEVEL, "displaced", 1, 0, runner=fake6, mace_level_name=mlevel)
-        check("a fresh <stem>.running claim by another Batch skips the frame (runner not called, status running); a stale claim is taken over and released",
-              lab6["status"] == "running" and calls_after_claim == 0 and lab6b["status"] == "labelled" and fake6.calls == 1
+        check("without squeue: a lock touched now holds the frame (runner not called, status running); one not touched for 40 min "
+              "(> LOCK_MAX_AGE_S 30 min) is taken over and released",
+              frame_labels._job_alive("999") is None and lab6["status"] == "running" and calls_after_claim == 0
+              and lab6b["status"] == "labelled" and fake6.calls == 1
               and not lock.exists() and lock.name == "orca.wb97m-d3bj_def2-tzvppd.displaced_b01_k0.running",
               (lab6["status"], fake6.calls, lab6b["status"], lock.name))
+
+        # --- the lock with Slurm: a fake squeue answers for the job the lock names -----------
+        fakebin = Path(tmp) / "fakebin"
+        fakebin.mkdir()
+        sq = fakebin / "squeue"
+        os.environ["PATH"] = str(fakebin) + os.pathsep + path0
+
+        def squeue_says(script):
+            sq.write_text("#!/bin/bash\n" + script + "\n", encoding="utf-8")
+            sq.chmod(0o755)
+            frame_labels._squeue_cache.clear()
+
+        stem_l = layout.orca_frame_stem(LEVEL, "displaced", 1, 1)
+        lock2 = frame_labels.lock_file(folder, stem_l)
+        lock2.write_text("4242 now\n", encoding="utf-8")            # touched now
+        squeue_says('echo RUNNING')
+        held_alive = frame_labels.running_elsewhere(folder, stem_l)
+        os.utime(lock2, (time.time() - 40 * 60,) * 2)                # job alive, heartbeat dead
+        held_alive_stale = frame_labels.running_elsewhere(folder, stem_l)
+        os.utime(lock2, None)
+        squeue_says('echo COMPLETING')
+        held_completing = frame_labels.running_elsewhere(folder, stem_l)
+        squeue_says('echo "CANCELLED by 1000"')
+        held_cancelled = frame_labels.running_elsewhere(folder, stem_l)
+        squeue_says('echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1')
+        held_unknown = frame_labels.running_elsewhere(folder, stem_l)
+        squeue_says('echo WEIRD_NEW_STATE')
+        held_weird = frame_labels.running_elsewhere(folder, stem_l)
+        squeue_says('sleep 30')
+        frame_labels.SQUEUE_TIMEOUT_S, saved_to = 1, frame_labels.SQUEUE_TIMEOUT_S
+        held_timeout = frame_labels.running_elsewhere(folder, stem_l)
+        frame_labels.SQUEUE_TIMEOUT_S = saved_to
+        check("with squeue: RUNNING + fresh heartbeat holds; RUNNING + 40 min silence frees; COMPLETING, 'CANCELLED by', "
+              "an unknown id (exit 1) free at once; a state the dead list never saw counts as alive; a squeue that "
+              "hangs past SQUEUE_TIMEOUT_S is no answer -> the heartbeat (fresh) holds",
+              held_alive and not held_alive_stale and not held_completing and not held_cancelled and not held_unknown
+              and held_weird and held_timeout,
+              (held_alive, held_alive_stale, held_completing, held_cancelled, held_unknown, held_weird, held_timeout))
+        squeue_says('echo COMPLETING')
+        stem_d0 = layout.orca_frame_stem(LEVEL, "displaced", 0, 0)
+        lock_d0 = frame_labels.lock_file(folder, stem_d0)
+        lock_d0.write_text("4243 now\n", encoding="utf-8")
+        fake6c = FakeOrca()
+        lab6c = frame_labels.label_one(mol, LEVEL, "displaced", 0, 0, runner=fake6c, mace_level_name=mlevel)
+        check("a lock whose job Slurm calls COMPLETING is taken over by label_one (the parsl retry after a block's time limit)",
+              lab6c["status"] == "labelled" and fake6c.calls == 1 and not lock_d0.exists(), (lab6c["status"], fake6c.calls))
+        os.environ["PATH"] = path0
+        frame_labels._squeue_cache.clear()
+        lock2.unlink()
+        for f in folder.glob(stem_d0 + ".*"):                        # displaced 0 back to never run
+            f.unlink()
+
+        # --- the heartbeat: the holder touches its lock while ORCA runs ----------------------
+        stem_h = stem_d0
+        lock_h = frame_labels.lock_file(folder, stem_h)
+        seen = {}
+
+        def slow_runner(inp, out, cwd, timeout_s=None):
+            seen["t0"] = lock_h.stat().st_mtime
+            time.sleep(2.6)
+            seen["t1"] = lock_h.stat().st_mtime
+            return FakeOrca()(inp, out, cwd, timeout_s)
+        frame_labels.HEARTBEAT_S, saved_hb = 1, frame_labels.HEARTBEAT_S
+        lab_h = frame_labels.label_one(mol, LEVEL, "displaced", 0, 0, runner=slow_runner, mace_level_name=mlevel)
+        frame_labels.HEARTBEAT_S = saved_hb
+        for f in folder.glob(stem_d0 + ".*"):                        # and back to never run again
+            f.unlink()
+        check("the heartbeat: with HEARTBEAT_S = 1 the lock's mtime advanced by >= 1.5 s during a 2.6 s ORCA; released after",
+              lab_h["status"] == "labelled" and seen["t1"] - seen["t0"] >= 1.5 and not lock_h.exists()
+              and not any(t.name == "lock-heartbeat" and t.is_alive() for t in threading.enumerate()),
+              (lab_h["status"], seen.get("t1", 0) - seen.get("t0", 0)))
+
+        # --- SIGTERM during ORCA: a cut -- the lock is released, nothing comes back ------------
+        stem_s = stem_d0                                             # the cut must leave it never run for the scratch test
+
+        def sleepy_runner(inp, out, cwd, timeout_s=None):
+            Path(out).write_text("ORCA started\n", encoding="utf-8")
+            time.sleep(5)
+            return 0
+        threading.Timer(0.8, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+        try:
+            frame_labels.label_one(mol, LEVEL, "displaced", 0, 0, runner=sleepy_runner, mace_level_name=mlevel)
+            code = None
+        except SystemExit as exc:
+            code = exc.code
+        check("SIGTERM while ORCA runs: SystemExit(143), the lock released, no <stem>.out (a cut, not a failure: the frame reads as never run), "
+              "the previous handler restored",
+              code == 143 and not frame_labels.lock_file(folder, stem_s).exists()
+              and not (folder / (stem_s + ".out")).exists() and not frame_labels.failed(folder, stem_s)
+              and signal.getsignal(signal.SIGTERM) == signal.SIG_DFL,
+              (code, (folder / (stem_s + ".out")).exists(), signal.getsignal(signal.SIGTERM)))
 
         # --- scratch: the run happens elsewhere and only KEEP files come back ---------
         scratch = Path(tmp) / "scratch"
