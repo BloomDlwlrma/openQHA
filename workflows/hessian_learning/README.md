@@ -38,7 +38,9 @@ tightening to fmax 1e‑4, MACE analytic Hessian). Four generators: `basin` (the
 `displaced` (4 draws per basin from the **classical** harmonic distribution at 298.15 K
 along the basin's modes, ⟨q²⟩ = k_BT/ω², RMS ≤ 0.15 Å; round‑2 Q14 (b)), `merged` (a
 CREST conformer branch A merged into a basin), `saddle`. Seeds are
-`SHA‑256(qm9_index|basin|generator|k)`. The only filter is ANI‑1's energy window
+`SHA‑256(qm9_index|basin|generator|k)`. The displaced frames are drawn by **normal‑mode
+sampling at 450 K** (a random partition of at most (3/2) N_a k_B T over the basin's modes,
+random signs; bounded in energy, no RMS ceiling). The only filter is the energy window
 (275 kcal/mol above the basin); a changed bond graph is reported, never a reason to drop.
 
 Beside ours, for the record: **SPICE** draws 10 RDKit conformers → 500 K OpenFF MD

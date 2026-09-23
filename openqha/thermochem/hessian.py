@@ -347,8 +347,12 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
                           max_rms_displacement_A=MAX_RMS_DISPLACEMENT_A,
                           max_draws_per_sample=50, return_hessian=False, hessian=None,
                           seeds=None, distribution="quantum"):
-    """Sample displacements along the normal modes from the harmonic quantum
-    distribution, returning n_samples structures away from the minimum.
+    """Sample displacements along the normal modes, returning n_samples structures away
+    from the minimum. Three draws (`distribution=`): `nms` (NORMAL-MODE SAMPLING, a random
+    partition of a bounded thermal energy over the modes -- what the Hessian-learning Frame
+    set uses), `quantum` (the harmonic-oscillator positional fluctuation, this function's
+    own default) and `classical` (equipartition). The last two are for calibration and for
+    branch B; the Frame-set workflow draws only `nms`.
 
     The positional fluctuation of each vibrational mode takes the exact quantum
     harmonic-oscillator value
@@ -372,6 +376,22 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     of 2026-08-29, "change it so that it can produce something"; the other half is
     `openqha.orca.composite_hessian`, which swaps the source of the forces for the
     composite reference.
+
+    `distribution="nms"` -- NORMAL-MODE SAMPLING. Mode k is given the harmonic energy
+    E_k = c_k (3/2) N_a k_B T with a random partition c_k >= 0, sum_k c_k = s <= 1, and a
+    random sign:
+
+        q_k = ±sqrt(2 E_k) / omega_k ,    E_h = sum_k E_k = (3/2) s N_a k_B T
+
+    so the TOTAL harmonic energy of a frame is bounded by (3/2) N_a k_B T with mean
+    (3/4) N_a k_B T (s uniform on [0, 1]), against equipartition's mean (3N-6)/2 k_B T and
+    unbounded chi-square tail at the same temperature -- which is why this draw is used at
+    450 K where equipartition was used at 298 K. Per mode the energies are a uniform
+    partition, not Boltzmann. The record carries `c_sum` (s per frame),
+    `harmonic_energy_kcal` (per frame) and `harmonic_energy_cap_kcal`. The scheme is the
+    normal-mode sampling published with the ANI-1 data set (Smith, Isayev, Roitberg,
+    Sci. Data 4, 170193 (2017), section "Normal mode sampling", eq. 1), here in
+    mass-weighted coordinates.
 
     `distribution="classical"` replaces the quantum fluctuation by equipartition,
     <q_k^2> = k_B T / omega_k^2 -- the distribution a classical 298 K trajectory (branch
@@ -426,14 +446,14 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     x = HBAR_SI * omega / (2.0 * KB_SI_ * temperature_K)
     if distribution == "quantum":
         q2_si = (HBAR_SI / (2.0 * omega)) / np.tanh(x)      # kg·m²
-    elif distribution in ("classical", "ani1"):
+    elif distribution in ("classical", "nms"):
         q2_si = KB_SI_ * temperature_K / omega ** 2         # equipartition
     else:
-        raise ValueError("distribution must be 'quantum', 'classical' or 'ani1', not {!r}".format(distribution))
+        raise ValueError("distribution must be 'nms', 'quantum' or 'classical', not {!r}".format(distribution))
     sigma_q = np.sqrt(q2_si) / (np.sqrt(AMU_KG_) * 1.0e-10)  # amu^½·Å
-    # ANI-1 does not use sigma_q -- it partitions a bounded total energy instead (below);
-    # the classical sigma is still reported, as the scale of the modes.
-    e_cap_si = 1.5 * len(atoms) * KB_SI_ * temperature_K     # (3/2) N_a k_B T, the ANI-1 cap
+    # normal-mode sampling does not use sigma_q -- it partitions a bounded total energy
+    # instead (below); the equipartition sigma is still reported, as the scale of the modes.
+    e_cap_si = 1.5 * len(atoms) * KB_SI_ * temperature_K     # (3/2) N_a k_B T, the NMS bound
 
     per_sample = seeds is not None
     if per_sample:
@@ -443,27 +463,27 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     else:
         seeds = [int(seed)] * int(n_samples)
     def _draw_q(rng):
-        """(q in amu^½·Å, the energy fraction rho) for one frame."""
-        if distribution != "ani1":
+        """(q in amu^½·Å, the energy share s = sum_k c_k of this frame) for one frame."""
+        if distribution != "nms":
             return rng.normal(0.0, sigma_q), float("nan")
-        # ANI-1 (Smith, Isayev, Roitberg, Chem. Sci. 2017, 8, 3192): R_i = ±sqrt(3 N_a c_i
-        # k_B T / K_i) with c_i >= 0 and sum c_i <= 1, so E_i = (1/2) K_i R_i² = (3/2) c_i
-        # N_a k_B T and the TOTAL harmonic energy is rho (3/2) N_a k_B T, rho = sum c_i <= 1:
-        # a uniform random partition of at most the classical total vibrational energy, with
-        # random signs. The direction on the simplex is Dirichlet(1,…,1), the radius uniform.
+        # NORMAL-MODE SAMPLING: mode k gets the harmonic energy E_k = c_k (3/2) N_a k_B T
+        # from a random partition (Dirichlet(1,…,1) direction, uniform radius s), with a
+        # random sign; q_k = ±sqrt(2 E_k)/omega_k in mass-weighted coordinates. The frame's
+        # total harmonic energy is then (3/2) s N_a k_B T <= (3/2) N_a k_B T.
         c = rng.dirichlet(np.ones(len(omega)))
-        rho = float(rng.random())
+        s = float(rng.random())
         sign = np.where(rng.random(len(omega)) < 0.5, -1.0, 1.0)
-        q_si = sign * np.sqrt(2.0 * c * rho * e_cap_si) / omega
-        return q_si / (np.sqrt(AMU_KG_) * 1.0e-10), rho
+        q_si = sign * np.sqrt(2.0 * c * s * e_cap_si) / omega
+        return q_si / (np.sqrt(AMU_KG_) * 1.0e-10), s
 
+    kcal_per_j = 6.02214076e23 / 4184.0
     rng = np.random.default_rng(seed)
-    out, rejected, fractions = [], 0, []
+    out, rejected, shares = [], 0, []
     for i_sample in range(int(n_samples)):
         if per_sample:
             rng = np.random.default_rng(seeds[i_sample])       # one generator per frame
         for _draw in range(int(max_draws_per_sample)):
-            q, rho = _draw_q(rng)
+            q, s_share = _draw_q(rng)
             dq = vec_v @ q                                   # mass-weighted displacement
             dx = (dq.reshape(-1, 3) / np.sqrt(np.asarray(m))[:, None])
             rms = float(np.sqrt((dx ** 2).mean()))
@@ -476,7 +496,7 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
                 "either the ceiling is too tight or the system has an extremely soft "
                 "mode".format(max_draws_per_sample, max_rms_displacement_A))
         out.append(Atoms(numbers=atoms.numbers, positions=x0 + dx))
-        fractions.append(rho)
+        shares.append(s_share)
     rec = dict(temperature_K=float(temperature_K), n_samples=int(n_samples),
                seed=int(seed), seeds=list(seeds), n_modes_sampled=int(keep.sum()),
                hessian_source="given" if hessian is not None else "finite_difference",
@@ -489,20 +509,21 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
                                    for s in out],
                max_rms_displacement_A=max_rms_displacement_A,
                n_draws_rejected=int(rejected),
-               energy_fraction=[float(t) for t in fractions],
-               energy_cap_kcal=float(e_cap_si * 6.02214076e23 / 4184.0),
+               c_sum=[float(t) for t in shares],
+               harmonic_energy_kcal=[float(t * e_cap_si * kcal_per_j) for t in shares],
+               harmonic_energy_cap_kcal=float(e_cap_si * kcal_per_j),
                delta_A=float(delta),
-               note=("`quantum`: the harmonic-oscillator positional fluctuation, classical "
-                     "in the high-temperature limit and zero-point in the low-temperature "
-                     "limit. `classical`: equipartition, <q²> = k_B T / omega². `ani1` "
-                     "(Smith, Isayev, Roitberg, Chem. Sci. 2017): a uniform random partition "
-                     "of rho (3/2) N_a k_B T over the modes with random signs, rho <= 1 -- "
-                     "the total harmonic ENERGY is bounded (`energy_cap_kcal`, "
-                     "`energy_fraction` per frame), the geometry is NOT: the amplitude is "
-                     "still sqrt(2 E_i)/omega_i, so a near-zero mode (4-6 cm^-1 surviving the "
+               note=("`nms` (normal-mode sampling): a random partition of s (3/2) N_a k_B T "
+                     "over the modes with random signs, s <= 1 -- the total harmonic ENERGY "
+                     "of a frame is bounded (`harmonic_energy_cap_kcal`, `c_sum` and "
+                     "`harmonic_energy_kcal` per frame), the GEOMETRY is not: the amplitude "
+                     "is sqrt(2 E_k)/omega_k, so a near-zero mode (4-6 cm^-1 surviving the "
                      "Eckart projection: dsgdb9nsd_013068 / 025659, 2026-09-23) displaces by "
-                     "angstroms under any of the three draws. `max_rms_displacement_A` rejects "
-                     "and redraws such a frame (None -- what the Frame set passes since "
+                     "angstroms under every draw here. `quantum`: the harmonic-oscillator "
+                     "positional fluctuation, classical in the high-temperature limit and "
+                     "zero-point in the low-temperature limit. `classical`: equipartition, "
+                     "<q²> = k_B T / omega². `max_rms_displacement_A` rejects and redraws a "
+                     "frame over the ceiling (None -- what the Frame set passes since "
                      "2026-09-23 -- takes the first draw and lets the energy window judge it). "
                      "**A better source is a real trajectory snapshot from package 3** -- at "
                      "that point this sampler should be replaced."))

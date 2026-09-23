@@ -42,15 +42,12 @@ def main():
     g.add_argument("--species", help="one QM9 index")
     g.add_argument("--all", action="store_true", help="every molecule under the tag with basins")
     ap.add_argument("--n-displaced", type=int, default=frames.N_DISPLACED)
-    ap.add_argument("--temperature", type=float, default=frames.TEMPERATURE_K)
+    ap.add_argument("--temperature", type=float, default=frames.TEMPERATURE_K,
+                    help="the temperature of the normal-mode sampling draw, in K (default {:.0f})".format(frames.TEMPERATURE_K))
     ap.add_argument("--max-rms", type=float, default=frames.MAX_RMS_A,
                     help="RMS displacement ceiling of a displaced draw, in A (default: none -- the energy "
                          "window is the only filter, ruling 2026-09-23); with one, a draw over it is "
                          "redrawn up to 50 times and a basin with a near-zero mode then raises")
-    ap.add_argument("--distribution", default=frames.DISTRIBUTION, choices=("ani1", "quantum", "classical"),
-                    help="the draw of the displaced frames: ani1 (ANI-1's bounded coefficient randomisation, the "
-                         "default since 2026-09-23), classical (equipartition, exactly thermal) or quantum "
-                         "(zero-point). One campaign uses one draw: changing it means rebuilding with --force")
     ap.add_argument("--engine", default=None, help="registered engine name (default: the production default)")
     ap.add_argument("--force", action="store_true", help="rebuild a Frame set whose Record exists")
     args = ap.parse_args()
@@ -66,7 +63,7 @@ def main():
             continue
         try:
             out = frames.generate(mol, n_displaced=args.n_displaced, temperature_K=args.temperature,
-                                  max_rms_A=args.max_rms, engine_name=args.engine, distribution=args.distribution)
+                                  max_rms_A=args.max_rms, engine_name=args.engine, distribution=frames.DISTRIBUTION)
         except Exception as exc:                                 # one molecule must not stop the Batch
             failed += 1
             print("FAILED  {}  {}: {}".format(mol.name, type(exc).__name__, str(exc)[:200]), flush=True)

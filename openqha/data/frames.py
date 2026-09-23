@@ -13,11 +13,11 @@ GENERATORS (rounds 3-4, rulings 2026-09-18)
     basin      the MACE basin itself (branch A: CREST on GFN2 with `refine = "sp"`,
                then MACE tightening to fmax 1e-4 and the MACE analytic Hessian). Its
                Hessian is the basin's stored `hessian.npy`, reused, not recomputed.
-    displaced  n draws per basin along the basin's modes at the target temperature
-               (`hessian.thermal_displacements` with `hessian=` the stored matrix,
-               `distribution=DISTRIBUTION`, ANI-1 since 2026-09-23 -- see THE DISPLACED
-               DRAW), the draw taken AS IT COMES -- no RMS ceiling since 2026-09-23 (the
-               energy window is the only filter, below); the engine's Hessian at each.
+    displaced  n NORMAL-MODE SAMPLING draws per basin along the basin's modes at
+               TEMPERATURE_K (`hessian.thermal_displacements`, `distribution="nms"`, with
+               `hessian=` the stored matrix -- see THE DISPLACED DRAW), taken AS IT COMES:
+               no RMS ceiling, the energy window below is the only filter; the engine's
+               energy, forces and Hessian are computed at each.
     merged     every input conformer branch A's deduplication merged into a basin
                (`DUPLICATE_MAP` of the branch-A Property; geometry = the tightened
                `mace/confNN/conf.extxyz`), one frame each, no displacement.
@@ -63,25 +63,29 @@ recorded likewise. The MACE E-F-H of a kept frame is written at generation time 
 it is the very quantity the loss compares to the label, and with it on disk the judge
 needs no engine.
 
-THE DISPLACED DRAW (round-2 Q14 ruled (b) 2026-09-18; changed to ANI-1 on 2026-09-23)
+THE DISPLACED DRAW: NORMAL-MODE SAMPLING AT 450 K (rulings 2026-09-18 and 2026-09-23)
 --------------------------------------------------------------------------------------
-Three draws exist; the Frame set declares which one it used (`DISTRIBUTION`).
+`DISTRIBUTION = "nms"`, `TEMPERATURE_K = 450`. Mode k of the basin is given the harmonic
+energy E_k = c_k (3/2) N_a k_B T from a random partition (c_k >= 0, sum_k c_k = s <= 1)
+and a random sign, so the displacement is q_k = ±sqrt(2 E_k)/omega_k in mass-weighted
+coordinates and the frame's total harmonic energy is
 
-    ani1        THE DEFAULT since 2026-09-23. ANI-1's coefficient randomisation (Smith,
-                Isayev, Roitberg, Chem. Sci. 2017, 8, 3192): R_i = ±sqrt(3 N_a c_i k_B T
-                / K_i) with c_i >= 0 and sum c_i <= 1, so the TOTAL harmonic energy is
-                rho (3/2) N_a k_B T with rho <= 1 -- a uniform random partition of at most
-                the classical total vibrational energy, random signs. Bounded in energy;
-                not a thermal ensemble (the per-mode marginal depends on the mode count
-                and on rho).
-    classical   equipartition, <q_k²> = k_B T / omega_k²: the distribution a classical
-                298 K trajectory (branch B) samples, ~7 kcal/mol (3-13) above the basin
-                for a 10-atom molecule. Exactly thermal; unbounded (chi-square tail).
-    quantum     the harmonic-oscillator fluctuation: hbar omega / 2 into every stretch,
-                ~27 kcal/mol per frame, 88 % of it above 1000 cm^-1 (C-H amplitude 2.7x
-                classical). Below 300 cm^-1 -- the modes that carry the entropy error --
-                quantum and classical agree to 1-6 % in amplitude (propanal, oxetane,
-                MACE Hessians, 2026-09-18).
+    E_h = (3/2) s N_a k_B T <= (3/2) N_a k_B T ,   mean (3/4) N_a k_B T ,   s ~ U(0, 1).
+
+Bounded in energy by construction, and per mode a uniform partition rather than a Boltzmann
+one. 450 K is where this draw puts the same amplitude the equipartition draw put at 298 K:
+its mean energy is (3/4) N_a k_B T against equipartition's (3N-6)/2 k_B T, and on propanal
+(4000 draws, MACE Hessian) NMS at 450 K gives RMS 0.113 A mean / 0.266 max against the
+298 K equipartition draw's 0.118 / 0.365 -- the same centre with a bounded tail. The
+scheme is the normal-mode sampling published with the ANI-1 data set (Smith, Isayev,
+Roitberg, Sci. Data 4, 170193 (2017), section "Normal mode sampling", eq. 1), whose own
+setting for 8-heavy-atom molecules is 450 K.
+
+The equipartition (`classical`) and zero-point (`quantum`) draws are NOT part of this
+workflow any more (ruling 2026-09-23): `hessian.thermal_displacements` keeps them for
+calibration and for branch B, `02_frames.py` has no `--distribution`, and Frame sets drawn
+that way before the ruling are told apart by their own Record (`DISTRIBUTION`,
+`TEMPERATURE`).
 
 WHAT THE DRAW DOES AND DOES NOT TOUCH. msRRHO thermochemistry is computed at BASINS
 (basin geometry, basin Hessian) and the training set is basin frames only (S0-C-54), so
@@ -90,9 +94,9 @@ EnGrad only (round 5, Q7 (b) -- no reference Hessian), and they serve the judge'
 rows, the in-distribution and forgetting checks and rho_k (the curvature change from the
 basin). The draw is therefore the SCALE of those diagnostics, and one campaign must use one
 scale -- which is why the ruling of 2026-09-23 rebuilt every Frame set of draw300 with
-`--force` rather than mixing. No draw bounds the GEOMETRY: the amplitude is sqrt(2E_i)/omega_i
-in all three, so a basin with a near-zero mode (4-6 cm^-1 surviving the Eckart projection)
-displaces by angstroms and its displaced frames are dropped by the energy window (ticket 27).
+`--force` rather than mixing. No draw bounds the GEOMETRY: the amplitude is sqrt(2E_k)/omega_k,
+so a basin with a near-zero mode (4-6 cm^-1 surviving the Eckart projection) displaces by
+angstroms and its displaced frames are dropped by the energy window (ticket 27).
 
 FILES
 -----
@@ -119,18 +123,22 @@ PROGNAME = "openQHA frames"
 GENERATORS = ("basin", "displaced", "merged", "saddle")
 #: displaced frames per basin (round 4, Q2)
 N_DISPLACED = 4
-#: the target temperature of the harmonic draw
-TEMPERATURE_K = 298.15
-#: the draw of the displaced generator: "ani1" (ANI-1's bounded coefficient randomisation,
-#: the default since 2026-09-23), "classical" (equipartition, exactly thermal, unbounded) or
-#: "quantum" (zero-point motion in every mode). See THE DISPLACED DRAW above.
-DISTRIBUTION = "ani1"
+#: the target temperature of the draw. 450 K under normal-mode sampling puts the same
+#: amplitude that equipartition put at 298 K (its mean energy is (3/4) N_a k_B T, not
+#: (3N-6)/2 k_B T); it is also the published setting for 8-heavy-atom molecules.
+TEMPERATURE_K = 450.0
+#: the draw of the displaced generator: NORMAL-MODE SAMPLING -- a random partition of at
+#: most (3/2) N_a k_B T over the modes, random signs (see THE DISPLACED DRAW above). The
+#: equipartition and zero-point draws left this workflow on 2026-09-23; they remain in
+#: `hessian.thermal_displacements` for calibration and branch B.
+DISTRIBUTION = "nms"
 #: RMS displacement ceiling of a displaced frame: NONE since 2026-09-23 -- the energy
 #: window is the only filter (see FILTER above). A caller may still set one
 #: (`02_frames.py --max-rms`, `hessian.MAX_RMS_DISPLACEMENT_A` = 0.15 A is that function's
 #: own default for other callers); the Record then carries it and `nan` when there is none.
 MAX_RMS_A = None
-#: ANI-1's window: a frame this far above its basin (kcal/mol) is dropped -- the only filter
+#: the energy window, the ONLY filter: a frame whose engine energy is this far above its
+#: basin (kcal/mol) is dropped and counted (the published sets' own number)
 ENERGY_WINDOW_KCAL = 275.0
 #: reported, not filtered: a basin bond counts as broken when its length exceeds this x (r_i + r_j)
 BOND_BREAK_MULT = 1.35
@@ -148,11 +156,11 @@ SCHEMA = {
         "LEVEL": ("String", None, "the engine's level name (the file suffix)"),
         "ENGINE_PARAMS_SHA256": ("String", None, "parameter fingerprint of the weights (engine.parameter_fingerprint)"),
         "ENGINE_PIN_STATUS": ("String", None, "matches / differs / unpinned against the registry"),
-        "TEMPERATURE": ("Double", "K", "temperature of the harmonic draw"),
-        "DISTRIBUTION": ("String", None, "classical (equipartition; the default, Q14) or quantum (zero-point amplitude in every mode) draw of the displaced frames"),
+        "TEMPERATURE": ("Double", "K", "temperature of the displaced draw"),
+        "DISTRIBUTION": ("String", None, "the draw of the displaced frames: nms = normal-mode sampling, a random partition of at most (3/2) N_a k_B T over the modes (this workflow's only draw since 2026-09-23); classical = equipartition and quantum = zero-point amplitude, kept for Frame sets drawn before that"),
         "N_DISPLACED_PER_BASIN": ("Integer", None, "displaced frames drawn per basin"),
         "MAX_RMS_A": ("Double", "A", "RMS displacement ceiling of a displaced frame (over the 3N coordinates); nan = no ceiling, the energy window is the only filter (ruling 2026-09-23)"),
-        "ENERGY_WINDOW_KCAL": ("Double", "kcal/mol", "the only filter: a frame further above its basin is dropped (ANI-1's 275; SPICE cuts at 2390)"),
+        "ENERGY_WINDOW_KCAL": ("Double", "kcal/mol", "the only filter: a frame whose engine energy is further above its basin is dropped"),
         "BOND_CUTOFF_MULT": ("Double", None, "covalent-radius multiplier defining the basin's bond graph (reported, not filtered)"),
         "BOND_BREAK_MULT": ("Double", None, "a basin bond longer than this x (r_i + r_j) is reported as broken (RDKit perceives at 1.3, Open Babel ~1.4)"),
         "BOND_FORM_MULT": ("Double", None, "a non-bonded pair closer than this x (r_i + r_j) is reported as formed"),
@@ -419,10 +427,10 @@ def _write_report(path, info, gen_rows, rows):
                for r in rows])
     rep.note("a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term "
              "included -- the Hessian-learning target, not a frequency; 'lowest' at a displaced frame is a "
-             "curvature. The basin frame reuses the basin's stored hessian.npy. dE of a displaced frame is "
-             "the harmonic draw's energy: classical 298 K (equipartition, ~3/4 N_a kT = 7 kcal/mol for 10 "
-             "atoms, ANI-1's regime for 8-heavy-atom molecules at 450 K) unless DISTRIBUTION says quantum "
-             "(zero-point motion in every stretch, ~4x more). The only filter is the energy window (ANI-1's 275 "
+             "curvature. The basin frame reuses the basin's stored hessian.npy. dE of a displaced frame is the "
+             "ENGINE's energy at the drawn geometry; what the draw put in is the harmonic part of it -- normal-mode "
+             "sampling bounds that at (3/2) N_a k_B T with mean (3/4) N_a k_B T (9.4 kcal/mol mean, 18.7 max for "
+             "14 atoms at 450 K). The only filter is the energy window (275 "
              "kcal/mol; SPICE cuts at 2390), as the published sets do; 'bonds' reports a broken or formed "
              "bond at perception tolerances (RDKit 1.3 / Open Babel ~1.4) and never drops a frame. Hot-MD, "
              "cooled and hot normal-mode frames (SPICE, OpenREACT) were considered and not built (rulings "

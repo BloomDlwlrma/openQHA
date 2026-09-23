@@ -62,9 +62,10 @@ python scripts/tooling/s0_hl_progress.py --tag draw300                          
 
 **Rebuilding the Frame sets (ticket 28, 2026-09-23).** The displaced draw is the scale of
 the judge's diagnostics (msRRHO reads basins, the training set is basin frames), so one
-campaign carries one draw. When it changes — it did on 2026-09-23, from the classical
-equipartition Gaussian to ANI-1's bounded coefficient randomisation — every Frame set of the
-draw is rebuilt rather than mixed:
+campaign carries one draw. When it changes — it did on 2026-09-23, from the equipartition
+draw at 298 K to **normal-mode sampling at 450 K** (a random partition of at most
+(3/2) N_a k_B T over the modes: bounded in energy, the same mean amplitude, no tail) — every
+Frame set of the draw is rebuilt rather than mixed:
 
 ```bash
 FORCE=1 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_frames.slurm

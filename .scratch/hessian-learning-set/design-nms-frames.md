@@ -1,4 +1,10 @@
-# ANI-1 normal-mode sampling as the only displaced-frame generator (design, 2026-09-21)
+# Normal-mode sampling as the only displaced-frame generator (design, 2026-09-21)
+
+**Status: implemented 2026-09-23 as ticket 28** (`DISTRIBUTION = "nms"`, `TEMPERATURE_K = 450`,
+`MAX_RMS_A = None`, `--distribution` removed, the energy window the only filter). The Record keys
+are `c_sum`, `harmonic_energy_kcal`, `harmonic_energy_cap_kcal` as designed; the partition uses a
+Dirichlet(1,…,1) direction with a uniform radius (uniform on the simplex) rather than u/sum(u).
+`N_DISPLACED = 4` was already this file's proposal (4 per basin at 450 K).
 
 The user's ask: adopt ANI-1's NMS for the displaced frames -- temperature from ANI's table,
 no RMS ceiling (only the 275 kcal/mol energy window, as ANI), the judge bins frames by RMS

@@ -1,4 +1,4 @@
-# 28: The displaced draw becomes ANI-1's coefficient randomisation, and every Frame set is rebuilt with it (`thermochem/hessian.py`, `data/frames.py`, `02_frames.py`, `t_frames.py`)
+# 28: The displaced draw becomes NORMAL-MODE SAMPLING at 450 K (`nms`), the equipartition and zero-point draws leave the workflow, and every Frame set is rebuilt with it (`thermochem/hessian.py`, `data/frames.py`, `02_frames.py`, `t_frames.py`)
 
 **Why (user ruling 2026-09-23):** the displaced generator has drawn from the classical
 equipartition Gaussian (round-2 Q14, 2026-09-18): per-mode sigma_i = sqrt(k_B T)/omega_i,
@@ -63,3 +63,38 @@ basins only, `--generators basin`) would be orphaned -- to be checked before the
 - [x] `FORCE=1` in `hl_frames.slurm` (`hl_list --force` + `02_frames --force`), the header and the
       campaign page carry the rebuild command
 - [ ] tianhe (user): rebuild + finish 02 with `FORCE=1 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_frames.slurm`
+
+
+## Amendment (user ruling 2026-09-23, after the citation sweep): the method is the name
+
+Three things were ruled after the first implementation, which had called the draw `ani1` at
+298 K and kept the other two as options:
+
+1. **The name is the method, everywhere.** `DISTRIBUTION = "nms"` (normal-mode sampling); no
+   constant, schema description, CLI help or Record note is named after a paper or carries a
+   citation shorthand. The source is cited once where the module surveys the literature
+   (`frames.py` FILTER and THE DISPLACED DRAW, `hessian.thermal_displacements`'s docstring):
+   Smith, Isayev, Roitberg, Sci. Data 4, 170193 (2017), section "Normal mode sampling", eq. 1
+   -- the data-set paper, which carries both the formula and the temperature table, not the
+   potential paper (Chem. Sci. 8, 3192) the first implementation cited.
+2. **450 K** (`frames.TEMPERATURE_K`), the published setting for 8-heavy-atom molecules and
+   the temperature at which this draw's mean energy (3/4) N_a k_B T matches what equipartition
+   put in at 298 K: on propanal (4000 draws, MACE Hessian, `design-nms-frames.md` §4) NMS at
+   450 K gives RMS 0.113 A mean / 0.266 max against equipartition 298 K's 0.118 / 0.365.
+3. **The equipartition and zero-point draws leave the workflow.** `02_frames.py` has no
+   `--distribution`; `frames.generate` still takes the keyword (tests, calibration) but the
+   workflow passes `frames.DISTRIBUTION`. `hessian.thermal_displacements` keeps all three
+   branches -- the other two have callers in calibration and branch B.
+
+The Record's keys follow the method: `c_sum` (the frame's energy share s),
+`harmonic_energy_kcal` per frame, `harmonic_energy_cap_kcal` = (3/2) N_a k_B T.
+This supersedes the `ani1` naming; `design-nms-frames.md` (2026-09-21) is the design this
+implements, with its §4 measurements and its "4 frames per basin at 450 K" proposal (which is
+`N_DISPLACED = 4`, unchanged).
+
+- [x] unit `t_frames` (58/58 in the group): the Record says `nms` / 450 K; every frame's
+      harmonic energy is under (3/2) N_a k_B T (13.4 kcal/mol on propanal at 450 K) and equals
+      `c_sum` x the bound to 1e-6; the mean over 400 draws is (3/4) N_a k_B T within 5 %;
+      seeds reproduce; the equipartition branch is untouched (`c_sum` nan). The redraw checks
+      now take the temperature from the Record -- they caught the 298 K default when the
+      default moved
