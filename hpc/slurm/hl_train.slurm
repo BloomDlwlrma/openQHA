@@ -3,7 +3,7 @@
 #
 #     # the gate: 2 epochs on the smoke Dataset, exact probe, 30 minutes
 #     source /APP/u22/ai_x86/toolshs/set-XY-I.sh            # fine-grained env FIRST
-#     TAG=smoke RUN=gate PROBE=modes MAX_EPOCHS=2 \
+#     TAG=smoke RUN=gate PROBE=cartesian MAX_EPOCHS=2 \
 #         yhbatch -p ai -G 1 -c 12 -t 00:30:00 hpc/slurm/hl_train.slurm
 #
 #     # a scan row (tickets 16, 18, 19): the Replay file IS its size, s0_spice_pt_draw.py wrote it
@@ -48,7 +48,6 @@ N_PROBES="${N_PROBES:-4}"
 HESSIAN_WEIGHT="${HESSIAN_WEIGHT:-balance}"      # a number, or balance = w_F L_F / L_H on the base (S0-C-60)
 ENERGY_WEIGHT="${ENERGY_WEIGHT:-1.0}"
 FORCES_WEIGHT="${FORCES_WEIGHT:-100.0}"
-MODE_WEIGHTING="${MODE_WEIGHTING:-cartesian}"      # the target (S0-C-53); entropy / none are diagnostics
 MAX_EPOCHS="${MAX_EPOCHS:-100}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
 SEED="${SEED:-123}"
@@ -104,7 +103,7 @@ PY
 
 # ---- 3. the fine-tune -----------------------------------------------------------------------
 ARGS=(--tag "$TAG" --name "$NAME" --run "$RUN" --level "$LEVEL" --device cuda
-      --probe "$PROBE" --n-probes "$N_PROBES" --mode-weighting "$MODE_WEIGHTING"
+      --probe "$PROBE" --n-probes "$N_PROBES"
       --energy-weight "$ENERGY_WEIGHT" --forces-weight "$FORCES_WEIGHT" --hessian-weight "$HESSIAN_WEIGHT"
       --max-epochs "$MAX_EPOCHS" --batch-size "$BATCH_SIZE" --seed "$SEED")
 if [ "$MULTIHEADS" = "1" ]; then
@@ -118,7 +117,7 @@ fi
 echo
 echo "tag         $TAG    dataset $NAME    run $RUN    level $LEVEL"
 echo "loss        w_E $ENERGY_WEIGHT  w_F $FORCES_WEIGHT  w_H $HESSIAN_WEIGHT"
-echo "probe       $PROBE  k=$N_PROBES  weighting $MODE_WEIGHTING"
+echo "probe       $PROBE  k=$N_PROBES  target the full Cartesian matrix (S0-C-64)"
 echo "loop        $MAX_EPOCHS epochs, batch $BATCH_SIZE, seed $SEED, multiheads $MULTIHEADS"
 echo
 

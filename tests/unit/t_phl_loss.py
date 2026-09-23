@@ -261,13 +261,13 @@ def main():
     b_default = phl_loss.build(argparse.Namespace(energy_weight=1.0, forces_weight=100.0, hessian_weight=1.0, seed=1))
     check("build(args) without any target flag builds the Cartesian loss",
           b_default.probe == "rademacher" and b_default.n_probes == 4 and "target='cartesian'" in repr(b_default))
-    try:
-        phl_loss.build(argparse.Namespace(energy_weight=1.0, forces_weight=1.0, hessian_weight=1.0, seed=1,
-                                          hessian_mode_weighting="entropy"))
-        check("build(args) REFUSES a target that no longer exists rather than ignoring the flag", False)
-    except ValueError as exc:
-        check("build(args) REFUSES a target that no longer exists rather than ignoring the flag",
-              "S0-C-64" in str(exc) and "entropy" in str(exc), str(exc))
+    b_stale = phl_loss.build(argparse.Namespace(energy_weight=1.0, forces_weight=1.0, hessian_weight=1.0,
+                                               seed=1, hessian_mode_weighting="entropy"))
+    check("build(args) ignores a stale hessian_mode_weighting: the flag is out of the fork's parser "
+          "(commit D), so mace itself refuses it and nothing here can receive it",
+          "target='cartesian'" in repr(b_stale))
+    check("MODE_WEIGHTINGS and DEFAULT_MODE_WEIGHTING are gone from the module",
+          not hasattr(phl_loss, "MODE_WEIGHTINGS") and not hasattr(phl_loss, "DEFAULT_MODE_WEIGHTING"))
     for gone in ("hutchinson", "modes"):
         try:
             phl_loss.WeightedEnergyForcesHessianLoss(probe=gone)

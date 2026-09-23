@@ -606,7 +606,7 @@ Rodriguez's `eta_H = 0.02`, which multiplies an RMSE rather than an MSE.
 | 33 | 0 | the MACE-OFF split granularity (S0-C-65): test = whole molecules 5 % (stratified) + the pinned seven, valid = 5 % of the training molecules' frames, `--split-by molecule` the default with a `--resplit` guard, the judge's empty `interpolation` row | done 2026-09-23 (CONTEXT's distribution entry carried into 38) | -- |
 | 34 | 4 | the exact anchors (path A, no fork change): the full matrix on the validation file before and after training, `VALID_HESSIAN_EXACT_BEFORE` / `_AFTER` and the last epoch's probe reading beside them | done 2026-09-23 | -- |
 | 35 | 1-2 | Algorithms 1-2: the frame's constants and the probes, PHL verbatim; the projected path removed from the probe and loss modules; the derivations as tests | done 2026-09-23 | -- |
-| 36 | 3 | Algorithm 3: the training step without `mode_weighting`; fork commit D -- the parser's two options out, the `valid_probes` field in (S0-C-67); driver, Slurm, Record, smoke fit, balance | ready-for-agent | 35 |
+| 36 | 3 | Algorithm 3: the training step without `mode_weighting`; fork commit D -- the parser's two options out, the `valid_probes` field in (S0-C-67); driver, Slurm, Record, smoke fit, balance | done 2026-09-23 | -- |
 | 37 | 4 | Algorithm 4 (S0-C-67): the dataset writes the fixed validation probes, the loss reads them from the batch, both `hashlib` calls die; the calibration tool follows; tests re-pointed | ready-for-agent | 35, 36 |
 | 38 | 5 | Algorithm 5: `LOSS_EXACT` removed; the frequency rows stated as the standard analysis; CONTEXT, ADR 0006, T03 archived, T04/T05 re-executed | ready-for-agent | 35, 36, 37 |
 

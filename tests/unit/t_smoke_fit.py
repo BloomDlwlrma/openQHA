@@ -107,20 +107,20 @@ def main():
 
         # --- the balance -----------------------------------------------------------------------
         calc = FakeCalc(H_t, energy=-1.0, forces=np.full((len(symbols), 3), 0.01))   # non-zero, or L_F = 0 and there is nothing to balance against
-        b_ent = smoke_fit.epoch_zero_balance(calc, out_dir / "train.{}.extxyz".format(LEVEL),
-                                             forces_weight=100.0, mode_weighting="entropy")
         b_none = smoke_fit.epoch_zero_balance(calc, out_dir / "train.{}.extxyz".format(LEVEL),
-                                              forces_weight=100.0, mode_weighting="none")
-        exact_none = phl.projected_loss_full(H_t, H_r, masses, x_r)
-        check("L_H with flat weights = phl.projected_loss_full (1e-10; the file's 8-decimal positions)",
+                                              forces_weight=100.0)
+        exact_none = phl.loss_full(H_t, H_r)
+        check("L_H = phl.loss_full, the full matrix (1e-10; the file's 8-decimal positions)",
               abs(b_none["L_H"] - exact_none) < 1e-10, (b_none["L_H"], exact_none))
         check("w_H balances the force term: w_H L_H = w_F L_F (1e-9 relative)",
               abs(b_none["HESSIAN_WEIGHT_BALANCED"] * b_none["L_H"] / b_none["WF_LF"] - 1) < 1e-9, b_none)
-        check("the entropy weighting gives a much larger w_H than the flat one "
-              "(the weight is measured, never carried between weightings)",
-              b_ent["HESSIAN_WEIGHT_BALANCED"] > 100 * b_none["HESSIAN_WEIGHT_BALANCED"],
-              (b_ent["HESSIAN_WEIGHT_BALANCED"], b_none["HESSIAN_WEIGHT_BALANCED"]))
-        check("the balance counts the frames it read", b_ent["N_FRAMES"] == 8 and b_ent["N_HESSIAN_FRAMES"] == 8)
+        try:
+            smoke_fit.epoch_zero_balance(calc, out_dir / "train.{}.extxyz".format(LEVEL),
+                                         mode_weighting="entropy")
+            check("epoch_zero_balance takes no `mode_weighting` (there is one target)", False)
+        except TypeError:
+            check("epoch_zero_balance takes no `mode_weighting` (there is one target)", True)
+        check("the balance counts the frames it read", b_none["N_FRAMES"] == 8 and b_none["N_HESSIAN_FRAMES"] == 8)
 
     # --- the replay arithmetic -----------------------------------------------------------------
     r = smoke_fit.replay_ratio(n_train=99000, n_hessian=29000, num_samples_pt=5000)

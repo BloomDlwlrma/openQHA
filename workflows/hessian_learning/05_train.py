@@ -13,7 +13,7 @@ evaluation (commit C). Nothing here reimplements a training loop.
     python workflows/hessian_learning/05_train.py --tag draw300 --run R4 --device cuda --max-epochs 100 \
         --multiheads --pt-train-file $S0_RUNS_ROOT/spice/spice_pt_R4.extxyz --pt-valid-file $S0_RUNS_ROOT/spice/spice_pt_R4.valid.extxyz
 
-THE TARGET is the Cartesian matrix (`--mode-weighting cartesian`, the default; S0-C-53);
+THE TARGET is the Cartesian matrix itself and nothing else (S0-C-64: there is no switch);
 validation uses four Rademacher probes fixed per frame (S0-C-55) and every control flag
 (`--lr`, `--scheduler-patience`, `--patience`, `--eval-interval`, `--ema`, Stage Two with
 `--start-swa`, `--swa-lr` and the Stage Two weights) is explicit and in the Record.
@@ -74,12 +74,8 @@ def main():
                     help="w_H: a number, or `balance` (default; S0-C-60) = w_F L_F / L_H measured on the base model over the "
                          "run's train file with the Cartesian target before the first step")
     ap.add_argument("--probe", choices=phl.PROBE_MODES, default="rademacher",
-                    help="rademacher/gaussian: k probes per structure (eq. 6); cartesian: the exact loss (3N probes); "
-                         "modes: exact on the projected diagnostics only")
-    ap.add_argument("--n-probes", type=int, default=4, help="k of eq. 6 (ignored by the deterministic probe sets)")
-    ap.add_argument("--mode-weighting", choices=phl_loss.MODE_WEIGHTINGS, default=phl_loss.DEFAULT_MODE_WEIGHTING,
-                    help="the target: cartesian = the raw matrix (S0-C-53, default); entropy / none = the projected "
-                         "diagnostics of T03")
+                    help="rademacher/gaussian: k probes per structure (eq. 6'); cartesian: the exact loss (3N probes)")
+    ap.add_argument("--n-probes", type=int, default=4, help="k of eq. 6' (ignored by the deterministic probe set)")
     # the loop
     ap.add_argument("--max-epochs", type=int, default=100)
     ap.add_argument("--batch-size", type=int, default=4)
@@ -128,7 +124,7 @@ def main():
         foundation=args.foundation, dry_run=args.dry_run, strict_fork=not args.no_strict_fork,
         energy_weight=args.energy_weight, forces_weight=args.forces_weight,
         hessian_weight=args.hessian_weight, probe=args.probe, n_probes=args.n_probes,
-        mode_weighting=args.mode_weighting, exact_anchors=not args.no_exact_anchors,
+        exact_anchors=not args.no_exact_anchors,
         max_epochs=args.max_epochs, batch_size=args.batch_size,
         valid_batch_size=args.valid_batch_size, lr=args.lr, seed=args.seed, device=args.device,
         scheduler_patience=args.scheduler_patience, patience=args.patience, eval_interval=args.eval_interval,
@@ -143,9 +139,9 @@ def main():
     print("  dataset      {} at {}".format(info["NAME"], info["LEVEL"]))
     print("  train        {} frames, {} with a reference Hessian".format(info["N_TRAIN"], info["N_TRAIN_HESSIAN"]))
     print("  valid        {} frames, {} with a reference Hessian".format(info["N_VALID"], info["N_VALID_HESSIAN"]))
-    print("  loss         w_E {} w_F {} w_H {} ({}); probe {} k={}; target {}; validation {}".format(
+    print("  loss         w_E {} w_F {} w_H {} ({}); probe {} k={}; validation {}".format(
         info["ENERGY_WEIGHT"], info["FORCES_WEIGHT"], info["HESSIAN_WEIGHT"], info["HESSIAN_WEIGHT_RULE"], info["PROBE"],
-        info["N_PROBES"], info["MODE_WEIGHTING"], info["VALID_PROBES"]))
+        info["N_PROBES"], info["VALID_PROBES"]))
     if info["HESSIAN_WEIGHT_RULE"] == "balance":
         print("  balance      base model on the train file: L_E {:.3e} L_F {:.3e} L_H {:.3e} -> w_H = w_F L_F / L_H".format(
             info["BALANCE_L_E"], info["BALANCE_L_F"], info["BALANCE_L_H"]))

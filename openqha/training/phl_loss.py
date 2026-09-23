@@ -50,12 +50,6 @@ import torch
 from . import hvp as hvp_mod
 from . import phl
 
-#: There is one target (S0-C-64). What is left of the old switch is the driver's
-#: vocabulary -- `05_train.py --mode-weighting`, the Slurm variable and the Record key --
-#: and it goes with the fork's `--hessian_mode_weighting` in ticket 36. The loss itself
-#: no longer takes it: `build(args)` REFUSES any other value rather than ignoring it.
-MODE_WEIGHTINGS = ("cartesian",)
-DEFAULT_MODE_WEIGHTING = "cartesian"
 #: the validation estimator (S0-C-55): k fixed Rademacher probes per frame
 VALID_PROBE = "rademacher"
 VALID_N_PROBES = 4
@@ -340,15 +334,11 @@ def build(args):
     """The factory the fork's `--loss external --loss_module openqha.training.phl_loss:build`
     calls with mace's parsed arguments (ticket 13's flags; every one has a default).
 
-    There is one target (S0-C-64). The fork's `--hessian_mode_weighting` still exists
-    until ticket 36 takes it out of the parser, so a value other than `cartesian` is
-    REFUSED here rather than silently ignored.
+    There is one target (S0-C-64), so there is nothing here to select it with: fork
+    commit D took `--hessian_mode_weighting` and `--hessian_probe modes` out of the
+    parser (ticket 36), and a run that names either now fails in mace's own argument
+    parsing, before a model is built.
     """
-    weighting = getattr(args, "hessian_mode_weighting", None)
-    if weighting is not None and weighting not in MODE_WEIGHTINGS:
-        raise ValueError(
-            "the target is the raw Cartesian Hessian and nothing else (S0-C-64); "
-            "--hessian_mode_weighting {!r} no longer exists (the flag itself goes with ticket 36)".format(weighting))
     return WeightedEnergyForcesHessianLoss(
         energy_weight=getattr(args, "energy_weight", 1.0),
         forces_weight=getattr(args, "forces_weight", 1.0),

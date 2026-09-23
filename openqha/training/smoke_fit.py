@@ -37,7 +37,6 @@ COST_SETTINGS = (
     dict(label="rademacher k=2", probe="rademacher", n_probes=2),
     dict(label="rademacher k=4", probe="rademacher", n_probes=4),
     dict(label="rademacher k=8", probe="rademacher", n_probes=8),
-    dict(label="modes (exact)", probe="modes"),
     dict(label="cartesian (exact)", probe="cartesian"),
 )
 
@@ -107,14 +106,13 @@ def replay_ratio(n_train, n_hessian, num_samples_pt):
 
 
 def epoch_zero_balance(calc, train_file, energy_weight=1.0, forces_weight=100.0, probe="cartesian",
-                       mode_weighting="cartesian", hessian_key="REF_hessian", energy_key="REF_energy",
+                       hessian_key="REF_hessian", energy_key="REF_energy",
                        forces_key="REF_forces"):
     """The three terms of eq. 11 on the BASE model, before a single step.
 
     `L_E` and `L_F` are mace's per-config-weighted squared errors as the loss computes
-    them (energy per atom, forces per component); `L_H` is the target EXACTLY -- the
-    Cartesian eq. 1' (`mode_weighting = cartesian`, the default since S0-C-53) or the
-    projected eq. 1 / eq. 3 (`none` / `entropy`) -- averaged over the frames that carry a
+    them (energy per atom, forces per component); `L_H` is the target EXACTLY -- the full
+    matrix, eq. 1' (S0-C-64: there is one target) -- averaged over the frames that carry a
     Label.
     Returns the terms and `w_H = w_F L_F / L_H`, the weight at which the Hessian term
     enters with the same gradient share as the forces at epoch 0.
@@ -143,20 +141,11 @@ def epoch_zero_balance(calc, train_file, energy_weight=1.0, forces_weight=100.0,
         h_r = np.asarray(flat, dtype=float).reshape(n3, n3)
         from .judge import hessian_at
         h_e = hessian_at(calc, atoms)
-        if mode_weighting == "cartesian":
-            h_vals.append(phl.cartesian_loss_full(h_e, h_r))
-            continue
-        weights = None
-        if mode_weighting == "entropy":
-            from ..thermochem import hessian as hessian_mod
-            _l, lam = phl.reference_modes(h_r, atoms.get_masses(), atoms.positions)
-            weights, _ds = phl.entropy_weights(hessian_mod.eigenvalues_to_cm_inv(lam),
-                                               atoms.get_masses(), atoms.positions)
-        h_vals.append(phl.projected_loss_full(h_e, h_r, atoms.get_masses(), atoms.positions, weights=weights))
+        h_vals.append(phl.loss_full(h_e, h_r))
     l_e = float(np.mean(e_sq)) if e_sq else None
     l_f = float(np.mean(f_sq)) if f_sq else None
     l_h = float(np.mean(h_vals)) if h_vals else None
-    out = dict(N_FRAMES=len(frames), N_HESSIAN_FRAMES=len(h_vals), PROBE=probe, MODE_WEIGHTING=mode_weighting,
+    out = dict(N_FRAMES=len(frames), N_HESSIAN_FRAMES=len(h_vals), PROBE=probe,
                L_E=l_e, L_F=l_f, L_H=l_h, ENERGY_WEIGHT=float(energy_weight), FORCES_WEIGHT=float(forces_weight),
                WE_LE=None if l_e is None else energy_weight * l_e,
                WF_LF=None if l_f is None else forces_weight * l_f,

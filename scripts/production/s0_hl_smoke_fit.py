@@ -67,7 +67,6 @@ SCHEMA = {
         "SECONDS": ("Double", "s", "wall time of the whole fit"),
     },
     "Balance": {
-        "MODE_WEIGHTING": ("String", None, "entropy or none"),
         "N_FRAMES": ("Integer", None, "training frames read"),
         "N_HESSIAN_FRAMES": ("Integer", None, "of those, with a Label"),
         "L_E": ("Double", None, "energy term per atom squared, base model, epoch 0"),
@@ -79,7 +78,7 @@ SCHEMA = {
     },
     "Cost": {
         "SETTING": ("String", None, "the probe setting"),
-        "PROBE": ("String", None, "rademacher / modes / cartesian / - "),
+        "PROBE": ("String", None, "rademacher / cartesian / - "),
         "N_PROBES": ("Integer", None, "k"),
         "SECONDS": ("Double", "s", "wall time of the measurement run"),
         "SECONDS_PER_EPOCH": ("Double", "s", "measured"),
@@ -92,7 +91,6 @@ SCHEMA = {
         "RUN": ("String", None, "the train run"),
         "PROBE": ("String", None, "the probe setting"),
         "N_PROBES": ("Integer", None, "k"),
-        "MODE_WEIGHTING": ("String", None, "entropy or none"),
         "HESSIAN_WEIGHT": ("Double", None, "w_H"),
         "W_H_OVER_BALANCED": ("Double", None, "w_H / the epoch-0 balance"),
         "EPOCHS": ("Integer", None, "epochs run"),
@@ -159,27 +157,24 @@ def main():
 
     if "balance" in stages or "scan" in stages:
         print("\n--- the epoch-0 balance (the base model, before a single step) ---")
-        for weighting in ("cartesian", "entropy", "none"):
-            b = smoke_fit.epoch_zero_balance(calc, train_file, energy_weight=args.energy_weight,
-                                             forces_weight=args.forces_weight, mode_weighting=weighting,
-                                             probe="cartesian" if weighting == "cartesian" else "modes")
-            balance_rows.append(dict(MODE_WEIGHTING=weighting, N_FRAMES=b["N_FRAMES"],
-                                     N_HESSIAN_FRAMES=b["N_HESSIAN_FRAMES"], L_E=b["L_E"], L_F=b["L_F"],
-                                     L_H=b["L_H"], WE_LE=b["WE_LE"], WF_LF=b["WF_LF"],
-                                     HESSIAN_WEIGHT_BALANCED=b["HESSIAN_WEIGHT_BALANCED"]))
-            print("  {:8s}  L_E {:.4e}  L_F {:.4e}  L_H {:.4e}   w_F L_F {:.4e}   ->  w_H = {:.4g}".format(
-                weighting, b["L_E"], b["L_F"], b["L_H"], b["WF_LF"], b["HESSIAN_WEIGHT_BALANCED"]))
-            if weighting == "cartesian":                     # the production target (S0-C-53); the others are diagnostics
-                balanced = b["HESSIAN_WEIGHT_BALANCED"]
-        print("  (the Cartesian 0.25-0.30 band of PHL / Rodriguez does not transfer under mass weighting:"
-              " design section 2.6)")
+        b = smoke_fit.epoch_zero_balance(calc, train_file, energy_weight=args.energy_weight,
+                                         forces_weight=args.forces_weight, probe="cartesian")
+        balance_rows.append(dict(N_FRAMES=b["N_FRAMES"],
+                                 N_HESSIAN_FRAMES=b["N_HESSIAN_FRAMES"], L_E=b["L_E"], L_F=b["L_F"],
+                                 L_H=b["L_H"], WE_LE=b["WE_LE"], WF_LF=b["WF_LF"],
+                                 HESSIAN_WEIGHT_BALANCED=b["HESSIAN_WEIGHT_BALANCED"]))
+        print("  L_E {:.4e}  L_F {:.4e}  L_H {:.4e}   w_F L_F {:.4e}   ->  w_H = {:.4g}".format(
+            b["L_E"], b["L_F"], b["L_H"], b["WF_LF"], b["HESSIAN_WEIGHT_BALANCED"]))
+        balanced = b["HESSIAN_WEIGHT_BALANCED"]
+        print("  (the rule is PHL's, the number is not: w_H = w_F L_F / L_H measured HERE, on the full"
+              " matrix and on this base model -- S0-C-64)")
 
     if "cost" in stages:
         print("\n--- the cost of a probe setting ({} epoch(s) each) ---".format(args.cost_epochs))
         cost_rows = smoke_fit.cost_table(fit_dir, args.tag, fit_name, args.level, epochs=args.cost_epochs,
                                          batch_size=args.batch_size, strict_fork=not args.no_strict_fork,
                                          energy_weight=args.energy_weight, forces_weight=args.forces_weight,
-                                         hessian_weight=balanced or 1.0, mode_weighting="entropy",
+                                         hessian_weight=balanced or 1.0,
                                          device=args.device, seed=args.seed)
         print("  {:20s} {:>6s} {:>14s} {:>10s}".format("setting", "k", "s per epoch", "x E/F"))
         for r in cost_rows:
@@ -191,17 +186,12 @@ def main():
         if balanced is None:
             balanced = 1.0
         print("\n--- the scan: {} epochs per run ---".format(args.epochs))
-        runs = [dict(label="x{:g}".format(m), probe="rademacher", n_probes=4, mode_weighting="entropy",
+        runs = [dict(label="x{:g}".format(m), probe="rademacher", n_probes=4,
                      hessian_weight=balanced * m) for m in args.scan]
-        runs.append(dict(label="modes", probe="modes", n_probes=4, mode_weighting="entropy",
-                         hessian_weight=balanced))
-        runs.append(dict(label="none", probe="rademacher", n_probes=4, mode_weighting="none",
-                         hessian_weight=balanced))
         for spec in runs:
             run_name = "fit_{}".format(spec["label"])
             out = train_run.run_training(fit_dir, args.tag, fit_name, args.level, run_name,
                                          probe=spec["probe"], n_probes=spec["n_probes"],
-                                         mode_weighting=spec["mode_weighting"],
                                          hessian_weight=spec["hessian_weight"],
                                          energy_weight=args.energy_weight, forces_weight=args.forces_weight,
                                          max_epochs=args.epochs, batch_size=args.batch_size,
@@ -211,7 +201,7 @@ def main():
             train_losses = [r["loss"] for r in out["epochs"] if r["split"] == "train" and r["loss"] is not None]
             valid_losses = [r["loss"] for r in out["epochs"] if r["split"] == "valid" and r["loss"] is not None]
             row = dict(RUN=run_name, PROBE=spec["probe"], N_PROBES=spec["n_probes"],
-                       MODE_WEIGHTING=spec["mode_weighting"], HESSIAN_WEIGHT=spec["hessian_weight"],
+                       HESSIAN_WEIGHT=spec["hessian_weight"],
                        W_H_OVER_BALANCED=spec["hessian_weight"] / balanced if balanced else None,
                        EPOCHS=info["N_EPOCHS"], SECONDS_PER_EPOCH=info["SECONDS_PER_EPOCH"],
                        FINAL_TRAIN_LOSS=train_losses[-1] if train_losses else None,
@@ -262,8 +252,8 @@ def main():
         rep.kv(k, info[k])
     if balance_rows:
         rep.section("the epoch-0 balance")
-        rep.table(["weighting", "L_E", "L_F", "L_H", "w_F L_F", "w_H balanced"],
-                  [[b["MODE_WEIGHTING"], "{:.4e}".format(b["L_E"]), "{:.4e}".format(b["L_F"]),
+        rep.table(["L_E", "L_F", "L_H", "w_F L_F", "w_H balanced"],
+                  [["{:.4e}".format(b["L_E"]), "{:.4e}".format(b["L_F"]),
                     "{:.4e}".format(b["L_H"]), "{:.4e}".format(b["WF_LF"]),
                     "{:.6g}".format(b["HESSIAN_WEIGHT_BALANCED"])] for b in balance_rows])
     if cost_rows:

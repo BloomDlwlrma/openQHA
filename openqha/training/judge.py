@@ -916,7 +916,7 @@ def _write_report(path, out):
     if curves:
         ti = out.get("train_info") or {}
         rep.section("the fine-tune's validation curves (ticket 21's Record: {})".format(info.get("TRAIN_RECORD")))
-        for k in ("MODE_WEIGHTING", "VALID_PROBES", "HESSIAN_WEIGHT", "PT_N_FRAMES", "REPLAY_PER_HESSIAN_FRAME",
+        for k in ("VALID_PROBES", "HESSIAN_WEIGHT", "PT_N_FRAMES", "REPLAY_PER_HESSIAN_FRAME",
                   "STAGE_TWO_EPOCH", "HESSIAN_CURVE_MOVED", "N_EPOCHS"):
             if k in ti:
                 rep.kv(k, ti.get(k))

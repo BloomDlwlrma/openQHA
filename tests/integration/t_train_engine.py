@@ -99,7 +99,6 @@ def main():
               and argv[argv.index("--loss_module") + 1] == train_run.LOSS_MODULE
               and argv[argv.index("--hessian_key") + 1] == "REF_hessian"
               and argv[argv.index("--default_dtype") + 1] == "float64"
-              and argv[argv.index("--hessian_mode_weighting") + 1] == "cartesian"
               and argv[argv.index("--start_swa") + 1] == "3" and "--ema" in argv
               and argv[argv.index("--scheduler_patience") + 1] == "20", argv)
         check("dry run: the Record counts the frames and their Hessians (2 train / 2 valid, all labelled), no Replay",
@@ -150,7 +149,7 @@ def main():
         # the epoch -1 Hessian value is the base model's fixed-probe estimate of the Cartesian
         # target: within 4 s.e. of the exact epoch-zero balance (one frame, k = 4 Rademacher)
         base_calc = MACECalculator(model_paths=str(engine.model_path()), device="cpu", default_dtype="float64")
-        bal = smoke_fit.epoch_zero_balance(base_calc, info["VALID_FILE"], mode_weighting="cartesian")
+        bal = smoke_fit.epoch_zero_balance(base_calc, info["VALID_FILE"])
         atoms = read(str(info["VALID_FILE"]), index="0", format="extxyz")
         n3 = 3 * len(atoms)
         h_r = np.asarray(atoms.info["REF_hessian"], dtype=float).reshape(n3, n3)

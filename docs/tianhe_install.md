@@ -289,6 +289,16 @@ Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`
 > commit as `mace_fork_commit`; a pip wheel answers `unknown` and `05_train` refuses it.
 > `scripts/tooling/s0_check_weights.py` prints the two lines. `install_env_tianhe.slurm`
 > does the replacement in its section 9 when `MACE_FORK` points at the checkout.
+>
+> The branch carries four commits on top of the base tag: **A** the per-structure
+> Hessian label (`--hessian_key`), **B** the external-loss hook (`--loss external
+> --loss_module`), **C** multihead fine-tuning with that hook and the `evaluate`
+> changes, **D** (2026-09-23) `--hessian_mode_weighting` and `--hessian_probe modes`
+> removed -- there is one target (S0-C-64) -- and `--valid_probes_key` added: the
+> per-structure fixed probe set the dataset draws and the loss reads at evaluation
+> (S0-C-67). There is no pinned sha to keep in step: `engine.provenance()` reads the
+> checkout's own commit and `05_train` refuses a dirty or unknown one, so the only
+> thing that must be true is that the checkout is committed.
 
 ### 3.2 `openqha`
 

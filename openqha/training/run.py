@@ -34,8 +34,8 @@ heads' counts from mace's log and prints the ratio as replay frames per Hessian 
 
 THE WEIGHT (S0-C-60). `hessian_weight="balance"` makes the driver measure, on the BASE
 model and the run's own train file before the first step, the epoch-0 balance
-`w_H = w_F L_F / L_H` with `L_H` the Cartesian target (`smoke_fit.epoch_zero_balance`,
-`mode_weighting = cartesian`) and train with that value; the Record keeps the rule, the
+`w_H = w_F L_F / L_H` with `L_H` the Cartesian target, the full matrix
+(`smoke_fit.epoch_zero_balance`) and train with that value; the Record keeps the rule, the
 three terms and the resolved `HESSIAN_WEIGHT`. A number is used as given.
 
 THE CONTROL (S0-C-55; the base's recipe, MACE-OFF23): every flag that steers the loop
@@ -122,9 +122,8 @@ SCHEMA = {
         "BALANCE_L_E": ("Double", None, "the base model's per-atom energy MSE on the train file (balance rule only, else 0)"),
         "BALANCE_L_F": ("Double", None, "the base model's force MSE on the train file (balance rule only, else 0)"),
         "BALANCE_L_H": ("Double", None, "the base model's Cartesian Hessian loss ||dH||^2/(9N^2) on the train file's Hessian frames (balance rule only, else 0)"),
-        "PROBE": ("String", None, "rademacher / gaussian / modes / cartesian (Algorithm 1): the training probes"),
+        "PROBE": ("String", None, "rademacher / gaussian / cartesian (Algorithm 2): the training probes"),
         "N_PROBES": ("Integer", None, "probes per structure per step (k of eq. 6)"),
-        "MODE_WEIGHTING": ("String", None, "the target: cartesian (the raw matrix, S0-C-53, default), entropy or none (the projected diagnostics)"),
         "VALID_PROBES": ("String", None, "the validation estimator: rademacher k=4 fixed per frame (S0-C-55)"),
         "MAX_NUM_EPOCHS": ("Integer", None, "epochs asked for"),
         "N_EPOCHS": ("Integer", None, "epochs the log holds"),
@@ -315,7 +314,7 @@ def hessian_weight_balance(foundation_name, train_file, energy_weight=1.0, force
     from . import smoke_fit
     calc, _name, _prov = engine.calculator(device=device, name=foundation_name)
     b = smoke_fit.epoch_zero_balance(calc, train_file, energy_weight=energy_weight, forces_weight=forces_weight,
-                                     probe="cartesian", mode_weighting="cartesian")
+                                     probe="cartesian")
     if not b["HESSIAN_WEIGHT_BALANCED"]:
         raise ValueError("no Hessian frame in {} (or L_H = 0): the balance rule has nothing to balance".format(train_file))
     return b
@@ -352,13 +351,13 @@ def exact_valid_hessian(model_name_or_path, valid_file, device="cpu"):
     """
     from . import smoke_fit
     calc = _calculator_for(model_name_or_path, device=device)
-    b = smoke_fit.epoch_zero_balance(calc, valid_file, probe="cartesian", mode_weighting="cartesian")
+    b = smoke_fit.epoch_zero_balance(calc, valid_file, probe="cartesian")
     return None if not b["N_HESSIAN_FRAMES"] else float(b["L_H"])
 
 
 def mace_argv(train_file, valid_file, run, work_dir, foundation, level, *, energy_weight=1.0,
               forces_weight=100.0, hessian_weight=1.0, probe="rademacher", n_probes=4,
-              mode_weighting=phl_loss.DEFAULT_MODE_WEIGHTING, max_epochs=100, batch_size=4, valid_batch_size=None,
+              max_epochs=100, batch_size=4, valid_batch_size=None,
               seed=123, device="cpu", lr=None, multiheads=False, pt_train_file=None, pt_valid_file=None,
               scheduler_patience=DEFAULT_SCHEDULER_PATIENCE, patience=DEFAULT_PATIENCE,
               eval_interval=DEFAULT_EVAL_INTERVAL, ema=True, swa=True, start_swa=None, swa_lr=None,
@@ -389,7 +388,6 @@ def mace_argv(train_file, valid_file, run, work_dir, foundation, level, *, energ
         "--hessian_weight", repr(float(hessian_weight)),
         "--hessian_probe", str(probe),
         "--n_hessian_probes", str(int(n_probes)),
-        "--hessian_mode_weighting", str(mode_weighting),
         "--max_num_epochs", str(int(max_epochs)),
         "--batch_size", str(int(batch_size)),
         "--valid_batch_size", str(int(valid_batch_size or batch_size)),
@@ -650,7 +648,6 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
         BALANCE_L_H=float(balance["L_H"] or 0.0),
         PROBE=str(settings.get("probe", "rademacher")),
         N_PROBES=int(settings.get("n_probes", 4)),
-        MODE_WEIGHTING=str(settings.get("mode_weighting", phl_loss.DEFAULT_MODE_WEIGHTING)),
         VALID_PROBES=phl_loss.VALID_PROBES_LABEL,
         MAX_NUM_EPOCHS=int(settings.get("max_epochs", 100)),
         BATCH_SIZE=int(settings.get("batch_size", 4)),
@@ -795,7 +792,7 @@ def _write_report(path, info, epochs):
                      phl_loss.VALID_N_PROBES,
                      "-" if _record_num(info, "VALID_HESSIAN_PROBE_LAST") < 0 else "{:.4e}".format(_record_num(info, "VALID_HESSIAN_PROBE_LAST")),
                      "-" if _record_num(info, "VALID_PROBE_OFFSET_RUN") < 0 else "{:.1%}".format(_record_num(info, "VALID_PROBE_OFFSET_RUN"))))
-    for k in ("LOSS", "MODE_WEIGHTING", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "HESSIAN_WEIGHT_RULE",
+    for k in ("LOSS", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "HESSIAN_WEIGHT_RULE",
               "BALANCE_L_E", "BALANCE_L_F", "BALANCE_L_H", "PROBE", "N_PROBES", "VALID_PROBES"):
         rep.kv(k, info.get(k))
     if info.get("HESSIAN_WEIGHT_RULE") == "balance":
@@ -855,8 +852,8 @@ def registry_entry(info):
                 filename="{}.model".format(name),
                 source="{} + config {}".format(info["INDEX_FILE"], info["CONFIG_SHA256"][:16]),
                 note="Fine-tuned on {} ({} frames, {} with Hessians) with the Hessian loss "
-                     "(target {}, w_H {}, probe {} k={}){}; mace fork {}.".format(
-                         info["NAME"], info["N_TRAIN"], info["N_TRAIN_HESSIAN"], info["MODE_WEIGHTING"],
+                     "(the full Cartesian matrix, w_H {}, probe {} k={}){}; mace fork {}.".format(
+                         info["NAME"], info["N_TRAIN"], info["N_TRAIN_HESSIAN"],
                          info["HESSIAN_WEIGHT"], info["PROBE"], info["N_PROBES"], replay,
                          info["MACE_FORK_COMMIT"][:12]),
                 params_sha256=info.get("MODEL_PARAMS_SHA256"))

@@ -218,10 +218,11 @@ mode and given the force graph at evaluation (commit C):
     --loss external --loss_module openqha.training.phl_loss:build
 
 Nothing here reimplements a training loop. **The target is the Cartesian matrix**
-(S0‑C‑53; `--mode-weighting cartesian`, the default): `L_H = ‖H_θ − H_r‖²_F / (9N²)`,
+(S0‑C‑64, and there is no switch to say otherwise): `L_H = ‖H_θ − H_r‖²_F / (9N²)`,
 PHL's eq. 2.1', no mass weighting, no projection — derived in
-`docs/tutorials/T05_openQHA_Theory_PHL_Finetune_EFH_to_wB97M.ipynb` and T04; `entropy` /
-`none` are the projected diagnostics of T03.
+`docs/tutorials/T05_openQHA_Theory_PHL_Finetune_EFH_to_wB97M.ipynb` and T04. Fork commit D
+took `--hessian_mode_weighting` and `--hessian_probe modes` out of mace's parser, so a run
+that asks for the projected target of T03 fails in argument parsing.
 
 ```bash
 # what would run, and the Record header -- no training

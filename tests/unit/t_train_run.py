@@ -103,7 +103,8 @@ def main():
           and pc["--ema"] is True and pc["--swa"] is True and pc["--start_swa"] == "75" and pc["--swa_lr"] == "0.00025", pc)
     check("the Stage Two weights: 1000 / 100 and w_H^(2) = 0.02 x 100 / 100 = 0.02",
           (pc["--swa_energy_weight"], pc["--swa_forces_weight"], pc["--swa_hessian_weight"]) == ("1000.0", "100.0", "0.02"), pc)
-    check("the target defaults to cartesian", pc["--hessian_mode_weighting"] == "cartesian")
+    check("no --hessian_mode_weighting is emitted: fork commit D took it out of the parser",
+          "--hessian_mode_weighting" not in pc, sorted(pc))
     ctl = train_run.control_settings(8, lr=0.004, swa_forces_weight=10.0, hessian_weight=0.5, forces_weight=1000.0)
     check("control_settings as arithmetic: start_swa 6, swa_lr 1e-4, w_H^(2) = 0.5 x 10 / 1000 = 0.005",
           ctl["START_SWA"] == 6 and abs(ctl["SWA_LR"] - 1e-4) < 1e-15 and abs(ctl["SWA_HESSIAN_WEIGHT"] - 0.005) < 1e-15, ctl)
@@ -259,7 +260,7 @@ def main():
                "N_TRAIN", "N_TRAIN_HESSIAN", "N_VALID", "N_VALID_HESSIAN", "FOUNDATION_MODEL",
                "FOUNDATION_PARAMS_SHA256", "ENGINE_PARAMS_SHA256", "CONFIG_FILE", "CONFIG_SHA256",
                "LOSS", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "PROBE", "N_PROBES",
-               "MODE_WEIGHTING", "VALID_PROBES", "MAX_NUM_EPOCHS", "BATCH_SIZE", "SEED", "DEVICE", "DTYPE",
+               "VALID_PROBES", "MAX_NUM_EPOCHS", "BATCH_SIZE", "SEED", "DEVICE", "DTYPE",
                "MULTIHEADS", "PT_TRAIN_FILE", "PT_VALID_FILE", "PT_N_FRAMES", "PT_CONFIG_WEIGHT", "PT_HEAD_TRAIN",
                "PT_HEAD_VALID", "FT_HEAD_TRAIN", "FT_HEAD_VALID", "REPLAY_PER_HESSIAN_FRAME",
                "REAL_PT_DATA_RATIO_THRESHOLD", "HESSIAN_CURVE_MOVED", "STAGE_TWO_EPOCH",
@@ -274,7 +275,7 @@ def main():
 
     info = dict(FOUNDATION_MODEL="MACE-OFF23_medium", RUN="w1", INDEX_FILE="/r/index.dat",
                 CONFIG_SHA256="0123456789abcdef" * 4, NAME="draw300", N_TRAIN=90, N_TRAIN_HESSIAN=30,
-                HESSIAN_WEIGHT=0.01, PROBE="rademacher", N_PROBES=4, MODE_WEIGHTING="cartesian",
+                HESSIAN_WEIGHT=0.01, PROBE="rademacher", N_PROBES=4,
                 MACE_FORK_COMMIT="b" * 40, MODEL_PARAMS_SHA256="c" * 64, MULTIHEADS=True, PT_N_FRAMES=5000,
                 REPLAY_PER_HESSIAN_FRAME=5000 / 30, PT_CONFIG_WEIGHT="1.0")
     e = train_run.registry_entry(info)
@@ -282,7 +283,7 @@ def main():
           e["name"] == "MACE-OFF23_medium-w1" and e["filename"] == "MACE-OFF23_medium-w1.model"
           and "/r/index.dat" in e["source"] and "0123456789abcdef" in e["source"]
           and e["params_sha256"] == "c" * 64 and "w_H 0.01" in e["note"] and "Replay 5000 frames" in e["note"]
-          and "target cartesian" in e["note"], e)
+          and "the full Cartesian matrix" in e["note"], e)
 
     # --- the Record writes and reads back ------------------------------------------------------------
     with tempfile.TemporaryDirectory() as td:
@@ -294,7 +295,7 @@ def main():
         for k in ("VALID_HESSIAN_EXACT_BEFORE", "VALID_HESSIAN_EXACT_AFTER", "VALID_HESSIAN_PROBE_LAST",
                   "VALID_PROBE_OFFSET_RUN"):
             full[k] = -1.0
-        for k in ("PT_CONFIG_WEIGHT", "VALID_PROBES", "MODE_WEIGHTING"):
+        for k in ("PT_CONFIG_WEIGHT", "VALID_PROBES"):
             full[k] = "x"
         train_run.write_record(td, full, [dict(epoch=0, split="train", loss=1.0,
                                                rmse_e_per_atom_meV=2.0, rmse_f_meV_A=3.0),
