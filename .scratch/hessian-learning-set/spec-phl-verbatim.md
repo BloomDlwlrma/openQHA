@@ -1,43 +1,69 @@
-# Spec: PHL verbatim -- the training path rebuilt one algorithm per step, each with its derivation (2026-09-22)
+# Spec: PHL verbatim -- deleting the projected path, one algorithm per step (tickets 35-38)
 
-Label: `ready-for-agent`. Tracker: `.scratch/hessian-learning-set/`. This spec supersedes the
-loss side of `spec-fine-tune-basins.md` (its "Loss = PHL's Cartesian term" decision, which kept
-the projected variants as diagnostics) and `design-phl-loss.md` (the projected, mass-weighted,
-entropy-weighted loss of 2026-09-18, ticket 11). Everything else of `spec-fine-tune-basins.md`
-stands: basin frames only (S0-C-54), the Replay (S0-C-56/57/60), the fixed-probe validation
-(S0-C-55), the judge's gate on the matrix itself (S0-C-58/59), the gate closed (S0-C-60), the
-R4 chain. The user's ruling of 2026-09-22 (to be recorded as S0-C-61 when this spec is
-approved): *the loss is the full Cartesian Hessian, trained through PHL's random-probe
-Hessian-vector products; "projected" means the random-vector projection and nothing else; the
-Eckart projection of the mass-weighted Hessian is the standard vibrational analysis and belongs
-to evaluation only.* T04 and T05 were rewritten to this state the same day (T04 §§1-7, T05
-§§1-8); this spec is their derivations turned into six build steps, one per algorithm.
+Label: `ready-for-agent`. Tracker: `.scratch/hessian-learning-set/`. **Ruling: S0-C-64**
+(2026-09-23) -- *the training loss is PHL's as published: the Cartesian Hessian's MSE, per
+structure over (3N)^2, estimated by Hutchinson random probes through Hessian-vector products;
+"projected" means the random-vector projection and nothing else; mass-weighting and the Eckart
+projection exist only in evaluation, where they are the standard vibrational analysis.* This
+spec supersedes the loss side of `spec-fine-tune-basins.md` (its "Loss = PHL's Cartesian term"
+decision, which kept the projected variants as diagnostics and scan rows) and
+`design-phl-loss.md` (the projected, mass-weighted, entropy-weighted loss of 2026-09-18,
+ticket 11). Everything else of `spec-fine-tune-basins.md` stands.
+
+**What is already settled, and is not this spec's work.** S0-C-53 made the Cartesian matrix the
+target; S0-C-54 basin frames only; S0-C-55 the fixed-probe validation; S0-C-56/57/60 the Replay
+and the single production row R4; S0-C-58/59 the judge's gate on the matrix itself and its
+closure. On 2026-09-23, under **S0-C-65**: ticket 33 moved the split to MACE-OFF's granularity
+(whole test molecules at 5 %, validation by frame from the training molecules), ticket 34 added
+the exact anchors on the validation file before and after training (path A, no fork change), and
+ticket 32's probe calibration lost its verdict columns -- whether K = 4 is enough is read from a
+real run, not extrapolated. T04 and T05 were rewritten to PHL verbatim on 2026-09-22 and are
+re-executed at the end of this work, because the probe module's signatures change under it.
+
+What remains is the deletion itself: the code still carries both loss paths, and the fork still
+offers the flags that select the one that no longer exists. Six steps, one algorithm each, with
+the derivation each step rests on; steps 0 and 4 are done (tickets 33/34/32) and are kept here
+because the derivations are what the remaining tickets are checked against.
 
 ## Problem statement
 
-The training code carries two loss paths. The one that trains (S0-C-53: PHL's Cartesian
+The training code carries two loss paths: the one that trains (S0-C-53/64: PHL's Cartesian
 Hessian, sampled by Hessian-vector products) and one that never trains -- the projected,
 mass-weighted, entropy-weighted norms designed on 2026-09-18 when the target was the msRRHO
-entropy, kept after S0-C-53 as "diagnostics and scan rows". The second path is half of
-`phl.py`, a branch in every `FrameConstants`, a three-way `mode_weighting` flag in the loss,
-the driver, the Slurm script, the fork's argument parser and every Record, a three-row ladder in
-the smoke fit, a `LOSS_EXACT` column in the judge, the whole of T03 and -- until today -- the
-hardest sections of T04 and T05. No paper trains on it (Rodriguez, PHL, PFT, HIP all train on
-the Cartesian matrix; HIP projects only in evaluation). It costs tests, reading time and a
-permanent risk of the wrong default; it buys nothing the judge does not already read from the
-trained matrix by the standard analysis.
+entropy, kept after S0-C-53 as "diagnostics and scan rows". The second path is two thirds of
+`phl.py` (7 functions and a `metric` argument threaded through 3 more), a branch in every
+`FrameConstants` with 7 extra slots, a three-way `mode_weighting` in the loss, the driver, the
+Slurm script and every Record, a `modes` probe set that needs the reference eigenvectors, a
+three-row balance ladder in the smoke fit, a `LOSS_EXACT` column in the judge, and two flags in
+the fork's argument parser.
+
+Nobody trains on it: Rodriguez 2025 (element-wise RMSE), PHL (eq. 6, MSE with Hutchinson probes),
+PFT (MAE on a randomly sampled column) and HIP (element-wise MAE/MSE plus a subspace term in the
+REFERENCE Cartesian eigenbasis) all train on the Cartesian matrix, and HIP's mass-weighting and
+Eckart projection appear only where frequencies are read. Keeping the path costs tests, reading
+time -- it was the hardest part of T04 and T05 until they were rewritten -- and carries a
+permanent risk: a flag that mace parses but our loss no longer reads would sit in every
+`config.yaml` claiming a target that did not run, which is the failure S0-C-56 was written
+about. It buys nothing the judge does not already read from the trained matrix by the standard
+analysis.
 
 ## Solution
 
-Rebuild the training path as PHL published it, one algorithm per step, deleting the projected
-path as each step is reached: Algorithm 0 (the Dataset and the Replay -- unchanged, verified),
-Algorithm 1 (the frame's constants: the Label and its seed, nothing diagonalised), Algorithm 2
-(the probes and the reference matvec), Algorithm 3 (the training step: the HVP, the masked mean,
-the third-order graph, the weights), Algorithm 4 (evaluation on fixed probes), Algorithm 5 (the
-judge: the target itself as the gate, the standard vibrational analysis as the reference rows).
-Each step's ticket carries the full derivation below, so that the code, the tests and the
-tutorials say the same thing and nothing more. At the end, one loss module of ~half the size,
-one probe module without a metric switch, no `mode_weighting` anywhere, T03 archived, ADR 0006.
+Delete the projected path in the order the algorithms run, so that every step leaves the suite
+green and the Record honest: **35** Algorithms 1-2 (the frame's constants become the Label, the
+normalisation and the seed; the probes become the draw and one matvec; the seven projected
+functions and the `metric` argument go, with the derivations of Step 2 as the tests), **36**
+Algorithm 3 (the training step loses `mode_weighting` in the loss, the driver, the Slurm script
+and the Record; fork commit D removes `--hessian_mode_weighting` and the `modes` choice of
+`--hessian_probe`; the smoke fit's ladder becomes probe kind x K on the one target), **37**
+Algorithm 4 (the fixed-probe evaluation on the reduced constants), **38** Algorithm 5 and the
+documents (the judge's `LOSS_EXACT` column goes, the frequency rows are named for what they are,
+CONTEXT and ADR 0006 say it once, T03 is archived with a banner and T04/T05 are re-executed
+against the new signatures).
+
+At the end: one probe module without a metric switch, a loss module about half its size, no
+`mode_weighting` anywhere, a fork whose parser offers only what the loss reads, and a judge table
+in which every column is a quantity the loss trains or the standard analysis computes.
 
 ## User stories
 
@@ -57,6 +83,9 @@ one probe module without a metric switch, no `mode_weighting` anywhere, T03 arch
 14. As the campaign, I want the Replay's Record to carry the expected coverage of the draw (the number of distinct SPICE molecules a uniform-by-frame draw of n frames touches), so that Algorithm 0's arithmetic is a Record field and not a notebook calculation.
 15. As a reader of CONTEXT.md, I want the Loss entry to say "PHL's full-Hessian loss sampled by random probes" and the Judge entry to name the standard vibrational analysis for the frequency rows, so that the glossary matches the code.
 16. As a future reader, I want ADR 0006 to say why the loss is PHL verbatim and why the Eckart projection is evaluation-only, so that the projected loss is not re-adopted by accident.
+17. As a reader of CONTEXT.md, I want the distribution entry to say that the production split is by MOLECULE (S0-C-65) and that `interpolation` is therefore empty in production, so that the glossary stops describing the split ticket 33 replaced.
+18. As the person paying for the campaign, I want every step of the deletion to leave the unit suite and both integration suites green, so that the deletion can stop half-way without leaving a broken tree.
+19. As a maintainer, I want `phl.estimator_variance` and `phl.make_probes` to keep the names and the meanings the tutorials cite, so that T04's equation numbers still point at the functions after the signatures shrink.
 
 ## Seams (where the behaviour is tested)
 
@@ -405,6 +434,66 @@ frequency rows are unchanged in code and restated in the docstring, CONTEXT's Ju
 T05 §6 as the standard vibrational analysis. The msRRHO branch (`thermochem.hessian`,
 `hessian_compare`) keeps its Eckart projection -- that is what a frequency is.
 
+## Implementation decisions: what goes, file by file
+
+The inventory below is the survey of 2026-09-23, so that the tickets are bounded and nothing is
+found later "still importing it".
+
+**It is the END state of tickets 35-38, not a list for any one of them.** A name is deleted by
+the ticket that removes its LAST caller, so the vibrational-analysis half of `phl.py`
+(`mass_weighted` .. `mode_basis_terms`) survives 35 for the smoke fit's diagnostic (36) and the
+judge's `loss_exact` row (38), under a banner saying it is not a training path; and
+`MODE_WEIGHTINGS` / `DEFAULT_MODE_WEIGHTING` survive 35 as the DRIVER's vocabulary for a flag
+that only 36 can take out of the fork's parser -- reduced to `("cartesian",)`, with
+`build(args)` raising on anything else rather than accepting a flag it ignores. Ticket 35's
+closing note states both.
+
+**`openqha/training/phl.py`** (261 lines). Goes: `mass_weighted`, `projector`, `reference_modes`,
+`entropy_weights`, `weighted_projector`, `error_operator`, `projected_loss_full`,
+`mode_basis_terms`; the `metric` argument of `make_probes` and `estimator_variance`; the `modes`
+probe set; `masses` and `positions` from every signature; `METRICS`. Stays, with the same names:
+`make_probes(H_r, k, mode, rng)` returning the draw, `r_j = H_r v_j` and the denominator;
+`cartesian_loss_full` (renamed `loss_full`, the old name kept as an alias for one release);
+`estimator_from_products`; `estimator_variance(H_theta, H_r, k)` with both probe kinds. The
+module docstring stops being "Algorithm 1 of the projected Hessian loss".
+
+**`openqha/training/phl_loss.py`** (402 lines). Goes: `MODE_WEIGHTINGS`,
+`DEFAULT_MODE_WEIGHTING`, the `mode_weighting` / `temperature_K` / `preset` constructor
+arguments, the projected branch of `FrameConstants` and its slots (`masses`, `positions`,
+`metric`, `modes_r`, `lam_r`, `weights`, `projector`, `inv_sqrt_m`, `n_vib`, `projector_t`,
+`inv_sqrt_m_t`), the `probe == "modes"` refusal (there is no such probe), and `valid_target` in
+`eval_summary`. `build(args)` stops reading `args.hessian_mode_weighting`.
+
+**The fork, commit D** (`openQHA-Hessian`): `mace/tools/arg_parser.py` loses
+`--hessian_mode_weighting` and the `"modes"` choice of `--hessian_probe`; `tests/
+test_external_loss.py` loses the three assertions that named them. Nothing else in the fork
+changes: commits A-C stand.
+
+**`openqha/training/run.py`**: `mace_argv` stops emitting `--hessian_mode_weighting` and loses
+the `mode_weighting` parameter; the Record loses `MODE_WEIGHTING` (schema, info dict, report
+line, `registry_entry`'s note); `hessian_weight_balance` and `exact_valid_hessian` stop passing
+`mode_weighting=` to `epoch_zero_balance`.
+
+**`openqha/training/smoke_fit.py`**: `epoch_zero_balance` loses `mode_weighting` and computes
+only `phl.loss_full`; `MODE_WEIGHTING` leaves its Record.
+
+**`workflows/hessian_learning/05_train.py`** and **`hpc/slurm/hl_train.slurm`**:
+`--mode-weighting` / `MODE_WEIGHTING` go; the printed summary line loses the column.
+
+**`scripts/production/s0_hl_smoke_fit.py`**: the balance table becomes one row (there is one
+target); the ladder becomes probe kind (`rademacher`, `gaussian`) x K in {1, 2, 4}, with the
+`modes` and `none` rows gone; both `MODE_WEIGHTING` schema entries go.
+
+**`openqha/training/judge.py`**: `loss_exact` / `base_loss_exact` (frame rows), `LOSS_EXACT` /
+`BASE_LOSS_EXACT` (the distribution and class blocks) and the two `phl.projected_loss_full`
+calls go; `loss_cartesian` / `LOSS_CARTESIAN` stay -- that is the gate's quantity. The
+`MODE_WEIGHTING` key disappears from the train-Record echo. `hessian_compare` is untouched: its
+mass-weighting and Eckart projection are the standard vibrational analysis and stay exactly
+where they are.
+
+**`scripts/tooling/s0_probe_calibration.py`**: the one `metric="cartesian"` call site follows the
+new signature.
+
 ## Documentation decisions (with step 5)
 
 - T03 (`T03_openQHA_Theory_Projected_Hessian_Loss.ipynb`) moves to `docs/tutorials/archive/`
@@ -413,7 +502,10 @@ T05 §6 as the standard vibrational analysis. The msRRHO branch (`thermochem.hes
 - T04 and T05 are re-executed after steps 2-3 land (`phl.make_probes` loses `metric=`).
 - CONTEXT.md: the Loss entry says PHL's full-Hessian loss sampled by random probes (Algorithms
   1-4); the Judge entry names the standard vibrational analysis for the frequency rows; the
-  "projected" wording is removed from the training entries.
+  "projected" wording is removed from the training entries. Carried over from ticket 33: the
+  DISTRIBUTION entry still describes the by-frame production split ("held out by FRAME (the
+  production split, round-5 Q4)") -- it becomes the by-molecule split of S0-C-65, with
+  `interpolation` named as empty in production and kept for the smoke / fit Datasets.
 - ADR 0006 "PHL verbatim: the Cartesian Hessian trained by random-probe HVPs; the Eckart
   projection is evaluation-only" (context: design-phl-loss.md and ticket 11; decision; consequences:
   what was removed, where the frequency analysis lives). `design-phl-loss.md` marked superseded.
@@ -421,36 +513,40 @@ T05 §6 as the standard vibrational analysis. The msRRHO branch (`thermochem.hes
 
 ## Testing decisions
 
-- A good test runs a derivation on stored numbers or reads an argv, a Record, an index or a tool's
-  exit -- never mace's internals. Prior art: `t_phl.py` (the propanal pair), `t_phl_loss.py`
-  (synthetic batches), `t_train_run.py` (argv and Record), `t_smoke_fit.py`, `t_judge.py`, the fork's
-  `test_external_loss.py`.
-- Step 0: the draw's `EXPECTED_MOLECULES` equals the closed form on `spice_tiny`; the prefix
-  property (`--n 3` is a prefix of `--n 5`) and the disjointness assertion stay as they are.
-- Step 1: `FrameConstants` exposes the Label, $\nu$, the seed and nothing diagonalised; the seed is
-  a function of the Label's bytes only.
-- Step 2 (the derivations as tests, on the propanal pair): the Rademacher and Gaussian means over
-  4000 draws are within a few s.e. of `loss_full`; the Rademacher variance matches Derivation 2.2
-  within 5 %, the Gaussian variance matches $2\|B\|_F^2$; the $3N$ unit probes reproduce `loss_full`
-  to $10^{-12}$; `estimator_variance` returns both kinds; `modes` and `metric=` are gone (a
-  `TypeError` / `ValueError` test).
-- Step 3: the loss's forward on a three-graph synthetic batch equals the mean of the labelled
-  graphs alone; the gradient through the third-order graph matches finite differences; the driver
-  never emits `--hessian_mode_weighting`; the Record has no `MODE_WEIGHTING`; `epoch_zero_balance`
-  takes no `mode_weighting`; the fork's parser rejects the flag and `modes` (fork test).
-- Step 4: the fixed-probe tests of ticket 21 on the reduced constants; the integration fine-tune
-  (4 epochs, basin only) still yields the three curves and a moving Hessian curve.
-- Step 5: the judge's frame rows have no `loss_exact`; the gate row still reads 0 for base-vs-base
-  and FAIL for the 0.81x potential (unit and engine tests).
-- Full unit suite and both integration suites green before each ticket's commit is handed over.
+- A good test runs a derivation on stored numbers, or reads an argv, a Record, an index or a
+  tool's exit -- never mace's internals. Prior art, all of it already in the tree:
+  `t_phl.py` (the propanal pair: the ORCA Hessian and the stored MACE Hessian at one geometry),
+  `t_phl_loss.py` (forward on synthetic batches), `t_train_run.py` (argv pairs and the Record),
+  `t_smoke_fit.py`, `t_judge.py`, `t_probe_calibration.py`, and the fork's `test_external_loss.py`.
+- **35**: the estimator's three properties on the fixture pair -- unbiased for Rademacher and
+  Gaussian over many draws; the Rademacher variance equal to eq. 2.3 and strictly below the
+  Gaussian one; the 3N unit probes exact to 1e-12 -- plus: `make_probes` takes no `metric` and
+  no masses (a `TypeError`), `mode="modes"` is not a probe, and the seven deleted functions are
+  not importable. `t_phl.py` shrinks from 27 checks to the ones that test what is left;
+  `t_phl_loss.py` keeps the fixed-probe and masking checks with the reduced constructor.
+- **36**: the driver never emits `--hessian_mode_weighting`; no Record carries `MODE_WEIGHTING`;
+  `epoch_zero_balance` takes no `mode_weighting`; the fork's parser REFUSES both the flag and
+  `--hessian_probe modes` (the fork's own test); the smoke fit's ladder rows are the new ones.
+- **37**: the fixed-probe tests of ticket 21 on the reduced `FrameConstants` (two calls on one
+  frame agree to 1e-12, another mace seed gives the same value, different frames differ, training
+  draws differ), and the integration fine-tune still yields three validation curves, a moving
+  Hessian curve and the exact anchors of ticket 34.
+- **38**: the judge's frame rows carry no `loss_exact`; the gate row still reads exactly 0 for
+  base-against-base and FAIL for the 0.81x potential (`t_judge.py`, `t_judge_engine.py`);
+  `examples/README.md` points at the archived T03; T04 and T05 execute with 0 errors.
+- Every ticket ends with the full unit suite (59 files) and both integration suites green before
+  its commit is handed over.
 
 ## Out of scope
 
-The judge's rows and thresholds beyond the `LOSS_EXACT` removal (S0-C-58/59/60 stand; the
-placeholder thresholds stay un-ruled); the R4 recipe and the campaign (ticket 16); active learning
-(round 12, parked); the exclusion-versus-refusal letter of ticket 19; the msRRHO pipeline's own
-Hessian analysis (it keeps its Eckart projection); upstreaming the fork; any change to
-`hvp.hvp_from_forces` or to the fork's commits A-C beyond the parser's two choices.
+The judge's rows and thresholds beyond the `LOSS_EXACT` removal (S0-C-58/59/60 stand; the 15 %,
+1.15x, 8.5 cm^-1 and 0.2 cal/mol/K numbers remain un-ruled placeholders); the R4 recipe and the
+campaign (ticket 16); active learning (round 12, parked); the exclusion-versus-refusal letter of
+ticket 19; the msRRHO pipeline's own Hessian analysis and `hessian_compare` (they keep their
+mass-weighting and Eckart projection -- that is what a frequency is); `openqha/quasi_harmonic`
+and the branch B tools, whose `mass_weighted*` names are their own; upstreaming the fork; any
+change to `hvp.hvp_from_forces` or to the fork's commits A-C beyond the parser's two choices;
+whether K = 4 is enough (ticket 34's anchors answer it on a real run).
 
 ## Further notes
 
@@ -461,18 +557,33 @@ target as an option -- the option is what made T04 hard to read and the code twi
 propanal fixture pair and the 2-methyloxirane frames remain the numerical bench for every
 derivation above; the same numbers appear in T04/T05 and in the tests.
 
+PHL's own weights are not adopted with its form. `lambda_F = 0.30` and `lambda_H = 0.09` were,
+in its words, "tuned to balance the relative contributions of forces and Hessian information
+against energies" on ANI, from scratch, in its units -- and the ratio is dimensional (the units
+of `lambda_H / lambda_F` are a length squared, so the same balance reads 0.30 in Angstrom and
+1.07 in Bohr). On our fixture, copied verbatim, it would put the Hessian term at 10.2x the force
+term at epoch 0, because the base model already fits E and F at its own level while its Hessians
+were never supervised (L_H / L_F ~ 34). We adopt the rule the sentence states, not the instance:
+`w_H = w_F L_F / L_H` measured on the base model over the run's own train file with the full
+matrix, recorded with its three terms (S0-C-60). The same reasoning voids any attempt to carry
+Rodriguez's `eta_H = 0.02`, which multiplies an RMSE rather than an MSE.
+
 ## Tickets, in order (`issues/`; proposed, for `/to-tickets`)
 
 | # | step | ticket | status | blocked by |
 |---|---|---|---|---|
-| 32 | 4 | the probe calibration (`s0_probe_calibration.py`): checks 1 and 2, `VALID_PROBE_OFFSET` / `VALID_PROBE_SEED_SPREAD`, `--project-n` | done 2026-09-23; the tianhe run is the user's | -- |
-| 33 | 0 | the MACE-OFF split granularity (S0-C-65): test = whole molecules 5 % (stratified) + the pinned seven, valid = 5 % of the training molecules' frames, `--split-by molecule` the default, the judge's empty `interpolation` row, the Replay Record's `EXPECTED_MOLECULES` (Derivation 0.3) | ready-for-agent | -- |
-| 34 | 4 | the exact anchors (path A, no fork change): the full matrix on the validation file before and after training, `VALID_HESSIAN_EXACT_BEFORE` / `_AFTER` and the last epoch's probe reading beside them | ready-for-agent | -- |
-| 35 | 1-2 | Algorithms 1-2: the frame's constants and the probes, PHL verbatim; the projected path removed from the probe and loss modules; the derivations as tests | ready-for-agent | -- |
+| 32 | 4 | the probe calibration (`s0_probe_calibration.py`): checks 1 and 2, the funnel diagnostic; its verdict columns voided the same day | done 2026-09-23; the tianhe run is the user's | -- |
+| 33 | 0 | the MACE-OFF split granularity (S0-C-65): test = whole molecules 5 % (stratified) + the pinned seven, valid = 5 % of the training molecules' frames, `--split-by molecule` the default with a `--resplit` guard, the judge's empty `interpolation` row | done 2026-09-23 (CONTEXT's distribution entry carried into 38) | -- |
+| 34 | 4 | the exact anchors (path A, no fork change): the full matrix on the validation file before and after training, `VALID_HESSIAN_EXACT_BEFORE` / `_AFTER` and the last epoch's probe reading beside them | done 2026-09-23 | -- |
+| 35 | 1-2 | Algorithms 1-2: the frame's constants and the probes, PHL verbatim; the projected path removed from the probe and loss modules; the derivations as tests | done 2026-09-23 | -- |
 | 36 | 3 | Algorithm 3: the training step without `mode_weighting`; fork commit D (the parser's two options); driver, Slurm, Record, smoke fit, balance | ready-for-agent | 35 |
 | 37 | 4 | Algorithm 4: the fixed-probe evaluation on the reduced constants; tests re-pointed; integration green | ready-for-agent | 35, 36 |
 | 38 | 5 | Algorithm 5: `LOSS_EXACT` removed; the frequency rows stated as the standard analysis; CONTEXT, ADR 0006, T03 archived, T04/T05 re-executed | ready-for-agent | 35, 36, 37 |
 
-Frontier: 33 and 34 (independent, and independent of the deletions); then 35, 36, 37, 38.
-The numbers 27-31 went to the other session's tickets (the energy window, the ANI-1 draw, the
-displaced frames) while this spec was being written; the work is the same, the labels moved.
+Frontier: **35** (nothing blocks it); then 36, 37, 38 in order -- each leaves the suite green, so
+the sequence can stop anywhere. The numbers 27-31 went to the other session's tickets (the energy
+window, the ANI-1 draw, the displaced frames) while this spec was being written; the work is the
+same, the labels moved. The Replay Record's `EXPECTED_MOLECULES` (Derivation 0.3) was proposed
+with ticket 33 and is not in it: it is a one-field addition to `s0_spice_pt_draw.py` and can ride
+with 36 or be dropped -- it records what the draw's coverage is, which is otherwise a notebook
+calculation.

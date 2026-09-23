@@ -10,8 +10,8 @@ a `DataLoader` batch; `phl_loss.graph_labels` slices the batch and every Hessian
 the fixture's to 1e-10; `has_hessian` is T F F F F; `REF_energy` / `REF_forces` equal
 `energy` / `forces`; `sqrt_masses` are ASE's; and the loss's full-matrix term on that
 batch, fed the MACE-level Hessian of the basin frame as `pred["hessian"]`, equals
-`phl.projected_loss_full` of the two fixture matrices. SKIPs if the fork's key is
-absent (a pip-installed mace).
+`phl.loss_full` of the two fixture matrices (eq. 1', the one target since S0-C-64).
+SKIPs if the fork's key is absent (a pip-installed mace).
 """
 import sys
 import tempfile
@@ -101,15 +101,15 @@ def main():
               and all(l[2] is None for l in labels[1:]) and np.abs(labels[0][3] - atoms_list[0].get_masses()).max() < 1e-12)
 
         # the loss's full-matrix term on this batch, with the MACE-level fixture Hessian as the model's
-        loss = phl_loss.WeightedEnergyForcesHessianLoss(mode_weighting="none")
+        loss = phl_loss.WeightedEnergyForcesHessianLoss()
         n_nodes = int(batch.ptr[-1])
         H_pred = torch.zeros(3 * n_nodes, 3 * n_nodes)
         H_pred[:30, :30] = torch.tensor(mace_basin.info["hessian"])
-        term = loss.projected_hessian_error_full(batch, dict(hessian=H_pred.reshape(3 * n_nodes, n_nodes, 3)))
-        exact = phl.projected_loss_full(mace_basin.info["hessian"], H_fix[0], atoms_list[0].get_masses(), atoms_list[0].positions)
-        check("the loss's full-matrix term on the batch = projected_loss_full(H_mace, H_ref) of the fixture (1e-12)",
+        term = loss.hessian_error_full(batch, dict(hessian=H_pred.reshape(3 * n_nodes, n_nodes, 3)))
+        exact = phl.loss_full(mace_basin.info["hessian"], H_fix[0])
+        check("the loss's full-matrix term on the batch = loss_full(H_mace, H_ref) of the fixture (1e-12)",
               abs(float(term) - exact) < 1e-12 and loss.last_terms["n_labelled"] == 1, (float(term), exact))
-        print("  (2-methyloxirane basin: MACE vs wB97M projected loss {:.4e} eV^2/A^4/amu^2 per mode)".format(exact))
+        print("  (2-methyloxirane basin: MACE vs wB97M Cartesian loss {:.4e} eV^2/A^4 per element)".format(exact))
 
         # a corrupted label is refused by name
         bad = atoms_list[0].copy(); bad.info = dict(atoms_list[0].info)

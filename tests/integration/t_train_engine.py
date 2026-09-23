@@ -156,7 +156,7 @@ def main():
         h_r = np.asarray(atoms.info["REF_hessian"], dtype=float).reshape(n3, n3)
         from openqha.training.judge import hessian_at
         h_e = hessian_at(base_calc, atoms)
-        se = np.sqrt(phl.estimator_variance(h_e, h_r, atoms.get_masses(), atoms.positions, k=4, metric="cartesian")["rademacher"])
+        se = np.sqrt(phl.estimator_variance(h_e, h_r, k=4)["rademacher"])
         h_init = curves["valid_hessian"][0][1]
         check("epoch -1 validation Hessian term = epoch_zero_balance's Cartesian L_H within 4 s.e. ({:.3e} vs {:.3e}, s.e. {:.1e})".format(
               h_init, bal["L_H"], se), abs(h_init - bal["L_H"]) < 4 * se + 1e-12, (h_init, bal["L_H"], se))
@@ -175,7 +175,7 @@ def main():
         from mace.tools import torch_geometric
         from mace.tools.train import evaluate
         torch.set_default_dtype(torch.float64)
-        loss_fn = phl_loss.WeightedEnergyForcesHessianLoss(probe="rademacher", n_probes=4, mode_weighting="cartesian", seed=1)
+        loss_fn = phl_loss.WeightedEnergyForcesHessianLoss(probe="rademacher", n_probes=4, seed=1)
         check("wants_hessian_at_eval False, wants_force_graph_at_eval True",
               loss_fn.wants_hessian_at_eval is False and loss_fn.wants_force_graph_at_eval is True)
         ks = mdata.KeySpecification.from_defaults()

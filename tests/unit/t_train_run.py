@@ -62,8 +62,8 @@ def main():
 
     # --- the command line -----------------------------------------------------------------
     argv = train_run.mace_argv("tr.xyz", "va.xyz", "r1", "/tmp/run", "/w/base.model", "lvl",
-                               hessian_weight=0.25, probe="modes", n_probes=7,
-                               mode_weighting="none", max_epochs=3, batch_size=2, seed=5, device="cuda")
+                               hessian_weight=0.25, probe="gaussian", n_probes=7,
+                               max_epochs=3, batch_size=2, seed=5, device="cuda")
     p = pairs(argv)
     check("the loss is ours, by name, through the fork's hook",
           p["--loss"] == "external" and p["--loss_module"] == "openqha.training.phl_loss:build"
@@ -74,8 +74,8 @@ def main():
     check("the isolated-atom energies come from the foundation (the energy zero does not move)",
           p["--E0s"] == "foundation")
     check("the probe settings reach mace",
-          (p["--hessian_weight"], p["--hessian_probe"], p["--n_hessian_probes"], p["--hessian_mode_weighting"])
-          == ("0.25", "modes", "7", "none"), p)
+          (p["--hessian_weight"], p["--hessian_probe"], p["--n_hessian_probes"])
+          == ("0.25", "gaussian", "7"), p)
     check("the loop settings reach mace",
           (p["--max_num_epochs"], p["--batch_size"], p["--seed"], p["--device"]) == ("3", "2", "5", "cuda"))
     check("without --multiheads the replay is off, no pt file is named and no duplication threshold is emitted",
