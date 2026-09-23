@@ -37,7 +37,10 @@ WHAT IT READS. `--tag`: the molecule tree `<root>/<tag>/<qid>/frames/`, preferri
 assembled `basin.<level>.extxyz` (`frame_labels.load_frames`) and falling back to the ORCA
 job files `orca.<level>.basin_bBB_kK.hess` (`frame_labels.parse_label`) for molecules whose
 labels are not assembled yet. `--frames`: a glob of extxyz files with `hessian` in info.
-Only basin frames carry a Hessian in the campaign (S0-C-54); `--generator` overrides.
+Only basin frames carry a Hessian in the campaign (S0-C-54); `--generator` overrides. A molecule
+whose branch A finished but whose Frame set does not exist yet (step 02 has not reached it) is
+skipped, not an error: the campaign's stages run at different speeds and this tool reads whatever
+is labelled so far.
 
 WHAT IT WRITES. `<out>` (default `probe_calibration.<level>.toml` beside the Dataset root or
 the working directory): `[ProbeCalibration]` (engine, level, counts, the exact mean, the
@@ -140,7 +143,7 @@ def labelled_frames(tag=None, root=None, level=None, species=(), limit=None, gen
     out = []
     f = {} if funnel is None else funnel
     f.setdefault("root", "-"); f.setdefault("tag_dir", "-"); f.setdefault("n_molecules", 0)
-    f.setdefault("n_with_assembled", 0); f.setdefault("n_with_orca", 0)
+    f.setdefault("n_with_frameset", 0); f.setdefault("n_with_assembled", 0); f.setdefault("n_with_orca", 0)
     f.setdefault("example_assembled", "-"); f.setdefault("example_orca", "-"); f.setdefault("example_molecule", "-")
     if frames_glob:
         for path in sorted(_glob.glob(str(frames_glob))):
@@ -166,13 +169,19 @@ def labelled_frames(tag=None, root=None, level=None, species=(), limit=None, gen
             f["example_assembled"] = str(assembled)
         got = [a for a in frame_labels.load_frames(mol, generator, level) if a.info.get("hessian") is not None]
         if got:
+            f["n_with_frameset"] += 1
             f["n_with_assembled"] += 1
             out.extend((a, "extxyz") for a in got)
             continue
         # not assembled yet: read the finished ORCA jobs of this molecule's frames
         folder = layout.frames_dir(mol)
+        try:
+            wanted = frame_labels.frame_list(mol, generators=(generator,))
+        except FileNotFoundError:
+            continue                    # branch A finished here, step 02 has not run yet: nothing to label
+        f["n_with_frameset"] += 1
         had = False
-        for gen, basin, k in frame_labels.frame_list(mol, generators=(generator,)):
+        for gen, basin, k in wanted:
             stem = layout.orca_frame_stem(level, gen, basin, k)
             if f["example_orca"] == "-":
                 f["example_orca"] = str(folder / (stem + ".hess"))
@@ -284,6 +293,8 @@ def main(argv=None):
               "exists" if Path(funnel["tag_dir"]).is_dir() else "DOES NOT EXIST"), file=sys.stderr)
         print("  molecules with branch A (_records/branchA.toml + basins.done): {}".format(funnel["n_molecules"]),
               file=sys.stderr)
+        print("  with a Frame set (frames/frames.toml, step 02): {}".format(funnel["n_with_frameset"]),
+              file=sys.stderr)
         print("  with an assembled label file: {}   e.g. {}".format(funnel["n_with_assembled"], funnel["example_assembled"]),
               file=sys.stderr)
         print("  with a finished ORCA Hessian job: {}   e.g. {}".format(funnel["n_with_orca"], funnel["example_orca"]),
@@ -293,16 +304,24 @@ def main(argv=None):
             print("\n  -> the root or the tag is wrong, or the environment was not sourced:\n"
                   "     source hpc/env/common.sh && source hpc/env/tianhe.sh   (sets S0_RUNS_ROOT)\n"
                   "     or pass it: --root <the directory that holds {}/>".format(args.tag), file=sys.stderr)
+        elif not funnel["n_with_frameset"]:
+            print("\n  -> branch A has finished but step 02 has not: there is no Frame set to label yet."
+                  "\n     python workflows/hessian_learning/02_frames.py --tag {}   (then 03_labels)".format(args.tag),
+                  file=sys.stderr)
         else:
-            print("\n  -> the molecules are there but no frame carries a Hessian at this level:\n"
-                  "     check the level spelling, or that 03_labels has finished a basin job\n"
-                  "     (ls {}/frames/ | head)".format(funnel["example_molecule"]), file=sys.stderr)
+            print("\n  -> the Frame sets are there but no frame carries a Hessian at this level:"
+                  "\n     check the level spelling, or that 03_labels has finished a basin job"
+                  "\n     (ls {}/frames/ | head)".format(funnel["example_molecule"]), file=sys.stderr)
         return 2
     calc, ename, prov = engine.calculator(device=args.device, name=args.engine)
     ks = sorted(set(int(k) for k in args.k))
     print("engine     {} ({})".format(ename, prov.get("params_sha256", "-")[:12]))
     print("frames     {} labelled frames of {} molecules at {}".format(
         len(frames), len({_frame_key(a)[0] for a, _s in frames}), args.level))
+    if args.tag:
+        print("           of {} molecules with branch A: {} have a Frame set, {} an assembled label file, "
+              "{} a finished ORCA Hessian job".format(funnel["n_molecules"], funnel["n_with_frameset"],
+                                                      funnel["n_with_assembled"], funnel["n_with_orca"]))
     print("probing    K = {}, {} seed sets, production K = {} ({})".format(
         ks, args.seed_sets, PRODUCTION_K, phl_loss.VALID_PROBE))
 

@@ -12,8 +12,10 @@ SEED_SPREAD in units of the exact mean and draws no verdict (the `ENOUGH` column
 `--project-n` extrapolation were voided on 2026-09-23: whether K is enough is measured on a real
 run by ticket 34, not extrapolated here); the mean's spread
 falls as 1/sqrt(n_frames) when the same frame is repeated; the reader takes a glob of labelled
-extxyz and skips frames without a Hessian; the tool runs end to end on the fixture glob with a
-stub engine and writes a Record whose [[K]] rows carry every schema key.
+extxyz and skips frames without a Hessian; a molecule whose branch A finished but whose Frame set
+is missing is skipped rather than raised on (the tianhe crash of 2026-09-23) and the funnel says so;
+the tool runs end to end on the fixture glob with a stub engine and writes a Record whose [[K]] rows
+carry every schema key.
 """
 import subprocess
 import sys
@@ -183,7 +185,26 @@ def main():
               q.returncode == 2 and "runs root" in q.stderr and "DOES NOT EXIST" in q.stderr
               and "S0_RUNS_ROOT" in q.stderr, q.stderr[-300:])
 
-    print("\n{} checks, {} failed".format(20, len(FAIL)))
+        # a molecule whose branch A finished but whose Frame set is missing (step 02 has not reached
+        # it): skipped, not an error -- the tianhe crash of 2026-09-23
+        half = Path(td) / "half" / "draw300" / "dsgdb9nsd_006415"
+        (half / "_records").mkdir(parents=True)
+        (half / "mace" / "basin00").mkdir(parents=True)          # branch A's product: basins.exists()
+        _write(str(half / "mace" / "basin00" / "basin.extxyz"), [got[0][0]], format="extxyz")
+        prop.write(half / "_records" / "branchA.toml", {"Calculation_Info": {"SMILES": "CCO"}},
+                   {"Calculation_Info": {"SMILES": ("String", None, "the molecule")}},
+                   prop.NORMAL_TERMINATION, "test")                # branch A's Record: NORMAL TERMINATION
+
+        fun2 = {}
+        none2 = tool.labelled_frames(tag="draw300", root=str(Path(td) / "half"), level=LEVEL, funnel=fun2)
+        check("a molecule with branch A but no Frame set is skipped, not raised on, and counted in the funnel",
+              none2 == [] and fun2["n_molecules"] == 1 and fun2["n_with_frameset"] == 0, fun2)
+        h = subprocess.run([sys.executable, str(ROOT / "scripts" / "tooling" / "s0_probe_calibration.py"),
+                            "--tag", "draw300", "--root", str(Path(td) / "half")], capture_output=True, text=True)
+        check("... and the report points at 02_frames rather than at the root",
+              h.returncode == 2 and "Frame set" in h.stderr and "02_frames" in h.stderr, h.stderr[-300:])
+
+    print("\n{} checks, {} failed".format(27, len(FAIL)))
     return 1 if FAIL else 0
 
 
