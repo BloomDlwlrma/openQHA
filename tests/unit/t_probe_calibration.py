@@ -1,0 +1,174 @@
+"""Ticket 32 of the Hessian-learning set (S0-C-65): `scripts/tooling/s0_probe_calibration.py`,
+the fixed-probe calibration, on the stored fixture pair (propanal: the ORCA Hessian and the
+MACE-OFF23_medium Hessian at the same basin) and on the 2-methyloxirane frames.
+
+Asserted, all on the two stored matrices (no model call, so this test runs anywhere):
+`frame_statistics` reproduces the exact target to 1e-12 and is unbiased -- the mean of the
+seed sets sits within a few predicted standard deviations of the exact value, and the
+deterministic limit holds (K = 3N unit probes would be exact; the Rademacher spread falls as
+1/sqrt(K), checked as a ratio between K = 1 and K = 16); the predicted per-frame sd (eq. 2.3)
+agrees with the measured spread of many sets within 15 %; `summarise` computes OFFSET and
+SEED_SPREAD in units of the exact mean and marks ENOUGH against the target; the mean's spread
+falls as 1/sqrt(n_frames) when the same frame is repeated; the reader takes a glob of labelled
+extxyz and skips frames without a Hessian; the tool runs end to end on the fixture glob with a
+stub engine and writes a Record whose [[K]] rows carry every schema key.
+"""
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+
+def _repo_root():
+    for _p in Path(__file__).resolve().parents:
+        if (_p / "openqha" / "__init__.py").is_file():
+            return _p
+    raise RuntimeError("openQHA package not found above " + __file__)
+
+
+ROOT = _repo_root()
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts" / "tooling"))
+from openqha.qm_interfaces import orca                            # noqa: E402
+from openqha.store import property as prop                        # noqa: E402
+from openqha.training import phl, phl_loss                        # noqa: E402
+import s0_probe_calibration as tool                               # noqa: E402
+
+LEVEL = "wb97m-d3bj_def2-tzvppd"
+FIXP = ROOT / "tests" / "data" / "propanal_molecule"
+FIXM = ROOT / "tests" / "data" / "methyloxirane_frames"
+FAIL = []
+
+
+def check(label, ok, detail=""):
+    print("  {:78s} {}".format(label, "ok" if ok else "FAIL " + str(detail)[:300]))
+    if not ok:
+        FAIL.append(label)
+
+
+def fixture_pair():
+    parsed = orca.parse_hess(FIXP / "msrrho" / "orca.{}.basin00.hess".format(LEVEL))
+    h_r = orca.hessian_to_ev_per_angstrom2(parsed["hessian_eh_bohr2"])
+    h_t = np.load(FIXP / "mace" / "basin00" / "hessian_at_{}.npy".format(LEVEL))
+    return np.asarray(h_t, dtype=float), np.asarray(h_r, dtype=float)
+
+
+def main():
+    h_t, h_r = fixture_pair()
+    n3 = h_t.shape[0]
+    exact = float(np.sum((h_t - h_r) ** 2)) / (n3 * n3)
+    ks = [1, 2, 4, 16]
+    seed = phl_loss.frame_seed(h_r)
+
+    st = tool.frame_statistics(h_t, h_r, ks, seed, seed_sets=200)
+    check("the exact target equals ||dH||^2/(9N^2) (1e-12)", abs(st["exact"] - exact) < 1e-12 * max(1.0, exact),
+          (st["exact"], exact))
+    check("the stable rank is finite and below 3N", 1.0 <= st["r_eff"] <= n3, st["r_eff"])
+
+    # unbiasedness: the mean over 200 independent fixed sets is within a few s.e. of the exact value
+    ok_unbiased, detail = True, []
+    for k in ks:
+        vals = st["sets"][k]
+        se = float(np.std(vals) / np.sqrt(len(vals)))
+        detail.append((k, float(np.mean(vals)), exact, se))
+        if abs(float(np.mean(vals)) - exact) > 4.0 * se:
+            ok_unbiased = False
+    check("the mean of 200 fixed sets is within 4 s.e. of the exact value, every K", ok_unbiased, detail)
+
+    # the spread falls as 1/sqrt(K)
+    ratio = float(np.std(st["sets"][1]) / np.std(st["sets"][16]))
+    check("the spread falls as 1/sqrt(K) (K = 1 vs 16: ratio 4 within 25 %)", abs(ratio - 4.0) < 1.0, ratio)
+
+    # eq. 2.3 predicts the spread
+    ok_var, detail = True, []
+    for k in ks:
+        pred = float(np.sqrt(st["var"][k]))
+        meas = float(np.std(st["sets"][k]))
+        detail.append((k, pred, meas))
+        if abs(pred - meas) > 0.15 * pred:
+            ok_var = False
+    check("the predicted sd (eq. 2.3) matches the measured spread within 15 %, every K", ok_var, detail)
+    check("phl.estimator_variance is the source of that prediction",
+          abs(st["var"][4] - phl.estimator_variance(h_t, h_r, None, None, k=4, metric="cartesian")["rademacher"]) < 1e-18,
+          st["var"][4])
+
+    # the deterministic limit: 3N unit probes are exact
+    a = h_t - h_r
+    unit = float(np.sum((np.eye(n3) @ a.T) ** 2)) / (n3 * n3)
+    check("3N unit probes give the exact value (1e-12)", abs(unit - exact) < 1e-12 * max(1.0, exact), (unit, exact))
+
+    # --- summarise ------------------------------------------------------------------------------------
+    exact_mean, rows = tool.summarise([st], ks, target=1.0)
+    check("summarise's exact mean is the frame's exact value", abs(exact_mean - exact) < 1e-12 * max(1.0, exact))
+    r4 = next(r for r in rows if r["K"] == 4)
+    check("OFFSET is |production reading - exact| / exact",
+          abs(r4["OFFSET"] - abs(st["production"][4] - exact) / exact) < 1e-12, r4["OFFSET"])
+    check("SEED_SPREAD is the sd of the set means over the exact mean",
+          abs(r4["SEED_SPREAD"] - float(np.std(st["sets"][4])) / exact) < 1e-12, r4["SEED_SPREAD"])
+    check("COST_RATIO is K / 3N", abs(r4["COST_RATIO"] - 4.0 / n3) < 1e-12, r4["COST_RATIO"])
+    check("every [[K]] row carries every schema key", all(set(r) == set(tool.K_ROW) for r in rows), set(rows[0]))
+    _m, strict = tool.summarise([st], [4], target=0.0)
+    check("ENOUGH is False at target 0 and True at target 1", (not strict[0]["ENOUGH"]) and r4["ENOUGH"])
+
+    # the mean's spread falls as 1/sqrt(n_frames): the same frame repeated 9 times
+    _m9, rows9 = tool.summarise([st] * 9, ks, target=1.0)
+    r49 = next(r for r in rows9 if r["K"] == 4)
+    check("the predicted sd of the mean falls as 1/sqrt(n_frames) (9 frames: 1/3)",
+          abs(r49["SD_MEAN_PREDICTED"] / r4["SD_MEAN_PREDICTED"] - 1.0 / 3.0) < 1e-9,
+          (r4["SD_MEAN_PREDICTED"], r49["SD_MEAN_PREDICTED"]))
+
+    # --- the reader -----------------------------------------------------------------------------------
+    got = tool.labelled_frames(frames_glob=str(FIXM / "basin.{}.extxyz".format(LEVEL)))
+    check("the glob reader returns the labelled basin frame with its Hessian",
+          len(got) == 1 and got[0][1] == "extxyz" and got[0][0].info.get("hessian") is not None, len(got))
+    with tempfile.TemporaryDirectory(prefix="nohess_") as td0:
+        from ase.io import write as _write
+        a = got[0][0].copy(); a.info = {k: v for k, v in got[0][0].info.items() if k != "hessian"}
+        _write(str(Path(td0) / "no_hessian.extxyz"), [a], format="extxyz")
+        none = tool.labelled_frames(frames_glob=str(Path(td0) / "no_hessian.extxyz"))
+    check("frames without a reference Hessian are skipped", none == [], len(none))
+
+    # --- end to end with a stub engine ----------------------------------------------------------------
+    with tempfile.TemporaryDirectory(prefix="probecal_") as td:
+        out = Path(td) / "pc.toml"
+        stub = Path(td) / "stub.py"
+        stub.write_text(
+            "import numpy as np\n"
+            "def _hessian_at(calc, atoms):\n"
+            "    n3 = 3 * len(atoms)\n"
+            "    h = np.asarray(atoms.info['hessian'], float).reshape(n3, n3)\n"
+            "    return 0.9 * h\n", encoding="utf-8")
+        runner = Path(td) / "run.py"
+        runner.write_text(
+            "import sys\n"
+            "sys.path.insert(0, {root!r}); sys.path.insert(0, {tooling!r}); sys.path.insert(0, {td!r})\n"
+            "import stub\n"
+            "import s0_probe_calibration as t\n"
+            "from openqha.training import judge\n"
+            "judge.hessian_at = stub._hessian_at\n"
+            "t.judge.hessian_at = stub._hessian_at\n"
+            "t.engine.calculator = lambda **kw: (None, 'stub', {{'params_sha256': 'deadbeef'}})\n"
+            "raise SystemExit(t.main({argv!r}))\n".format(
+                root=str(ROOT), tooling=str(ROOT / "scripts" / "tooling"), td=str(td),
+                argv=["--frames", str(FIXM / "basin.{}.extxyz".format(LEVEL)), "--k", "1", "4",
+                      "--seed-sets", "5", "--out", str(out)]),
+            encoding="utf-8")
+        p = subprocess.run([sys.executable, str(runner)], capture_output=True, text=True)
+        check("the tool runs end to end and exits 0", p.returncode == 0, p.stderr[-400:])
+        rec = prop.load(out) if out.is_file() else {}
+        info = rec.get("ProbeCalibration", {})
+        check("the Record names the engine, the level and the frame count",
+              info.get("ENGINE") == "stub" and info.get("N_FRAMES") == 1 and info.get("LEVEL") == LEVEL, info)
+        krows = rec.get("K", [])
+        check("the Record carries one [[K]] row per K", len(krows) == 2 and {int(r["K"]) for r in krows} == {1, 4}, krows)
+        check("the Record carries one [[Frame]] row", len(rec.get("Frame", [])) == 1, rec.get("Frame"))
+        check("PRODUCTION_K is phl_loss.VALID_N_PROBES", info.get("PRODUCTION_K") == phl_loss.VALID_N_PROBES, info)
+
+    print("\n{} checks, {} failed".format(18, len(FAIL)))
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
