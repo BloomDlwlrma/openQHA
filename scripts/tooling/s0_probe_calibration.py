@@ -6,7 +6,10 @@ question it answers is the one S0-C-55 left open -- the validation Hessian term 
 how far is the mean over frames from the exact `mean_n ||dH_n||_F^2 / (9 N_n^2)`, and is
 K = 4 enough?
 
-    # tianhe, the campaign's molecule tree (whatever is labelled so far)
+    # tianhe, the campaign's molecule tree (whatever is labelled so far). The login node has no
+    # GPU: read there on the CPU (one full Hessian per frame -- keep --limit small), or submit the
+    # tool to a compute node and keep --device cuda.
+    python scripts/tooling/s0_probe_calibration.py --tag draw300 --limit 20
     python scripts/tooling/s0_probe_calibration.py --tag draw300 --device cuda
     # a subset, or one molecule
     python scripts/tooling/s0_probe_calibration.py --tag draw300 --limit 50
@@ -219,7 +222,7 @@ def frame_statistics(h_engine, h_ref, ks, seed, seed_sets):
     r_eff = (tr * tr / fro2) if fro2 > 0 else float("nan")
     out = dict(exact=exact, n3=n3, r_eff=r_eff, production={}, sets={}, var={})
     for k in ks:
-        var = phl.estimator_variance(h_engine, h_ref, None, None, k=k, metric="cartesian")["rademacher"]
+        var = phl.estimator_variance(h_engine, h_ref, k=k)["rademacher"]
         out["var"][k] = float(var)
         # the production probes: the frame's own seed, exactly as the validation draws them
         rng = np.random.default_rng(seed)
@@ -273,6 +276,13 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if not args.tag and not args.frames:
         ap.error("--tag (the molecule tree) or --frames (a glob) is required")
+    if str(args.device).startswith("cuda"):
+        import torch                                             # noqa: E402  (kept out of import time)
+        if not torch.cuda.is_available():
+            ap.error("--device cuda, but torch.cuda.is_available() is False -- this is a login node,"
+                     " or a torch build without CUDA. Either drop the flag and read on the CPU here"
+                     " (one full Hessian per frame: keep --limit small), or submit the tool to a"
+                     " compute node with a GPU and keep --device cuda.")
     t0 = time.time()
 
     funnel = {}

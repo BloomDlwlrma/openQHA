@@ -95,7 +95,7 @@ def main():
             ok_var = False
     check("the predicted sd (eq. 2.3) matches the measured spread within 15 %, every K", ok_var, detail)
     check("phl.estimator_variance is the source of that prediction",
-          abs(st["var"][4] - phl.estimator_variance(h_t, h_r, None, None, k=4, metric="cartesian")["rademacher"]) < 1e-18,
+          abs(st["var"][4] - phl.estimator_variance(h_t, h_r, k=4)["rademacher"]) < 1e-18,
           st["var"][4])
 
     # the deterministic limit: 3N unit probes are exact
@@ -204,7 +204,20 @@ def main():
         check("... and the report points at 02_frames rather than at the root",
               h.returncode == 2 and "Frame set" in h.stderr and "02_frames" in h.stderr, h.stderr[-300:])
 
-    print("\n{} checks, {} failed".format(27, len(FAIL)))
+        # --device cuda on the login node: the flag is refused at parse time, not deep inside
+        # torch.load (the tianhe RuntimeError of 2026-09-23)
+        g = subprocess.run([sys.executable, str(ROOT / "scripts" / "tooling" / "s0_probe_calibration.py"),
+                            "--tag", "draw300", "--root", str(Path(td) / "nowhere"), "--device", "cuda"],
+                           capture_output=True, text=True)
+        import torch                                              # the repo depends on it anyway
+        if torch.cuda.is_available():
+            ok = g.returncode == 2 and "runs root" in g.stderr    # a real GPU passes the guard
+        else:
+            ok = g.returncode == 2 and "torch.cuda.is_available() is False" in g.stderr
+        check("--device cuda without a visible GPU stops at the flag, not inside torch.load",
+              ok, g.stderr[-300:])
+
+    print("\n{} checks, {} failed".format(28, len(FAIL)))
     return 1 if FAIL else 0
 
 
