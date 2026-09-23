@@ -1,6 +1,7 @@
 # Spec: PHL verbatim -- deleting the projected path, one algorithm per step (tickets 35-38)
 
-Label: `ready-for-agent`. Tracker: `.scratch/hessian-learning-set/`. **Ruling: S0-C-64**
+Label: `ready-for-agent`. Tracker: `.scratch/hessian-learning-set/`. **Rulings: S0-C-64** and **S0-C-67** (the validation probes are stored in the dataset, not seeded from the Label; step 4)
+**S0-C-64**
 (2026-09-23) -- *the training loss is PHL's as published: the Cartesian Hessian's MSE, per
 structure over (3N)^2, estimated by Hutchinson random probes through Hessian-vector products;
 "projected" means the random-vector projection and nothing else; mass-weighting and the Eckart
@@ -171,11 +172,10 @@ stated in T04 §6.
 Algorithm 1  frame_constants(H_r)                                  -- once per labelled frame, no autograd (phl_loss.FrameConstants)
   Input   H_r [3N,3N] the raw Cartesian Label, as stored
   1  ν ← 9 N²                                                             # PHL's (3N)² normalisation
-  2  seed ← SHA-1(H_r bytes)[:8]                                          # the frame's own probe seed (phl_loss.frame_seed)
-  Output  (H_r, ν, seed)                                                  # cached by the Label's bytes; nothing is diagonalised or projected
+  Output  (H_r, ν)                                                          # nothing is diagonalised, projected or hashed
 ```
 
-**Principle.** The loss needs, per labelled frame, the Label and two numbers. The Label is used
+**Principle.** The loss needs, per labelled frame, the Label and one number. The Label is used
 as stored -- symmetric to the precision of the reference program, never symmetrised, projected or
 mass-weighted by the loss (the fork's Label check refuses a non-symmetric or wrongly sized
 Hessian at data-loading time; that is a data check, not a transformation). The normalisation is
@@ -183,20 +183,29 @@ PHL's $(3N)^2$: the mean squared error per matrix element, so that molecules of 
 contribute on the same scale. The seed makes the *validation* probes a deterministic function of
 the Label.
 
-**Derivation 1.1 (why the seed is a hash of the Label).** Validation must be reproducible across
-epochs, processes and machines, and independent between frames. A seed derived from the frame's
-position in a shuffled loader is neither; a seed derived from the Label's bytes is both: the same
-Label gives the same 64-bit seed anywhere (SHA-1 is a deterministic function of the bytes), two
-frames with different Labels give seeds that agree with probability $2^{-64}$, and the probes
-drawn from `default_rng(seed)` are then identical every epoch for a frame and independent between
-frames. The training probes do not use the seed: they come from mace's own generator, fresh every
-step (Algorithm 2).
+**Derivation 1.1 (why the validation probes are stored, not seeded).** Validation must be
+reproducible across epochs, processes and machines, and the probe errors must be independent
+between frames (that is what makes $\mathrm{Var}(\text{mean})=\sum_n \mathrm{Var}_n/n^2$ exact
+rather than an assumption about the frames). A seed taken from the frame's position in a shuffled
+loader gives neither. Until S0-C-67 the seed was `SHA-1(bytes(H_r))[:8]`, which gives both -- but
+it is a hash of the *measured object*: a Label recomputed at the same level (another program
+version, convergence threshold, dtype or write precision) has different bytes, so the probe set
+changes silently and two runs' validation curves stop being comparable with nothing said in the
+Record. S0-C-67 therefore follows PHL's fixed-vector protocol: the vectors are drawn once when the
+Dataset is built, from a generator seeded by the frame's IDENTITY
+(`_rng(seed, "probe", qm9_index, generator, basin, k)` -- the rule the split already uses), and
+written into the valid file as `valid_probes` $[k_{\max},3N]$ with $k_{\max}=16$. The set is
+nested: the $K=4$ reading is its first four rows, so a $K$ scan is a flag and not a rebuild. The
+loss reads them; nothing in the training path hashes anything. The training probes are unchanged:
+they come from mace's own generator, fresh every step (Algorithm 2).
 
 **Decision (step 1).** `FrameConstants` holds the Label (as a tensor on the batch's device and
-dtype), $\nu=9N^2$, the seed and the cached fixed validation probe set. Removed: the metric
-switch, the projector, the reference modes and eigenvalues, the entropy weights, the weighted
-projector, `inv_sqrt_m`, `n_vib`, the temperature and the preset. The cache key stays the
-Label's bytes.
+dtype) and $\nu=9N^2$. Removed by 35: the metric switch, the projector, the reference modes and
+eigenvalues, the entropy weights, the weighted projector, `inv_sqrt_m`, `n_vib`, the temperature
+and the preset. Removed by 37 (S0-C-67): the seed, the seeded probe draw and BOTH `hashlib` calls
+-- `frame_seed` and the `constants()` cache key. The validation probes arrive with the graph; the
+cache either keys on the frame's identity or goes, a `FrameConstants` now costing an `asarray`
+and two integers.
 
 ### Step 2 -- Algorithm 2: the probes and the reference matvec
 
@@ -205,7 +214,7 @@ Algorithm 2  probes(frame constants, mode, K, rng | seed)           -- per frame
   1  if mode = rademacher:  v_j ~ Uniform{−1,+1}^{3N}, j = 1..K          denominator ← ν · K      (the default: the smaller variance)
      if mode = gaussian:    v_j ~ N(0, I),               j = 1..K          denominator ← ν · K      (PHL's Algorithm 1)
      if mode = cartesian:   v_j ← e_j,                   j = 1..3N        denominator ← ν          (exact: = get_hessian)
-     the draw comes from rng in training (mace's seed) and from default_rng(seed) at validation: FIXED per frame (FrameConstants.probes)
+     the draw comes from rng in training (mace's seed); at validation it is the frame's STORED set, read from the batch (S0-C-67)
   2  r_j ← H_r v_j                               # the reference side: a matvec on the Label (PHL's bmm(H_ref, v))
   Output  {v_j}, {r_j}, denominator              # the probe the model sees is the draw itself
 ```
@@ -331,7 +340,7 @@ balance table is one row and its ladder is probe kind x $K\in\{2,4\}$ on the tar
 ```
 Algorithm 4  evaluate(validation set, θ)                            -- the fixed-probe estimator (S0-C-55; phl_loss in eval mode)
   1  loss.eval();  for each batch:  E_θ, F_θ ← model(𝓑, training=True)   # the force graph kept: wants_force_graph_at_eval (commit C)
-  2  for each labelled frame:  ({v_j}, {r_j}, den) ← Algorithm 2 with default_rng(seed), K = 4 rademacher   # the same 4 every epoch
+  2  for each labelled frame:  {v_j} ← the first K = 4 rows of its STORED valid_probes (S0-C-67); r_j ← H_r v_j; den ← v·K   # the same 4 every epoch
   3      L̂_n ← Σ_j ‖ g_j − r_j ‖² / den                                    # under enable_grad (torchmetrics runs update under no_grad)
   4  accumulate w_E L_E, w_F L_F, mean_n L̂_n; total ← their sum            # what ReduceLROnPlateau, the best checkpoint, Stage Two read
   5  eval_summary() → valid_energy_term, valid_forces_term, valid_hessian_term → results/*.txt → the Record's three curves (run.parse_results)
@@ -358,10 +367,16 @@ is kept by the fork's `evaluate` calling the model with `training=True` when the
 `wants_force_graph_at_eval`. torchmetrics' full-state update calls the loss twice per batch, so
 the summary accumulates each batch object once.
 
-**Decision (step 4).** No change to the evaluation logic. The tests of the fixed probes (two calls
-on the same frame agree to $10^{-12}$; another mace seed gives the same value; different frames
-differ; training draws differ) are re-pointed to the reduced `FrameConstants`; `eval_summary`'s
-`valid_target` field is dropped (there is one target).
+**Decision (step 4).** The estimator and the schedule are unchanged; where the fixed probes COME
+FROM changes (S0-C-67, ticket 37). `04_dataset` draws $[k_{\max}=16,3N]$ Rademacher rows per
+labelled VALID frame from the frame's identity and writes them into the valid file; fork commit D
+carries them into the batch beside `hessian` / `has_hessian`; the loss takes the first
+`valid_n_probes` rows. A labelled valid frame with no stored probes is REFUSED, not drawn for: that
+state means a stale valid file, and a silent draw is the failure this ruling removes. The tests of
+the fixed probes (two calls on one frame agree to $10^{-12}$; another mace seed gives the same
+value; different frames differ; training draws differ) are re-pointed at the stored set and gain
+the regression this ruling exists for -- **rewriting the Label bit-for-bit differently at the same
+level leaves the probes untouched**. `eval_summary`'s `valid_target` field is dropped (35).
 
 ### Step 5 -- Algorithm 5: the judge
 
@@ -462,12 +477,24 @@ module docstring stops being "Algorithm 1 of the projected Hessian loss".
 arguments, the projected branch of `FrameConstants` and its slots (`masses`, `positions`,
 `metric`, `modes_r`, `lam_r`, `weights`, `projector`, `inv_sqrt_m`, `n_vib`, `projector_t`,
 `inv_sqrt_m_t`), the `probe == "modes"` refusal (there is no such probe), and `valid_target` in
-`eval_summary`. `build(args)` stops reading `args.hessian_mode_weighting`.
+`eval_summary`. `build(args)` stops reading `args.hessian_mode_weighting`. With 37 (S0-C-67) go
+`frame_seed`, the `seed` slot, the seeded `_fixed` draw and the `constants()` cache key: `import
+hashlib` leaves the module, and `graph_labels` returns the graph's stored `valid_probes` beside
+its Label.
 
 **The fork, commit D** (`openQHA-Hessian`): `mace/tools/arg_parser.py` loses
 `--hessian_mode_weighting` and the `"modes"` choice of `--hessian_probe`; `tests/
-test_external_loss.py` loses the three assertions that named them. Nothing else in the fork
-changes: commits A-C stand.
+test_external_loss.py` loses the three assertions that named them. It also GAINS one field
+(S0-C-67): a per-graph `valid_probes` `[k_max, 3n]` read from the config's flat key, with
+`has_valid_probes` false when it is absent -- the same pattern commit A used for `hessian` /
+`has_hessian`, no default draw and no silent zero. Nothing else in the fork changes: commits A-C
+stand.
+
+**`openqha/data/dataset.py` and `workflows/hessian_learning/04_dataset.py`** (S0-C-67, ticket 37).
+Gains: the valid split's labelled frames carry `valid_probes` drawn from
+`_rng(seed, "probe", qid, generator, basin, k)`; Record keys `VALID_PROBE_SOURCE`,
+`VALID_PROBE_KMAX`, `VALID_PROBE_SEED`, `N_VALID_PROBE_FRAMES`. `train` and `test` are untouched:
+training draws fresh probes every step and the judge reads the full matrix.
 
 **`openqha/training/run.py`**: `mace_argv` stops emitting `--hessian_mode_weighting` and loses
 the `mode_weighting` parameter; the Record loses `MODE_WEIGHTING` (schema, info dict, report
@@ -527,10 +554,13 @@ new signature.
 - **36**: the driver never emits `--hessian_mode_weighting`; no Record carries `MODE_WEIGHTING`;
   `epoch_zero_balance` takes no `mode_weighting`; the fork's parser REFUSES both the flag and
   `--hessian_probe modes` (the fork's own test); the smoke fit's ladder rows are the new ones.
-- **37**: the fixed-probe tests of ticket 21 on the reduced `FrameConstants` (two calls on one
-  frame agree to 1e-12, another mace seed gives the same value, different frames differ, training
-  draws differ), and the integration fine-tune still yields three validation curves, a moving
-  Hessian curve and the exact anchors of ticket 34.
+- **37**: the fixed-probe tests of ticket 21 re-pointed at the STORED set (two calls on one frame
+  agree to 1e-12, another mace seed gives the same value, different frames differ, training draws
+  differ), plus S0-C-67's own: a Label rewritten bit-for-bit differently at the same level leaves
+  the probes untouched, the first 4 rows of the k_max set are the K = 4 set, a labelled valid frame
+  without stored probes is refused, and `grep -rn hashlib openqha/training/phl_loss.py` is empty.
+  The integration fine-tune still yields three validation curves, a moving Hessian curve and the
+  exact anchors of ticket 34, reading a valid file that carries probes.
 - **38**: the judge's frame rows carry no `loss_exact`; the gate row still reads exactly 0 for
   base-against-base and FAIL for the 0.81x potential (`t_judge.py`, `t_judge_engine.py`);
   `examples/README.md` points at the archived T03; T04 and T05 execute with 0 errors.
@@ -576,8 +606,8 @@ Rodriguez's `eta_H = 0.02`, which multiplies an RMSE rather than an MSE.
 | 33 | 0 | the MACE-OFF split granularity (S0-C-65): test = whole molecules 5 % (stratified) + the pinned seven, valid = 5 % of the training molecules' frames, `--split-by molecule` the default with a `--resplit` guard, the judge's empty `interpolation` row | done 2026-09-23 (CONTEXT's distribution entry carried into 38) | -- |
 | 34 | 4 | the exact anchors (path A, no fork change): the full matrix on the validation file before and after training, `VALID_HESSIAN_EXACT_BEFORE` / `_AFTER` and the last epoch's probe reading beside them | done 2026-09-23 | -- |
 | 35 | 1-2 | Algorithms 1-2: the frame's constants and the probes, PHL verbatim; the projected path removed from the probe and loss modules; the derivations as tests | done 2026-09-23 | -- |
-| 36 | 3 | Algorithm 3: the training step without `mode_weighting`; fork commit D (the parser's two options); driver, Slurm, Record, smoke fit, balance | ready-for-agent | 35 |
-| 37 | 4 | Algorithm 4: the fixed-probe evaluation on the reduced constants; tests re-pointed; integration green | ready-for-agent | 35, 36 |
+| 36 | 3 | Algorithm 3: the training step without `mode_weighting`; fork commit D -- the parser's two options out, the `valid_probes` field in (S0-C-67); driver, Slurm, Record, smoke fit, balance | ready-for-agent | 35 |
+| 37 | 4 | Algorithm 4 (S0-C-67): the dataset writes the fixed validation probes, the loss reads them from the batch, both `hashlib` calls die; the calibration tool follows; tests re-pointed | ready-for-agent | 35, 36 |
 | 38 | 5 | Algorithm 5: `LOSS_EXACT` removed; the frequency rows stated as the standard analysis; CONTEXT, ADR 0006, T03 archived, T04/T05 re-executed | ready-for-agent | 35, 36, 37 |
 
 Frontier: **35** (nothing blocks it); then 36, 37, 38 in order -- each leaves the suite green, so
