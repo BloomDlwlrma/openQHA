@@ -14,7 +14,8 @@ evaluation (commit C). Nothing here reimplements a training loop.
         --multiheads --pt-train-file $S0_RUNS_ROOT/spice/spice_pt_R4.extxyz --pt-valid-file $S0_RUNS_ROOT/spice/spice_pt_R4.valid.extxyz
 
 THE TARGET is the Cartesian matrix itself and nothing else (S0-C-64: there is no switch);
-validation uses four Rademacher probes fixed per frame (S0-C-55) and every control flag
+validation uses four standard-normal probes fixed per frame, drawn by the Dataset and read
+from the file (S0-C-55, S0-C-67, S0-C-68), and every control flag
 (`--lr`, `--scheduler-patience`, `--patience`, `--eval-interval`, `--ema`, Stage Two with
 `--start-swa`, `--swa-lr` and the Stage Two weights) is explicit and in the Record.
 
@@ -73,8 +74,9 @@ def main():
     ap.add_argument("--hessian-weight", type=_weight, default="balance",
                     help="w_H: a number, or `balance` (default; S0-C-60) = w_F L_F / L_H measured on the base model over the "
                          "run's train file with the Cartesian target before the first step")
-    ap.add_argument("--probe", choices=phl.PROBE_MODES, default="rademacher",
-                    help="rademacher/gaussian: k probes per structure (eq. 6'); cartesian: the exact loss (3N probes)")
+    ap.add_argument("--probe", choices=phl.PROBE_MODES, default="gaussian",
+                    help="gaussian (PHL's draw, the default) / rademacher: k probes per structure (eq. 6'); "
+                         "cartesian: the exact loss (3N probes)")
     ap.add_argument("--n-probes", type=int, default=4, help="k of eq. 6' (ignored by the deterministic probe set)")
     # the loop
     ap.add_argument("--max-epochs", type=int, default=100)

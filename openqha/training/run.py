@@ -122,7 +122,7 @@ SCHEMA = {
         "BALANCE_L_E": ("Double", None, "the base model's per-atom energy MSE on the train file (balance rule only, else 0)"),
         "BALANCE_L_F": ("Double", None, "the base model's force MSE on the train file (balance rule only, else 0)"),
         "BALANCE_L_H": ("Double", None, "the base model's Cartesian Hessian loss ||dH||^2/(9N^2) on the train file's Hessian frames (balance rule only, else 0)"),
-        "PROBE": ("String", None, "rademacher / gaussian / cartesian (Algorithm 2): the training probes"),
+        "PROBE": ("String", None, "gaussian (PHL's Algorithm 1, the default since S0-C-68) / rademacher / cartesian (Algorithm 2): the training probes"),
         "N_PROBES": ("Integer", None, "probes per structure per step (k of eq. 6)"),
         "VALID_PROBES": ("String", None, "the validation estimator: rademacher k=4 fixed per frame (S0-C-55)"),
         "MAX_NUM_EPOCHS": ("Integer", None, "epochs asked for"),
@@ -356,7 +356,7 @@ def exact_valid_hessian(model_name_or_path, valid_file, device="cpu"):
 
 
 def mace_argv(train_file, valid_file, run, work_dir, foundation, level, *, energy_weight=1.0,
-              forces_weight=100.0, hessian_weight=1.0, probe="rademacher", n_probes=4,
+              forces_weight=100.0, hessian_weight=1.0, probe="gaussian", n_probes=4,
               max_epochs=100, batch_size=4, valid_batch_size=None,
               seed=123, device="cpu", lr=None, multiheads=False, pt_train_file=None, pt_valid_file=None,
               scheduler_patience=DEFAULT_SCHEDULER_PATIENCE, patience=DEFAULT_PATIENCE,
@@ -646,7 +646,7 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
         HESSIAN_WEIGHT_RULE=rule,
         BALANCE_L_E=float(balance["L_E"] or 0.0), BALANCE_L_F=float(balance["L_F"] or 0.0),
         BALANCE_L_H=float(balance["L_H"] or 0.0),
-        PROBE=str(settings.get("probe", "rademacher")),
+        PROBE=str(settings.get("probe", "gaussian")),
         N_PROBES=int(settings.get("n_probes", 4)),
         VALID_PROBES=phl_loss.VALID_PROBES_LABEL,
         MAX_NUM_EPOCHS=int(settings.get("max_epochs", 100)),

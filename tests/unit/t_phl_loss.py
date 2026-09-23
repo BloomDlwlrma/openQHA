@@ -90,9 +90,10 @@ K_MAX = 16
 
 
 def stored_probes(n_atoms, seed, k_max=K_MAX):
-    """What the Dataset writes with a valid frame: [k_max, 3N] of +-1 from the frame's
-    IDENTITY (here the caller's `seed` stands for it) -- never from the Label (S0-C-67)."""
-    return np.random.default_rng(seed).choice([-1.0, 1.0], size=(k_max, 3 * n_atoms))
+    """What the Dataset writes with a labelled frame: [k_max, 3N] ~ N(0, I) (PHL's
+    Algorithm 1, S0-C-68) from the frame's IDENTITY (here the caller's `seed` stands for
+    it) -- never from the Label (S0-C-67)."""
+    return np.random.default_rng(seed).standard_normal((k_max, 3 * n_atoms))
 
 
 def make_batch(frames, model, probes=None):
@@ -280,7 +281,7 @@ def main():
           b.wants_hessian_at_eval is False and b.wants_force_graph_at_eval is True)
     b_default = phl_loss.build(argparse.Namespace(energy_weight=1.0, forces_weight=100.0, hessian_weight=1.0, seed=1))
     check("build(args) without any target flag builds the Cartesian loss",
-          b_default.probe == "rademacher" and b_default.n_probes == 4 and "target='cartesian'" in repr(b_default))
+          b_default.probe == "gaussian" and b_default.n_probes == 4 and "target='cartesian'" in repr(b_default))
     b_stale = phl_loss.build(argparse.Namespace(energy_weight=1.0, forces_weight=1.0, hessian_weight=1.0,
                                                seed=1, hessian_mode_weighting="entropy"))
     check("build(args) ignores a stale hessian_mode_weighting: the flag is out of the fork's parser "
@@ -371,7 +372,7 @@ def main():
     check("eval_summary: three terms over the pass (H = mean of the two labelled graphs' fixed values), "
           "n_labelled 2, the label of the probes; then reset",
           abs(summary["valid_hessian_term"] - 0.5 * (v1 + hb_fixed)) < 1e-12 and summary["valid_hessian_n_labelled"] == 2
-          and summary["valid_probes"] == "rademacher k=4 fixed"
+          and summary["valid_probes"] == phl_loss.VALID_PROBES_LABEL
           and summary["valid_forces_term"] is not None and summary["valid_energy_term"] is not None
           and lv._eval_sums["n_batches"] == 0,           # reset; hvp_error alone (above) does not accumulate
           summary)

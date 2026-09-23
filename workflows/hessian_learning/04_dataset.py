@@ -16,7 +16,8 @@ judge and never trained on. Writes
 REF_hessian keys and `split`), the single `mace_<name>.<level>.extxyz`, `index.dat`
 
 THE FIXED VALIDATION PROBES (S0-C-67). Every labelled frame with a Hessian is written with
-its own `[VALID_PROBE_KMAX, 3N]` Rademacher set (`valid_probes` / `REF_valid_probes`),
+its own `[VALID_PROBE_KMAX, 3N]` standard-normal set (PHL's Algorithm 1, S0-C-68;
+`valid_probes` / `REF_valid_probes`),
 drawn HERE from the frame's identity and this Dataset's seed. The training loss draws
 fresh probes every step; the VALIDATION reading takes the first k rows of this set and
 draws nothing, so nothing in the loss depends on the Label's bytes and a label recomputed

@@ -43,7 +43,7 @@ TAG="${TAG:?TAG not set (the campaign tag; the Dataset lives under it)}"
 NAME="${NAME:-$TAG}"
 RUN="${RUN:?RUN not set (the run name; the directory is <dataset>/train/<run>/)}"
 LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
-PROBE="${PROBE:-rademacher}"
+PROBE="${PROBE:-gaussian}"      # PHL's Algorithm 1 (S0-C-68)
 N_PROBES="${N_PROBES:-4}"
 HESSIAN_WEIGHT="${HESSIAN_WEIGHT:-balance}"      # a number, or balance = w_F L_F / L_H on the base (S0-C-60)
 ENERGY_WEIGHT="${ENERGY_WEIGHT:-1.0}"

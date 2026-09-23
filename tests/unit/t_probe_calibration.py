@@ -17,6 +17,7 @@ is missing is skipped rather than raised on (the tianhe crash of 2026-09-23) and
 the tool runs end to end on the fixture glob with a stub engine and writes a Record whose [[K]] rows
 carry every schema key.
 """
+import math
 import subprocess
 import sys
 import tempfile
@@ -66,10 +67,10 @@ def main():
     ks = [1, 2, 4, 16]
     n_at = n3 // 3
     prod_v, sets_v = tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 0), n_at, max(ks), seed_sets=200)
-    check("the production set is [k_max, 3N] of +-1, drawn from the frame's IDENTITY and nothing else "
-          "(S0-C-67): the same call twice gives the same set, another frame's differs, and a rewritten "
-          "Label does not enter it",
-          prod_v.shape == (max(ks), n3) and set(np.unique(prod_v)) == {-1.0, 1.0}
+    check("the production set is [k_max, 3N] ~ N(0, I) (PHL's Algorithm 1, S0-C-68), drawn from the "
+          "frame's IDENTITY and nothing else (S0-C-67): the same call twice gives the same set, another "
+          "frame's differs, and a rewritten Label does not enter it",
+          prod_v.shape == (max(ks), n3) and abs(float(np.std(prod_v)) - 1.0) < 0.15
           and np.array_equal(prod_v, tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 0), n_at, max(ks), 1)[0])
           and not np.array_equal(prod_v, tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 1), n_at, max(ks), 1)[0]),
           prod_v.shape)
@@ -99,18 +100,26 @@ def main():
     ratio = float(np.std(st["sets"][1]) / np.std(st["sets"][16]))
     check("the spread falls as 1/sqrt(K) (K = 1 vs 16: ratio 4 within 25 %)", abs(ratio - 4.0) < 1.0, ratio)
 
-    # eq. 2.3 predicts the spread
+    # eq. 2.3 predicts the spread. The band is NOT a fixed percentage: a sample variance has
+    # its own sampling error, sd(s^2) = s^2 sqrt((kurt - 1) / n), and with PHL's normal draw
+    # X = v^T B v is a weighted sum of chi^2_1, so that error is several percent here. The
+    # band is read off the draws themselves, exactly as t_phl does it.
     ok_var, detail = True, []
     for k in ks:
-        pred = float(np.sqrt(st["var"][k]))
-        meas = float(np.std(st["sets"][k]))
-        detail.append((k, pred, meas))
-        if abs(pred - meas) > 0.15 * pred:
+        vals = np.asarray(st["sets"][k], dtype=float)
+        pred_var = float(st["var"][k])
+        meas_var = float(vals.var())
+        kurt = float(np.mean((vals - vals.mean()) ** 4) / vals.var() ** 2)
+        band = 3.0 * meas_var * math.sqrt((kurt - 1) / len(vals))
+        detail.append((k, "pred {:.3e}".format(pred_var), "meas {:.3e}".format(meas_var),
+                       "band {:.0%}".format(band / pred_var), "kurt {:.1f}".format(kurt)))
+        if abs(meas_var - pred_var) > band:
             ok_var = False
-    check("the predicted sd (eq. 2.3) matches the measured spread within 15 %, every K", ok_var, detail)
-    check("phl.estimator_variance is the source of that prediction",
-          abs(st["var"][4] - phl.estimator_variance(h_t, h_r, k=4)["rademacher"]) < 1e-18,
-          st["var"][4])
+    check("the measured spread sits within 3 sd(s^2) of eq. 2.3 at every K, the band read off the "
+          "draws' own kurtosis rather than asserted", ok_var, detail)
+    check("phl.estimator_variance for the draw the validation uses is the source of that prediction",
+          abs(st["var"][4] - phl.estimator_variance(h_t, h_r, k=4)[phl_loss.VALID_PROBE]) < 1e-18,
+          (st["var"][4], phl_loss.VALID_PROBE))
 
     # the deterministic limit: 3N unit probes are exact
     a = h_t - h_r

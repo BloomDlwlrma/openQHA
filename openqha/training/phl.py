@@ -19,9 +19,11 @@ the random vector itself:
     v_j i.i.d., E[v] = 0, E[v v^T] = I ;   r_j = H_r v_j                          (2')
     L^(K) = sum_j ||H_theta v_j - r_j||^2 / (9 N^2 K)                             (6')
 
-`L^(K)` is unbiased for every K (Derivation 2.1), its Rademacher variance is the
-smallest of the unit-variance draws (Derivation 2.2), and the 3N unit probes make it
-exact -- the deterministic limit of the estimator IS the full matrix (Derivation 2.3).
+`L^(K)` is unbiased for every K (Derivation 2.1) whatever the unit-variance draw, and the
+3N unit probes make it exact -- the deterministic limit of the estimator IS the full
+matrix (Derivation 2.3). The production draw is PHL's standard normal (S0-C-68); the
+Rademacher draw has the smaller variance (Derivation 2.2) and stays available, but the
+target is to follow the published method.
 
 Units: `H` in eV/A^2. The Label is used AS STORED: never symmetrised, projected or
 mass-weighted here (the fork's data-loading check refuses a non-symmetric or wrongly
@@ -59,7 +61,7 @@ def loss_full(hessian_theta, hessian_r):
 cartesian_loss_full = loss_full
 
 
-def make_probes(hessian_r, mode="rademacher", k=4, rng=None):
+def make_probes(hessian_r, mode="gaussian", k=4, rng=None):
     """Algorithm 2: the probes the model sees and the reference side of each.
 
     Returns (v [k, 3N], r [k, 3N], info) with
@@ -74,10 +76,10 @@ def make_probes(hessian_r, mode="rademacher", k=4, rng=None):
     the DETERMINISTIC set, where probe j is column j of dH and the columns are summed
     (Derivation 2.3). That is the one place the two kinds of probe differ.
 
-    mode: "rademacher" (v_i in {-1, +1}, the default: the smallest variance of the
-    unit-variance draws, Derivation 2.2) or "gaussian" (standard normal, PHL's
-    Algorithm 1), k draws from `rng` (a numpy Generator; the caller seeds it);
-    "cartesian" (v_j = e_j, k := 3N, exact).
+    mode: "gaussian" (standard normal, PHL's Algorithm 1 and the default since S0-C-68)
+    or "rademacher" (v_i in {-1, +1}: the smallest variance of the unit-variance draws,
+    Derivation 2.2 -- kept as a choice, no longer a default), k draws from `rng` (a numpy
+    Generator; the caller seeds it); "cartesian" (v_j = e_j, k := 3N, exact).
     """
     if mode not in PROBE_MODES:
         raise ValueError("probe mode must be one of {}; got {!r}".format(PROBE_MODES, mode))

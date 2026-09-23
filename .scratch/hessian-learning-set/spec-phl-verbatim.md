@@ -71,7 +71,7 @@ in which every column is a quantity the loss trains or the standard analysis com
 1. As the trainer, I want the Hessian term of the loss to be PHL's eq. 6 sampled by PHL's Algorithm 1 -- and nothing else -- so that the code trains what the literature trains and what S0-C-53 rules.
 2. As the trainer, I want the probe the model sees to be the raw random draw and the reference side a matvec on the stored Label, so that no mass matrix, projector or mode basis sits between the label and the loss.
 3. As the trainer, I want the `mode_weighting` switch gone from the loss, the driver, the Slurm script, the fork's parser and the Record, so that no run can be configured onto a target that is not the ruling's.
-4. As the trainer, I want the `modes` probe gone (it needs the reference eigenvectors), leaving `rademacher` (default) and `gaussian` (PHL's), so that every probe set is a random draw or the deterministic unit set.
+4. As the trainer, I want the `modes` probe gone (it needs the reference eigenvectors), leaving `gaussian` (PHL's Algorithm 1 and the default since S0-C-68) and `rademacher` (the smaller variance, kept as a choice), so that every probe set is a random draw or the deterministic unit set.
 5. As the trainer, I want `w_H` measured by the balance rule on the full Cartesian matrix only, so that the driver's default and the smoke fit's balance table are one number.
 6. As the reader of a Record, I want `LOSS phl`, `PROBE`, `N_PROBES`, `VALID_PROBES`, `HESSIAN_WEIGHT`, `HESSIAN_WEIGHT_RULE`, `BALANCE_L_*` and no `MODE_WEIGHTING`, so that the Record names only quantities that exist.
 7. As the judge's reader, I want the gate row to be the target itself (the frame-weighted held-out `||dH||^2/(9N^2)`, engine over base) and the frequency rows to be stated as the standard vibrational analysis of the trained matrix, so that "projected" never appears in a training claim.
@@ -213,8 +213,8 @@ and two integers.
 
 ```
 Algorithm 2  probes(frame constants, mode, K, rng | seed)           -- per frame per batch, no autograd (phl.make_probes)
-  1  if mode = rademacher:  v_j ~ Uniform{−1,+1}^{3N}, j = 1..K          denominator ← ν · K      (the default: the smaller variance)
-     if mode = gaussian:    v_j ~ N(0, I),               j = 1..K          denominator ← ν · K      (PHL's Algorithm 1)
+  1  if mode = gaussian:    v_j ~ N(0, I),               j = 1..K          denominator ← ν · K      (PHL's Algorithm 1; the default, S0-C-68)
+     if mode = rademacher:  v_j ~ Uniform{−1,+1}^{3N}, j = 1..K          denominator ← ν · K      (the smaller variance; a choice, not a default)
      if mode = cartesian:   v_j ← e_j,                   j = 1..3N        denominator ← ν          (exact: = get_hessian)
      the draw comes from rng in training (mace's seed); at validation it is the frame's STORED set, read from the batch (S0-C-67)
   2  r_j ← H_r v_j                               # the reference side: a matvec on the Label (PHL's bmm(H_ref, v))
@@ -232,7 +232,7 @@ Averaging $K$ independent probes and dividing by $9N^2$ gives $E[\hat{\mathcal L
 for every $K\ge1$. The gradient is unbiased too: $\partial_\theta$ and $E_v$ commute because the
 probes do not depend on $\theta$.
 
-**Derivation 2.2 (variance; why Rademacher is the default).** Let $B=A^{\!\top}A$ (symmetric,
+**Derivation 2.2 (variance; what the Rademacher draw would have bought).** Let $B=A^{\!\top}A$ (symmetric,
 $\operatorname{tr}B=\|A\|_F^2$) and $X=v^{\!\top}Bv$. Then
 $E[X^2]=\sum_{ijkl}B_{ij}B_{kl}E[v_iv_jv_kv_l]$. For Rademacher components
 $E[v_iv_jv_kv_l]=\delta_{ij}\delta_{kl}+\delta_{ik}\delta_{jl}+\delta_{il}\delta_{jk}-2\,\delta_{ijkl}$
@@ -244,6 +244,17 @@ $\operatorname{Var}_{\rm Gau}[X]=2\|B\|_F^2\ge\operatorname{Var}_{\rm Rad}[X]$. 
 the $1/(9N^2)$ normalisation both variances divide by $(9N^2)^2K$. Rademacher is therefore the
 default (Hutchinson's own choice); Gaussian stays as PHL's Algorithm 1 draw. Measured on the
 propanal pair: Rademacher variance 1.41 against the formula's 1.32; Gaussian 1.76x that (T04 §2).
+
+**S0-C-68 does not take that bargain.** The user's instruction is to follow PHL as published, and
+PHL's Algorithm 1 draws the standard normal, so `gaussian` is the default everywhere (the dataset's
+stored sets, the training draw, the driver, the Slurm variable, the fork's parser) and `rademacher`
+is a flag nobody sets. The accepted cost, stated: at the same $K$ the validation reading's standard
+deviation is $\sqrt{1.76}\approx1.33$ times the Rademacher one -- $K$ stays 4, so the reading is
+noisier by that factor and nothing else changes. Two consequences to keep in mind: the predicted
+spread must be read from `estimator_variance(...)['gaussian']` (the calibration tool takes it from
+`phl_loss.VALID_PROBE`), and a check on a MEASURED spread cannot use a fixed percentage band --
+with a normal draw $X=v^\top Bv$ is a weighted sum of $\chi^2_1$, so the band is computed from the
+draws' own kurtosis, as `t_phl` and `t_probe_calibration` now do.
 
 **Derivation 2.3 (exact with an orthonormal set).** For any $U$ with $UU^{\!\top}=I$,
 $\sum_j\|AU_j\|^2=\operatorname{tr}(A^{\!\top}AUU^{\!\top})=\|A\|_F^2$ with zero variance. With $U=I$
@@ -370,7 +381,7 @@ is kept by the fork's `evaluate` calling the model with `training=True` when the
 the summary accumulates each batch object once.
 
 **Decision (step 4).** The estimator and the schedule are unchanged; where the fixed probes COME
-FROM changes (S0-C-67, ticket 37). `04_dataset` draws $[k_{\max}=16,3N]$ Rademacher rows per
+FROM changes (S0-C-67, ticket 37; S0-C-68 for the draw). `04_dataset` draws $[k_{\max}=16,3N]$ standard-normal rows per
 labelled VALID frame from the frame's identity and writes them into the valid file; fork commit D
 carries them into the batch beside `hessian` / `has_hessian`; the loss takes the first
 `valid_n_probes` rows. A labelled valid frame with no stored probes is REFUSED, not drawn for: that
@@ -510,7 +521,7 @@ only `phl.loss_full`; `MODE_WEIGHTING` leaves its Record.
 `--mode-weighting` / `MODE_WEIGHTING` go; the printed summary line loses the column.
 
 **`scripts/production/s0_hl_smoke_fit.py`**: the balance table becomes one row (there is one
-target); the ladder becomes probe kind (`rademacher`, `gaussian`) x K in {1, 2, 4}, with the
+target); the ladder becomes probe kind (`gaussian`, `rademacher`) x K in {1, 2, 4}, with the
 `modes` and `none` rows gone; both `MODE_WEIGHTING` schema entries go.
 
 **`openqha/training/judge.py`**: `loss_exact` / `base_loss_exact` (frame rows), `LOSS_EXACT` /
@@ -611,6 +622,7 @@ Rodriguez's `eta_H = 0.02`, which multiplies an RMSE rather than an MSE.
 | 36 | 3 | Algorithm 3: the training step without `mode_weighting`; fork commit D -- the parser's two options out, the `valid_probes` field in (S0-C-67); driver, Slurm, Record, smoke fit, balance | done 2026-09-23 | -- |
 | 37 | 4 | Algorithm 4 (S0-C-67): the dataset writes the fixed validation probes, the loss reads them from the batch, both `hashlib` calls die; the calibration tool follows; tests re-pointed | done 2026-09-23 | -- |
 | 38 | 5 | Algorithm 5: `LOSS_EXACT` removed; the frequency rows stated as the standard analysis; CONTEXT, ADR 0006, T03 archived, T04/T05 re-executed | ready-for-agent | 35, 36, 37 |
+| 39 | 2 | S0-C-68: the probes are PHL's standard normal everywhere a default is chosen (dataset, loss, driver, Slurm, fork parser); the measured-spread band is read off the draws | done 2026-09-23 | -- |
 
 Frontier: **35** (nothing blocks it); then 36, 37, 38 in order -- each leaves the suite green, so
 the sequence can stop anywhere. The numbers 27-31 went to the other session's tickets (the energy

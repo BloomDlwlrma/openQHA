@@ -186,7 +186,7 @@ def main():
         if balanced is None:
             balanced = 1.0
         print("\n--- the scan: {} epochs per run ---".format(args.epochs))
-        runs = [dict(label="x{:g}".format(m), probe="rademacher", n_probes=4,
+        runs = [dict(label="x{:g}".format(m), probe="gaussian", n_probes=4,
                      hessian_weight=balanced * m) for m in args.scan]
         for spec in runs:
             run_name = "fit_{}".format(spec["label"])

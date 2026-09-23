@@ -34,9 +34,9 @@ PROGNAME = "openQHA hl_smoke_fit"
 #: the probe settings the cost table walks, in the order it reports them
 COST_SETTINGS = (
     dict(label="energy_forces", probe=None),
-    dict(label="rademacher k=2", probe="rademacher", n_probes=2),
-    dict(label="rademacher k=4", probe="rademacher", n_probes=4),
-    dict(label="rademacher k=8", probe="rademacher", n_probes=8),
+    dict(label="gaussian k=2", probe="gaussian", n_probes=2),
+    dict(label="gaussian k=4", probe="gaussian", n_probes=4),
+    dict(label="gaussian k=8", probe="gaussian", n_probes=8),
     dict(label="cartesian (exact)", probe="cartesian"),
 )
 
@@ -166,7 +166,7 @@ def cost_table(dataset_dir, tag, name, level, settings=COST_SETTINGS, epochs=1, 
         extra = dict(common)
         if s["probe"] is None:
             extra["hessian_weight"] = 0.0
-            probe, n_probes = "rademacher", 1              # the term is weighted to zero
+            probe, n_probes = "gaussian", 1                # the term is weighted to zero
         else:
             probe, n_probes = s["probe"], s.get("n_probes", 4)
         t0 = time.time()

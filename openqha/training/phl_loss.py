@@ -25,7 +25,7 @@ module's generator (mace's seed) every step.
 
 EVALUATION (S0-C-55). The fork's `evaluate` puts the loss in eval mode (commit C) and,
 because `wants_force_graph_at_eval` is set, calls the model with the force graph kept;
-the Hessian term is then the same estimator on `VALID_N_PROBES` Rademacher probes that
+the Hessian term is then the same estimator on `VALID_N_PROBES` standard-normal probes that
 the DATASET drew and stored with the frame (S0-C-67, PHL's fixed-vector protocol): the
 loss takes the first k rows of `ref.valid_probes` and draws nothing. They are identical
 every epoch for a frame, independent between frames, reproducible from the Dataset's
@@ -52,10 +52,12 @@ import torch
 from . import hvp as hvp_mod
 from . import phl
 
-#: the validation estimator (S0-C-55): k fixed Rademacher probes per frame
-VALID_PROBE = "rademacher"
+#: the validation estimator (S0-C-55, S0-C-67, S0-C-68): k fixed standard-normal probes per
+#: frame, drawn by the Dataset and read from the file
+VALID_PROBE = "gaussian"                                   # PHL's Algorithm 1 (S0-C-68)
 VALID_N_PROBES = 4
-VALID_PROBES_LABEL = "{} k={} fixed, stored by the Dataset".format(VALID_PROBE, VALID_N_PROBES)
+PROBES_LABEL_FORM = "{} k={} fixed, stored by the Dataset"
+VALID_PROBES_LABEL = PROBES_LABEL_FORM.format(VALID_PROBE, VALID_N_PROBES)
 
 
 def _field(ref, name):
@@ -183,7 +185,7 @@ class WeightedEnergyForcesHessianLoss(torch.nn.Module):
     wants_force_graph_at_eval = True
 
     def __init__(self, energy_weight=1.0, forces_weight=1.0, hessian_weight=1.0, n_probes=4,
-                 probe="rademacher", seed=None, cache_size=4096,
+                 probe="gaussian", seed=None, cache_size=4096,
                  valid_probe=VALID_PROBE, valid_n_probes=VALID_N_PROBES):
         super().__init__()
         if probe not in phl.PROBE_MODES:
@@ -330,7 +332,7 @@ class WeightedEnergyForcesHessianLoss(torch.nn.Module):
                    valid_forces_term=(s["forces"] / s["n_graphs"]) if s["n_graphs"] else None,
                    valid_hessian_term=(s["hessian"] / s["n_labelled"]) if s["n_labelled"] else None,
                    valid_hessian_n_labelled=int(s["n_labelled"]),
-                   valid_probes="{} k={} fixed".format(self.valid_probe, self.valid_n_probes))
+                   valid_probes=PROBES_LABEL_FORM.format(self.valid_probe, self.valid_n_probes))
         if s["n_batches"]:
             logging.info("openQHA loss (valid): energy=%s forces=%s hessian=%s n_labelled=%d probes=%s",
                          "-" if out["valid_energy_term"] is None else "{:.6e}".format(out["valid_energy_term"]),
@@ -361,7 +363,7 @@ class WeightedEnergyForcesHessianLoss(torch.nn.Module):
                 "n_probes={}, probe={!r}, target='cartesian', seed={!r}, valid_probes={!r})").format(
                     self.__class__.__name__, float(self.energy_weight), float(self.forces_weight),
                     float(self.hessian_weight), self.n_probes, self.probe, self.seed,
-                    "{} k={} fixed".format(self.valid_probe, self.valid_n_probes))
+                    PROBES_LABEL_FORM.format(self.valid_probe, self.valid_n_probes))
 
 
 def build(args):
@@ -378,6 +380,6 @@ def build(args):
         forces_weight=getattr(args, "forces_weight", 1.0),
         hessian_weight=getattr(args, "hessian_weight", 1.0),
         n_probes=getattr(args, "n_hessian_probes", 4),
-        probe=getattr(args, "hessian_probe", "rademacher"),
+        probe=getattr(args, "hessian_probe", "gaussian"),
         seed=getattr(args, "seed", None),
     )

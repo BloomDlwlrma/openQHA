@@ -113,7 +113,8 @@ PINNED = ("dsgdb9nsd_000018", "dsgdb9nsd_000019", "dsgdb9nsd_000035", "dsgdb9nsd
 VALID_FRACTION = 0.05
 TEST_FRACTION = 0.05
 #: The fixed validation probes (S0-C-67, PHL's fixed-vector protocol): every labelled frame
-#: carrying a Hessian gets its own [VALID_PROBE_KMAX, 3N] Rademacher set, drawn here from
+#: carrying a Hessian gets its own [VALID_PROBE_KMAX, 3N] standard-normal set (PHL's own
+#: draw, S0-C-68), drawn here from
 #: the frame's IDENTITY and written into the file. The loss takes the first k rows of it, so
 #: the sets are nested: a K scan is a flag, not a rebuild, and the K = 4 and K = 8 readings
 #: are comparable by construction. Nothing is derived from the Label's bytes.
@@ -121,7 +122,9 @@ TEST_FRACTION = 0.05
 #: (its final error table), and in eval mode the loss reads stored probes and draws none.
 #: What is particular to valid is the USE -- the reading that drives the schedule.
 VALID_PROBE_KMAX = 16
-VALID_PROBE_MODE = "rademacher"
+#: PHL's own draw (Algorithm 1), S0-C-68: standard normal. `rademacher` has the smaller
+#: variance and is still a supported probe, but it is no longer anyone's default.
+VALID_PROBE_MODE = "gaussian"
 #: by-frame split (the smoke / fit mode; production until S0-C-65): 90 / 5 / 5 of the frames
 FRAME_VALID_FRACTION = 0.05
 FRAME_TEST_FRACTION = 0.05
@@ -241,7 +244,7 @@ SCHEMA = {
         "N_VALID_PROBE_FRAMES": ("Integer", None, "labelled frames carrying their fixed probe set: every frame with a Hessian, because mace evaluates the loss on the training split too (S0-C-67)"),
         "VALID_PROBE_SOURCE": ("String", None, "where the validation probes come from: file (drawn here, stored in the valid split) -- the loss draws none"),
         "VALID_PROBE_KMAX": ("Integer", None, "rows stored per valid frame; the loss takes the first k of them (nested, so a K scan needs no rebuild)"),
-        "VALID_PROBE_MODE": ("String", None, "the stored probes' distribution (rademacher: the smallest variance of the unit-variance draws)"),
+        "VALID_PROBE_MODE": ("String", None, "the stored probes' distribution (gaussian: PHL's own draw, Algorithm 1; S0-C-68)"),
         "N_HESSIAN_FRAMES": ("Integer", None, "labelled frames carrying a reference Hessian (basin / merged / saddle)"),
         "N_TRAIN_HESSIAN": ("Integer", None, "train frames carrying a reference Hessian: the number the production Replay is 4x of (S0-C-60)"),
         "REPLAY_R4_FRAMES": ("Integer", None, "4 x N_TRAIN_HESSIAN: the Replay size of the production row R4 (s0_spice_pt_draw.py --n)"),
@@ -553,8 +556,8 @@ def _rng(seed, *parts):
     return np.random.default_rng(int.from_bytes(h[:8], "little"))
 
 
-def valid_probes(seed, qid, key, n_atoms, k_max=VALID_PROBE_KMAX):
-    """The frame's own fixed probe set, [k_max, 3N] of +-1 (S0-C-67).
+def valid_probes(seed, qid, key, n_atoms, k_max=VALID_PROBE_KMAX, digits=8):
+    """The frame's own fixed probe set, [k_max, 3N] ~ N(0, I) (S0-C-67, S0-C-68).
 
     The generator is seeded by the frame's IDENTITY -- the same rule the split itself uses
     (`_rng(seed, "frame", ...)`) -- so the set is reproducible from the Record's SEED alone,
@@ -562,7 +565,11 @@ def valid_probes(seed, qid, key, n_atoms, k_max=VALID_PROBE_KMAX):
     same level. Nothing here reads `H_r`.
     """
     rng = _rng(seed, "probe", qid, key[0], key[1], key[2])
-    return rng.choice([-1, 1], size=(int(k_max), 3 * int(n_atoms))).astype(np.int8)
+    v = rng.standard_normal((int(k_max), 3 * int(n_atoms)))
+    # rounded before it is written: the numbers IN THE FILE are the probes, so the only
+    # thing that matters is that every reader gets the same ones. Eight digits keeps the
+    # comment line about half the size of full repr and changes no estimate materially.
+    return np.round(v, int(digits))
 
 
 def frame_draw(seed, qid, key):
@@ -799,7 +806,7 @@ def _write_split(path, atoms_list, reference=True):
             if b.info["has_hessian"]:
                 b.info[REF_HESSIAN_KEY] = b.info["hessian"]
             if b.info.get("has_valid_probes"):
-                b.info[REF_PROBES_KEY] = np.asarray(b.info["valid_probes"], dtype=int).reshape(-1)
+                b.info[REF_PROBES_KEY] = np.asarray(b.info["valid_probes"], dtype=float).reshape(-1)
         out.append(b)
     write(str(path), out, format="extxyz")
 
@@ -856,7 +863,8 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
              "REFERENCE E-F-H (also as REF_energy / REF_forces / REF_hessian, MACE-torch's keys; has_hessian says which "
              "frames carry one) and are repeated in MERGED_FILE, the single xyz for training; pool carries the engine's.")
     rep.note("VALID_PROBE_* (S0-C-67, PHL's fixed-vector protocol): every labelled frame with a Hessian carries its "
-             "own [VALID_PROBE_KMAX, 3N] Rademacher set, drawn HERE from the frame's identity (qm9_index | generator "
+             "own [VALID_PROBE_KMAX, 3N] set of PHL's standard normal (S0-C-68), drawn HERE from the frame's "
+             "identity (qm9_index | generator "
              "| basin | k) and this Record's SEED, and written as valid_probes / REF_valid_probes -- every labelled "
              "split, because mace evaluates the loss on the training split too and the loss draws nothing in eval "
              "mode. What is particular to valid is the USE. The training loss "

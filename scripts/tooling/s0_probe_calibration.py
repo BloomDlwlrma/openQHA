@@ -85,7 +85,7 @@ K_ROW = {
     "K": ("Integer", None, "probes per frame"),
     "OFFSET": ("Double", None, "check 1: |mean L^(K) - mean L_exact| / mean L_exact with the production probes (each frame's own seed)"),
     "SEED_SPREAD": ("Double", None, "check 2: sd over the independent fixed probe sets of mean L^(K) / mean L_exact"),
-    "SD_MEAN_PREDICTED": ("Double", None, "sqrt(sum_n Var_n) / (n_frames * mean L_exact) from eq. 2.3 (Rademacher)"),
+    "SD_MEAN_PREDICTED": ("Double", None, "sqrt(sum_n Var_n) / (n_frames * mean L_exact) from eq. 2.3, for the draw the validation uses"),
     "SD_FRAME_PREDICTED": ("Double", None, "the median per-frame sqrt(Var_n) / L_n from eq. 2.3"),
     "SD_FRAME_MEASURED": ("Double", None, "the median per-frame sd over the seed sets, relative to L_n"),
     "COST_RATIO": ("Double", None, "K / 3N (median): the cost of the estimate against the full matrix"),
@@ -99,7 +99,7 @@ FRAME_ROW = {
     "n_atoms": ("Integer", None, "atoms"),
     "L_EXACT": ("Double", "eV^2/A^4", "||H_theta - H_r||_F^2 / (9 N^2), the training target, exact"),
     "L_PRODUCTION_K": ("Double", "eV^2/A^4", "the same frame's reading with its production probes at the production K"),
-    "SD_PREDICTED": ("Double", "eV^2/A^4", "sqrt(Var) at the production K, eq. 2.3 (Rademacher)"),
+    "SD_PREDICTED": ("Double", "eV^2/A^4", "sqrt(Var) at the production K, eq. 2.3, for the draw the validation uses"),
     "R_EFF": ("Double", None, "stable rank (tr B)^2 / ||B||_F^2 of B = dH^T dH: over how many directions the error spreads"),
     "SOURCE": ("String", None, "extxyz (assembled label file) or orca (the job files)"),
 }
@@ -117,7 +117,7 @@ SCHEMA = {
         "EXACT_MEAN": ("Double", "eV^2/A^4", "mean_n ||dH_n||_F^2 / (9 N_n^2): what the validation term estimates"),
         "R_EFF_MEDIAN": ("Double", None, "median stable rank of the error matrix; the estimator's noise falls as 1/sqrt(K r_eff)"),
         "PRODUCTION_K": ("Integer", None, "the K the validation uses (phl_loss.VALID_N_PROBES)"),
-        "PROBE": ("String", None, "the probe distribution (rademacher: phl_loss.VALID_PROBE)"),
+        "PROBE": ("String", None, "the probe distribution the readings and the predicted sd use (phl_loss.VALID_PROBE; gaussian since S0-C-68)"),
         "SEED_SETS": ("Integer", None, "independent fixed probe sets drawn for check 2"),
         "SECONDS": ("Double", "s", "wall time"),
         "FILE": ("String", None, "this Record"),
@@ -242,7 +242,9 @@ def frame_statistics(h_engine, h_ref, ks, production_v, probe_sets):
     r_eff = (tr * tr / fro2) if fro2 > 0 else float("nan")
     out = dict(exact=exact, n3=n3, r_eff=r_eff, production={}, sets={}, var={})
     for k in ks:
-        var = phl.estimator_variance(h_engine, h_ref, k=k)["rademacher"]
+        # the closed form of the draw the validation actually uses (S0-C-68: PHL's normal),
+        # not of the one with the smaller variance
+        var = phl.estimator_variance(h_engine, h_ref, k=k)[phl_loss.VALID_PROBE]
         out["var"][k] = float(var)
         # the production reading: the FIRST K rows of the frame's own stored set, which is
         # what the validation takes (S0-C-67). The sets are nested, so the K rows of this
