@@ -8,7 +8,9 @@ seed sets sits within a few predicted standard deviations of the exact value, an
 deterministic limit holds (K = 3N unit probes would be exact; the Rademacher spread falls as
 1/sqrt(K), checked as a ratio between K = 1 and K = 16); the predicted per-frame sd (eq. 2.3)
 agrees with the measured spread of many sets within 15 %; `summarise` computes OFFSET and
-SEED_SPREAD in units of the exact mean and marks ENOUGH against the target; the mean's spread
+SEED_SPREAD in units of the exact mean and draws no verdict (the `ENOUGH` column and the
+`--project-n` extrapolation were voided on 2026-09-23: whether K is enough is measured on a real
+run by ticket 34, not extrapolated here); the mean's spread
 falls as 1/sqrt(n_frames) when the same frame is repeated; the reader takes a glob of labelled
 extxyz and skips frames without a Hessian; the tool runs end to end on the fixture glob with a
 stub engine and writes a Record whose [[K]] rows carry every schema key.
@@ -100,7 +102,7 @@ def main():
     check("3N unit probes give the exact value (1e-12)", abs(unit - exact) < 1e-12 * max(1.0, exact), (unit, exact))
 
     # --- summarise ------------------------------------------------------------------------------------
-    exact_mean, rows = tool.summarise([st], ks, target=1.0)
+    exact_mean, rows = tool.summarise([st], ks)
     check("summarise's exact mean is the frame's exact value", abs(exact_mean - exact) < 1e-12 * max(1.0, exact))
     r4 = next(r for r in rows if r["K"] == 4)
     check("OFFSET is |production reading - exact| / exact",
@@ -109,11 +111,14 @@ def main():
           abs(r4["SEED_SPREAD"] - float(np.std(st["sets"][4])) / exact) < 1e-12, r4["SEED_SPREAD"])
     check("COST_RATIO is K / 3N", abs(r4["COST_RATIO"] - 4.0 / n3) < 1e-12, r4["COST_RATIO"])
     check("every [[K]] row carries every schema key", all(set(r) == set(tool.K_ROW) for r in rows), set(rows[0]))
-    _m, strict = tool.summarise([st], [4], target=0.0)
-    check("ENOUGH is False at target 0 and True at target 1", (not strict[0]["ENOUGH"]) and r4["ENOUGH"])
+    r1 = next(r for r in rows if r["K"] == 1)
+    check("SEED_SPREAD falls as 1/sqrt(K) across the rows (K = 1 vs 4: ratio 2 within 25 %)",
+          abs(r1["SEED_SPREAD"] / r4["SEED_SPREAD"] - 2.0) < 0.5, (r1["SEED_SPREAD"], r4["SEED_SPREAD"]))
+    check("no row claims a verdict (ENOUGH / SPREAD_AT_N were voided 2026-09-23)",
+          "ENOUGH" not in r4 and "SPREAD_AT_N" not in r4 and not hasattr(tool, "DEFAULT_TARGET"), sorted(r4))
 
     # the mean's spread falls as 1/sqrt(n_frames): the same frame repeated 9 times
-    _m9, rows9 = tool.summarise([st] * 9, ks, target=1.0)
+    _m9, rows9 = tool.summarise([st] * 9, ks)
     r49 = next(r for r in rows9 if r["K"] == 4)
     check("the predicted sd of the mean falls as 1/sqrt(n_frames) (9 frames: 1/3)",
           abs(r49["SD_MEAN_PREDICTED"] / r4["SD_MEAN_PREDICTED"] - 1.0 / 3.0) < 1e-9,
@@ -157,6 +162,7 @@ def main():
             encoding="utf-8")
         p = subprocess.run([sys.executable, str(runner)], capture_output=True, text=True)
         check("the tool runs end to end and exits 0", p.returncode == 0, p.stderr[-400:])
+        check("the report draws no verdict", "no verdict is drawn" in p.stdout, p.stdout[-300:])
         rec = prop.load(out) if out.is_file() else {}
         info = rec.get("ProbeCalibration", {})
         check("the Record names the engine, the level and the frame count",
@@ -166,7 +172,18 @@ def main():
         check("the Record carries one [[Frame]] row", len(rec.get("Frame", [])) == 1, rec.get("Frame"))
         check("PRODUCTION_K is phl_loss.VALID_N_PROBES", info.get("PRODUCTION_K") == phl_loss.VALID_N_PROBES, info)
 
-    print("\n{} checks, {} failed".format(18, len(FAIL)))
+        # an empty tree reports the funnel, not a blank line
+        funnel = {}
+        empty = tool.labelled_frames(tag="draw300", root=str(Path(td) / "nowhere"), level=LEVEL, funnel=funnel)
+        check("an empty tree returns nothing and fills the funnel with the root it searched",
+              empty == [] and funnel["n_molecules"] == 0 and funnel["tag_dir"].endswith("draw300"), funnel)
+        q = subprocess.run([sys.executable, str(ROOT / "scripts" / "tooling" / "s0_probe_calibration.py"),
+                            "--tag", "draw300", "--root", str(Path(td) / "nowhere")], capture_output=True, text=True)
+        check("the tool exits 2 naming the root, the tag directory and the environment to source",
+              q.returncode == 2 and "runs root" in q.stderr and "DOES NOT EXIST" in q.stderr
+              and "S0_RUNS_ROOT" in q.stderr, q.stderr[-300:])
+
+    print("\n{} checks, {} failed".format(20, len(FAIL)))
     return 1 if FAIL else 0
 
 

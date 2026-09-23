@@ -106,6 +106,9 @@ def main():
                     help="concatenate a Replay (mace's pretraining head) beside the fine-tuning head")
     ap.add_argument("--pt-train-file", default=None,
                     help="the Replay file written by scripts/tooling/s0_spice_pt_draw.py -- its frame count IS the size")
+    ap.add_argument("--no-exact-anchors", action="store_true",
+                    help="skip the two full-matrix readings of the Hessian term on the validation file (before and "
+                         "after training, path A / S0-C-65); each costs about a third of one epoch")
     ap.add_argument("--pt-valid-file", default=None,
                     help="the Replay's companion validation file (<stem>.valid.extxyz of the draw tool)")
     # the rest
@@ -125,7 +128,8 @@ def main():
         foundation=args.foundation, dry_run=args.dry_run, strict_fork=not args.no_strict_fork,
         energy_weight=args.energy_weight, forces_weight=args.forces_weight,
         hessian_weight=args.hessian_weight, probe=args.probe, n_probes=args.n_probes,
-        mode_weighting=args.mode_weighting, max_epochs=args.max_epochs, batch_size=args.batch_size,
+        mode_weighting=args.mode_weighting, exact_anchors=not args.no_exact_anchors,
+        max_epochs=args.max_epochs, batch_size=args.batch_size,
         valid_batch_size=args.valid_batch_size, lr=args.lr, seed=args.seed, device=args.device,
         scheduler_patience=args.scheduler_patience, patience=args.patience, eval_interval=args.eval_interval,
         ema=not args.no_ema, swa=not args.no_swa, start_swa=args.start_swa, swa_lr=args.swa_lr,

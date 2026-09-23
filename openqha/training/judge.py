@@ -15,9 +15,11 @@ What one judge run reports:
                    same geometry, plus `||A||_F^2 / n_vib` (eq. 1, from `phl`)
   per class        the structure classes of `index.dat`, so "how are we doing on
                    epoxides" has an answer
-  per distribution `interpolation` (the by-frame test of the drawn molecules -- the split
-                   measures interpolation WITHIN them, round-5 Q4's stated consequence),
-                   `out_of_molecule` (the pinned seven: whole molecules never trained on)
+  per distribution `out_of_molecule` (whole molecules the fine-tune never saw: the pinned
+                   seven and, under the by-molecule split of S0-C-65, every drawn test
+                   molecule -- so this is the generalisation reading the gate row rests on),
+                   `interpolation` (a test frame of a TRAINING molecule: only the by-frame
+                   split of the smoke / fit Datasets produces one; empty in production)
                    and `in_distribution` (the shipped molecules, which MACE-OFF23 did see)
   anharmonic       reference modes the entropy tier must not be judged on (round-2 Q6 (a),
                    assumed): omega_r < ANHARMONIC_CM, or a `mode_curvature` self-check
@@ -311,13 +313,20 @@ def anharmonic_modes(omega_ref_cm, qid, basin, profiles=None):
     return out
 
 
-def distribution_of(qid, pinned=dataset_mod.PINNED, in_distribution=IN_DISTRIBUTION):
+def distribution_of(qid, pinned=dataset_mod.PINNED, in_distribution=IN_DISTRIBUTION, molecule_split=None):
     """Which row of the judge's table this molecule belongs to. `in_distribution` wins
     over `out_of_molecule`: a pinned molecule MACE-OFF23 was trained on is not held out,
-    whatever the split says (S0-C-40)."""
+    whatever the split says (S0-C-40).
+
+    `molecule_split` is the index's column of the same name -- "test" when the WHOLE
+    molecule is held out. Under the by-molecule split (production since S0-C-65) every
+    test frame belongs to such a molecule, so `interpolation` is empty by construction and
+    the held-out rows are a generalisation reading; under the by-frame split a test frame
+    of a training molecule is `interpolation` (the same molecule, other conformers), which
+    is what round 5 Q4 traded away and S0-C-65 traded back."""
     if qid in in_distribution:
         return "in_distribution"
-    if qid in pinned:
+    if qid in pinned or str(molecule_split or "") == "test":
         return "out_of_molecule"
     return "interpolation"
 
@@ -355,12 +364,13 @@ def frame_rows(dataset_dir, name, level, calc, base_calc=None, splits=("test",),
     still has a row: the reference bins of ticket 22 read it)."""
     from ase.io import read
     dataset_dir = Path(dataset_dir)
-    classes, held = {}, {}
+    classes, held, msplit = {}, {}, {}
     if index is None:
         p = dataset_dir / "index.dat"
         index = dat.read_table(p) if p.is_file() else []
     for r in index:
         classes.setdefault(str(r.get("qm9_index")), str(r.get("classes") or "-"))
+        msplit.setdefault(str(r.get("qm9_index")), str(r.get("molecule_split") or ""))
         held[(str(r.get("qm9_index")), str(r.get("generator")), int(r.get("basin", 0) or 0), int(r.get("k", 0) or 0))] = \
             str(r.get("held_out_generator", "no"))
 
@@ -394,7 +404,8 @@ def frame_rows(dataset_dir, name, level, calc, base_calc=None, splits=("test",),
                 progress("{} {} b{} k{}".format(qid, gen, basin, k))
             rms = float(atoms.info.get("rms_displacement_A", 0.0) or 0.0) if gen != "basin" else 0.0
             row = dict(qm9_index=qid, generator=gen, basin=basin, k=k, split=split,
-                       distribution=distribution_of(qid), classes=classes.get(qid, "-"),
+                       distribution=distribution_of(qid, molecule_split=msplit.get(qid)),
+                       classes=classes.get(qid, "-"),
                        has_hessian=bool(has_h), rms_displacement_A=rms, rms_bin=rms_bin(rms),
                        held_out_generator=held.get((qid, gen, basin, k), "yes" if gen != "basin" else "no"),
                        n_low=None, freq_mae_low_cm=None, freq_mae_cm=None, hessian_mae=None,

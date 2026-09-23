@@ -289,8 +289,11 @@ def main():
         full = dict(info)
         for k in schema - set(full) - {"PROGNAME", "VERSION", "STATUS"}:
             full[k] = 0 if "N_" in k or "SECONDS" in k or "WEIGHT" in k else "x"
-        for k in ("MULTIHEADS", "EMA", "SWA", "HESSIAN_CURVE_MOVED"):
+        for k in ("MULTIHEADS", "EMA", "SWA", "HESSIAN_CURVE_MOVED", "EXACT_ANCHORS"):
             full[k] = False
+        for k in ("VALID_HESSIAN_EXACT_BEFORE", "VALID_HESSIAN_EXACT_AFTER", "VALID_HESSIAN_PROBE_LAST",
+                  "VALID_PROBE_OFFSET_RUN"):
+            full[k] = -1.0
         for k in ("PT_CONFIG_WEIGHT", "VALID_PROBES", "MODE_WEIGHTING"):
             full[k] = "x"
         train_run.write_record(td, full, [dict(epoch=0, split="train", loss=1.0,

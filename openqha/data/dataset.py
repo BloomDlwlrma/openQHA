@@ -17,7 +17,18 @@ one table and a Batch over `--name` always sees the whole draw. Written as
 
 SPLIT (`build`, driver `04_dataset.py`)
 ---------------------------------------
-Two modes (`split_by`). BY FRAME is the PRODUCTION split (round 5, Q4, ruled 2026-09-19):
+Two modes (`split_by`). BY MOLECULE is the PRODUCTION split since S0-C-65 (2026-09-23), the
+granularity MACE-OFF was trained with (Kovacs et al., JACS 147, 17598 (2025), Sec. 2.2: 95 % of
+SPICE for training and validation, 5 % for testing, "splitting was performed at the molecule
+level, ensuring that conformers of the same molecule do not appear in both train/validation and
+test sets"; the validation set is then drawn by configuration inside the 95 %, as mace's
+`--valid_fraction` does it). It supersedes the by-frame production split of round 5 Q4
+(S0-C-49) so that a test frame is always a molecule the fine-tune never saw: the judge's
+`interpolation` distribution is empty by construction and its gate row is a generalisation
+reading. BY FRAME stays for the smoke and fit Datasets, where whole-molecule test frames would
+eat a large share of a small label budget.
+
+BY FRAME (the smoke / fit split; the production split until S0-C-65):
     test    the pinned 7 (the msRRHO study's molecules: acetone, acetamide, propanal,
             N-methylformamide, 2-methyloxirane, cyclopropanol, oxetane) as WHOLE
             molecules, plus FRAME_TEST_FRACTION of every other molecule's labelled frames
@@ -26,11 +37,15 @@ Two modes (`split_by`). BY FRAME is the PRODUCTION split (round 5, Q4, ruled 202
 Every frame is drawn on its own: one number from a generator seeded from (seed, "frame",
 molecule, generator, basin, k), so a frame's split never depends on what else is
 labelled, and the fractions are EXPECTATIONS (exact to +-0.1 % over 100,000 frames, +-1
-frame over 15). BY MOLECULE is the smoke-set split of rounds 3-4 (Q3/Q6 (b), 2026-09-18):
+frame over 15). BY MOLECULE (the production split, S0-C-65; the smoke split of rounds 3-4, Q3/Q6 (b)):
     test    whole molecules: the pinned 7 plus TEST_FRACTION of the others, drawn per
-            stratum (ring count x heteroatom pattern) with `seed`
+            stratum (ring count x heteroatom pattern) with `seed`, so every stratum has
+            test molecules
     valid   VALID_FRACTION of the training molecules' labelled frames, drawn by frame
     train   the rest of the training molecules' labelled frames
+Both draws are per-identity (`_rng(seed, "test", stratum, ...)` for a molecule,
+`_rng(seed, "valid", qid)` for its frames), so a rebuild as labels arrive keeps every earlier
+decision: round t's splits are a prefix of round t+1's.
 In both modes `pool` is every frame that exists at the engine level but carries no label
 at `level` yet, whatever its molecule's side (`molecule_split` in the index says where
 it will go once labelled). The split is set here, written into `index.dat`, and never
@@ -93,13 +108,16 @@ SPLITS = ("train", "valid", "test", "pool")
 #: the 7 known molecules of the msRRHO study, always `test` (rounds 3-4, Q6/Q3 rulings)
 PINNED = ("dsgdb9nsd_000018", "dsgdb9nsd_000019", "dsgdb9nsd_000035", "dsgdb9nsd_000036",
           "dsgdb9nsd_000044", "dsgdb9nsd_000046", "dsgdb9nsd_000048")
-#: by-molecule split (the smoke set): test molecules and valid frames
-VALID_FRACTION = 0.1
-TEST_FRACTION = 0.1
-#: by-frame split (production, round 5 Q4): 90 / 5 / 5 of the non-pinned labelled frames
+#: by-molecule split (production since S0-C-65, MACE-OFF's granularity): 5 % of the molecules
+#: are test (whole), 5 % of the training molecules' labelled frames are valid
+VALID_FRACTION = 0.05
+TEST_FRACTION = 0.05
+#: by-frame split (the smoke / fit mode; production until S0-C-65): 90 / 5 / 5 of the frames
 FRAME_VALID_FRACTION = 0.05
 FRAME_TEST_FRACTION = 0.05
 SPLIT_MODES = ("frame", "molecule")
+#: what `04_dataset.py` uses unless told otherwise (S0-C-65)
+DEFAULT_SPLIT_MODE = "molecule"
 SEED = 0
 #: the generators whose frames may train (S0-C-54: basin Hessians only); every other
 #: generator is held out -- its labelled frames go to test for the judge
@@ -191,7 +209,8 @@ SCHEMA = {
         "LEVEL": ("String", None, "the reference level of the labelled splits"),
         "MACE_LEVEL": ("String", None, "the engine level of the frames (and of the pool's values)"),
         "SEED": ("Integer", None, "the split's random seed"),
-        "SPLIT_BY": ("String", None, "frame (production: 90/5/5 of the non-pinned labelled frames, each drawn on its own) or molecule (the smoke set: whole test molecules)"),
+        "SPLIT_BY": ("String", None, "molecule (production since S0-C-65, MACE-OFF's granularity: whole test molecules, valid drawn by frame from the training molecules) or frame (the smoke / fit mode: 90/5/5 of the non-pinned labelled frames, each drawn on its own)"),
+        "RESPLIT": ("Boolean", None, "this build discarded the previous index's decisions and drew the whole Dataset again (a split-mode change)"),
         "VALID_FRACTION": ("Double", None, "fraction of the labelled frames drawn as valid (by frame: of every non-pinned molecule's; by molecule: of the training molecules')"),
         "TEST_FRACTION": ("Double", None, "by frame: fraction of the non-pinned labelled frames drawn as test; by molecule: fraction of the non-pinned molecules drawn as test, per stratum"),
         "PINNED": ("ArrayOfStrings", None, "the molecules always in test"),
@@ -484,6 +503,19 @@ def _frames_of(mol, level, mace_level):
     return out
 
 
+def _previous_mode(dataset_dir):
+    """The `SPLIT_BY` of the Dataset already in `dataset_dir`, or None when there is none.
+    Read from the Record, which is written with every build."""
+    p = Path(dataset_dir) / (STEP + ".toml")
+    if not p.is_file():
+        return None
+    try:
+        rec = prop.load(p)
+    except Exception:                                                # noqa: BLE001
+        return None
+    return (rec.get("Calculation_Info") or {}).get("SPLIT_BY") or None
+
+
 def _previous_split(dataset_dir):
     """`{(qm9_index, generator, basin, k): split}` of the labelled frames of the last
     `index.dat`, and `{qm9_index: molecule_split}` -- what a rebuild keeps."""
@@ -518,12 +550,12 @@ def merged_file(dataset_dir, name, level):
     return Path(dataset_dir) / "mace_{}.{}.extxyz".format(name, level)
 
 
-def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", valid_fraction=None,
+def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_SPLIT_MODE, valid_fraction=None,
           test_fraction=None, seed=SEED, mace_level=None, selection=None, pinned=PINNED,
-          keep_previous=True, purpose=None, train_generators=TRAIN_GENERATORS):
-    """The Dataset: split every Frame set of the selected molecules (`split_by`: "frame",
-    the production 90/5/5 by frame, or "molecule", the smoke set's whole test molecules;
-    module docstring), write the four split files, the merged `mace_<name>.<level>.extxyz`,
+          keep_previous=True, purpose=None, train_generators=TRAIN_GENERATORS, resplit=False):
+    """The Dataset: split every Frame set of the selected molecules (`split_by`: "molecule",
+    the production split since S0-C-65 -- whole test molecules, MACE-OFF's granularity -- or
+    "frame", the smoke / fit split; module docstring), write the four split files, the merged `mace_<name>.<level>.extxyz`,
     `index.dat` and the Record. `selection`: rows as `select` returns them (default: read
     `select.dat` under the first tag; run `select` first). The fractions default to the
     mode's (FRAME_* or the by-molecule ones). `train_generators`: the generators whose
@@ -535,7 +567,13 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", 
     new molecules and newly labelled frames are drawn, each with a generator seeded from
     `seed` and its own name, so nothing moves because something else was added. That is
     what "set at write time, never recomputed" means across the label Batches that fill
-    the pool."""
+    the pool.
+
+    A rebuild that CHANGES `split_by` is refused (`resplit=True` overrides): keeping the old
+    decisions under a new rule would leave one index with two split schemes in it -- some
+    molecules split by frame, the newly labelled ones by molecule -- and no reader could say
+    what the test split means. `resplit=True` discards the previous decisions and draws the
+    whole Dataset again under the new mode."""
     t0 = time.time()
     if split_by not in SPLIT_MODES:
         raise ValueError("split_by must be one of {}, not {!r}".format(SPLIT_MODES, split_by))
@@ -561,6 +599,15 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", 
     if mace_level is None:
         mace_level = frame_labels.mace_level(mols[0]["molecule_dir"])
     d = datasets_dir(root, tags[0], name)
+    previous_mode = _previous_mode(d)
+    if previous_mode and previous_mode != split_by and not resplit:
+        raise ValueError(
+            "this Dataset was split by {0} and the build asks for {1}: a rebuild would mix two split schemes in one "
+            "index (the old molecules by {0}, the new frames by {1}) and the test split would mean neither. Pass "
+            "resplit=True (04_dataset.py --resplit) to discard the previous decisions and draw it all again by {1}, "
+            "or keep --split-by {0}.".format(previous_mode, split_by))
+    if resplit:
+        keep_previous = False
     prev_frames, prev_mols = _previous_split(d) if keep_previous else ({}, {})
 
     # ---- test molecules: pinned + the previous index's (+ by molecule: a per-stratum draw of the NEW ones)
@@ -660,6 +707,7 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by="frame", 
     for m in per_mol:
         m.pop("classes")
     info = dict(NAME=str(name), TAGS=tags, LEVEL=level, MACE_LEVEL=mace_level, SEED=int(seed), SPLIT_BY=split_by,
+                RESPLIT=bool(resplit),
                 VALID_FRACTION=float(valid_fraction), TEST_FRACTION=float(test_fraction), PINNED=list(pinned),
                 PURPOSE=str(purpose or ("judge" if pinned else "fit")),
                 TRAIN_GENERATORS=list(train_generators), HELD_OUT_GENERATORS=list(held_out_generators),
@@ -749,15 +797,21 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
              "(`held_out_generator = yes` in index.dat). The judge reads them as reference rows; training never "
              "sees them.".format(", ".join(info["HELD_OUT_GENERATORS"]) or "none"))
     if info["SPLIT_BY"] == "frame":
-        rep.note("SPLIT_BY frame (production, round 5 Q4): test = the pinned seven as whole molecules + TEST_FRACTION of "
+        rep.note("SPLIT_BY frame (the smoke / fit mode; production until S0-C-65): test = the pinned seven as whole molecules + TEST_FRACTION of "
                  "every other molecule's labelled frames; valid = VALID_FRACTION of those frames; train = the rest. Every "
                  "frame is drawn on its own (a generator seeded from the seed and the frame's name), so its split never "
                  "depends on what else is labelled and the fractions are expectations. pool = frames without a label at "
                  "LEVEL yet.")
     else:
-        rep.note("SPLIT_BY molecule (the smoke set): test = whole molecules (the pinned seven + a per-stratum draw of "
-                 "TEST_FRACTION); valid = VALID_FRACTION of the training molecules' labelled frames, drawn by frame; "
-                 "train = the rest; pool = frames without a label at LEVEL yet, whatever their molecule's split.")
+        rep.note("SPLIT_BY molecule (production, S0-C-65 -- MACE-OFF's granularity): test = whole molecules (the "
+                 "pinned seven + a per-stratum draw of TEST_FRACTION), so conformers of one molecule never sit on both "
+                 "sides; valid = VALID_FRACTION of the TRAINING molecules' labelled frames, drawn by frame (MACE-OFF "
+                 "splits its 95 % pool by configuration too); train = the rest; pool = frames without a label at LEVEL "
+                 "yet, whatever their molecule's split. Every test frame is a molecule the fine-tune never saw, so the "
+                 "judge's interpolation distribution is empty and its gate row is a generalisation reading.")
+    if info.get("RESPLIT"):
+        rep.note("RESPLIT: the previous index.dat's decisions were discarded and the whole Dataset drawn again (the "
+                 "split mode changed). Numbers from a run against the earlier split are not comparable with these.")
     rep.note("The split is set here and never recomputed: a rebuild keeps every decision of the previous index.dat and "
              "draws only the new molecules and newly labelled frames, each with its own seeded generator. A label file "
              "whose geometry differs from the engine file's (stale) is ignored. train/valid/test files carry the "

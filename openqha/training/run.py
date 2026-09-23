@@ -155,6 +155,11 @@ SCHEMA = {
         "FT_HEAD_VALID": ("Integer", None, "mace's count of fine-tuning-head validation frames (-1 when not logged)"),
         "REPLAY_PER_HESSIAN_FRAME": ("Double", None, "PT_N_FRAMES / N_TRAIN_HESSIAN: the Replay's size as the scan rows define it (0 without a Replay)"),
         "REAL_PT_DATA_RATIO_THRESHOLD": ("Double", None, "mace's duplication threshold, always 0 here (never duplicate the fine-tune frames)"),
+        "VALID_HESSIAN_EXACT_BEFORE": ("Double", "eV^2/A^4", "the EXACT Hessian term on the validation file for the BASE model, from the full matrix (path A, S0-C-65); -1 when not measured"),
+        "VALID_HESSIAN_EXACT_AFTER": ("Double", "eV^2/A^4", "the same quantity for the fine-tuned model: the pair says what the run moved on the target, with no estimator noise; -1 when not measured"),
+        "VALID_HESSIAN_PROBE_LAST": ("Double", "eV^2/A^4", "the last epoch's in-loop reading of the same quantity (4 fixed probes per frame); -1 when absent"),
+        "VALID_PROBE_OFFSET_RUN": ("Double", None, "|probe - exact| / exact at the end of the run: what the fixed-probe estimator cost on this validation set; -1 when either is missing"),
+        "EXACT_ANCHORS": ("Boolean", None, "the two exact readings were taken (--no-exact-anchors turns them off)"),
         "HESSIAN_CURVE_MOVED": ("Boolean", None, "the validation Hessian term changed across the epochs (a flat curve means the term did not act)"),
         "MACE_VERSION": ("String", None, "mace.__version__ (the fork: 0.3.16+openqha)"),
         "MACE_FORK": ("String", None, "the fork the training code came from"),
@@ -314,6 +319,41 @@ def hessian_weight_balance(foundation_name, train_file, energy_weight=1.0, force
     if not b["HESSIAN_WEIGHT_BALANCED"]:
         raise ValueError("no Hessian frame in {} (or L_H = 0): the balance rule has nothing to balance".format(train_file))
     return b
+
+
+def _calculator_for(model, device="cpu"):
+    """A calculator for `model`: a registered engine NAME goes through `engine.calculator`
+    (its cache, the fingerprint check and the translation patch); a PATH -- a model this run
+    just wrote, which no registry knows yet -- is loaded directly, with the same patch applied
+    first, because the wrapper must be in place before any neighbour list is built."""
+    if hasattr(model, "get_hessian"):
+        return model
+    p = Path(str(model))
+    if not p.is_file():
+        return engine.calculator(device=device, name=str(model))[0]
+    from ..potentials import mace_patch
+    mace_patch.apply(strict=True)
+    from mace.calculators import MACECalculator
+    return MACECalculator(model_paths=str(p), device=device, default_dtype=engine.DTYPE)
+
+
+def exact_valid_hessian(model_name_or_path, valid_file, device="cpu"):
+    """The EXACT Hessian term on the validation file: the frame-weighted mean of
+    `||H_theta - H_r||_F^2 / (9 N^2)` over its labelled frames, from the full matrix
+    (`get_hessian`, 3N HVPs per frame) -- the quantity the in-loop validation estimates
+    with 4 fixed probes (S0-C-55).
+
+    Measured twice per run (path A, S0-C-65): on the base model before training and on the
+    fine-tuned model after it. Two readings of the same quantity on the same frames, so
+    their difference is what the fine-tune moved on the target, free of the estimator's
+    noise; the last epoch's probe reading beside them is what that noise cost. None when
+    the file holds no Label. Costs one pass, not one per epoch: at 19 atoms a frame is
+    3N = 57 force-graph passes, so ~900 validation frames are about a third of one epoch.
+    """
+    from . import smoke_fit
+    calc = _calculator_for(model_name_or_path, device=device)
+    b = smoke_fit.epoch_zero_balance(calc, valid_file, probe="cartesian", mode_weighting="cartesian")
+    return None if not b["N_HESSIAN_FRAMES"] else float(b["L_H"])
 
 
 def mace_argv(train_file, valid_file, run, work_dir, foundation, level, *, energy_weight=1.0,
@@ -563,6 +603,8 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
 
     files, counts = split_files(dataset_dir, name, level, run_dir)
     settings = dict(settings)
+    # not mace's: the two full-matrix readings of the Hessian term on the validation file (ticket 34)
+    exact_anchors = bool(settings.pop("exact_anchors", True))
     rule, balance = "given", dict(L_E=0.0, L_F=0.0, L_H=0.0)
     if str(settings.get("hessian_weight", 1.0)) == "balance":
         rule = "balance"
@@ -624,12 +666,20 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
         REPLAY_PER_HESSIAN_FRAME=(float(replay["n_frames"]) / n_hess) if (n_hess and replay["n_frames"]) else 0.0,
         REAL_PT_DATA_RATIO_THRESHOLD=REAL_PT_DATA_RATIO_THRESHOLD if multiheads else 0.0,
         HESSIAN_CURVE_MOVED=False,
+        VALID_HESSIAN_EXACT_BEFORE=-1.0, VALID_HESSIAN_EXACT_AFTER=-1.0,
+        VALID_HESSIAN_PROBE_LAST=-1.0, VALID_PROBE_OFFSET_RUN=-1.0,
+        EXACT_ANCHORS=exact_anchors,
         MACE_VERSION=fork["mace_version"], MACE_FORK=engine.MACE_FORK,
         MACE_FORK_COMMIT=fork["mace_fork_commit"],
     )
     info.update(ctl)
     if dry_run:
         return dict(info=info, argv=argv, run_dir=run_dir, epochs=[], dry_run=True)
+
+    if info["EXACT_ANCHORS"]:
+        before = exact_valid_hessian(foundation_name, files["valid"], settings.get("device", "cpu"))
+        if before is not None:
+            info["VALID_HESSIAN_EXACT_BEFORE"] = before
 
     t0 = time.time()
     _run_mace(argv, run_dir)
@@ -661,6 +711,16 @@ def run_training(dataset_dir, tag, name, level, run, *, foundation=None, dry_run
         fp = engine.parameter_fingerprint(path=model_file)
         info["MODEL_PARAMS_SHA256"] = fp["params_sha256"]
         info["MODEL_N_TENSORS"] = fp["n_tensors"]
+    if info["EXACT_ANCHORS"] and model_file.is_file():
+        after = exact_valid_hessian(str(model_file), files["valid"], settings.get("device", "cpu"))
+        if after is not None:
+            info["VALID_HESSIAN_EXACT_AFTER"] = after
+            probe_last = validation_curves(epochs)["valid_hessian"]
+            last = next((v for _e, v in reversed(probe_last) if v is not None), None) if probe_last else None
+            if last is not None:
+                info["VALID_HESSIAN_PROBE_LAST"] = float(last)
+                if after > 0:
+                    info["VALID_PROBE_OFFSET_RUN"] = float(abs(float(last) - after) / after)
     write_record(run_dir, info, epochs)
     return dict(info=info, argv=argv, run_dir=run_dir, epochs=epochs, dry_run=False)
 
@@ -707,6 +767,15 @@ def _fmt(v, spec="{:.6e}"):
     return "-" if v is None else spec.format(v)
 
 
+def _record_num(info, key, default=-1.0):
+    """`info[key]` as a float, or `default` when it is absent or not a number: a report must
+    print what a Record holds, not raise on it."""
+    try:
+        return float(info.get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def _write_report(path, info, epochs):
     rep = report.Report(PROGNAME, "Fine-tune {!r} of {} on {}".format(
         info["RUN"], info["FOUNDATION_MODEL"], info["NAME"]))
@@ -715,6 +784,17 @@ def _write_report(path, info, epochs):
               "VALID_FILE", "N_VALID", "N_VALID_HESSIAN"):
         rep.kv(k, info.get(k))
     rep.section("the loss (eq. 11; the Cartesian target S0-C-53; T04 / T05)")
+    if info.get("EXACT_ANCHORS") is True and _record_num(info, "VALID_HESSIAN_EXACT_BEFORE") >= 0:
+        b_, a_ = _record_num(info, "VALID_HESSIAN_EXACT_BEFORE"), _record_num(info, "VALID_HESSIAN_EXACT_AFTER")
+        rep.note("EXACT ANCHORS (path A, S0-C-65): the full-matrix Hessian term on the validation file, base model "
+                 "{:.4e}{} -- the same quantity the in-loop validation estimates with {} fixed probes per frame. The "
+                 "pair is free of estimator noise; the last epoch's probe reading is {} and its relative distance from "
+                 "the exact value is {}. Neither number is a generalisation reading: the validation frames belong to "
+                 "TRAINING molecules (S0-C-65); the judge's test split is where generalisation is read.".format(
+                     b_, "" if a_ < 0 else " -> fine-tuned {:.4e} ({:+.1%})".format(a_, a_ / b_ - 1.0 if b_ else 0.0),
+                     phl_loss.VALID_N_PROBES,
+                     "-" if _record_num(info, "VALID_HESSIAN_PROBE_LAST") < 0 else "{:.4e}".format(_record_num(info, "VALID_HESSIAN_PROBE_LAST")),
+                     "-" if _record_num(info, "VALID_PROBE_OFFSET_RUN") < 0 else "{:.1%}".format(_record_num(info, "VALID_PROBE_OFFSET_RUN"))))
     for k in ("LOSS", "MODE_WEIGHTING", "ENERGY_WEIGHT", "FORCES_WEIGHT", "HESSIAN_WEIGHT", "HESSIAN_WEIGHT_RULE",
               "BALANCE_L_E", "BALANCE_L_F", "BALANCE_L_H", "PROBE", "N_PROBES", "VALID_PROBES"):
         rep.kv(k, info.get(k))

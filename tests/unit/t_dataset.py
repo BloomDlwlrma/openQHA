@@ -335,12 +335,38 @@ def main():
         pool_ok = True
         if (d / "pool.{}.extxyz".format(LEVEL)).is_file():
             pool_ok = all("REF_energy" not in a.info for a in read(str(d / "pool.{}.extxyz".format(LEVEL)), index=":", format="extxyz"))
+        # S0-C-65: the mode is part of the Dataset's identity -- changing it needs --resplit
+        try:
+            dataset.build(root, [TAG], "p", level=LEVEL, split_by="molecule", test_fraction=0.0, valid_fraction=0.2,
+                          seed=3, pinned=pinned, train_generators=frames.GENERATORS)
+            refused = ""
+        except ValueError as exc:
+            refused = str(exc)
+        check("a rebuild that changes split_by is refused, naming both modes and --resplit",
+              "split by frame" in refused and "asks for molecule" in refused and "resplit" in refused, refused[:160])
         by_mol = dataset.build(root, [TAG], "p", level=LEVEL, split_by="molecule", test_fraction=0.0, valid_fraction=0.2, seed=3,
-                               pinned=pinned, train_generators=frames.GENERATORS, keep_previous=False)
+                               pinned=pinned, train_generators=frames.GENERATORS, resplit=True)
         check("split by molecule still works on the same tree (pinned test, others train/valid at 0.2, no frame test); pool frames carry no REF_ keys",
               by_mol["info"]["N_TEST"] == 15 and by_mol["info"]["SPLIT_BY"] == "molecule" and by_mol["info"]["N_VALID"] == 6
               and all(r["split"] != "test" for r in by_mol["index"] if r["qm9_index"] != "dsgdb9nsd_000035") and pool_ok,
               {k: by_mol["info"][k] for k in ("N_TRAIN", "N_VALID", "N_TEST", "N_POOL")})
+        check("the resplit is recorded, and drawing it again in the same mode is not refused",
+              by_mol["info"]["RESPLIT"] is True
+              and dataset.build(root, [TAG], "p", level=LEVEL, split_by="molecule", test_fraction=0.0,
+                                valid_fraction=0.2, seed=3, pinned=pinned,
+                                train_generators=frames.GENERATORS)["info"]["RESPLIT"] is False,
+              by_mol["info"].get("RESPLIT"))
+        check("the production default is by molecule at 5 % / 5 % (S0-C-65, MACE-OFF's granularity)",
+              dataset.DEFAULT_SPLIT_MODE == "molecule" and dataset.TEST_FRACTION == 0.05
+              and dataset.VALID_FRACTION == 0.05,
+              (dataset.DEFAULT_SPLIT_MODE, dataset.TEST_FRACTION, dataset.VALID_FRACTION))
+        # the judge reads a whole test molecule as out_of_molecule, not interpolation
+        from openqha.training import judge as judge_mod
+        check("a non-pinned molecule whose molecule_split is test reads out_of_molecule (S0-C-65); "
+              "with no molecule_split it is interpolation",
+              judge_mod.distribution_of("dsgdb9nsd_099999", molecule_split="test") == "out_of_molecule"
+              and judge_mod.distribution_of("dsgdb9nsd_099999") == "interpolation"
+              and judge_mod.distribution_of("dsgdb9nsd_000044", molecule_split="train") == "out_of_molecule")
 
     print("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL))
     return 0 if not FAIL else 1

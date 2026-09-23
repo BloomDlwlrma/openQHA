@@ -1,11 +1,14 @@
 """Workflow hessian_learning, step 04: the Dataset -- split, files, index (ticket 04).
 
-PRODUCTION. `openqha.data.dataset.build` over the selection of step 01. `--split-by frame`
-(the default; production, round 5 Q4): the pinned seven are whole test molecules, every
-other labelled frame goes to train / valid / test at 90 / 5 / 5 by its own seeded draw.
-`--split-by molecule` (the smoke set): test = whole molecules (the pinned seven + a
-per-stratum draw), valid = a fraction of the training molecules' labelled frames, train
-= the rest. pool = frames without a label at the level yet. `--train-generators basin`
+PRODUCTION. `openqha.data.dataset.build` over the selection of step 01. `--split-by molecule`
+(the default since S0-C-65; MACE-OFF's granularity): test = whole molecules -- the pinned
+seven plus a per-stratum draw of TEST_FRACTION (5 %) -- so conformers of one molecule never
+sit on both sides; valid = VALID_FRACTION (5 %) of the TRAINING molecules' labelled frames,
+drawn by frame; train = the rest. `--split-by frame` (the smoke / fit mode; production until
+S0-C-65): the pinned seven are whole test molecules, every other labelled frame goes to
+train / valid / test at 90 / 5 / 5 by its own seeded draw. Changing the mode of an existing
+Dataset needs `--resplit` (it discards the previous index's decisions and draws it all
+again; without it the build is refused, because one index cannot hold two split schemes). pool = frames without a label at the level yet. `--train-generators basin`
 (the default; S0-C-54, ADR 0005): only basin frames may train; every labelled frame of
 another generator (displaced, merged, saddle) is a held-out frame in test, read by the
 judge and never trained on. Writes
@@ -15,8 +18,8 @@ REF_hessian keys and `split`), the single `mace_<name>.<level>.extxyz`, `index.d
 `<root>/<first tag>/_datasets/<name>/`; `--export openreact` adds `molecules-<name>.h5`
 in OpenREACT's layout (A, Eh, Eh/A, Eh/A^2).
 
-    python workflows/hessian_learning/04_dataset.py --tag rings --tag propanal --name smoke --split-by molecule
     python workflows/hessian_learning/04_dataset.py --tag draw300 --export openreact
+    python workflows/hessian_learning/04_dataset.py --tag rings --tag propanal --name smoke --split-by frame
 """
 import argparse
 import sys
@@ -60,7 +63,8 @@ def main():
     out = dataset.build(root, args.tag, args.name, level=args.level, split_by=args.split_by,
                         valid_fraction=args.valid_fraction, test_fraction=args.test_fraction, seed=args.seed,
                         pinned=() if args.no_pinned else dataset.PINNED,
-                        purpose="fit" if args.no_pinned else "judge", train_generators=tuple(args.train_generators))
+                        purpose="fit" if args.no_pinned else "judge", train_generators=tuple(args.train_generators),
+                        resplit=args.resplit)
     i = out["info"]
     for m in out["molecules"]:
         print("{:18s} {:9s} {:5s} {} frames {:3d} labelled {:3d}  train {:3d} valid {:3d} test {:3d} pool {:3d}".format(

@@ -7,7 +7,7 @@ how far is the mean over frames from the exact `mean_n ||dH_n||_F^2 / (9 N_n^2)`
 K = 4 enough?
 
     # tianhe, the campaign's molecule tree (whatever is labelled so far)
-    python scripts/tooling/s0_probe_calibration.py --tag draw300 --device cuda --project-n 900
+    python scripts/tooling/s0_probe_calibration.py --tag draw300 --device cuda
     # a subset, or one molecule
     python scripts/tooling/s0_probe_calibration.py --tag draw300 --limit 50
     python scripts/tooling/s0_probe_calibration.py --tag draw300 --species dsgdb9nsd_000035
@@ -24,12 +24,14 @@ then everything else is linear algebra on the two matrices:
   check 2    SPREAD   = sd over `--seed-sets` independent fixed sets of (mean_n L^(K)_n) / mean_n L_n
   predicted  sd       = sqrt(Var) from `phl.estimator_variance` (eq. 2.3), per frame and for the mean
 
-A frame's probes are its own (seeded from its Label's bytes), so the per-frame errors are
-independent and the mean's error falls as 1/sqrt(n_frames): OFFSET and SPREAD should agree,
-and SPREAD is what decides K. The report prints the smallest K whose SPREAD is under
-`--target` (2 % by default, the scale of a late-training improvement) -- at `--project-n` frames when that is given (the
-validation split's size, about 900 on draw300), because the per-frame spread is the
-estimator's property while the mean's falls as 1/sqrt(n).
+A frame's probes are its own (seeded from its Label's bytes), so the probe errors are
+independent ACROSS frames whatever the frames' own correlation, and Var(mean) = sum_n Var_n / n^2
+is exact rather than an assumption. What this tool does NOT do is decide whether K is enough:
+that depends on how large a change in the validation reading a training decision turns on, which
+is a property of a real run and is measured by ticket 34 (the exact value on the validation file
+before and after training, beside the last epoch's probe reading). An earlier version of this
+tool printed an `ENOUGH` column against an asserted 2 % target and extrapolated the spread to a
+hypothetical frame count; both were voided on 2026-09-23 as unearned.
 
 WHAT IT READS. `--tag`: the molecule tree `<root>/<tag>/<qid>/frames/`, preferring the
 assembled `basin.<level>.extxyz` (`frame_labels.load_frames`) and falling back to the ORCA
@@ -71,8 +73,6 @@ DEFAULT_K = (1, 2, 4, 8, 16)
 DEFAULT_SEED_SETS = 10
 #: the production value (S0-C-55/65): the K the validation actually uses
 PRODUCTION_K = phl_loss.VALID_N_PROBES
-#: "K is enough" when the spread of the mean is under this fraction of the mean
-DEFAULT_TARGET = 0.02
 
 K_ROW = {
     "K": ("Integer", None, "probes per frame"),
@@ -82,8 +82,6 @@ K_ROW = {
     "SD_FRAME_PREDICTED": ("Double", None, "the median per-frame sqrt(Var_n) / L_n from eq. 2.3"),
     "SD_FRAME_MEASURED": ("Double", None, "the median per-frame sd over the seed sets, relative to L_n"),
     "COST_RATIO": ("Double", None, "K / 3N (median): the cost of the estimate against the full matrix"),
-    "SPREAD_AT_N": ("Double", None, "the spread the mean would have over --project-n frames: the estimator's per-frame sd / sqrt(--project-n)"),
-    "ENOUGH": ("Boolean", None, "the deciding spread (SPREAD_AT_N when --project-n is given, else SEED_SPREAD) <= --target"),
 }
 
 FRAME_ROW = {
@@ -114,9 +112,6 @@ SCHEMA = {
         "PRODUCTION_K": ("Integer", None, "the K the validation uses (phl_loss.VALID_N_PROBES)"),
         "PROBE": ("String", None, "the probe distribution (rademacher: phl_loss.VALID_PROBE)"),
         "SEED_SETS": ("Integer", None, "independent fixed probe sets drawn for check 2"),
-        "TARGET": ("Double", None, "the spread under which a K counts as enough"),
-        "N_PROJECT": ("Integer", None, "the frame count ENOUGH is decided at (the validation split size), or -1 for the frames read"),
-        "K_ENOUGH": ("Integer", None, "the smallest K tried whose SEED_SPREAD is under TARGET, or -1"),
         "SECONDS": ("Double", "s", "wall time"),
         "FILE": ("String", None, "this Record"),
     },
@@ -131,11 +126,22 @@ def _frame_key(atoms, default_gen="basin"):
             int(info.get("basin", 0)), int(info.get("k", 0)))
 
 
-def labelled_frames(tag=None, root=None, level=None, species=(), limit=None, generator="basin", frames_glob=None):
+def labelled_frames(tag=None, root=None, level=None, species=(), limit=None, generator="basin",
+                    frames_glob=None, funnel=None):
     """[(atoms, source)] -- every frame that carries a reference Hessian, from the molecule
     tree of `tag` (assembled `<generator>.<level>.extxyz` first, the ORCA job files after)
-    or from a glob of extxyz files. `atoms.info['hessian']` is the flattened Label."""
+    or from a glob of extxyz files. `atoms.info['hessian']` is the flattened Label.
+
+    `funnel`: an optional dict filled with where the frames were lost -- the root and tag
+    directory searched, the molecules with a branch A Record, those with an assembled label
+    file, those with a finished ORCA Hessian job, and one example path of each kind. An empty
+    result is almost always a wrong root or an unsourced environment, and the caller prints
+    this instead of "nothing found"."""
     out = []
+    f = {} if funnel is None else funnel
+    f.setdefault("root", "-"); f.setdefault("tag_dir", "-"); f.setdefault("n_molecules", 0)
+    f.setdefault("n_with_assembled", 0); f.setdefault("n_with_orca", 0)
+    f.setdefault("example_assembled", "-"); f.setdefault("example_orca", "-"); f.setdefault("example_molecule", "-")
     if frames_glob:
         for path in sorted(_glob.glob(str(frames_glob))):
             for a in frame_labels.frames_mod.read_frames(Path(path)):
@@ -143,23 +149,36 @@ def labelled_frames(tag=None, root=None, level=None, species=(), limit=None, gen
                     out.append((a, "extxyz"))
         return out
     root = root or config.runs_root(config.load())
+    f["root"] = str(root)
+    f["tag_dir"] = str(Path(root) / str(tag))
     pairs = dataset_mod.molecules_with_branch_a(root, tag)
+    f["n_molecules"] = len(pairs)
+    if pairs:
+        f["example_molecule"] = str(pairs[0][1])
     if species:
         want = set(species)
         pairs = [(q, d) for q, d in pairs if q in want]
     if limit:
         pairs = pairs[: int(limit)]
     for qid, mol in pairs:
+        assembled = layout.frames_file(mol, generator, level)
+        if f["example_assembled"] == "-":
+            f["example_assembled"] = str(assembled)
         got = [a for a in frame_labels.load_frames(mol, generator, level) if a.info.get("hessian") is not None]
         if got:
+            f["n_with_assembled"] += 1
             out.extend((a, "extxyz") for a in got)
             continue
         # not assembled yet: read the finished ORCA jobs of this molecule's frames
         folder = layout.frames_dir(mol)
+        had = False
         for gen, basin, k in frame_labels.frame_list(mol, generators=(generator,)):
             stem = layout.orca_frame_stem(level, gen, basin, k)
+            if f["example_orca"] == "-":
+                f["example_orca"] = str(folder / (stem + ".hess"))
             if not frame_labels.finished(folder, stem, hessian=True):
                 continue
+            had = True
             try:
                 atoms = frame_labels.load_frame(mol, gen, basin, k)
             except KeyError:
@@ -175,6 +194,7 @@ def labelled_frames(tag=None, root=None, level=None, species=(), limit=None, gen
             a.info.setdefault("basin", basin)
             a.info.setdefault("k", k)
             out.append((a, "orca"))
+        f["n_with_orca"] += int(had)
     return out
 
 
@@ -205,7 +225,7 @@ def frame_statistics(h_engine, h_ref, ks, seed, seed_sets):
     return out
 
 
-def summarise(stats, ks, target=DEFAULT_TARGET, project_n=None):
+def summarise(stats, ks):
     """The [[K]] rows from the per-frame statistics: check 1, check 2 and the predictions."""
     n = len(stats)
     exact_mean = float(np.mean([s["exact"] for s in stats])) if n else float("nan")
@@ -217,18 +237,12 @@ def summarise(stats, ks, target=DEFAULT_TARGET, project_n=None):
         sd_frame_pred = float(np.median([np.sqrt(s["var"][k]) / s["exact"] for s in stats if s["exact"] > 0]))
         sd_frame_meas = float(np.median([np.std(s["sets"][k]) / s["exact"] for s in stats if s["exact"] > 0]))
         spread = float(np.std(set_means) / exact_mean) if exact_mean > 0 else float("nan")
-        # the same estimator read over `project_n` frames instead of these n: the per-frame spread is a
-        # property of the estimator, the mean's falls as 1/sqrt(n)
-        at_n = float(sd_mean_pred / exact_mean * np.sqrt(n / float(project_n))) if (project_n and exact_mean > 0) \
-            else float("nan")
-        deciding = at_n if project_n else spread
         rows.append(dict(K=int(k),
                          OFFSET=float(abs(prod_mean - exact_mean) / exact_mean) if exact_mean > 0 else float("nan"),
                          SEED_SPREAD=spread,
                          SD_MEAN_PREDICTED=float(sd_mean_pred / exact_mean) if exact_mean > 0 else float("nan"),
                          SD_FRAME_PREDICTED=sd_frame_pred, SD_FRAME_MEASURED=sd_frame_meas,
-                         COST_RATIO=float(k) / float(np.median([s["n3"] for s in stats])),
-                         SPREAD_AT_N=at_n, ENOUGH=bool(deciding <= target)))
+                         COST_RATIO=float(k) / float(np.median([s["n3"] for s in stats]))))
     return exact_mean, rows
 
 
@@ -246,20 +260,43 @@ def main(argv=None):
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--k", type=int, nargs="+", default=list(DEFAULT_K), help="probe counts to compare")
     ap.add_argument("--seed-sets", type=int, default=DEFAULT_SEED_SETS, help="independent fixed sets for check 2")
-    ap.add_argument("--target", type=float, default=DEFAULT_TARGET, help="the spread under which a K is enough")
-    ap.add_argument("--project-n", type=int, default=None,
-                    help="decide ENOUGH at this frame count (the validation split size, e.g. 900 on draw300) instead of "
-                         "at the frames read: the per-frame spread is the estimator's, the mean's falls as 1/sqrt(n)")
     ap.add_argument("--out", default=None, help="the Record (default: probe_calibration.<level>.toml here)")
     args = ap.parse_args(argv)
     if not args.tag and not args.frames:
         ap.error("--tag (the molecule tree) or --frames (a glob) is required")
     t0 = time.time()
 
+    funnel = {}
     frames = labelled_frames(tag=args.tag, root=args.root, level=args.level, species=args.species,
-                             limit=args.limit, generator=args.generator, frames_glob=args.frames)
+                             limit=args.limit, generator=args.generator, frames_glob=args.frames,
+                             funnel=funnel)
     if not frames:
-        print("no labelled frame with a Hessian found", file=sys.stderr)
+        print("no labelled frame with a Hessian found. Where it looked:", file=sys.stderr)
+        if args.frames:
+            print("  glob                  {}".format(args.frames), file=sys.stderr)
+            print("  matched files         {}".format(len(_glob.glob(str(args.frames)))), file=sys.stderr)
+            print("  (a file matches only if a frame carries `hessian` in info: the reference-level"
+                  " file, not the engine-level one)", file=sys.stderr)
+            return 2
+        print("  runs root             {}{}".format(funnel["root"], "" if args.root else "   (from the config / $S0_RUNS_ROOT)"),
+              file=sys.stderr)
+        print("  tag directory         {}   {}".format(funnel["tag_dir"],
+              "exists" if Path(funnel["tag_dir"]).is_dir() else "DOES NOT EXIST"), file=sys.stderr)
+        print("  molecules with branch A (_records/branchA.toml + basins.done): {}".format(funnel["n_molecules"]),
+              file=sys.stderr)
+        print("  with an assembled label file: {}   e.g. {}".format(funnel["n_with_assembled"], funnel["example_assembled"]),
+              file=sys.stderr)
+        print("  with a finished ORCA Hessian job: {}   e.g. {}".format(funnel["n_with_orca"], funnel["example_orca"]),
+              file=sys.stderr)
+        print("  level                 {}".format(args.level), file=sys.stderr)
+        if not funnel["n_molecules"]:
+            print("\n  -> the root or the tag is wrong, or the environment was not sourced:\n"
+                  "     source hpc/env/common.sh && source hpc/env/tianhe.sh   (sets S0_RUNS_ROOT)\n"
+                  "     or pass it: --root <the directory that holds {}/>".format(args.tag), file=sys.stderr)
+        else:
+            print("\n  -> the molecules are there but no frame carries a Hessian at this level:\n"
+                  "     check the level spelling, or that 03_labels has finished a basin job\n"
+                  "     (ls {}/frames/ | head)".format(funnel["example_molecule"]), file=sys.stderr)
         return 2
     calc, ename, prov = engine.calculator(device=args.device, name=args.engine)
     ks = sorted(set(int(k) for k in args.k))
@@ -286,16 +323,13 @@ def main(argv=None):
         if i % 50 == 0 or i == len(frames):
             print("   {:5d} / {} frames".format(i, len(frames)))
 
-    exact_mean, k_rows = summarise(stats, ks, target=args.target, project_n=args.project_n)
-    enough = [r["K"] for r in k_rows if r["ENOUGH"]]
+    exact_mean, k_rows = summarise(stats, ks)
     info = dict(ENGINE=ename, ENGINE_PARAMS_SHA256=str(prov.get("params_sha256", "-")), LEVEL=args.level,
                 TAG=str(args.tag or "-"), GENERATOR=args.generator,
                 N_MOLECULES=len({r["qm9_index"] for r in rows}), N_FRAMES=len(rows),
                 N_ATOMS_MEDIAN=int(np.median([r["n_atoms"] for r in rows])), EXACT_MEAN=exact_mean,
                 R_EFF_MEDIAN=float(np.median([s["r_eff"] for s in stats])), PRODUCTION_K=int(PRODUCTION_K),
-                PROBE=str(phl_loss.VALID_PROBE), SEED_SETS=int(args.seed_sets), TARGET=float(args.target),
-                N_PROJECT=int(args.project_n) if args.project_n else -1,
-                K_ENOUGH=int(min(enough)) if enough else -1, SECONDS=time.time() - t0)
+                PROBE=str(phl_loss.VALID_PROBE), SEED_SETS=int(args.seed_sets), SECONDS=time.time() - t0)
     out = Path(args.out) if args.out else Path("probe_calibration.{}.toml".format(args.level))
     info["FILE"] = str(out)
     missing = prop.write(out, {"ProbeCalibration": info, "K": k_rows, "Frame": rows}, SCHEMA,
@@ -305,22 +339,18 @@ def main(argv=None):
 
     print("\nexact      mean_n ||dH||^2/(9N^2) = {:.4e} eV^2/A^4 over {} frames; median stable rank {:.1f}".format(
         exact_mean, len(rows), info["R_EFF_MEDIAN"]))
-    at = "   spread at n={}".format(args.project_n) if args.project_n else ""
-    print("\n  K   check 1 OFFSET   check 2 SPREAD   sd(mean) predicted   per-frame sd pred / meas   cost K/3N{}   enough".format(at))
+    print("\n  K   check 1 OFFSET   check 2 SPREAD   sd(mean) predicted   per-frame sd pred / meas   cost K/3N")
     for r in k_rows:
-        tail = "   {:8.2%}".format(r["SPREAD_AT_N"]) if args.project_n else ""
-        print("  {:2d}     {:7.2%}         {:7.2%}          {:7.2%}              {:.2f} / {:.2f}            {:5.1%}{}      {}".format(
+        print("  {:2d}     {:7.2%}         {:7.2%}          {:7.2%}              {:.2f} / {:.2f}            {:5.1%}".format(
             r["K"], r["OFFSET"], r["SEED_SPREAD"], r["SD_MEAN_PREDICTED"], r["SD_FRAME_PREDICTED"],
-            r["SD_FRAME_MEASURED"], r["COST_RATIO"], tail, "yes" if r["ENOUGH"] else "no"))
+            r["SD_FRAME_MEASURED"], r["COST_RATIO"]))
     prod = next((r for r in k_rows if r["K"] == PRODUCTION_K), None)
     if prod:
-        verdict = "the production seeds are a typical draw" if prod["OFFSET"] <= 2.0 * prod["SEED_SPREAD"] \
-            else "the production seeds sit outside the typical spread -- read the Frame rows"
-        print("\nproduction K = {}: offset {:.2%} against a spread of {:.2%} -> {}".format(
-            PRODUCTION_K, prod["OFFSET"], prod["SEED_SPREAD"], verdict))
-    print("smallest K with a spread under {:.0%}{}: {}".format(
-        args.target, " at n = {} frames".format(args.project_n) if args.project_n else " over the frames read",
-        info["K_ENOUGH"] if info["K_ENOUGH"] > 0 else "none of those tried"))
+        print("\nproduction K = {}: offset {:.2%}, spread {:.2%} over {} seed sets and {} frames".format(
+            PRODUCTION_K, prod["OFFSET"], prod["SEED_SPREAD"], args.seed_sets, len(rows)))
+        print("no verdict is drawn from this table: whether K = {} changes a training decision is measured on a real\n"
+              "run (ticket 34: the exact value on the validation file before and after training, beside the last\n"
+              "epoch's probe reading), not extrapolated from here.".format(PRODUCTION_K))
     print("written    {}".format(out))
     return 0
 

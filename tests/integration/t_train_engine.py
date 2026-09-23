@@ -239,6 +239,28 @@ def main():
               all("REF_hessian" not in a.info for a in read(str(pt), index=":", format="extxyz"))
               and mi["N_TRAIN_HESSIAN"] == 2)
 
+        # --- ticket 34: the exact anchors (path A, S0-C-65) ---------------------------------------
+        before, after = mi["VALID_HESSIAN_EXACT_BEFORE"], mi["VALID_HESSIAN_EXACT_AFTER"]
+        exact_base = train_run.exact_valid_hessian("MACE-OFF23_medium", mi["VALID_FILE"])
+        check("the Record carries both exact anchors, positive, and the BEFORE one is the base model's "
+              "full-matrix Hessian term on the validation file (1e-10)",
+              mi["EXACT_ANCHORS"] is True and before > 0 and after > 0
+              and abs(before - exact_base) < 1e-10 * max(1.0, exact_base), (before, after, exact_base))
+        probe_last = mi["VALID_HESSIAN_PROBE_LAST"]
+        check("the last epoch's probe reading is recorded beside them and the relative distance is "
+              "|probe - exact| / exact",
+              probe_last > 0 and abs(mi["VALID_PROBE_OFFSET_RUN"] - abs(probe_last - after) / after) < 1e-12,
+              (probe_last, after, mi["VALID_PROBE_OFFSET_RUN"]))
+        check("the report states the pair and says the validation frames are not a generalisation reading",
+              "EXACT ANCHORS" in (mh["run_dir"] / "train.out").read_text(encoding="utf-8")
+              and "generalisation" in (mh["run_dir"] / "train.out").read_text(encoding="utf-8"))
+        off = train_run.run_training(d, "test", "smoke_fit", LEVEL, "noanchor", strict_fork=False,
+                                     hessian_weight=0.01, max_epochs=1, batch_size=2, seed=7,
+                                     exact_anchors=False)
+        check("--no-exact-anchors skips both readings (the keys stay at -1)",
+              off["info"]["EXACT_ANCHORS"] is False and off["info"]["VALID_HESSIAN_EXACT_BEFORE"] == -1.0
+              and off["info"]["VALID_HESSIAN_EXACT_AFTER"] == -1.0, off["info"]["VALID_HESSIAN_EXACT_BEFORE"])
+
         # the default path still works on the same files
         from mace.cli.run_train import run as mace_run
         from mace.tools import build_default_arg_parser
@@ -259,7 +281,7 @@ def main():
         check("the stock loss trains on the same files (the default path is untouched)",
               (plain / "plain.model").is_file() or list(plain.glob("*.model")))
 
-    print("\n{} checks, {} failed".format(24, len(FAIL)))
+    print("\n{} checks, {} failed".format(28, len(FAIL)))
     print("PASS" if not FAIL else "FAIL")
     return 1 if FAIL else 0
 
