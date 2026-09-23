@@ -337,8 +337,9 @@ KB_SI_ = 1.380649e-23
 AMU_KG_ = 1.66053906660e-27
 
 
-MAX_RMS_DISPLACEMENT_A = 0.15   # a convention that may be changed; its consequence is
-                                # documented in thermal_displacements
+MAX_RMS_DISPLACEMENT_A = 0.15   # this function's own default; the Frame set passes None
+                                # since 2026-09-23 (data/frames.py FILTER). Its consequence
+                                # is documented in thermal_displacements
 
 
 def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
@@ -379,6 +380,15 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     a quantum frame's ~27 kcal/mol (propanal), against ~7 kcal/mol classical -- measured
     2026-09-18, Hessian-learning note 4.
 
+    `max_rms_displacement_A=` rejects and redraws a displacement whose RMS over the 3N
+    coordinates exceeds it, `max_draws_per_sample` times, then raises. **A basin with a
+    near-zero mode cannot satisfy any ceiling**: the classical amplitude is
+    sqrt(k_B T)/omega, so an eigenvalue of 4-6 cm^-1 that survives the Eckart projection
+    (measured on dsgdb9nsd_013068 and 025659, 2026-09-23) puts the median draw at 1.4-2.0 A
+    RMS with 97-98 % of draws over 0.15 A. Pass None -- the Frame set does -- and the first
+    draw is taken as it comes; the filtering is then done on the engine's own energy, where
+    such a draw shows up as hundreds of kcal/mol above the basin (data/frames.py FILTER).
+
     `hessian=` (3N x 3N, eV/A^2, raw Cartesian) skips that computation and samples on
     the modes of the given matrix -- the Frame set (ticket 02) hands in the basin's
     stored `hessian.npy` so the frames are drawn along exactly the modes the basin
@@ -416,11 +426,14 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     x = HBAR_SI * omega / (2.0 * KB_SI_ * temperature_K)
     if distribution == "quantum":
         q2_si = (HBAR_SI / (2.0 * omega)) / np.tanh(x)      # kg·m²
-    elif distribution == "classical":
+    elif distribution in ("classical", "ani1"):
         q2_si = KB_SI_ * temperature_K / omega ** 2         # equipartition
     else:
-        raise ValueError("distribution must be 'quantum' or 'classical', not {!r}".format(distribution))
+        raise ValueError("distribution must be 'quantum', 'classical' or 'ani1', not {!r}".format(distribution))
     sigma_q = np.sqrt(q2_si) / (np.sqrt(AMU_KG_) * 1.0e-10)  # amu^½·Å
+    # ANI-1 does not use sigma_q -- it partitions a bounded total energy instead (below);
+    # the classical sigma is still reported, as the scale of the modes.
+    e_cap_si = 1.5 * len(atoms) * KB_SI_ * temperature_K     # (3/2) N_a k_B T, the ANI-1 cap
 
     per_sample = seeds is not None
     if per_sample:
@@ -429,13 +442,28 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
             raise ValueError("seeds= has {} entries for n_samples = {}".format(len(seeds), n_samples))
     else:
         seeds = [int(seed)] * int(n_samples)
+    def _draw_q(rng):
+        """(q in amu^½·Å, the energy fraction rho) for one frame."""
+        if distribution != "ani1":
+            return rng.normal(0.0, sigma_q), float("nan")
+        # ANI-1 (Smith, Isayev, Roitberg, Chem. Sci. 2017, 8, 3192): R_i = ±sqrt(3 N_a c_i
+        # k_B T / K_i) with c_i >= 0 and sum c_i <= 1, so E_i = (1/2) K_i R_i² = (3/2) c_i
+        # N_a k_B T and the TOTAL harmonic energy is rho (3/2) N_a k_B T, rho = sum c_i <= 1:
+        # a uniform random partition of at most the classical total vibrational energy, with
+        # random signs. The direction on the simplex is Dirichlet(1,…,1), the radius uniform.
+        c = rng.dirichlet(np.ones(len(omega)))
+        rho = float(rng.random())
+        sign = np.where(rng.random(len(omega)) < 0.5, -1.0, 1.0)
+        q_si = sign * np.sqrt(2.0 * c * rho * e_cap_si) / omega
+        return q_si / (np.sqrt(AMU_KG_) * 1.0e-10), rho
+
     rng = np.random.default_rng(seed)
-    out, rejected = [], 0
+    out, rejected, fractions = [], 0, []
     for i_sample in range(int(n_samples)):
         if per_sample:
             rng = np.random.default_rng(seeds[i_sample])       # one generator per frame
         for _draw in range(int(max_draws_per_sample)):
-            q = rng.normal(0.0, sigma_q)
+            q, rho = _draw_q(rng)
             dq = vec_v @ q                                   # mass-weighted displacement
             dx = (dq.reshape(-1, 3) / np.sqrt(np.asarray(m))[:, None])
             rms = float(np.sqrt((dx ** 2).mean()))
@@ -448,6 +476,7 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
                 "either the ceiling is too tight or the system has an extremely soft "
                 "mode".format(max_draws_per_sample, max_rms_displacement_A))
         out.append(Atoms(numbers=atoms.numbers, positions=x0 + dx))
+        fractions.append(rho)
     rec = dict(temperature_K=float(temperature_K), n_samples=int(n_samples),
                seed=int(seed), seeds=list(seeds), n_modes_sampled=int(keep.sum()),
                hessian_source="given" if hessian is not None else "finite_difference",
@@ -460,17 +489,23 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
                                    for s in out],
                max_rms_displacement_A=max_rms_displacement_A,
                n_draws_rejected=int(rejected),
+               energy_fraction=[float(t) for t in fractions],
+               energy_cap_kcal=float(e_cap_si * 6.02214076e23 / 4184.0),
                delta_A=float(delta),
-               note=("quantum harmonic-oscillator positional fluctuation; classical in "
-                     "the high-temperature limit, zero-point in the low-temperature "
-                     "limit. **The displacement ceiling is necessary**: a normal mode is "
-                     "the linearisation of a torsion, and a large displacement along a "
-                     "very soft mode (83 cm^-1 is the lowest in this system) distorts "
-                     "bond angles and bond lengths together, producing structures that "
-                     "298 K molecular dynamics would never visit. The ceiling is a "
-                     "convention that may be changed; the number of rejected draws is "
-                     "recorded honestly. **A better source is a real trajectory snapshot "
-                     "from package 3** -- at that point this sampler should be replaced."))
+               note=("`quantum`: the harmonic-oscillator positional fluctuation, classical "
+                     "in the high-temperature limit and zero-point in the low-temperature "
+                     "limit. `classical`: equipartition, <q²> = k_B T / omega². `ani1` "
+                     "(Smith, Isayev, Roitberg, Chem. Sci. 2017): a uniform random partition "
+                     "of rho (3/2) N_a k_B T over the modes with random signs, rho <= 1 -- "
+                     "the total harmonic ENERGY is bounded (`energy_cap_kcal`, "
+                     "`energy_fraction` per frame), the geometry is NOT: the amplitude is "
+                     "still sqrt(2 E_i)/omega_i, so a near-zero mode (4-6 cm^-1 surviving the "
+                     "Eckart projection: dsgdb9nsd_013068 / 025659, 2026-09-23) displaces by "
+                     "angstroms under any of the three draws. `max_rms_displacement_A` rejects "
+                     "and redraws such a frame (None -- what the Frame set passes since "
+                     "2026-09-23 -- takes the first draw and lets the energy window judge it). "
+                     "**A better source is a real trajectory snapshot from package 3** -- at "
+                     "that point this sampler should be replaced."))
     if return_hessian:
         rec["hessian_eV_A2"] = [[float(v) for v in row] for row in h]
         rec["mode_record"] = project_and_diagonalise(h, m, x0)

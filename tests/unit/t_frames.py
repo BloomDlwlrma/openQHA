@@ -115,10 +115,58 @@ def main():
         x0 = basins[0][0]
         # RMS over Cartesian coordinates, hessian.thermal_displacements' definition (not per atom)
         rms = [float(np.sqrt(((a.get_positions() - basins[a.info["basin"]][0]) ** 2).mean())) for a in fd]
-        check("12 displaced frames within the RMS ceiling, each with its own seed = frame_seed(qm9_index, basin, 'displaced', k)",
-              len(fd) == 12 and max(rms) <= frames.MAX_RMS_A + 1e-12
+        check("12 displaced frames from the ANI-1 draw (the default since 2026-09-23; the Record says so), taken as they come "
+              "(no ceiling: MAX_RMS_A None, the Record nan, the energy window the only filter), each with its own "
+              "seed = frame_seed(qm9_index, basin, 'displaced', k)",
+              len(fd) == 12 and frames.MAX_RMS_A is None and np.isnan(out["info"]["MAX_RMS_A"])
+              and frames.DISTRIBUTION == "ani1" and out["info"]["DISTRIBUTION"] == "ani1"
+              and all(abs(a.info["rms_displacement_A"] - r) < 1e-7 for a, r in zip(fd, rms))
               and all(a.info["seed"] == frames.frame_seed("dsgdb9nsd_000035", a.info["basin"], "displaced", a.info["k"]) for a in fd)
-              and len({a.info["seed"] for a in fd}) == 12, (len(fd), max(rms)))
+              and len({a.info["seed"] for a in fd}) == 12, (len(fd), max(rms), out["info"]["MAX_RMS_A"]))
+        # an explicit ceiling is still honoured, and a draw that cannot meet one raises
+        tight, _rec = hessian_mod.thermal_displacements(
+            read(str(mol / "mace" / "basin00" / "basin.extxyz"), format="extxyz"), None, n_samples=2, hessian=h0,
+            seeds=[7, 8], max_rms_displacement_A=0.05, distribution=out["info"]["DISTRIBUTION"])
+        x00 = basins[0][0]
+        tight_rms = [float(np.sqrt(((a.get_positions() - x00) ** 2).mean())) for a in tight]
+        try:
+            hessian_mod.thermal_displacements(
+                read(str(mol / "mace" / "basin00" / "basin.extxyz"), format="extxyz"), None, n_samples=1, hessian=h0,
+                seeds=[7], max_rms_displacement_A=1e-9, distribution=out["info"]["DISTRIBUTION"])
+            raised = False
+        except RuntimeError as exc:
+            raised = "exceeded the displacement ceiling" in str(exc)
+        check("an explicit --max-rms is still honoured (0.05 A: every draw under it) and an unreachable one raises after 50 draws",
+              max(tight_rms) <= 0.05 + 1e-12 and raised, (max(tight_rms), raised))
+
+        # --- ticket 28: ANI-1 bounds the total harmonic energy at (3/2) N_a k_B T ----------
+        a00 = read(str(mol / "mace" / "basin00" / "basin.extxyz"), format="extxyz")
+        KB_J, NA, CAL = 1.380649e-23, 6.02214076e23, 4184.0
+        cap = 1.5 * len(a00) * KB_J * 298.15 * NA / CAL                       # kcal/mol
+        ani, arec = hessian_mod.thermal_displacements(a00, None, n_samples=8, hessian=h0,
+                                                      seeds=list(range(8)), max_rms_displacement_A=None,
+                                                      distribution="ani1")
+        dxs = [a.get_positions() - a00.get_positions() for a in ani]
+        e_harm = [0.5 * float(d.reshape(-1) @ h0 @ d.reshape(-1)) * frames.EV_TO_KCAL for d in dxs]
+        rho = arec["energy_fraction"]
+        ani2, _ = hessian_mod.thermal_displacements(a00, None, n_samples=8, hessian=h0, seeds=list(range(8)),
+                                                    max_rms_displacement_A=None, distribution="ani1")
+        ani3, _ = hessian_mod.thermal_displacements(a00, None, n_samples=8, hessian=h0, seeds=list(range(100, 108)),
+                                                    max_rms_displacement_A=None, distribution="ani1")
+        same = max(np.abs(ani2[i].get_positions() - ani[i].get_positions()).max() for i in range(8))
+        diff = np.abs(ani3[0].get_positions() - ani[0].get_positions()).max()
+        gauss, grec = hessian_mod.thermal_displacements(a00, None, n_samples=8, hessian=h0, seeds=list(range(8)),
+                                                        max_rms_displacement_A=None, distribution="classical")
+        check("the ANI-1 draw: every frame's harmonic energy (1/2 dx^T H dx) is under the cap (3/2) N_a k_B T = {:.1f} kcal/mol "
+              "and equals rho x cap to 1e-6 relative; rho in [0, 1]; the same seeds reproduce it, other seeds do not; "
+              "the classical branch is untouched".format(cap),
+              abs(arec["energy_cap_kcal"] - cap) < 1e-6 * cap
+              and all(e <= cap * (1 + 1e-9) for e in e_harm)
+              and all(0.0 <= r <= 1.0 for r in rho)
+              and max(abs(e - r * cap) for e, r in zip(e_harm, rho)) < 1e-6 * cap
+              and same < 1e-12 and diff > 1e-3
+              and np.isnan(grec["energy_fraction"][0]) and arec["distribution"] == "ani1",
+              (arec["energy_cap_kcal"], cap, max(e_harm), rho[:3], same, diff))
         check("a displaced frame's Hessian has shape (3N, 3N) and its energy sits above the basin (harmonic surrogate)",
               fd[0].info["hessian"].shape == (30, 30) and all(a.get_potential_energy() > basins[a.info["basin"]][1] for a in fd))
         # reproducibility: redraw basin 0's displacements from the recorded seeds

@@ -60,6 +60,22 @@ python scripts/tooling/s0_hl_progress.py --tag draw300                          
 
 (inside the tmux session, before command 5: `export OPENQHA_PARTITION=deimos; source hpc/env/common.sh && source hpc/env/tianhe.sh` — a new tmux shell is bare.)
 
+**Rebuilding the Frame sets (ticket 28, 2026-09-23).** The displaced draw is the scale of
+the judge's diagnostics (msRRHO reads basins, the training set is basin frames), so one
+campaign carries one draw. When it changes — it did on 2026-09-23, from the classical
+equipartition Gaussian to ANI-1's bounded coefficient randomisation — every Frame set of the
+draw is rebuilt rather than mixed:
+
+```bash
+FORCE=1 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_frames.slurm
+```
+
+`FORCE=1` makes the list stop skipping molecules that already have a `frames.toml` and passes
+`--force` to `02_frames.py`, so the full ~25 min/molecule is paid again (1,250 rebuilt +
+~4,000 still to build ≈ 1 day on 12 nodes). Reference labels already computed on displaced
+frames of the old draw would be orphaned — check `s0_hl_progress` for labelled displaced
+frames before starting one.
+
 **Why this shape and not a chain of arrays** (ruling 2026-09-22, round 11). The tenant's
 quota on TianheXY-CN, read off the portal on 2026-09-21:
 
@@ -245,3 +261,22 @@ Is the campaign's own route for step 03 since 2026-09-22 and lives in §1 (comma
 the tmux gate, living with the driver): a `SlurmProvider` submitting up to `--max-blocks`
 one-node blocks as the queue demands and releasing them as it drains
 (`hpc/resource_configs/tianhe_cpu.py`, role `labels`, per `alframework/parsl_resource_configs`).
+
+## 7. After the labels: the fine-tune (one A800, not tianhe's CPU nodes)
+
+The labels feed ONE training row (S0-C-60): **R4** -- Replay = 4 × the train frames that carry a
+Hessian at `config_weight = 10`, `w_H` = the epoch-0 balance the driver measures by default,
+the gate closed (every judge row reported, `VERDICT = REPORTED`). The five commands, with what
+each needs from this page, are the block "The production row R4, end to end" of
+[`../workflows/hessian_learning/README.md`](../workflows/hessian_learning/README.md):
+`04_dataset` (prints `N_TRAIN_HESSIAN` and `REPLAY_R4_FRAMES`) → the two SPICE draws
+(`s0_spice_test_draw.py --n 5000`, `s0_spice_pt_draw.py --n <REPLAY_R4_FRAMES> --weight 10`;
+the SPICE release is on tianhe, the draws are minutes on the login node) → `hl_train.slurm`
+with `TAG=draw300 RUN=R4` on the A800 partition → `05_train.py --register-copy`, then branch A
+and the msRRHO `mace` / `compare` steps for the pinned seven with `S0_ENGINE=MACE-OFF23_medium-R4
+--tag r4` → `06_judge.py --engine MACE-OFF23_medium-R4 --thermo-tag r4`. The smoke set of §1's
+gate (one day CREST + one day ORCA) runs the same five steps first with `--tag smoke` and
+`MAX_EPOCHS=20`; its Record's `SECONDS_PER_EPOCH` sets R4's walltime. The Dataset for R4 is
+built with the by-frame split and basin frames only (`--train-generators basin`, the default):
+command 6 of §1 as written (`--split-by molecule`) is the smoke set's mode and holds out whole
+molecules, which is not R4's split -- use `--split-by frame` for the campaign Dataset.

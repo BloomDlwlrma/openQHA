@@ -140,6 +140,22 @@ of a frame means stationary on the ENGINE's surface (the basin was optimised wit
 at the reference level the same geometry carries a gradient, which its Label keeps.
 _Avoid_: conformation (SPICE's word; collides with CREST's conformer), sample, structure
 
+**Displaced draw**:
+How a Frame set's displaced Frames are generated from a Basin's modes: `ani1` (ANI-1's
+coefficient randomisation, the default since 2026-09-23: a uniform random partition of at
+most (3/2) N_a k_B T over the modes, random signs -- bounded in energy, not a thermal
+ensemble), `classical` (equipartition, exactly the distribution a 298 K trajectory samples,
+unbounded) or `quantum`. It is the SCALE OF THE DIAGNOSTICS and nothing else: msRRHO
+thermochemistry is computed at Basins and the training set is Basin frames only, so the draw
+touches neither; the displaced Frames carry an EnGrad reference label and serve the judge's
+held-out rows, the in-distribution and forgetting checks and the curvature change from the
+Basin. One campaign therefore carries one draw (`FORCE=1` rebuilds every Frame set when it
+changes). No draw bounds the geometry -- the amplitude is sqrt(2E)/omega in all three -- so a
+Basin with a near-zero mode displaces by angstroms and loses its displaced Frames to the
+energy window, which is the only filter.
+_Avoid_: calling it a temperature (only `classical` is one); reading a msRRHO or training
+consequence into it.
+
 **Frame set**:
 One molecule's Frames, one file per generator and per Level, engine-independent,
 under the molecule directory's `frames/` folder; identical positions across the Levels

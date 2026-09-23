@@ -34,6 +34,9 @@ def main():
     ap.add_argument("--array-id", type=int, default=0)
     ap.add_argument("--array-n", type=int, default=1)
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules for this task (the debug gate)")
+    ap.add_argument("--force", action="store_true",
+                    help="stage frames: list every molecule with branch A, whether or not it already has a Frame "
+                         "set -- the REBUILD after a draw change (ticket 28). Ignored for stage branchA.")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     args.name = args.name or args.tag
@@ -48,7 +51,8 @@ def main():
             elif not basins.done(qid, args.tag, root=root):
                 todo.append(qid)
         else:
-            if basins.done(qid, args.tag, root=root) and not (layout.frames_dir(mol) / (frames.STEP + ".toml")).is_file():
+            if basins.done(qid, args.tag, root=root) and (
+                    args.force or not (layout.frames_dir(mol) / (frames.STEP + ".toml")).is_file()):
                 todo.append(qid)
     mine = [q for i, q in enumerate(todo) if i % max(1, args.array_n) == args.array_id]
     if args.limit:

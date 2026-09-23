@@ -12,6 +12,7 @@
 #     cd $HOME/openQHA-main
 #     TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm   # the gate
 #     TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm                # the campaign: 2 nodes, ~1 h (ticket 25)
+#     FORCE=1 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_frames.slurm    # REBUILD every Frame set (ticket 28)
 #
 # Molecules with a Frame-set Record are skipped, so a resubmission continues.
 # =======================================================================================
@@ -46,6 +47,13 @@ THREADS="${THREADS:-1}"
 CONCURRENCY="${CONCURRENCY:-$(( CORES / THREADS ))}"
 [ "$CONCURRENCY" -ge 1 ] || CONCURRENCY=1
 LIMIT="${LIMIT:-}"
+# FORCE=1 REBUILDS every Frame set of the draw, not only the missing ones: the list stops
+# skipping molecules that have a frames.toml and 02 overwrites it. That is what a change of
+# the displaced draw needs (ticket 28, 2026-09-23: classical -> ani1), so that one campaign
+# carries one draw. It costs the full 25 min/molecule again.
+FORCE="${FORCE:-0}"
+FORCE_FLAG=""
+[ "$FORCE" = 1 ] && FORCE_FLAG="--force"
 ARRAY_ID="${SLURM_ARRAY_TASK_ID:-0}"
 ARRAY_N="${SLURM_ARRAY_TASK_COUNT:-1}"
 
@@ -68,15 +76,16 @@ fi
 
 LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
 python hpc/slurm/hl_list.py --tag "$TAG" --name "$NAME" --stage frames --array-id "$ARRAY_ID" --array-n "$ARRAY_N" \
-    ${LIMIT:+--limit "$LIMIT"} --out "$LIST" || exit 1
+    ${LIMIT:+--limit "$LIMIT"} $FORCE_FLAG --out "$LIST" || exit 1
+if [ "$FORCE" = 1 ]; then echo "force      rebuilding every Frame set of the draw (02 --force)"; fi
 
 echo; echo "== 02 Frame sets"
 started=$(date +%s)
-export TAG
+export TAG FORCE_FLAG
 awk -v nc="$CONCURRENCY" -v np="$THREADS" '{ slot = (NR - 1) % nc; s = slot * np; printf "%s %d-%d\n", $1, s, s + np - 1 }' "$LIST" \
     | xargs -r -n 2 -P "$CONCURRENCY" bash -c 'q="$0"; c="$1"; t0=$(date +%s);
         if [ "${HL_TASKSET:-1}" = 1 ] && command -v taskset >/dev/null 2>&1; then run=(taskset -c "$c"); else run=(); fi
-        "${run[@]}" python -u workflows/hessian_learning/02_frames.py --tag "$TAG" --species "$q" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load" | sed "s/^/$q  /"
+        "${run[@]}" python -u workflows/hessian_learning/02_frames.py --tag "$TAG" --species "$q" $FORCE_FLAG 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load" | sed "s/^/$q  /"
         echo "$q rc=${PIPESTATUS[0]} $(( $(date +%s) - t0 )) s"'
 wall=$(( $(date +%s) - started ))
 
