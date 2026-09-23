@@ -17,7 +17,7 @@ GENERATORS (rounds 3-4, rulings 2026-09-18)
                TEMPERATURE_K (`hessian.thermal_displacements`, `distribution="nms"`, with
                `hessian=` the stored matrix -- see THE DISPLACED DRAW), taken AS IT COMES:
                no RMS ceiling, the energy window below is the only filter; the engine's
-               energy, forces and Hessian are computed at each.
+               energy and forces are computed at each, and NO engine Hessian (below).
     merged     every input conformer branch A's deduplication merged into a basin
                (`DUPLICATE_MAP` of the branch-A Property; geometry = the tightened
                `mace/confNN/conf.extxyz`), one frame each, no displacement.
@@ -98,6 +98,22 @@ scale -- which is why the ruling of 2026-09-23 rebuilt every Frame set of draw30
 so a basin with a near-zero mode (4-6 cm^-1 surviving the Eckart projection) displaces by
 angstroms and its displaced frames are dropped by the energy window (ticket 27).
 
+WHICH FRAMES CARRY AN ENGINE HESSIAN (ruling 2026-09-23, ticket 29)
+--------------------------------------------------------------------
+`basin` reuses branch A's stored `hessian.npy` (nothing is recomputed); `merged` and
+`saddle` get one from the engine; `displaced` gets NONE -- energy and forces only, and its
+`LOWEST_FREQ` is blank. The engine Hessian is 3N backward passes: 13.4 s of the 13.6 s a
+19-atom frame costs against 0.21 s for energy + forces, and ~22 of a molecule's ~30 frames
+are displaced, so this is 3.4x of the whole step. Nothing downstream read it: a labelled
+frame enters the Dataset as its REFERENCE label, a displaced frame has no reference Hessian
+(round 5, Q7 (b): `EnGrad` only) and so reaches the judge with `has_hessian = false`, where
+the Hessian rows filter it out; training predicts its own Hessian; `hessian_compare`,
+`mode_curvature` and the smoke fit all need a reference one; `frame_labels` reads the file
+for the GEOMETRY. What is lost: the `LOWEST_FREQ` column at displaced frames, the engine
+Hessian in the `pool` split, and the possibility of a basin -> displaced curvature ratio at
+the ENGINE level (at the reference level it has been impossible since Q7 (b)).
+`02_frames.py --displaced-hessian` rebuilds a molecule with them when one is wanted.
+
 FILES
 -----
 `<molecule>/frames/<generator>.<engine level>.extxyz`   one file per generator (ASE
@@ -123,6 +139,11 @@ PROGNAME = "openQHA frames"
 GENERATORS = ("basin", "displaced", "merged", "saddle")
 #: displaced frames per basin (round 4, Q2)
 N_DISPLACED = 4
+#: compute the ENGINE Hessian at a displaced frame too? Off since 2026-09-23 (ticket 29):
+#: it is 3N backward passes -- 13.4 s of the 13.6 s a 19-atom frame costs -- and nothing
+#: downstream reads it (see WHICH FRAMES CARRY AN ENGINE HESSIAN). `02_frames.py
+#: --displaced-hessian` turns it back on for a molecule that needs one.
+DISPLACED_HESSIAN = False
 #: the target temperature of the draw. 450 K under normal-mode sampling puts the same
 #: amplitude that equipartition put at 298 K (its mean energy is (3/4) N_a k_B T, not
 #: (3N-6)/2 k_B T); it is also the published setting for 8-heavy-atom molecules.
@@ -166,6 +187,8 @@ SCHEMA = {
         "BOND_FORM_MULT": ("Double", None, "a non-bonded pair closer than this x (r_i + r_j) is reported as formed"),
         "N_BOND_CHANGED": ("Integer", None, "kept frames whose bond graph differs from the basin's (information, not a filter)"),
         "N_BASINS": ("Integer", None, "basins of the molecule"),
+        "DISPLACED_HESSIAN": ("Boolean", None, "was the engine Hessian computed at the displaced frames too (02_frames.py --displaced-hessian)? Off since 2026-09-23"),
+        "N_ENGINE_HESSIAN": ("Integer", None, "kept frames carrying an engine Hessian (basin / merged / saddle, and displaced only with DISPLACED_HESSIAN)"),
         "N_FRAMES": ("Integer", None, "frames kept, all generators"),
         "N_DROPPED": ("Integer", None, "frames dropped, all generators"),
         "SECONDS": ("Double", "s", "wall time"),
@@ -186,7 +209,7 @@ SCHEMA = {
         "ENERGY": ("Double", "eV", "engine energy"),
         "ENERGY_ABOVE_BASIN": ("Double", "kcal/mol", "engine energy above the frame's basin"),
         "MAX_FORCE": ("Double", "eV/A", "engine |F|max"),
-        "LOWEST_FREQ": ("Double", "cm^-1", "lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); at a displaced frame this is a curvature, not a mode"),
+        "LOWEST_FREQ": ("Double", "cm^-1", "lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); nan at a displaced frame, which carries no engine Hessian (ticket 29)"),
         "BOND_CHANGE": ("String", None, "broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)"),
         "STATUS": ("String", None, "kept / dropped"),
         "REASON": ("String", None, "why dropped (the energy window), or -"),
@@ -227,13 +250,20 @@ def bond_change(atoms, basin_bonds, break_mult=BOND_BREAK_MULT, form_mult=BOND_F
     return None
 
 
-def engine_efh(atoms, calc):
-    """Energy (eV), forces (eV/A), raw Cartesian Hessian (3N x 3N, eV/A^2) of the engine
-    at `atoms`; the Hessian by the engine's analytic route (`hessian.hessian`)."""
+def engine_efh(atoms, calc, want_hessian=True):
+    """Energy (eV), forces (eV/A) and -- with `want_hessian` -- the raw Cartesian Hessian
+    (3N x 3N, eV/A^2) of the engine at `atoms`, by its analytic route (`hessian.hessian`).
+
+    The Hessian is the whole cost: 3N backward passes, measured single-threaded at 13.4 s
+    for 19 atoms and 3.7 s for 10, against 0.21 s for energy + forces. `want_hessian=False`
+    returns (e, f, None) -- what a displaced frame takes since 2026-09-23 (ticket 29:
+    nothing downstream reads the engine Hessian of a displaced frame)."""
     a = atoms.copy()
     a.calc = calc
     e = float(a.get_potential_energy())
     f = np.asarray(a.get_forces(), dtype=float)
+    if not want_hessian:
+        return e, f, None
     h, _asym = hessian_mod.hessian(a, calc, mode="analytic")
     return e, f, np.asarray(h, dtype=float)
 
@@ -284,11 +314,13 @@ def read_frames(path):
 # ====================================================================== the Calculation
 def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max_rms_A=MAX_RMS_A,
              engine_name=None, energy_window=ENERGY_WINDOW_KCAL, qm9_index=None, calc=None,
-             distribution=DISTRIBUTION):
+             distribution=DISTRIBUTION, displaced_hessian=DISPLACED_HESSIAN):
     """Build the Frame set of one molecule directory at the engine level: one extxyz per
     generator under `frames/` and the Record `frames/frames.{out,toml}`. Returns a dict
     with the rows and paths. `calc=` injects a calculator (tests); otherwise the
-    registered engine is loaded."""
+    registered engine is loaded. `displaced_hessian=True` also computes the engine Hessian
+    at every displaced frame (off by default since 2026-09-23 -- see WHICH FRAMES CARRY AN
+    ENGINE HESSIAN)."""
     from ase.io import read
     t0 = time.time()
     molecule = Path(molecule)
@@ -314,11 +346,13 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
     rows, kept = [], {g: [] for g in GENERATORS}
     graphs, masses_of, e_basin = {}, {}, {}
 
-    def consider(generator, basin, k, atoms, seed, source, rms, hessian=None, e=None, f=None):
+    def consider(generator, basin, k, atoms, seed, source, rms, hessian=None, e=None, f=None,
+                 want_hessian=True):
         if hessian is None:
-            e, f, hessian = engine_efh(atoms, calc)
+            e, f, hessian = engine_efh(atoms, calc, want_hessian=want_hessian)
         fmax = float(np.abs(f).max())
-        lowest = lowest_projected_cm(hessian, masses_of[basin], atoms.get_positions())
+        lowest = (lowest_projected_cm(hessian, masses_of[basin], atoms.get_positions())
+                  if hessian is not None else float("nan"))
         row = dict(GENERATOR=generator, BASIN=int(basin), K=int(k), SEED=int(seed), SOURCE_CONFORMER=int(source),
                    RMS_DISPLACEMENT_A=float(rms), ENERGY=float(e),
                    ENERGY_ABOVE_BASIN=(float(e) - e_basin[basin]) * EV_TO_KCAL,
@@ -355,7 +389,7 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
                 atoms, None, temperature_K=temperature_K, n_samples=int(n_displaced),
                 max_rms_displacement_A=max_rms_A, hessian=h_b, seeds=seeds, distribution=distribution)
             for k, (a, rms) in enumerate(zip(disp, drec["rms_displacement_A"])):
-                consider("displaced", b, k, a, seeds[k], -1, rms)
+                consider("displaced", b, k, a, seeds[k], -1, rms, want_hessian=bool(displaced_hessian))
 
     # ---- merged and saddle: tightened input conformers from branch A's engine files --
     def basin_of(cid):
@@ -396,8 +430,9 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
                 ENERGY_WINDOW_KCAL=float(energy_window), BOND_CUTOFF_MULT=BOND_CUTOFF_MULT,
                 BOND_BREAK_MULT=BOND_BREAK_MULT, BOND_FORM_MULT=BOND_FORM_MULT,
                 N_BOND_CHANGED=sum(1 for r in rows if r["STATUS"] == "kept" and r["BOND_CHANGE"] != "-"),
-                N_BASINS=len(files),
+                N_BASINS=len(files), DISPLACED_HESSIAN=bool(displaced_hessian),
                 N_FRAMES=sum(r["N_FRAMES"] for r in gen_rows), N_DROPPED=sum(r["N_DROPPED"] for r in gen_rows),
+                N_ENGINE_HESSIAN=sum(1 for g in kept for fr in kept[g] if fr.get("hessian") is not None),
                 SECONDS=time.time() - t0)
     fdir = layout.frames_dir(molecule)
     fdir.mkdir(parents=True, exist_ok=True)
@@ -412,7 +447,8 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
 def _write_report(path, info, gen_rows, rows):
     rep = report.Report("openQHA frames", "the Frame set of {} at {}".format(info["QM9_INDEX"], info["LEVEL"]))
     rep.section("conventions")
-    for k in ("ENGINE", "LEVEL", "ENGINE_PARAMS_SHA256", "ENGINE_PIN_STATUS", "TEMPERATURE", "DISTRIBUTION", "N_DISPLACED_PER_BASIN",
+    for k in ("ENGINE", "LEVEL", "ENGINE_PARAMS_SHA256", "ENGINE_PIN_STATUS", "TEMPERATURE", "DISTRIBUTION",
+              "N_DISPLACED_PER_BASIN", "DISPLACED_HESSIAN", "N_ENGINE_HESSIAN",
               "MAX_RMS_A", "ENERGY_WINDOW_KCAL", "BOND_CUTOFF_MULT", "BOND_BREAK_MULT", "BOND_FORM_MULT",
               "N_BOND_CHANGED", "N_BASINS", "N_FRAMES", "N_DROPPED"):
         rep.kv(k, info[k])
@@ -426,8 +462,9 @@ def _write_report(path, info, gen_rows, rows):
                 "%.1f" % r["LOWEST_FREQ"], r["BOND_CHANGE"], r["STATUS"], r["REASON"]]
                for r in rows])
     rep.note("a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term "
-             "included -- the Hessian-learning target, not a frequency; 'lowest' at a displaced frame is a "
-             "curvature. The basin frame reuses the basin's stored hessian.npy. dE of a displaced frame is the "
+             "included -- the Hessian-learning target, not a frequency. The basin frame reuses the basin's "
+             "stored hessian.npy; merged and saddle frames get one from the engine; a DISPLACED frame gets "
+             "none (ticket 29: 3N backward passes nothing downstream reads) and its 'lowest' is blank. dE of a displaced frame is the "
              "ENGINE's energy at the drawn geometry; what the draw put in is the harmonic part of it -- normal-mode "
              "sampling bounds that at (3/2) N_a k_B T with mean (3/4) N_a k_B T (9.4 kcal/mol mean, 18.7 max for "
              "14 atoms at 450 K). The only filter is the energy window (275 "

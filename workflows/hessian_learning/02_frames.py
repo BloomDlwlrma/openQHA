@@ -50,6 +50,10 @@ def main():
                          "redrawn up to 50 times and a basin with a near-zero mode then raises")
     ap.add_argument("--engine", default=None, help="registered engine name (default: the production default)")
     ap.add_argument("--force", action="store_true", help="rebuild a Frame set whose Record exists")
+    ap.add_argument("--displaced-hessian", action="store_true",
+                    help="also compute the engine Hessian at every displaced frame (off by default since "
+                         "2026-09-23: it is 3N backward passes -- ~3.4x of this step -- and nothing downstream "
+                         "reads it; the frame's LOWEST_FREQ is blank without it)")
     args = ap.parse_args()
 
     mols = [basin_reader.molecule_for(args.species, args.tag)] if args.species else molecules_under(args.tag)
@@ -63,7 +67,8 @@ def main():
             continue
         try:
             out = frames.generate(mol, n_displaced=args.n_displaced, temperature_K=args.temperature,
-                                  max_rms_A=args.max_rms, engine_name=args.engine, distribution=frames.DISTRIBUTION)
+                                  max_rms_A=args.max_rms, engine_name=args.engine, distribution=frames.DISTRIBUTION,
+                                  displaced_hessian=args.displaced_hessian)
         except Exception as exc:                                 # one molecule must not stop the Batch
             failed += 1
             print("FAILED  {}  {}: {}".format(mol.name, type(exc).__name__, str(exc)[:200]), flush=True)

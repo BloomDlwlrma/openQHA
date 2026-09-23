@@ -179,8 +179,31 @@ def main():
               and same < 1e-12 and diff > 1e-3
               and np.isnan(grec["c_sum"][0]) and arec["distribution"] == "nms",
               (arec["harmonic_energy_cap_kcal"], cap, max(e_harm), mean_e, rho[:3], same, diff))
-        check("a displaced frame's Hessian has shape (3N, 3N) and its energy sits above the basin (harmonic surrogate)",
-              fd[0].info["hessian"].shape == (30, 30) and all(a.get_potential_energy() > basins[a.info["basin"]][1] for a in fd))
+        # --- ticket 29: no engine Hessian at a displaced frame -------------------------------
+        fb_h = frames.read_frames(layout.frames_file(mol, "basin", level))
+        disp_rows = [r for r in out["frames"] if r["GENERATOR"] == "displaced" and r["STATUS"] == "kept"]
+        stat_rows = [r for r in out["frames"] if r["GENERATOR"] in ("basin", "merged", "saddle") and r["STATUS"] == "kept"]
+        with_h = frames.generate(mol, calc=calc, engine_name="MACE-OFF23_medium", n_displaced=1,
+                                 displaced_hessian=True)
+        fd_h = frames.read_frames(layout.frames_file(mol, "displaced", level))
+        check("ticket 29: a displaced frame carries NO engine Hessian (has_hessian false, no hessian key, LOWEST_FREQ nan) while "
+              "basin / merged / saddle do; the Record counts them (N_ENGINE_HESSIAN, DISPLACED_HESSIAN false); "
+              "--displaced-hessian brings them back",
+              all("hessian" not in a.info and a.info["has_hessian"] is False for a in fd)
+              and all(np.isnan(r["LOWEST_FREQ"]) for r in disp_rows)
+              and all(not np.isnan(r["LOWEST_FREQ"]) for r in stat_rows)
+              and fb_h[0].info["hessian"].shape == (30, 30)
+              and out["info"]["DISPLACED_HESSIAN"] is False
+              and out["info"]["N_ENGINE_HESSIAN"] == len(stat_rows)
+              and with_h["info"]["DISPLACED_HESSIAN"] is True
+              and all(a.info["has_hessian"] is True and a.info["hessian"].shape == (30, 30) for a in fd_h)
+              and with_h["info"]["N_ENGINE_HESSIAN"] == sum(1 for r in with_h["frames"] if r["STATUS"] == "kept"),
+              (out["info"]["N_ENGINE_HESSIAN"], len(stat_rows), with_h["info"]["N_ENGINE_HESSIAN"]))
+        # rebuild the Frame set as the workflow makes it, for the checks below
+        out = frames.generate(mol, calc=calc, engine_name="MACE-OFF23_medium")
+        fd = frames.read_frames(layout.frames_file(mol, "displaced", level))
+        check("a displaced frame's energy sits above the basin (harmonic surrogate)",
+              all(a.get_potential_energy() > basins[a.info["basin"]][1] for a in fd))
         # reproducibility: redraw basin 0's displacements from the recorded seeds
         seeds = [a.info["seed"] for a in fd if a.info["basin"] == 0]
         a0 = read(str(mol / "mace" / "basin00" / "basin.extxyz"), format="extxyz")

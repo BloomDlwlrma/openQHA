@@ -157,7 +157,7 @@ merged / saddle: `EnGrad Freq`) and ~12 gradient jobs (displaced: `EnGrad`; roun
 | stage | per unit | basis | draw300 (12 nodes) | measured on the campaign |
 |---|---|---|---|---|
 | A branch A | 283–1,493 s / molecule at 16 per node, 3 of 16 still running at the 30-min debug cap **[measured 2026-09-21, debug gate on draw300, 9 heavy atoms; the smoke set gave 460–590 s on 2026-09-19]** | 6,458 × ~1,000 s × 4 cores ≈ 7,200 core-h | **~10 h** (array `--time=1-00:00:00` is slack; a molecule past `TIMEOUT_S=3600` is skipped with rc≠0 and stays pending) | — |
-| 02 frames | ~1 min / molecule **[estimate from the smoke set]** | 6,458 × 60 s × 1 core = 108 core-h | **< 15 min** (64 × 1 since 2026-09-21) | — |
+| 02 frames | **122 s / molecule at 1 thread [measured 2026-09-23]**: ~8.6 frames with an engine Hessian at 13.4 s (19 atoms, 3N backward passes) + ~22 displaced at 0.21 s (energy and forces only since ticket 29) | 6,458 × 122 s × 1 core = 219 core-h | **~2 h** on 12 nodes at 64 × 1 (the 25 min/molecule of 2026-09-22 was Hessians at every frame, 3.4x, and 64-way contention) | — |
 | 03 Hessian jobs | 10 atoms: 245–305 s **[measured]**; 19 atoms: 40–80 min **[estimate, N³–N⁴ scaling]** | 6,458 × 4 × 60 min × 4 cores = 103,000 core-h | 5.6 days | — |
 | 03 gradient jobs | 19 atoms: 3–5 min **[estimate]** | 6,458 × 12 × 4 min × 4 = 20,700 core-h | 1.1 days | — |
 | 03 total | | **≈ 125,000–155,000 core-h** | **≈ 7–8.5 days** → 3 rounds of 3 days | — |

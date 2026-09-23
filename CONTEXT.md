@@ -159,6 +159,17 @@ not to this workflow.
 _Avoid_: calling the 450 K a physical temperature of the frames (the draw is a bounded random
 partition, not a Boltzmann ensemble); reading a msRRHO or training consequence into it.
 
+**Engine Hessian of a Frame**:
+Which Frames carry one, since 2026-09-23: a Basin frame reuses branch A's stored matrix,
+`merged` and `saddle` get one from the engine, a `displaced` frame gets NONE (energy and
+forces only; its `LOWEST_FREQ` is blank and its `has_hessian` is false). The engine Hessian
+is 3N backward passes -- 13.4 s of the 13.6 s a 19-atom frame costs -- and ~22 of a
+molecule's ~30 Frames are displaced, so this is 3.4x of the Frame-set step; nothing
+downstream reads it, because a labelled Frame enters the Dataset as its reference Label, a
+displaced Frame has no reference Hessian, and training predicts its own.
+_Avoid_: confusing it with the Label Hessian (the reference one) or with the model's
+prediction; assuming a `displaced` Frame can be compared matrix-to-matrix.
+
 **Frame set**:
 One molecule's Frames, one file per generator and per Level, engine-independent,
 under the molecule directory's `frames/` folder; identical positions across the Levels

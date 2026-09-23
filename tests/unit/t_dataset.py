@@ -64,6 +64,18 @@ def place(tmp, qid):
     return root, dest
 
 
+def _fake_hessian(a):
+    """A reference-level Hessian for the fixture: the engine's own scaled where the frame
+    carries one (basin / merged / saddle), else a deterministic surrogate of the right shape
+    -- a displaced frame has no engine Hessian since ticket 29, and this fixture is about
+    what the Dataset does with a LABEL Hessian, not where it came from."""
+    h = a.info.get("hessian")
+    if h is not None:
+        return np.asarray(h) * 1.1
+    n = 3 * len(a)
+    return np.eye(n) * 1.1 + 0.01
+
+
 def fake_labels(mol, generators, mace_level, only_basin_frames=False, gradient_only=()):
     """Reference-level files written from the engine frames with shifted values; the
     generators in `gradient_only` get no Hessian (round 5 Q7 (b): the displaced frames)."""
@@ -79,7 +91,7 @@ def fake_labels(mol, generators, mace_level, only_basin_frames=False, gradient_o
             info.update(level=LEVEL, orca_version="6.0.1", hessian_route="analytic" if g not in gradient_only else "gradient",
                         noise_floor_cm=1.0, keywords="fake")
             out.append(dict(atoms=a, energy=float(a.get_potential_energy()) - 1.0, forces=np.asarray(a.get_forces()) * 0.5,
-                            hessian=np.asarray(a.info["hessian"]) * 1.1 if g not in gradient_only else None, info=info))
+                            hessian=_fake_hessian(a) if g not in gradient_only else None, info=info))
         if out:
             frames._write_frames(layout.frames_file(mol, g, LEVEL), out)
 
@@ -184,10 +196,14 @@ def main():
             a = files[r["file"]][r["row"]]
             good = (a.info["qm9_index"] == r["qm9_index"] and a.info["generator"] == r["generator"]
                     and int(a.info["basin"]) == r["basin"] and int(a.info["k"]) == r["k"]
-                    and a.info["level"] == (LEVEL if r["split"] != "pool" else mace_level) and a.info["hessian"].shape == (30, 30))
+                    and a.info["level"] == (LEVEL if r["split"] != "pool" else mace_level)
+                    # a labelled frame carries its Label Hessian; a pool frame carries the engine's,
+                    # which a displaced frame has not had since ticket 29
+                    and (np.shape(a.info["hessian"]) == (30, 30)
+                         if a.info.get("has_hessian", "hessian" in a.info) else "hessian" not in a.info))
             if not good:
                 bad.append((r["qm9_index"], r["generator"], r["basin"], r["k"], r["split"], a.info.get("qm9_index"), a.info.get("generator"),
-                            a.info.get("basin"), a.info.get("k"), a.info.get("level"), np.shape(a.info["hessian"])))
+                            a.info.get("basin"), a.info.get("k"), a.info.get("level"), np.shape(a.info.get("hessian"))))
             ok = ok and good
         check("index.dat round-trips and every row's (file, row) is the frame it names, at the split's level", ok,
               (len(back), bad[:2]))
