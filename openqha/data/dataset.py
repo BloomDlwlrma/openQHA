@@ -112,6 +112,16 @@ PINNED = ("dsgdb9nsd_000018", "dsgdb9nsd_000019", "dsgdb9nsd_000035", "dsgdb9nsd
 #: are test (whole), 5 % of the training molecules' labelled frames are valid
 VALID_FRACTION = 0.05
 TEST_FRACTION = 0.05
+#: The fixed validation probes (S0-C-67, PHL's fixed-vector protocol): every labelled frame
+#: carrying a Hessian gets its own [VALID_PROBE_KMAX, 3N] Rademacher set, drawn here from
+#: the frame's IDENTITY and written into the file. The loss takes the first k rows of it, so
+#: the sets are nested: a K scan is a flag, not a rebuild, and the K = 4 and K = 8 readings
+#: are comparable by construction. Nothing is derived from the Label's bytes.
+#: Every labelled split, not only valid: mace evaluates the loss on the TRAINING split too
+#: (its final error table), and in eval mode the loss reads stored probes and draws none.
+#: What is particular to valid is the USE -- the reading that drives the schedule.
+VALID_PROBE_KMAX = 16
+VALID_PROBE_MODE = "rademacher"
 #: by-frame split (the smoke / fit mode; production until S0-C-65): 90 / 5 / 5 of the frames
 FRAME_VALID_FRACTION = 0.05
 FRAME_TEST_FRACTION = 0.05
@@ -228,6 +238,10 @@ SCHEMA = {
         "N_VALID": ("Integer", None, "frames in valid"),
         "N_TEST": ("Integer", None, "frames in test"),
         "N_POOL": ("Integer", None, "frames in pool (unlabelled)"),
+        "N_VALID_PROBE_FRAMES": ("Integer", None, "labelled frames carrying their fixed probe set: every frame with a Hessian, because mace evaluates the loss on the training split too (S0-C-67)"),
+        "VALID_PROBE_SOURCE": ("String", None, "where the validation probes come from: file (drawn here, stored in the valid split) -- the loss draws none"),
+        "VALID_PROBE_KMAX": ("Integer", None, "rows stored per valid frame; the loss takes the first k of them (nested, so a K scan needs no rebuild)"),
+        "VALID_PROBE_MODE": ("String", None, "the stored probes' distribution (rademacher: the smallest variance of the unit-variance draws)"),
         "N_HESSIAN_FRAMES": ("Integer", None, "labelled frames carrying a reference Hessian (basin / merged / saddle)"),
         "N_TRAIN_HESSIAN": ("Integer", None, "train frames carrying a reference Hessian: the number the production Replay is 4x of (S0-C-60)"),
         "REPLAY_R4_FRAMES": ("Integer", None, "4 x N_TRAIN_HESSIAN: the Replay size of the production row R4 (s0_spice_pt_draw.py --n)"),
@@ -539,6 +553,18 @@ def _rng(seed, *parts):
     return np.random.default_rng(int.from_bytes(h[:8], "little"))
 
 
+def valid_probes(seed, qid, key, n_atoms, k_max=VALID_PROBE_KMAX):
+    """The frame's own fixed probe set, [k_max, 3N] of +-1 (S0-C-67).
+
+    The generator is seeded by the frame's IDENTITY -- the same rule the split itself uses
+    (`_rng(seed, "frame", ...)`) -- so the set is reproducible from the Record's SEED alone,
+    is independent between frames, and does NOT move when the Label is recomputed at the
+    same level. Nothing here reads `H_r`.
+    """
+    rng = _rng(seed, "probe", qid, key[0], key[1], key[2])
+    return rng.choice([-1, 1], size=(int(k_max), 3 * int(n_atoms))).astype(np.int8)
+
+
 def frame_draw(seed, qid, key):
     """One number in [0, 1) for a frame, from its own generator: the by-frame split reads
     it against the fractions, so the frame's split depends on nothing else."""
@@ -627,6 +653,7 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
     # ---- frames ------------------------------------------------------------------------
     index, per_mol, split_frames = [], [], {s: [] for s in SPLITS}
     fingerprints, versions = set(), set()
+    n_valid_probe_frames = 0
     for r in mols:
         qid, mol = r["qm9_index"], Path(r["molecule_dir"])
         classes = str(r.get("classes") or "") or classes_of(r.get("smiles", ""))
@@ -665,6 +692,10 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
                     split, held_out = "test", True
                 atoms, levels, ver = lab, [mace_level, level], str(lab.info.get("orca_version", "-"))
                 versions.add(ver)
+                if lab.info.get("hessian") is not None:
+                    atoms.info["valid_probes"] = valid_probes(seed, qid, key, len(atoms)).reshape(-1)
+                    atoms.info["has_valid_probes"] = True
+                    n_valid_probe_frames += 1
             fp = str(a.info.get("engine_params_sha256", "-"))
             fingerprints.add(fp)
             counts[split] += 1
@@ -708,6 +739,8 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
         m.pop("classes")
     info = dict(NAME=str(name), TAGS=tags, LEVEL=level, MACE_LEVEL=mace_level, SEED=int(seed), SPLIT_BY=split_by,
                 RESPLIT=bool(resplit),
+                N_VALID_PROBE_FRAMES=int(n_valid_probe_frames), VALID_PROBE_SOURCE="file",
+                VALID_PROBE_KMAX=int(VALID_PROBE_KMAX), VALID_PROBE_MODE=VALID_PROBE_MODE,
                 VALID_FRACTION=float(valid_fraction), TEST_FRACTION=float(test_fraction), PINNED=list(pinned),
                 PURPOSE=str(purpose or ("judge" if pinned else "fit")),
                 TRAIN_GENERATORS=list(train_generators), HELD_OUT_GENERATORS=list(held_out_generators),
@@ -737,12 +770,14 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
 REF_ENERGY_KEY = "REF_energy"
 REF_FORCES_KEY = "REF_forces"
 REF_HESSIAN_KEY = "REF_hessian"
+REF_PROBES_KEY = "REF_valid_probes"                        # the fork's --valid_probes_key
 
 
 def _write_split(path, atoms_list, reference=True):
     """Write frames `(atoms, split)`: energy / forces on the calculator, `hessian` flat in
-    info with `has_hessian`, the `split` key, and -- for the labelled splits (`reference`) --
-    the same values again under REF_energy / REF_forces / REF_hessian."""
+    info with `has_hessian`, the `split` key, the valid split's fixed probes (`valid_probes`
+    flat with `has_valid_probes`, S0-C-67) and -- for the labelled splits (`reference`) --
+    the same values again under REF_energy / REF_forces / REF_hessian / REF_valid_probes."""
     from ase.calculators.singlepoint import SinglePointCalculator
     from ase.io import write
     out = []
@@ -763,6 +798,8 @@ def _write_split(path, atoms_list, reference=True):
             b.arrays[REF_FORCES_KEY] = f
             if b.info["has_hessian"]:
                 b.info[REF_HESSIAN_KEY] = b.info["hessian"]
+            if b.info.get("has_valid_probes"):
+                b.info[REF_PROBES_KEY] = np.asarray(b.info["valid_probes"], dtype=int).reshape(-1)
         out.append(b)
     write(str(path), out, format="extxyz")
 
@@ -777,7 +814,8 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
     for k in ("TAGS", "LEVEL", "MACE_LEVEL", "SEED", "SPLIT_BY", "VALID_FRACTION", "TEST_FRACTION", "TRAIN_GENERATORS",
               "HELD_OUT_GENERATORS", "N_MOLECULES", "N_TEST_MOLECULES", "N_TRAIN_MOLECULES", "N_FRAMES", "N_LABELLED",
               "N_HESSIAN_FRAMES", "N_TRAIN_HESSIAN", "REPLAY_R4_FRAMES", "N_TRAIN_BASIN", "N_TEST_HELD_OUT", "N_STALE",
-              "KEPT_PREVIOUS", "MERGED_FILE", "ENGINE_PARAMS_SHA256", "ORCA_VERSIONS"):
+              "KEPT_PREVIOUS", "MERGED_FILE", "ENGINE_PARAMS_SHA256", "ORCA_VERSIONS",
+              "VALID_PROBE_SOURCE", "VALID_PROBE_KMAX", "VALID_PROBE_MODE", "N_VALID_PROBE_FRAMES"):
         rep.kv(k, info[k])
     rep.section("per split")
     rep.table(["split", "frames", "molecules", "file"],
@@ -817,6 +855,16 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
              "whose geometry differs from the engine file's (stale) is ignored. train/valid/test files carry the "
              "REFERENCE E-F-H (also as REF_energy / REF_forces / REF_hessian, MACE-torch's keys; has_hessian says which "
              "frames carry one) and are repeated in MERGED_FILE, the single xyz for training; pool carries the engine's.")
+    rep.note("VALID_PROBE_* (S0-C-67, PHL's fixed-vector protocol): every labelled frame with a Hessian carries its "
+             "own [VALID_PROBE_KMAX, 3N] Rademacher set, drawn HERE from the frame's identity (qm9_index | generator "
+             "| basin | k) and this Record's SEED, and written as valid_probes / REF_valid_probes -- every labelled "
+             "split, because mace evaluates the loss on the training split too and the loss draws nothing in eval "
+             "mode. What is particular to valid is the USE. The training loss "
+             "draws fresh probes every step; the VALIDATION loss reads the first k rows of this set and draws nothing, "
+             "so the epoch-to-epoch difference is free of draw noise and nothing depends on the Label's bytes -- a "
+             "label recomputed at the same level leaves the probes untouched. The rows are nested, so k may be changed "
+             "on the command line up to VALID_PROBE_KMAX without rebuilding; changing VALID_PROBE_KMAX itself, or the "
+             "SEED, needs a rebuild of the valid file and makes the readings incomparable with the earlier runs'.")
     rep.write(path, step=STEP)
 
 

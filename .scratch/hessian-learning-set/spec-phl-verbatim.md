@@ -194,7 +194,9 @@ changes silently and two runs' validation curves stop being comparable with noth
 Record. S0-C-67 therefore follows PHL's fixed-vector protocol: the vectors are drawn once when the
 Dataset is built, from a generator seeded by the frame's IDENTITY
 (`_rng(seed, "probe", qm9_index, generator, basin, k)` -- the rule the split already uses), and
-written into the valid file as `valid_probes` $[k_{\max},3N]$ with $k_{\max}=16$. The set is
+written into the labelled splits as `valid_probes` $[k_{\max},3N]$ with $k_{\max}=16$
+(every labelled frame, not only the valid ones: mace evaluates the loss on the training split
+too, and in eval mode the loss draws nothing). The set is
 nested: the $K=4$ reading is its first four rows, so a $K$ scan is a flag and not a rebuild. The
 loss reads them; nothing in the training path hashes anything. The training probes are unchanged:
 they come from mace's own generator, fresh every step (Algorithm 2).
@@ -607,7 +609,7 @@ Rodriguez's `eta_H = 0.02`, which multiplies an RMSE rather than an MSE.
 | 34 | 4 | the exact anchors (path A, no fork change): the full matrix on the validation file before and after training, `VALID_HESSIAN_EXACT_BEFORE` / `_AFTER` and the last epoch's probe reading beside them | done 2026-09-23 | -- |
 | 35 | 1-2 | Algorithms 1-2: the frame's constants and the probes, PHL verbatim; the projected path removed from the probe and loss modules; the derivations as tests | done 2026-09-23 | -- |
 | 36 | 3 | Algorithm 3: the training step without `mode_weighting`; fork commit D -- the parser's two options out, the `valid_probes` field in (S0-C-67); driver, Slurm, Record, smoke fit, balance | done 2026-09-23 | -- |
-| 37 | 4 | Algorithm 4 (S0-C-67): the dataset writes the fixed validation probes, the loss reads them from the batch, both `hashlib` calls die; the calibration tool follows; tests re-pointed | ready-for-agent | 35, 36 |
+| 37 | 4 | Algorithm 4 (S0-C-67): the dataset writes the fixed validation probes, the loss reads them from the batch, both `hashlib` calls die; the calibration tool follows; tests re-pointed | done 2026-09-23 | -- |
 | 38 | 5 | Algorithm 5: `LOSS_EXACT` removed; the frequency rows stated as the standard analysis; CONTEXT, ADR 0006, T03 archived, T04/T05 re-executed | ready-for-agent | 35, 36, 37 |
 
 Frontier: **35** (nothing blocks it); then 36, 37, 38 in order -- each leaves the suite green, so

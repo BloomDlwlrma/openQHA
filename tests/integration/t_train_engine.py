@@ -55,11 +55,19 @@ def check(label, ok, detail=""):
 def build_dataset(tmp, name, level):
     """A Dataset directory with the merged MACE-form file: train = the basin frame,
     valid = the basin frame again (S0-C-54: basin frames only; the machinery, not
-    generalisation). Two copies in each split so mace's batch of 2 is full."""
+    generalisation). Two copies in each split so mace's batch of 2 is full.
+
+    Every row carries its fixed probe set, as `dataset.build` writes it (S0-C-67): drawn
+    from the frame's identity, stored in the file, read by the loss whenever it is in eval
+    mode -- which mace also is on the TRAINING split, for its final error table.
+    """
     from openqha.data import dataset, frames
     rows = []
-    for split in ("train", "train", "valid", "valid"):
+    for i, split in enumerate(("train", "train", "valid", "valid")):
         basin = frames.read_frames(FIX / "basin.{}.extxyz".format(level))[0]   # re-read: copy() drops the calculator
+        v = dataset.valid_probes(dataset.SEED, "fixture", ("basin", 0, i), len(basin))
+        basin.info["valid_probes"] = v.reshape(-1)
+        basin.info["has_valid_probes"] = True
         rows.append((basin, split))
     d = Path(tmp) / name
     d.mkdir(parents=True, exist_ok=True)
@@ -105,7 +113,7 @@ def main():
               (out["info"]["N_TRAIN"], out["info"]["N_TRAIN_HESSIAN"]) == (2, 2)
               and (out["info"]["N_VALID"], out["info"]["N_VALID_HESSIAN"]) == (2, 2)
               and out["info"]["PT_N_FRAMES"] == 0 and out["info"]["REPLAY_PER_HESSIAN_FRAME"] == 0.0
-              and out["info"]["VALID_PROBES"] == "rademacher k=4 fixed", out["info"])
+              and out["info"]["VALID_PROBES"] == phl_loss.VALID_PROBES_LABEL, out["info"])
         check("dry run writes no model", not (out["run_dir"] / "cart4.model").is_file())
 
         # --- (21) the Cartesian target, four epochs, Stage Two at 3 ------------------------------

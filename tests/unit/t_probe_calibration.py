@@ -64,9 +64,23 @@ def main():
     n3 = h_t.shape[0]
     exact = float(np.sum((h_t - h_r) ** 2)) / (n3 * n3)
     ks = [1, 2, 4, 16]
-    seed = phl_loss.frame_seed(h_r)
+    n_at = n3 // 3
+    prod_v, sets_v = tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 0), n_at, max(ks), seed_sets=200)
+    check("the production set is [k_max, 3N] of +-1, drawn from the frame's IDENTITY and nothing else "
+          "(S0-C-67): the same call twice gives the same set, another frame's differs, and a rewritten "
+          "Label does not enter it",
+          prod_v.shape == (max(ks), n3) and set(np.unique(prod_v)) == {-1.0, 1.0}
+          and np.array_equal(prod_v, tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 0), n_at, max(ks), 1)[0])
+          and not np.array_equal(prod_v, tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 1), n_at, max(ks), 1)[0]),
+          prod_v.shape)
+    check("a frame that carries its own stored set is read, not redrawn",
+          np.array_equal(tool.frame_probes("x", ("basin", 0, 0), n_at, max(ks), 1,
+                                           stored=prod_v.reshape(-1))[0], prod_v))
 
-    st = tool.frame_statistics(h_t, h_r, ks, seed, seed_sets=200)
+    st = tool.frame_statistics(h_t, h_r, ks, prod_v, sets_v)
+    check("the readings are nested in K: the K = 1 reading uses the first row of the same set",
+          abs(st["production"][1] - float(np.sum((prod_v[:1] @ (h_t - h_r).T) ** 2)) / (n3 * n3)) < 1e-9,
+          st["production"][1])
     check("the exact target equals ||dH||^2/(9N^2) (1e-12)", abs(st["exact"] - exact) < 1e-12 * max(1.0, exact),
           (st["exact"], exact))
     check("the stable rank is finite and below 3N", 1.0 <= st["r_eff"] <= n3, st["r_eff"])
@@ -217,7 +231,7 @@ def main():
         check("--device cuda without a visible GPU stops at the flag, not inside torch.load",
               ok, g.stderr[-300:])
 
-    print("\n{} checks, {} failed".format(28, len(FAIL)))
+    print("\n{} checks, {} failed".format(31, len(FAIL)))
     return 1 if FAIL else 0
 
 

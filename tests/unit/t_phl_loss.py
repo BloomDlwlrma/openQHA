@@ -86,9 +86,21 @@ def hessian_of(model, x):
     return torch.autograd.functional.hessian(lambda p: model(p), x.detach()).reshape(3 * x.shape[0], -1).detach().numpy()
 
 
-def make_batch(frames, model):
+K_MAX = 16
+
+
+def stored_probes(n_atoms, seed, k_max=K_MAX):
+    """What the Dataset writes with a valid frame: [k_max, 3N] of +-1 from the frame's
+    IDENTITY (here the caller's `seed` stands for it) -- never from the Label (S0-C-67)."""
+    return np.random.default_rng(seed).choice([-1.0, 1.0], size=(k_max, 3 * n_atoms))
+
+
+def make_batch(frames, model, probes=None):
     """frames: list of (positions [n,3] numpy, masses [n], H_r [3n,3n] or None). Returns
-    (ref, pred) with pred built from `model` with the force graph kept."""
+    (ref, pred) with pred built from `model` with the force graph kept. `probes`: a list
+    as long as `frames` of [k_max, 3n] stored sets (None for a frame that carries none);
+    by default every labelled frame carries one, seeded by its size, as a valid file's
+    frames do."""
     pos = np.vstack([f[0] for f in frames])
     ptr = np.cumsum([0] + [len(f[0]) for f in frames])
     batch = np.concatenate([np.full(len(f[0]), g) for g, f in enumerate(frames)])
@@ -105,6 +117,11 @@ def make_batch(frames, model):
         has_hessian=torch.tensor([f[2] is not None for f in frames]),
         sqrt_masses=torch.tensor(np.sqrt(np.concatenate([f[1] for f in frames]))),
     )
+    if probes is None:
+        probes = [stored_probes(len(f[0]), 700 + len(f[0])) if f[2] is not None else None for f in frames]
+    flat = [np.asarray(p, dtype=float).reshape(-1) for p in probes if p is not None]
+    ref.valid_probes = torch.tensor(np.concatenate(flat) if flat else np.zeros(0))
+    ref.has_valid_probes = torch.tensor([p is not None for p in probes])
     pred = dict(energy=E, forces=F)
     return ref, pred
 
@@ -229,17 +246,20 @@ def main():
 
     # --- Algorithm 1: what the frame's constants are now (ticket 35) --------------------------------------
     c = loss.constants(Ha)
-    check("FrameConstants = the Label, nu = 9 N^2, the frame's seed -- and nothing else",
-          c.n3 == 3 * n_a and c.nu == (3 * n_a) ** 2 and c.seed == phl_loss.frame_seed(Ha)
-          and c.seed != phl_loss.frame_seed(Hb) and set(phl_loss.FrameConstants.__slots__) ==
-          {"hessian_r", "n3", "nu", "seed", "_fixed"}, phl_loss.FrameConstants.__slots__)
+    check("FrameConstants = the Label and nu = 9 N^2 -- three slots, nothing else (S0-C-67)",
+          c.n3 == 3 * n_a and c.nu == (3 * n_a) ** 2
+          and set(phl_loss.FrameConstants.__slots__) == {"hessian_r", "n3", "nu"},
+          phl_loss.FrameConstants.__slots__)
+    check("no seed is derived from the Label anywhere: frame_seed is gone and phl_loss imports no hashlib",
+          not hasattr(phl_loss, "frame_seed") and not hasattr(c, "seed")
+          and "hashlib" not in Path(phl_loss.__file__).read_text(encoding="utf-8"))
     for gone in ("masses", "positions", "metric", "modes_r", "lam_r", "weights", "projector",
                  "inv_sqrt_m", "n_vib", "projector_t", "inv_sqrt_m_t"):
         if hasattr(c, gone):
             check("FrameConstants no longer carries {!r}".format(gone), False)
     check("FrameConstants carries none of the eleven projected attributes", True)
-    check("the constants are cached by the Label's bytes alone (one entry after two calls)",
-          loss.constants(Ha) is c and len([k for k in loss._cache if True]) >= 1 and len(loss._cache[list(loss._cache)[0]].__slots__) == 5)
+    check("the constants are built per call and keyed by nothing (the cache went with the hash)",
+          loss.constants(Ha) is not c and loss.constants(Ha).nu == c.nu)
     try:
         loss.constants(Ha, ma, xa)
         check("constants(H_r) takes the Label alone", False)
@@ -292,12 +312,45 @@ def main():
     lv2 = phl_loss.WeightedEnergyForcesHessianLoss(probe="rademacher", n_probes=4, seed=99)
     lv2.eval()
     ref, pred = make_batch([(xa, ma, Ha)], toy)
-    check("... and a second module with another mace seed gives the same value: the probes come from the Label, not the seed",
+    check("... and a second module with another mace seed gives the same value: the probes come from the file, not the seed",
           abs(float(lv2.hvp_error(ref, pred)) - v1) < 1e-12)
-    vt_a, _r, _i = lv.constants(Ha).probes("rademacher", 4)
-    vt_b, _r, _i = lv.constants(Hb).probes("rademacher", 4)
-    check("different frames get different fixed probes (their Labels differ)",
-          vt_a.shape == (4, 3 * n_a) and vt_b.shape == (4, 3 * n_b) and not np.array_equal(vt_a[:, :12], vt_b[:, :12]))
+
+    # S0-C-67: the probes do not move when the Label is rewritten bit-for-bit differently at
+    # the SAME level -- this is the regression the stored set exists for
+    Ha_rewritten = Ha + 0.0                      # a different object, the same physics
+    Ha_rewritten[0, 0] = np.nextafter(Ha[0, 0], np.inf)
+    ref, pred = make_batch([(xa, ma, Ha_rewritten)], toy)
+    check("a Label recomputed at the same level leaves the probes untouched (the old SHA-1 seed "
+          "would have changed every one of them)",
+          abs(float(lv.hvp_error(ref, pred)) - v1) < 1e-9)
+
+    store_a = stored_probes(n_a, 700 + n_a)
+    vt_a, _r, _i = lv.constants(Ha).probes("rademacher", 4, stored=store_a)
+    vt_8, _r8, _i8 = lv.constants(Ha).probes("rademacher", 8, stored=store_a)
+    check("the K = 4 set is the first four rows of the stored set, and K = 8 is nested with it",
+          vt_a.shape == (4, 3 * n_a) and np.array_equal(vt_8[:4], vt_a) and vt_8.shape == (8, 3 * n_a))
+    store_b = stored_probes(n_b, 700 + n_b)
+    vt_b, _r, _i = lv.constants(Hb).probes("rademacher", 4, stored=store_b)
+    check("different frames get different fixed probes (the Dataset drew them from different identities)",
+          vt_b.shape == (4, 3 * n_b) and not np.array_equal(vt_a[:, :12], vt_b[:, :12]))
+    try:
+        lv.constants(Ha).probes("rademacher", 4)
+        check("a labelled validation frame with no stored probes is REFUSED, not drawn for", False)
+    except ValueError as exc:
+        check("a labelled validation frame with no stored probes is REFUSED, not drawn for",
+              "S0-C-67" in str(exc) and "04_dataset" in str(exc), str(exc))
+    try:
+        lv.constants(Ha).probes("rademacher", 32, stored=store_a)
+        check("asking for more probes than the Dataset stored is refused naming VALID_PROBE_KMAX", False)
+    except ValueError as exc:
+        check("asking for more probes than the Dataset stored is refused naming VALID_PROBE_KMAX",
+              "VALID_PROBE_KMAX" in str(exc), str(exc))
+    ref_no, pred_no = make_batch([(xa, ma, Ha)], toy, probes=[None])
+    try:
+        lv.hvp_error(ref_no, pred_no)
+        check("... and the same refusal reaches the loss through a stale valid file", False)
+    except ValueError as exc:
+        check("... and the same refusal reaches the loss through a stale valid file", "valid_probes" in str(exc))
     lv.train()
     ref, pred = make_batch([(xa, ma, Ha)], toy)
     t1 = float(lv.hvp_error(ref, pred))
@@ -330,7 +383,7 @@ def main():
     lv(ref, pred)
     check("training-mode forwards do not accumulate", lv._eval_sums["n_batches"] == 0)
 
-    print("\n{} checks, {} failed".format(29, len(FAIL)))
+    print("\n{} checks, {} failed".format(41, len(FAIL)))
     return 1 if FAIL else 0
 
 

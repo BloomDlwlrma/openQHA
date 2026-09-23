@@ -25,10 +25,14 @@ module's generator (mace's seed) every step.
 
 EVALUATION (S0-C-55). The fork's `evaluate` puts the loss in eval mode (commit C) and,
 because `wants_force_graph_at_eval` is set, calls the model with the force graph kept;
-the Hessian term is then the same estimator on `VALID_N_PROBES` Rademacher probes whose
-generator is seeded from the frame's Label bytes -- identical every epoch for a frame,
-different between frames -- so the validation curve is a fixed, cheap, unbiased reading
-of the target (about 4 HVPs per labelled frame against 3N for the full matrix). That
+the Hessian term is then the same estimator on `VALID_N_PROBES` Rademacher probes that
+the DATASET drew and stored with the frame (S0-C-67, PHL's fixed-vector protocol): the
+loss takes the first k rows of `ref.valid_probes` and draws nothing. They are identical
+every epoch for a frame, independent between frames, reproducible from the Dataset's
+Record alone, and unchanged when the Label is recomputed at the same level -- so the
+validation curve is a fixed, cheap, unbiased reading of the target (about 4 HVPs per
+labelled frame against 3N for the full matrix). A labelled validation frame that carries
+no stored set is REFUSED, not drawn for: that state means a stale valid file. That
 term enters the total validation loss mace's scheduler, checkpoint and Stage Two read.
 Over a validation pass the three terms are accumulated and handed back through
 `eval_summary()` (commit C), which joins them to mace's `results/*.txt` as
@@ -36,12 +40,10 @@ Over a validation pass the three terms are accumulated and handed back through
 is False: the fork's full-matrix hook stays available but unused; the full matrix is
 the judge's tool (`hessian_error_full` remains for it and for the tests).
 
-Per-structure constants are now two numbers and a cache (Algorithm 1): nu = 9 N^2, the
-frame's seed -- SHA-1 of the Label's bytes -- and the fixed validation probes drawn
-from it. They depend only on the Label, so they are computed once per frame and cached
-by the Label's bytes. Nothing is diagonalised.
+Per-structure constants are the Label and one number (Algorithm 1): nu = 9 N^2. There is
+no seed, no cache and no hash in this module -- the probes ride in with the graph, so
+nothing has to be derived from the Label's bytes. Nothing is diagonalised.
 """
-import hashlib
 import logging
 
 import numpy as np
@@ -53,7 +55,7 @@ from . import phl
 #: the validation estimator (S0-C-55): k fixed Rademacher probes per frame
 VALID_PROBE = "rademacher"
 VALID_N_PROBES = 4
-VALID_PROBES_LABEL = "{} k={} fixed".format(VALID_PROBE, VALID_N_PROBES)
+VALID_PROBES_LABEL = "{} k={} fixed, stored by the Dataset".format(VALID_PROBE, VALID_N_PROBES)
 
 
 def _field(ref, name):
@@ -72,43 +74,53 @@ def _has(ref, name):
         return False
 
 
-def frame_seed(hessian_r):
-    """The frame's own probe seed: the first 8 bytes of SHA-1 over the Label's bytes.
-    The same Label gives the same seed anywhere; two frames with different Labels differ."""
-    digest = hashlib.sha1(np.ascontiguousarray(np.asarray(hessian_r, dtype=float)).tobytes()).digest()
-    return int.from_bytes(digest[:8], "little")
-
-
 class FrameConstants:
-    """Algorithm 1: what the loss needs of one frame, computed once -- the Label as
-    stored, nu = 9 N^2, the frame's seed, and the fixed validation probes drawn from it.
-    Nothing is diagonalised, projected or mass-weighted (S0-C-64)."""
+    """Algorithm 1: what the loss needs of one frame -- the Label as stored and nu = 9 N^2.
+    Nothing is diagonalised, projected, mass-weighted (S0-C-64) or hashed (S0-C-67)."""
 
-    __slots__ = ("hessian_r", "n3", "nu", "seed", "_fixed")
+    __slots__ = ("hessian_r", "n3", "nu")
 
     def __init__(self, hessian_r):
         self.hessian_r = np.asarray(hessian_r, dtype=float)
         self.n3 = int(self.hessian_r.shape[0])
         self.nu = self.n3 * self.n3                                    # PHL's (3N)^2
-        self.seed = frame_seed(self.hessian_r)
-        self._fixed = {}
 
-    def probes(self, mode, k, rng=None):
-        """Algorithm 2's probes for this frame. With `rng` (training) a fresh draw; without
-        (evaluation) the FIXED set from the frame's own seed, cached -- the same k vectors
-        on every call, every epoch (S0-C-55)."""
+    def probes(self, mode, k, rng=None, stored=None):
+        """Algorithm 2's probes for this frame.
+
+        TRAINING (`rng` given): a fresh draw every step, from mace's generator.
+        VALIDATION (`rng` None): the frame's STORED set -- the first k of the
+        [k_max, 3N] rows the Dataset drew from the frame's identity and wrote into the
+        valid file (S0-C-67). The loss draws nothing there and derives nothing from the
+        Label: a Label recomputed at the same level leaves these vectors untouched.
+        """
         if rng is not None:
             return phl.make_probes(self.hessian_r, mode=mode, k=k, rng=rng)
-        key = (mode, int(k))
-        if key not in self._fixed:
-            self._fixed[key] = phl.make_probes(self.hessian_r, mode=mode, k=k,
-                                               rng=np.random.default_rng(self.seed))
-        return self._fixed[key]
+        if stored is None:
+            raise ValueError(
+                "a labelled validation frame carries no valid_probes: the fixed probes are drawn by "
+                "the Dataset and stored in the valid file (S0-C-67), and this loss draws none. "
+                "Rebuild the Dataset with 04_dataset.py so that valid.<level>.extxyz carries "
+                "REF_valid_probes, and train against a fork that has commit D.")
+        v = np.asarray(stored, dtype=float)
+        if v.ndim != 2 or v.shape[1] != self.n3:
+            raise ValueError("valid_probes for this frame is {}, not [k_max, {}]".format(v.shape, self.n3))
+        if k > v.shape[0]:
+            raise ValueError(
+                "the validation asks for {} probes and the Dataset stored {} per frame (VALID_PROBE_KMAX); "
+                "rebuild the Dataset to store more, or lower --valid-n-probes".format(k, v.shape[0]))
+        v = v[:int(k)]
+        r = v @ self.hessian_r.T
+        return v, r, dict(n3=self.n3, mode=mode, k=int(k), stochastic=True, nu=self.nu,
+                          denominator=self.nu * int(k))
 
 
 def graph_labels(ref):
-    """Per graph: (index, n_atoms, H_r [3n, 3n] numpy or None, masses, positions) read
-    from the batch fields of ticket 12. Graphs without a Label give None."""
+    """Per graph: (index, n_atoms, H_r [3n, 3n] numpy or None, masses, positions, probes)
+    read from the batch fields of tickets 12 and 36. Graphs without a Label give None for
+    `H_r`; graphs without a stored probe set give None for `probes` (every labelled frame has
+    one, S0-C-67 -- mace evaluates the loss on the training split too; a pool frame, which
+    has no Label at all, has none)."""
     ptr = _field(ref, "ptr").detach().cpu().numpy()
     n_k = ptr[1:] - ptr[:-1]
     has = _field(ref, "has_hessian").detach().cpu().numpy().astype(bool) if _has(ref, "has_hessian") \
@@ -116,7 +128,12 @@ def graph_labels(ref):
     hess = _field(ref, "hessian").detach().cpu().numpy() if _has(ref, "hessian") else np.zeros(0)
     sqrt_m = _field(ref, "sqrt_masses").detach().cpu().numpy()
     pos = _field(ref, "positions").detach().cpu().numpy()
-    out, off = [], 0
+    has_v = _field(ref, "has_valid_probes").detach().cpu().numpy().astype(bool) \
+        if _has(ref, "has_valid_probes") else np.zeros(len(n_k), dtype=bool)
+    vprobes = _field(ref, "valid_probes").detach().cpu().numpy() if _has(ref, "valid_probes") else np.zeros(0)
+    # k_max is one number for the whole Dataset, so it is read once from what the batch holds
+    k_max = _k_max_from(vprobes, has_v, n_k) if vprobes.size else 0
+    out, off, off_v = [], 0, 0
     for g, n in enumerate(n_k):
         size = 9 * int(n) ** 2 if has[g] else 0
         h = None
@@ -126,11 +143,32 @@ def graph_labels(ref):
                     hess.size, g, size, off))
             h = hess[off:off + size].reshape(3 * n, 3 * n)
         off += size
+        v = None
+        if has_v[g] and k_max:
+            n3 = 3 * int(n)
+            size_v = k_max * n3
+            if off_v + size_v > vprobes.size:
+                raise ValueError("batch.valid_probes holds {} numbers; graph {} needs {} more at offset {}".format(
+                    vprobes.size, g, size_v, off_v))
+            v = vprobes[off_v:off_v + size_v].reshape(k_max, n3)
+            off_v += size_v
         a, b = int(ptr[g]), int(ptr[g + 1])
-        out.append((g, int(n), h, sqrt_m[a:b] ** 2, pos[a:b]))
+        out.append((g, int(n), h, sqrt_m[a:b] ** 2, pos[a:b], v))
     if off != hess.size:
         raise ValueError("batch.hessian holds {} numbers but the labelled graphs account for {}".format(hess.size, off))
+    if off_v != vprobes.size:
+        raise ValueError("batch.valid_probes holds {} numbers but the graphs account for {}".format(vprobes.size, off_v))
     return out
+
+
+def _k_max_from(vprobes, has_v, n_k):
+    """k_max = (total stored numbers) / (sum of 3n over the graphs that stored a set): one
+    number for the whole batch, because a Dataset stores the same k_max for every frame."""
+    denom = sum(3 * int(n) for g, n in enumerate(n_k) if has_v[g])
+    if denom == 0 or vprobes.size % denom != 0:
+        raise ValueError("batch.valid_probes holds {} numbers, not a multiple of sum(3n) = {} over the "
+                         "graphs that carry a set".format(vprobes.size, denom))
+    return vprobes.size // denom
 
 
 class WeightedEnergyForcesHessianLoss(torch.nn.Module):
@@ -169,16 +207,11 @@ class WeightedEnergyForcesHessianLoss(torch.nn.Module):
 
     # ---- per-frame constants ---------------------------------------------------------
     def constants(self, hessian_r):
-        """Algorithm 1 for one frame, cached by the LABEL's bytes -- the only thing the
-        constants depend on now (Derivation 1.1)."""
-        key = hashlib.sha1(np.ascontiguousarray(np.asarray(hessian_r, dtype=float)).tobytes()).digest()
-        c = self._cache.get(key)
-        if c is None:
-            c = FrameConstants(hessian_r)
-            if len(self._cache) >= self._cache_size:
-                self._cache.pop(next(iter(self._cache)))
-            self._cache[key] = c
-        return c
+        """Algorithm 1 for one frame. Not cached and not keyed: since ticket 35 a
+        FrameConstants is an `asarray` and two integers, and since S0-C-67 there is
+        nothing left that a cache key could be derived from -- the probes come with the
+        graph, not from the Label."""
+        return FrameConstants(hessian_r)
 
     # ---- Algorithm 2 for a batch -----------------------------------------------------
     def make_probes(self, ref, like):
@@ -186,20 +219,21 @@ class WeightedEnergyForcesHessianLoss(torch.nn.Module):
         graphs without a Label and for j >= k_g), and per labelled graph
         (g, slice, k_g, v [k_g, 3n], r_j [k_g, 3n] numpy, constants, denominator).
         In training mode the probes are fresh draws (`self.probe`, `self.n_probes`); in
-        eval mode the frame's fixed validation set (`valid_probe`, `valid_n_probes`)."""
+        eval mode the first `valid_n_probes` rows of the set the Dataset stored with the
+        frame (S0-C-67) -- nothing is drawn and nothing is derived from the Label."""
         labels = graph_labels(ref)
         ptr = _field(ref, "ptr").detach().cpu().numpy()
         n_nodes = int(ptr[-1])
         per_graph = []
         k_max = 0
-        for g, n, h_r, _masses, _pos in labels:
+        for g, n, h_r, _masses, _pos, stored in labels:
             if h_r is None:
                 continue
             c = self.constants(h_r)
             if self.training:
                 vt, r, info = c.probes(self.probe, self.n_probes, rng=self.rng)
             else:
-                vt, r, info = c.probes(self.valid_probe, self.valid_n_probes)
+                vt, r, info = c.probes(self.valid_probe, self.valid_n_probes, stored=stored)
             per_graph.append((g, slice(int(ptr[g]), int(ptr[g + 1])), info["k"], vt, r, c, info["denominator"]))
             k_max = max(k_max, info["k"])
         probes = torch.zeros((k_max, n_nodes, 3), dtype=like.dtype, device=like.device)
@@ -251,7 +285,7 @@ class WeightedEnergyForcesHessianLoss(torch.nn.Module):
         w_cfg = _field(ref, "weight")
         w_h = _field(ref, "hessian_weight") if _has(ref, "hessian_weight") else torch.ones_like(w_cfg)
         terms = []
-        for g, n, h_r, _masses, _pos in graph_labels(ref):
+        for g, n, h_r, _masses, _pos, _probes in graph_labels(ref):
             if h_r is None:
                 continue
             c = self.constants(h_r)

@@ -207,6 +207,52 @@ def main():
             ok = ok and good
         check("index.dat round-trips and every row's (file, row) is the frame it names, at the split's level", ok,
               (len(back), bad[:2]))
+        # --- S0-C-67: the valid split carries its own fixed probes ------------------------
+        valid_name = "valid.{}.extxyz".format(LEVEL)
+        valid_frames = files.get(valid_name) or (frames.read_frames(d / valid_name)
+                                                 if (d / valid_name).is_file() else [])
+        labelled_valid = [a for a in valid_frames if a.info.get("has_hessian", "hessian" in a.info)]
+        n_at = len(labelled_valid[0]) if labelled_valid else 0
+        probe_ok = bool(labelled_valid) and all(
+            np.asarray(a.info["valid_probes"]).size == dataset.VALID_PROBE_KMAX * 3 * len(a)
+            and set(np.unique(np.asarray(a.info["valid_probes"]))) <= {-1, 1, -1.0, 1.0}
+            and bool(a.info["has_valid_probes"]) for a in labelled_valid)
+        check("every labelled valid frame carries [VALID_PROBE_KMAX, 3N] Rademacher probes, "
+              "and REF_valid_probes beside them",
+              probe_ok and all("REF_valid_probes" in a.info for a in labelled_valid),
+              [len(labelled_valid), n_at])
+        rec_seed = prop.load(d / "dataset.toml")["Calculation_Info"]["SEED"]
+        labelled_everywhere = [a for name, fl in files.items() if name.split(".")[0] != "pool"
+                               for a in fl if a.info.get("has_hessian", "hessian" in a.info)]
+        check("every labelled frame carries a set, not only the valid split: mace evaluates the loss "
+              "on the training split too, and in eval mode the loss draws none",
+              bool(labelled_everywhere) and all("valid_probes" in a.info for a in labelled_everywhere),
+              [len(labelled_everywhere)])
+        check("pool frames carry none (they have no Label at all)",
+              all("valid_probes" not in a.info
+                  for name, fl in files.items() if name.split(".")[0] == "pool" for a in fl))
+        if labelled_valid:
+            a0 = labelled_valid[0]
+            key = (a0.info["generator"], int(a0.info["basin"]), int(a0.info["k"]))
+            drawn = dataset.valid_probes(int(rec_seed), a0.info["qm9_index"], key, len(a0))
+            check("the stored set is the draw from the frame's IDENTITY and the Record's SEED -- "
+                  "reproducible from the Record alone, and independent of the Label's bytes",
+                  np.array_equal(np.asarray(a0.info["valid_probes"], dtype=int), drawn.reshape(-1)))
+            other = dataset.valid_probes(int(rec_seed), a0.info["qm9_index"], (key[0], key[1], key[2] + 1), len(a0))
+            check("another frame of the same molecule gets a different set",
+                  not np.array_equal(drawn, other))
+        rec_probe = prop.load(d / "dataset.toml")["Calculation_Info"]
+        check("the Record says where the validation probes come from and how many rows are stored",
+              rec_probe["VALID_PROBE_SOURCE"] == "file"
+              and int(rec_probe["VALID_PROBE_KMAX"]) == dataset.VALID_PROBE_KMAX
+              and rec_probe["VALID_PROBE_MODE"] == "rademacher"
+              and int(rec_probe["N_VALID_PROBE_FRAMES"]) == len(
+                  {(r["qm9_index"], r["generator"], r["basin"], r["k"]) for r in back
+                   if r["split"] != "pool"} & {(a.info["qm9_index"], a.info["generator"],
+                                                int(a.info["basin"]), int(a.info["k"]))
+                                               for a in labelled_everywhere}),
+              {k: rec_probe.get(k) for k in ("VALID_PROBE_SOURCE", "VALID_PROBE_KMAX", "N_VALID_PROBE_FRAMES")})
+
         test_atoms = files["test.{}.extxyz".format(LEVEL)][0]
         eng = frames.read_frames(layout.frames_file(mol_a, "basin", mace_level))[0]
         check("a test frame carries the REFERENCE values (energy - 1, forces x 0.5, hessian x 1.1 of the engine's), same positions",

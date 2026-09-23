@@ -23,11 +23,12 @@ then everything else is linear algebra on the two matrices:
 
   exact      L_n      = ||H_theta - H_r||_F^2 / (9 N^2)                  (the training target)
   check 1    OFFSET   = |mean_n L^(K)_n - mean_n L_n| / mean_n L_n       with the PRODUCTION probes
-                       (the frame's own seed, `phl_loss.frame_seed` -- the set a run would use)
+                       (the frame's own stored set, or the same draw 04_dataset would make from
+                        its identity -- the set a run would use; S0-C-67)
   check 2    SPREAD   = sd over `--seed-sets` independent fixed sets of (mean_n L^(K)_n) / mean_n L_n
   predicted  sd       = sqrt(Var) from `phl.estimator_variance` (eq. 2.3), per frame and for the mean
 
-A frame's probes are its own (seeded from its Label's bytes), so the probe errors are
+A frame's probes are its own (drawn from its identity by the Dataset, S0-C-67), so the probe errors are
 independent ACROSS frames whatever the frames' own correlation, and Var(mean) = sum_n Var_n / n^2
 is exact rather than an assumption. What this tool does NOT do is decide whether K is enough:
 that depends on how large a change in the validation reading a training decision turns on, which
@@ -210,9 +211,28 @@ def labelled_frames(tag=None, root=None, level=None, species=(), limit=None, gen
     return out
 
 
-def frame_statistics(h_engine, h_ref, ks, seed, seed_sets):
-    """One frame: the exact target, the production reading at every K, the readings of
-    `seed_sets` independent fixed sets, the predicted variance, the stable rank."""
+def frame_probes(qid, key, n_atoms, k_max, seed_sets, stored=None):
+    """The frame's PRODUCTION probe set and `seed_sets` independent ones, all [k_max, 3N].
+
+    Production is what a run would read: the set stored with the frame when it comes from a
+    Dataset's valid file, and otherwise the same draw `04_dataset` would make from the
+    frame's IDENTITY and the Dataset's seed (S0-C-67) -- never anything derived from the
+    Label. The independent sets are the same draw under shifted seeds, for check 2.
+    """
+    n3 = 3 * int(n_atoms)
+    if stored is not None:
+        prod = np.asarray(stored, dtype=float).reshape(-1, n3)
+    else:
+        prod = dataset_mod.valid_probes(dataset_mod.SEED, qid, key, n_atoms, k_max).astype(float)
+    sets = [dataset_mod.valid_probes(dataset_mod.SEED + 1_000_003 * (s + 1), qid, key, n_atoms, k_max).astype(float)
+            for s in range(int(seed_sets))]
+    return prod, sets
+
+
+def frame_statistics(h_engine, h_ref, ks, production_v, probe_sets):
+    """One frame: the exact target, the production reading at every K (the first K rows of
+    the frame's own set -- nested, as the validation takes them), the readings of the
+    independent sets, the predicted variance, the stable rank."""
     a = np.asarray(h_engine, dtype=float) - np.asarray(h_ref, dtype=float)
     n3 = a.shape[0]
     exact = float(np.sum(a * a)) / (n3 * n3)
@@ -224,15 +244,13 @@ def frame_statistics(h_engine, h_ref, ks, seed, seed_sets):
     for k in ks:
         var = phl.estimator_variance(h_engine, h_ref, k=k)["rademacher"]
         out["var"][k] = float(var)
-        # the production probes: the frame's own seed, exactly as the validation draws them
-        rng = np.random.default_rng(seed)
-        v = rng.choice([-1.0, 1.0], size=(k, n3))
+        # the production reading: the FIRST K rows of the frame's own stored set, which is
+        # what the validation takes (S0-C-67). The sets are nested, so the K rows of this
+        # table are readings of one set, not of K unrelated draws.
+        v = np.asarray(production_v, dtype=float)[:k]
         out["production"][k] = float(np.sum((v @ a.T) ** 2)) / (n3 * n3 * k)
-        vals = []
-        for s in range(seed_sets):
-            rs = np.random.default_rng((seed + 1_000_003 * (s + 1)) % (2 ** 63))
-            vs = rs.choice([-1.0, 1.0], size=(k, n3))
-            vals.append(float(np.sum((vs @ a.T) ** 2)) / (n3 * n3 * k))
+        vals = [float(np.sum((np.asarray(vs, dtype=float)[:k] @ a.T) ** 2)) / (n3 * n3 * k)
+                for vs in probe_sets]
         out["sets"][k] = np.asarray(vals, dtype=float)
     return out
 
@@ -340,10 +358,11 @@ def main(argv=None):
         n3 = 3 * len(atoms)
         h_ref = np.asarray(atoms.info["hessian"], dtype=float).reshape(n3, n3)
         h_eng = judge.hessian_at(calc, atoms)
-        seed = phl_loss.frame_seed(h_ref)
-        st = frame_statistics(h_eng, h_ref, ks, seed, args.seed_sets)
-        stats.append(st)
         qid, gen, basin, k = _frame_key(atoms, args.generator)
+        prod_v, sets_v = frame_probes(qid, (gen, basin, k), len(atoms), max(ks), args.seed_sets,
+                                      stored=atoms.info.get("valid_probes"))
+        st = frame_statistics(h_eng, h_ref, ks, prod_v, sets_v)
+        stats.append(st)
         rows.append(dict(qm9_index=qid, generator=gen, basin=int(basin), k=int(k), n_atoms=len(atoms),
                          L_EXACT=st["exact"],
                          L_PRODUCTION_K=st["production"].get(PRODUCTION_K, float("nan")),

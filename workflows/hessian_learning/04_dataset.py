@@ -14,6 +14,14 @@ another generator (displaced, merged, saddle) is a held-out frame in test, read 
 judge and never trained on. Writes
 `{train,valid,test,pool}.<level>.extxyz` (with MACE-torch's REF_energy / REF_forces /
 REF_hessian keys and `split`), the single `mace_<name>.<level>.extxyz`, `index.dat`
+
+THE FIXED VALIDATION PROBES (S0-C-67). Every labelled frame with a Hessian is written with
+its own `[VALID_PROBE_KMAX, 3N]` Rademacher set (`valid_probes` / `REF_valid_probes`),
+drawn HERE from the frame's identity and this Dataset's seed. The training loss draws
+fresh probes every step; the VALIDATION reading takes the first k rows of this set and
+draws nothing, so nothing in the loss depends on the Label's bytes and a label recomputed
+at the same level leaves the probes untouched. The rows are nested: k may be lowered on
+the command line without a rebuild. This is PHL's fixed-vector protocol.
 (with `classes`) and `dataset.{out,toml}` (with a `[[Class]]` table) under
 `<root>/<first tag>/_datasets/<name>/`; `--export openreact` adds `molecules-<name>.h5`
 in OpenREACT's layout (A, Eh, Eh/A, Eh/A^2).
