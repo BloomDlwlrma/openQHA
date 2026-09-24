@@ -104,6 +104,10 @@ def main():
         check("after four finished file groups, one fresh claim and one .out without the terminal line: labelled 4, failed 1 (that .out), unlabelled 10, running 1 (the claim only)",
               (t["frames"], t["labelled"], t["failed"], t["unlabelled"], t["running"]) == (15, 4, 1, 10, 1)
               and later["classes"]["aldehyde"]["labelled"] == 4 and later["classes"]["ketone"]["labelled"] == 0, t)
+        threaded = hp.progress(root, [TAG], "p", LEVEL, workers=4)
+        check("the threaded walk (workers=4) returns the same counters as the single-threaded one -- threading is an implementation detail",
+              threaded["total"] == later["total"] and threaded["classes"] == later["classes"]
+              and threaded["molecules"] == later["molecules"], (threaded["total"], later["total"]))
         # without a draw: the selection, then the tags
         (d / "draw.dat").unlink()
         dataset.select(root, [TAG], "p", pinned=("dsgdb9nsd_000035",))

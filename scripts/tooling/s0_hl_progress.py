@@ -11,14 +11,19 @@ lock: its job alive by `squeue`, its heartbeat fresh) -- and prints one row per 
 class and the total: molecules drawn / branch A / Frame sets, frames total / labelled /
 failed / unlabelled / running. `squeue` is asked only about the job named in a lock; what
 is on disk is the question. Login-node cheap: a few `stat`s per molecule, no MACE, no
-extxyz parsed.
+extxyz parsed -- **but a `stat` costs ~8 ms on the shared pool** (measured on Tianhe
+2026-09-24: the simpler `hl_list` scan over 6 458 molecules took 6 min 19 s
+single-threaded), so the per-molecule walk runs in threads (`--workers`,
+`HL_PROGRESS_WORKERS`).
 
     python scripts/tooling/s0_hl_progress.py --tag draw300
     python scripts/tooling/s0_hl_progress.py --tag rings --tag propanal --name smoke --level hf_cc-pvtz
 """
 import argparse
+import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -83,13 +88,28 @@ def molecule_progress(qid, tag, mol, level, root):
     return row
 
 
-def progress(root, tags, name, level=frame_labels.DEFAULT_LEVEL):
-    """{'total': counters, 'classes': {class: counters}, 'molecules': n, 'source': path}."""
+#: Threads over the per-molecule walk (latency-bound: ~8 ms per metadata op on the shared
+#: pool, see the module docstring). `progress(workers=1)` is the single-threaded shape.
+DEFAULT_WORKERS = 8
+
+
+def progress(root, tags, name, level=frame_labels.DEFAULT_LEVEL, workers=1):
+    """{'total': counters, 'classes': {class: counters}, 'molecules': n, 'source': path}.
+
+    `workers` > 1 threads the per-molecule disk walk; the counters must not depend on it,
+    and `tests/unit/t_hl_campaign.py` holds that.
+    """
     mols, source = molecules(root, tags, name)
+    if workers <= 1:
+        rows = [(molecule_progress(qid, tag, mol, level, root), classes)
+                for qid, tag, mol, classes in mols]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            rows = list(ex.map(
+                lambda m: (molecule_progress(m[0], m[1], m[2], level, root), m[3]), mols))
     total = {c: 0 for c in COLUMNS}
     per_class = {}
-    for qid, tag, mol, classes in mols:
-        row = molecule_progress(qid, tag, mol, level, root)
+    for row, classes in rows:
         row["drawn"] = 1
         for c in COLUMNS:
             total[c] += row[c]
@@ -105,11 +125,16 @@ def main():
     ap.add_argument("--tag", action="append", required=True)
     ap.add_argument("--name", default=None, help="the Dataset (default: the first tag)")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL)
+    ap.add_argument("--workers", type=int, default=None,
+                    help="threads over the per-molecule walk (default {}; env HL_PROGRESS_WORKERS; 1 disables)"
+                         .format(DEFAULT_WORKERS))
     args = ap.parse_args()
+    workers = max(1, int(args.workers if args.workers is not None
+                         else os.environ.get("HL_PROGRESS_WORKERS", DEFAULT_WORKERS)))
     t0 = time.time()
     root = config.runs_root(config.load())
     name = args.name or args.tag[0]
-    out = progress(root, args.tag, name, args.level)
+    out = progress(root, args.tag, name, args.level, workers=workers)
     fmt = "{:22s} {:>6} {:>7} {:>8} {:>10} {:>7} {:>8} {:>6} {:>10} {:>7}"
     print("progress of {!r} at {} ({} molecules from {})".format(name, args.level, out["molecules"], out["source"]))
     print(fmt.format("class", "drawn", "branchA", "A failed", "frame sets", "frames", "labelled", "failed", "unlabelled", "running"))

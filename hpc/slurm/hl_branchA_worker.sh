@@ -10,16 +10,18 @@ qid="$1"; cores="$2"
 cmd=(python -u scripts/production/s0_A_pipeline.py --species "$qid" --tag "${TAG:-draw}"
      --threads "${THREADS:-4}" --timeout-s "${TIMEOUT_S:-3600}" --hessian-mode analytic)
 t0=$(date +%s)
-# A HARD CEILING FOR THE WHOLE MOLECULE (2026-09-24). `--timeout-s` bounds ONE CREST
-# attempt; a hang in the tighten / Hessian / MACE-socket phase after it holds this worker
-# and the task's slot until the JOB's walltime -- the "no status update, nothing to
-# cancel until the time limit" shape of 2026-09-24. Default: three CREST timeouts (the
-# published attempt, the pointwise retry, and the census after them) plus an hour; set
-# WALL_S to say it yourself. rc=124 means the ceiling ended the molecule, nothing was
-# written, and the next round reruns it whole.
-WALL_S="${WALL_S:-$(( 3 * ${TIMEOUT_S:-3600} + 3600 ))}"
+# A CEILING FOR THE WHOLE MOLECULE -- OPT-IN, NO DEFAULT (2026-09-24). `--timeout-s`
+# bounds ONE CREST attempt; a hang in the tighten / Hessian / MACE-socket phase after it
+# would otherwise hold this worker and the task's slot until the JOB's walltime, so
+# `WALL_S` is here to cut a molecule loose: rc=124, nothing written, rerun next round.
+# It has NO default because molecules are legitimately long -- measured on draw300,
+# 2026-09-24: one molecule rc=0 in 71 453 s (19.8 h), task walls 15-22 h against a 24 h
+# limit, the census after two CREST attempts dominating -- and any ceiling derived from
+# TIMEOUT_S would kill real work. Set it when your draw is known small (e.g. WALL_S=21600).
 runner=()
-command -v timeout >/dev/null 2>&1 && runner=(timeout -k 60 "$WALL_S")
+if [ -n "${WALL_S:-}" ] && command -v timeout >/dev/null 2>&1; then
+    runner=(timeout -k 60 "$WALL_S")
+fi
 if [ "${HL_TASKSET:-1}" = 1 ] && command -v taskset >/dev/null 2>&1 && [ -n "$cores" ]; then
     "${runner[@]}" taskset -c "$cores" "${cmd[@]}" > "${S0_SCRATCH:-/tmp}/branchA_${qid}.log" 2>&1
 else

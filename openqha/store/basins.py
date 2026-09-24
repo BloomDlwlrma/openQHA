@@ -34,10 +34,12 @@ def molecule_for(qid, tag, cfg=None, root=None):
 def basin_files(molecule):
     """`mace/basinNN/basin.extxyz` for every basin folder that holds one, in basin order."""
     mace = Path(molecule) / "mace"
-    if not mace.is_dir():
+    try:
+        entries = list(mace.iterdir())      # one listing; a missing mace/ raises here, which
+    except OSError:                         # is the same answer a stat would have given
         return []
     out = []
-    for d in mace.iterdir():
+    for d in entries:
         m = _BASIN_DIR.match(d.name)
         if m and (d / "basin.extxyz").is_file():
             out.append((int(m.group(1)), d / "basin.extxyz"))
