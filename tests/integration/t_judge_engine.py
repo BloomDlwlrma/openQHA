@@ -6,7 +6,7 @@ fixture (basin frame with a reference Hessian) and judges MACE-OFF23_medium agai
 itself:
 
   * must-PASS: the base model's numbers reproduce `hessian_compare`'s known ones and
-    `||A||_F^2/n_vib` = 2.8166e-2 (the value ticket 12 measured on the same frame); the
+    the training target `||H - H_r||_F^2/(9N^2)` (the gate's quantity); the
     engine columns equal the base columns (it IS the base); against `H_r := H_base` the
     loss is ~0; no degradation line FAILs.
   * must-FAIL: `ScaledCalculator(0.9)` -- every frequency 0.9x -- fails the low-mode line.
@@ -89,21 +89,20 @@ def main():
                       for x in rows[1:])
               and {x["rms_bin"] for x in rows[1:]} <= {"<0.08", "<0.15"} and rows[0]["rms_bin"] == "0",
               [(x["generator"], x["rms_bin"], x["has_hessian"]) for x in rows])
-        exact = phl.projected_loss_full(mace_basin.info["hessian"], ref[0].info["hessian"],
-                                        ref[0].get_masses(), ref[0].positions)
-        check("the judge's ||A||_F^2/n_vib on the basin frame = the fixture's 2.8166e-2 (1e-6 relative)",
-              abs(r["loss_exact"] / exact - 1) < 1e-6 and abs(r["loss_exact"] - 2.8166e-2) < 1e-5,
-              (r["loss_exact"], exact))
+        cart = phl.loss_full(mace_basin.info["hessian"], ref[0].info["hessian"])
+        check("the judge's loss_cartesian on the basin frame = phl.loss_full(H_t, H_r) (1e-6 relative)",
+              abs(r["loss_cartesian"] / cart - 1) < 1e-6 and r["loss_cartesian"] > 0,
+              (r["loss_cartesian"], cart))
         check("the engine columns equal the base columns (it IS the base model)",
               abs(r["freq_mae_cm"] - r["base_freq_mae_cm"]) < 1e-9
-              and abs(r["loss_exact"] - r["base_loss_exact"]) < 1e-15,
-              (r["freq_mae_cm"], r["base_freq_mae_cm"], r["loss_exact"], r["base_loss_exact"]))
+              and abs(r["loss_cartesian"] - r["base_loss_cartesian"]) < 1e-15,
+              (r["freq_mae_cm"], r["base_freq_mae_cm"], r["loss_cartesian"], r["base_loss_cartesian"]))
         check("the frame carries its classes, its distribution and the Label's noise floor",
               r["classes"] == "epoxide;small_ring" and r["distribution"] == "out_of_molecule"
               and r["noise_floor_cm"] > 0, r)
         print("    2-methyloxirane basin: low-mode MAE {:.2f}, full MAE {:.2f} cm^-1, "
-              "||A||^2/n {:.4e}, noise floor {:.1f} cm^-1".format(
-                  r["freq_mae_low_cm"], r["freq_mae_cm"], r["loss_exact"], r["noise_floor_cm"]))
+              "||dH||^2/9N^2 {:.4e}, noise floor {:.1f} cm^-1".format(
+                  r["freq_mae_low_cm"], r["freq_mae_cm"], r["loss_cartesian"], r["noise_floor_cm"]))
 
         # must-pass: the base model against a Label that IS its own Hessian
         self_label = [a.copy() for a in ref]
@@ -118,7 +117,7 @@ def main():
         # not exactly zero: the Label is the engine's Hessian at the FIXTURE's positions,
         # while the engine recomputes at the extxyz's 8-decimal ones (5e-9 A) -- 3e-5 cm^-1
         check("A5 through the judge: H_r := H_base gives ~0 loss and ~0 frequency error",
-              srows[0]["loss_exact"] < 1e-12 and srows[0]["freq_mae_cm"] < 1e-3, srows[0])
+              srows[0]["loss_cartesian"] < 1e-12 and srows[0]["freq_mae_cm"] < 1e-3, srows[0])
 
         ramp = dict(max_K=20.0, step_K=5.0, step_ps=0.05, seed=1)        # 4 stages x 50 steps: the machinery, not the physics
         closed = judge.run(Path(tmp), "smoke", "smoke", LEVEL, calc, name, base_calc=calc, base_engine=name,
@@ -187,9 +186,9 @@ def main():
               [(l["LINE"], l["GATE"], l["RESULT"], l["VALUE"]) for l in bad["verdict"]])
         print("    scaled 0.9: low-mode MAE {:.2f} cm^-1 against the base model's {:.2f}".format(
             blines["held_out_low_mode_mae_cm"]["VALUE"], lines["held_out_low_mode_mae_cm"]["VALUE"]))
-        check("... and its ||A||^2/n is far worse than the base model's",
-              bad["distributions"][0]["LOSS_EXACT"] > 10 * out["distributions"][0]["LOSS_EXACT"],
-              (bad["distributions"][0]["LOSS_EXACT"], out["distributions"][0]["LOSS_EXACT"]))
+        check("... and its ||dH||^2/9N^2 is far worse than the base model's",
+              bad["distributions"][0]["LOSS_CARTESIAN"] > 10 * out["distributions"][0]["LOSS_CARTESIAN"],
+              (bad["distributions"][0]["LOSS_CARTESIAN"], out["distributions"][0]["LOSS_CARTESIAN"]))
 
         try:
             judge.run(Path(tmp), "nowhere", "nowhere", LEVEL, calc, name, write=False)

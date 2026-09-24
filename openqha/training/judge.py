@@ -6,13 +6,15 @@ The judge reads only SHIPPED paths: the full Cartesian Hessian from
 `MACECalculator.get_hessian` (mace's `compute_hessians_vmap`, no graph) against the
 Label, through `hessian_compare` -- the same four metric families every earlier
 comparison in this repository used. **Nothing here calls the estimator or the training
-loss.** The optimiser reads eq. 6; the judge reads eq. 1, exactly, from the full matrix.
+loss.** The optimiser reads eq. 6; the judge reads the Cartesian target
+`||H - H_r||_F^2 / (9 N^2)`, exactly, from the full matrix.
 That separation is the point: a loss that flatters itself cannot flatter the ruler.
 
 What one judge run reports:
 
   per frame        `hessian_compare`'s metrics of the engine and of the base model at the
-                   same geometry, plus `||A||_F^2 / n_vib` (eq. 1, from `phl`)
+                   same geometry, plus the training target `||H - H_r||_F^2 / (9 N^2)`
+                   exactly (the gate's quantity, from `phl.loss_full`)
   per class        the structure classes of `index.dat`, so "how are we doing on
                    epoxides" has an answer
   per distribution `out_of_molecule` (whole molecules the fine-tune never saw: the pinned
@@ -113,13 +115,11 @@ FRAME_ROW = {
     "hessian_mae": ("Double", "eV/A^2", "engine: element-wise MAE of the Cartesian Hessian"),
     "eigval_mae_eckart": ("Double", "eV/A^2/amu", "engine: MAE of the projected eigenvalues"),
     "mixing": ("Double", None, "engine: off-diagonal weight of D in the reference-mode basis"),
-    "loss_exact": ("Double", "eV^2/A^4/amu^2", "eq. 1 exactly: ||A||_F^2 / n_vib (the projected diagnostic)"),
     "loss_cartesian": ("Double", "eV^2/A^4", "the training target exactly: ||H_theta - H_r||_F^2 / (9 N^2) (S0-C-53)"),
     "base_freq_mae_low_cm": ("Double", "cm^-1", "the base model on the same frame"),
     "base_freq_mae_cm": ("Double", "cm^-1", "the base model on the same frame"),
     "base_hessian_mae": ("Double", "eV/A^2", "the base model on the same frame"),
     "base_eigval_mae_eckart": ("Double", "eV/A^2/amu", "the base model on the same frame"),
-    "base_loss_exact": ("Double", "eV^2/A^4/amu^2", "the base model on the same frame"),
     "base_loss_cartesian": ("Double", "eV^2/A^4", "the base model on the same frame"),
     "n_anharmonic": ("Integer", None, "reference modes set aside from the entropy tier"),
     "noise_floor_cm": ("Double", "cm^-1", "REF_NOISE_FLOOR_CM: the rigid block of the unprojected REFERENCE Hessian -- a low-mode difference below it is unresolved, not model error (S0-C-44)"),
@@ -176,13 +176,11 @@ SCHEMA = {
         "FREQ_MAE_CM": ("Double", "cm^-1", "mean over frames of the full-spectrum MAE"),
         "HESSIAN_MAE": ("Double", "eV/A^2", "mean over frames"),
         "EIGVAL_MAE_ECKART": ("Double", "eV/A^2/amu", "mean over frames"),
-        "LOSS_EXACT": ("Double", "eV^2/A^4/amu^2", "mean over frames of eq. 1"),
         "LOSS_CARTESIAN": ("Double", "eV^2/A^4", "mean over frames of the training target ||dH||^2/(9N^2): the gate's number"),
         "BASE_FREQ_MAE_LOW_CM": ("Double", "cm^-1", "the base model, same frames"),
         "BASE_FREQ_MAE_CM": ("Double", "cm^-1", "the base model, same frames"),
         "BASE_HESSIAN_MAE": ("Double", "eV/A^2", "the base model, same frames"),
         "BASE_EIGVAL_MAE_ECKART": ("Double", "eV/A^2/amu", "the base model, same frames"),
-        "BASE_LOSS_EXACT": ("Double", "eV^2/A^4/amu^2", "the base model, same frames"),
         "BASE_LOSS_CARTESIAN": ("Double", "eV^2/A^4", "the base model, same frames"),
     },
     "Class": {
@@ -191,10 +189,8 @@ SCHEMA = {
         "N_MOLECULES": ("Integer", None, "molecules"),
         "FREQ_MAE_LOW_CM": ("Double", "cm^-1", "mean over frames"),
         "FREQ_MAE_CM": ("Double", "cm^-1", "mean over frames"),
-        "LOSS_EXACT": ("Double", "eV^2/A^4/amu^2", "mean over frames"),
         "BASE_FREQ_MAE_LOW_CM": ("Double", "cm^-1", "the base model, same frames"),
         "BASE_FREQ_MAE_CM": ("Double", "cm^-1", "the base model, same frames"),
-        "BASE_LOSS_EXACT": ("Double", "eV^2/A^4/amu^2", "the base model, same frames"),
     },
     "Thermochemistry": {
         "QM9_INDEX": ("String", None, "the molecule"),
@@ -409,7 +405,7 @@ def frame_rows(dataset_dir, name, level, calc, base_calc=None, splits=("test",),
                        has_hessian=bool(has_h), rms_displacement_A=rms, rms_bin=rms_bin(rms),
                        held_out_generator=held.get((qid, gen, basin, k), "yes" if gen != "basin" else "no"),
                        n_low=None, freq_mae_low_cm=None, freq_mae_cm=None, hessian_mae=None,
-                       eigval_mae_eckart=None, mixing=None, loss_exact=None, noise_floor_cm=None,
+                       eigval_mae_eckart=None, mixing=None, noise_floor_cm=None,
                        n_anharmonic=0)
             row["e_err_mev_per_atom"], row["f_rmse_mev_a"] = _ef_errors(calc, atoms, e_ref, f_ref)
             if base_calc is not None:
@@ -425,7 +421,6 @@ def frame_rows(dataset_dir, name, level, calc, base_calc=None, splits=("test",),
                            hessian_mae=float(cmp_e["HESSIAN_MAE"]),
                            eigval_mae_eckart=float(cmp_e["EIGVAL_MAE_ECKART"]),
                            mixing=float(cmp_e["MIXING"]),
-                           loss_exact=phl.projected_loss_full(h_e, h_r, masses, pos),
                            loss_cartesian=phl.cartesian_loss_full(h_e, h_r),
                            noise_floor_cm=float(cmp_e.get("REF_NOISE_FLOOR_CM", 0.0)))
                 anh = anharmonic_modes(cmp_e["OMEGA_REF_CM"], qid, basin)
@@ -439,7 +434,6 @@ def frame_rows(dataset_dir, name, level, calc, base_calc=None, splits=("test",),
                                base_freq_mae_cm=float(cmp_b["FREQ_MAE_CM"]),
                                base_hessian_mae=float(cmp_b["HESSIAN_MAE"]),
                                base_eigval_mae_eckart=float(cmp_b["EIGVAL_MAE_ECKART"]),
-                               base_loss_exact=phl.projected_loss_full(h_b, h_r, masses, pos),
                                base_loss_cartesian=phl.cartesian_loss_full(h_b, h_r))
             rows.append(row)
     return rows, anharmonic
@@ -464,22 +458,20 @@ def aggregate(rows):
             DISTRIBUTION=d, N_FRAMES=len(sel), N_MOLECULES=len({r["qm9_index"] for r in sel}),
             FREQ_MAE_LOW_CM=_mean(sel, "freq_mae_low_cm"), FREQ_MAE_CM=_mean(sel, "freq_mae_cm"),
             HESSIAN_MAE=_mean(sel, "hessian_mae"), EIGVAL_MAE_ECKART=_mean(sel, "eigval_mae_eckart"),
-            LOSS_EXACT=_mean(sel, "loss_exact"), LOSS_CARTESIAN=_mean(sel, "loss_cartesian"),
+            LOSS_CARTESIAN=_mean(sel, "loss_cartesian"),
             BASE_FREQ_MAE_LOW_CM=_mean(sel, "base_freq_mae_low_cm"),
             BASE_FREQ_MAE_CM=_mean(sel, "base_freq_mae_cm"),
             BASE_HESSIAN_MAE=_mean(sel, "base_hessian_mae"),
             BASE_EIGVAL_MAE_ECKART=_mean(sel, "base_eigval_mae_eckart"),
-            BASE_LOSS_EXACT=_mean(sel, "base_loss_exact"), BASE_LOSS_CARTESIAN=_mean(sel, "base_loss_cartesian")))
+            BASE_LOSS_CARTESIAN=_mean(sel, "base_loss_cartesian")))
     names = sorted({c for r in rows for c in str(r.get("classes", "-")).split(";") if c and c != "-"})
     cls_rows = []
     for c in names:
         sel = [r for r in rows if c in str(r.get("classes", "-")).split(";")]
         cls_rows.append(dict(CLASS=c, N_FRAMES=len(sel), N_MOLECULES=len({r["qm9_index"] for r in sel}),
                              FREQ_MAE_LOW_CM=_mean(sel, "freq_mae_low_cm"), FREQ_MAE_CM=_mean(sel, "freq_mae_cm"),
-                             LOSS_EXACT=_mean(sel, "loss_exact"),
                              BASE_FREQ_MAE_LOW_CM=_mean(sel, "base_freq_mae_low_cm"),
-                             BASE_FREQ_MAE_CM=_mean(sel, "base_freq_mae_cm"),
-                             BASE_LOSS_EXACT=_mean(sel, "base_loss_exact")))
+                             BASE_FREQ_MAE_CM=_mean(sel, "base_freq_mae_cm")))
     return dist_rows, cls_rows
 
 
@@ -925,12 +917,12 @@ def _write_report(path, out):
                   [[r["epoch"], _num(r["valid_energy"], "{:.4e}"), _num(r["valid_forces"], "{:.4e}"),
                     _num(r["valid_hessian"], "{:.4e}")] for r in shown])
     rep.section("per distribution (the engine, then the base model)")
-    rep.table(["distribution", "frames", "mols", "low MAE", "MAE", "||A||^2/n", "base low", "base MAE", "base ||A||^2/n"],
+    rep.table(["distribution", "frames", "mols", "low MAE", "MAE", "||dH||^2/9N^2", "base low", "base MAE", "base ||dH||^2/9N^2"],
               [[d["DISTRIBUTION"], d["N_FRAMES"], d["N_MOLECULES"], _num(d["FREQ_MAE_LOW_CM"], "{:.2f}"),
-                _num(d["FREQ_MAE_CM"], "{:.2f}"), _num(d["LOSS_EXACT"], "{:.4e}"),
+                _num(d["FREQ_MAE_CM"], "{:.2f}"), _num(d["LOSS_CARTESIAN"], "{:.4e}"),
                 _num(d["BASE_FREQ_MAE_LOW_CM"], "{:.2f}"), _num(d["BASE_FREQ_MAE_CM"], "{:.2f}"),
-                _num(d["BASE_LOSS_EXACT"], "{:.4e}")] for d in out["distributions"]],
-              units=["", "", "", "cm^-1", "cm^-1", "", "cm^-1", "cm^-1", ""])
+                _num(d["BASE_LOSS_CARTESIAN"], "{:.4e}")] for d in out["distributions"]],
+              units=["", "", "", "cm^-1", "cm^-1", "eV^2/A^4", "cm^-1", "cm^-1", "eV^2/A^4"])
     if out["classes"]:
         rep.section("per structure class")
         rep.table(["class", "frames", "mols", "low MAE", "MAE", "base low", "base MAE"],

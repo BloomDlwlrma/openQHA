@@ -123,13 +123,13 @@ def main():
     info = out["info"]
     print("frames     {} from {} molecules in {:.1f} s".format(info["N_FRAMES"], info["N_MOLECULES"], info["SECONDS"]))
 
-    print("\n{:18s} {:>6s} {:>5s} {:>9s} {:>9s} {:>12s} {:>9s} {:>9s}".format(
-        "distribution", "frames", "mols", "low MAE", "MAE", "||A||^2/n", "base low", "base MAE"))
+    print("\n{:18s} {:>6s} {:>5s} {:>9s} {:>9s} {:>13s} {:>9s} {:>9s}".format(
+        "distribution", "frames", "mols", "low MAE", "MAE", "||dH||^2/9N^2", "base low", "base MAE"))
     for d in out["distributions"]:
-        print("{:18s} {:6d} {:5d} {:>9s} {:>9s} {:>12s} {:>9s} {:>9s}".format(
+        print("{:18s} {:6d} {:5d} {:>9s} {:>9s} {:>13s} {:>9s} {:>9s}".format(
             d["DISTRIBUTION"], d["N_FRAMES"], d["N_MOLECULES"],
             judge._num(d["FREQ_MAE_LOW_CM"], "{:.2f}"), judge._num(d["FREQ_MAE_CM"], "{:.2f}"),
-            judge._num(d["LOSS_EXACT"], "{:.4e}"), judge._num(d["BASE_FREQ_MAE_LOW_CM"], "{:.2f}"),
+            judge._num(d["LOSS_CARTESIAN"], "{:.4e}"), judge._num(d["BASE_FREQ_MAE_LOW_CM"], "{:.2f}"),
             judge._num(d["BASE_FREQ_MAE_CM"], "{:.2f}")))
     if out["classes"]:
         print("\n{:24s} {:>6s} {:>5s} {:>9s} {:>9s}".format("class", "frames", "mols", "low MAE", "MAE"))

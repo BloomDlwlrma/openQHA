@@ -29,23 +29,13 @@ Units: `H` in eV/A^2. The Label is used AS STORED: never symmetrised, projected 
 mass-weighted here (the fork's data-loading check refuses a non-symmetric or wrongly
 sized Hessian -- that is a data check, not a transformation).
 
-The block at the end of this module is the standard VIBRATIONAL ANALYSIS (mass
-weighting, the Eckart projector, the reference modes, the msRRHO entropy weights). It
-is no longer on any training path: what is left of it serves the smoke fit's diagnostic
-and the judge's `loss_exact` row, and it goes with its last caller (tickets 36, 38).
 """
 import numpy as np
-
-from ..thermochem import hessian as hessian_mod
-from ..thermochem import thermo
 
 #: The three probe sets of `make_probes`. `rademacher` and `gaussian` are stochastic
 #: (Hutchinson, eq. 6'); `cartesian` is the deterministic unit-vector set that makes the
 #: estimator exact (Derivation 2.3) at k = 3N HVPs -- the cost of `get_hessian` itself.
 PROBE_MODES = ("rademacher", "gaussian", "cartesian")
-
-#: Finite-difference step for the entropy derivative, cm^-1 (the analysis block below).
-ENTROPY_FD_STEP_CM = 0.5
 
 
 def loss_full(hessian_theta, hessian_r):
@@ -126,119 +116,3 @@ def estimator_variance(hessian_theta, hessian_r, k=1):
     fro2 = float(np.sum(b * b))
     diag2 = float(np.sum(np.diag(b) ** 2))
     return dict(rademacher=2.0 * (fro2 - diag2) / (nu ** 2 * k), gaussian=2.0 * fro2 / (nu ** 2 * k))
-
-
-# ---------------------------------------------------------------------------------------
-# THE STANDARD VIBRATIONAL ANALYSIS -- not a training path (S0-C-64). Mass weighting and
-# the Eckart projection are what a FREQUENCY is; they live here only until their last
-# caller is gone: the smoke fit's diagnostic (ticket 36) and the judge's `loss_exact`
-# row (ticket 38). Nothing below is reachable from `phl_loss`.
-#
-#     K   = M^-1/2 H M^-1/2                      mass-weighted Hessian, eV A^-2 amu^-1
-#     P   = I - V V^T                            Eckart projector (V: rigid, mass-weighted)
-#     K~  = P K P = L Lambda L^T                 reference modes L_r, eigenvalues lambda_r
-#     A   = P_W M^-1/2 (H_theta - H_r) M^-1/2 P_W
-# ---------------------------------------------------------------------------------------
-
-
-def mass_vectors(masses):
-    """m3 = masses repeated per Cartesian component [3N], and M^-1/2 as a vector."""
-    m3 = np.repeat(np.asarray(masses, dtype=float), 3)
-    return m3, 1.0 / np.sqrt(m3)
-
-
-def mass_weighted(hessian_eV_A2, masses):
-    """K = M^-1/2 H M^-1/2, symmetrised."""
-    m3, _inv = mass_vectors(masses)
-    k = np.asarray(hessian_eV_A2, dtype=float) / np.sqrt(np.outer(m3, m3))
-    return 0.5 * (k + k.T)
-
-
-def projector(masses, positions):
-    """(P, M^-1/2 as a vector, V): the Eckart projector in mass-weighted coordinates at
-    `positions`, from `hessian.rigid_body_vectors` (orthonormal, rank 6 or 5)."""
-    m3, inv_sqrt_m = mass_vectors(masses)
-    v, _sing, _rank = hessian_mod.rigid_body_vectors(masses, positions)
-    p = np.eye(len(m3)) - v @ v.T
-    return p, inv_sqrt_m, v
-
-
-def reference_modes(hessian_r_eV_A2, masses, positions):
-    """(L_r [3N, n_vib], lambda_r [n_vib]) of the projected reference Hessian, ascending;
-    the rigid modes are identified by overlap with the rigid subspace, as
-    `hessian.project_and_diagonalise` does, never as 'the six smallest'."""
-    p, _inv, v = projector(masses, positions)
-    k = p @ mass_weighted(hessian_r_eV_A2, masses) @ p
-    k = 0.5 * (k + k.T)
-    lam, vec = np.linalg.eigh(k)
-    keep = np.linalg.norm(v.T @ vec, axis=0) ** 2 <= 0.5
-    lam, vec = lam[keep], vec[:, keep]
-    order = np.argsort(lam)
-    return vec[:, order], lam[order]
-
-
-def entropy_weights(omega_r_cm, masses, positions, temperature_K=thermo.T_REF, preset="crest",
-                    step_cm=ENTROPY_FD_STEP_CM):
-    """w_i = |dS_msRRHO/d omega_i| at T, normalised to max 1.
-
-    Central finite difference of the msRRHO vibrational entropy under the preset, mode
-    by mode (the per-mode terms are separable; only the rotor cap is molecular, and it
-    is evaluated with the given masses and positions). A mode below `thermo.VIBTHR_CM`
-    has no harmonic entropy to differentiate: it keeps the largest weight, 1.0 -- the
-    limit of the harmonic-oscillator derivative as omega -> 0.
-    Returns (w normalised, |dS/d omega| in cal/mol/K per cm^-1).
-    """
-    omega = np.asarray(omega_r_cm, dtype=float)
-    ds = np.zeros(len(omega))
-    below = omega - step_cm < thermo.VIBTHR_CM
-    for i in np.flatnonzero(~below):
-        s = []
-        for f in (omega[i] + step_cm, omega[i] - step_cm):
-            r = thermo.msrrho([float(f)], masses, positions, preset=preset, temperature_K=temperature_K,
-                              imaginary_policy="refuse")
-            s.append(r["S_vib_kcal_per_K"] * 1000.0)
-        ds[i] = abs(s[0] - s[1]) / (2.0 * step_cm)
-    top = ds.max() if ds.size and ds.max() > 0 else 1.0
-    w = ds / top
-    w[below] = 1.0
-    return w, ds
-
-
-def weighted_projector(modes_r, weights=None):
-    """P_W = L_r W^1/2 L_r^T (symmetric). With `weights` None this is P itself,
-    because L_r L_r^T = P."""
-    l = np.asarray(modes_r, dtype=float)
-    if weights is None:
-        return l @ l.T
-    w = np.asarray(weights, dtype=float)
-    if w.shape != (l.shape[1],) or (w < 0).any():
-        raise ValueError("weights must be one non-negative number per reference mode ({}); got {}".format(
-            l.shape[1], w.shape))
-    return (l * np.sqrt(w)[None, :]) @ l.T
-
-
-def error_operator(hessian_theta, hessian_r, masses, positions, weights=None):
-    """A = P_W M^-1/2 (H_theta - H_r) M^-1/2 P_W, symmetrised."""
-    l_r, _lam = reference_modes(hessian_r, masses, positions)
-    p_w = weighted_projector(l_r, weights)
-    d = mass_weighted(hessian_theta, masses) - mass_weighted(hessian_r, masses)
-    a = p_w @ d @ p_w
-    return 0.5 * (a + a.T)
-
-
-def projected_loss_full(hessian_theta, hessian_r, masses, positions, weights=None):
-    """||A||_F^2 / n_vib: the projected, mass-weighted DIAGNOSTIC. Not the training
-    target (S0-C-64) -- the judge's `loss_exact` row and the smoke fit's diagnostic."""
-    l_r, _lam = reference_modes(hessian_r, masses, positions)
-    a = error_operator(hessian_theta, hessian_r, masses, positions, weights)
-    return float(np.sum(a * a)) / l_r.shape[1]
-
-
-def mode_basis_terms(hessian_theta, hessian_r, masses, positions):
-    """The two terms in the reference-mode basis: (D, lambda_r) with
-    D = L_r^T K~_theta L_r, so that ||A||_F^2 = sum_i (D_ii - lambda_i)^2 + sum_{i!=j} D_ij^2
-    -- `hessian_compare` family 4 (OMEGA_ALONG_REF_CM^2 on the diagonal, MIXING off it)."""
-    l_r, lam_r = reference_modes(hessian_r, masses, positions)
-    p, _inv, _v = projector(masses, positions)
-    k_t = p @ mass_weighted(hessian_theta, masses) @ p
-    return l_r.T @ (0.5 * (k_t + k_t.T)) @ l_r, lam_r

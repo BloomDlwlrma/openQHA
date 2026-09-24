@@ -1,5 +1,12 @@
 # Projected Hessian learning for MACE-OFF23: derivation, algorithm, and the rewrite of mace-torch 0.3.16
 
+> **SUPERSEDED (2026-09-23, S0-C-53 / S0-C-64).** This design's projected,
+> mass-weighted, entropy-weighted loss is no longer the training target. The loss is PHL
+> verbatim: the Cartesian Hessian's MSE sampled by random-probe Hessian-vector products;
+> mass weighting and the Eckart projection are evaluation-only (the standard vibrational
+> analysis, in `hessian_compare`). See `spec-phl-verbatim.md`, ADR 0006, and the archived
+> T03. Kept for the record of why the projected loss was designed and why it was dropped.
+
 Design note for the Hessian-learning step (round-2 grilling, Q4/Q5/Q7/Q13), 2026-09-18.
 Ruling it rests on: HIP's full-matrix metrics are the ruler, PHL's Hessian-vector-product
 loss is the loss, neither is the potential. Everything below is stated so that it can fail:

@@ -223,14 +223,28 @@ _Avoid_: test generator, extrapolation set (that is what the rows measure, not t
 
 **Held-out**, and the three distributions:
 What a judged number is worth depends on what the model had already seen, so every judge
-table has three rows and never one. **interpolation**: frames of molecules the model was
-fine-tuned on, held out by FRAME (the production split, round-5 Q4) -- it measures
-interpolation within those molecules, not generalisation to new ones. **out_of_molecule**:
+table has three rows and never one. **interpolation**: a test frame of a TRAINING
+molecule -- held out by frame, so it measures interpolation within those molecules, not
+generalisation to new ones; the production split holds out whole MOLECULES (S0-C-65), so
+`interpolation` is EMPTY in production and only the smoke / fit Datasets (the by-frame
+split) produce one. **out_of_molecule**:
 whole molecules held out, which the fine-tune never saw in any frame. **in_distribution**:
 molecules the BASE model was trained on (the four shipped ones, S0-C-40) -- there the
 question is not accuracy but damage, and the line to watch is "no worse than the base".
 A number quoted without its row is not a claim about anything.
 _Avoid_: held-out (alone), test set (alone -- which test?), generalisation (for the by-frame split)
+
+**Loss**:
+The fine-tune's Hessian term, PHL verbatim (S0-C-64): the mean squared error per matrix
+element of the Cartesian matrix, `||H_theta - H_r||_F^2 / (9 N^2)` (eq. 1'), sampled by
+`K` random probes through Hessian-vector products (`sum_j ||H_theta v_j - H_r v_j||^2 /
+(9 N^2 K)`, eq. 6'), the probes PHL's standard normal (S0-C-68) and the reference side a
+matvec on the stored Label. Nothing is mass-weighted or projected in training; the mass
+weighting and Eckart projection are evaluation only -- what a frequency is -- and live in
+`hessian_compare`, never the loss. The full matrix is the deterministic limit (3N unit
+probes = `get_hessian`), which is what the Judge reads exactly.
+_Avoid_: projected Hessian loss (the 2026-09-18 design, superseded by S0-C-53/64),
+entropy-weighted loss, mode-weighted loss
 
 **Judge**:
 The step that decides whether a potential is better, reading only shipped paths: the full
@@ -242,7 +256,9 @@ per row. GATE rows decide the verdict (S0-C-58/59): the Hessian MATRIX itself ag
 Label on the held-out Hessian frames -- the training target's own number, engine no worse
 than base -- the in_distribution no-degradation, the forgetting line. Everything computed
 FROM the matrix afterwards is post-processing and a REFERENCE row, measured against a
-number and reported, never gated: the low-mode frequency line, the msRRHO entropy at the
+number and reported, never gated: the low-mode frequency line (the standard vibrational
+analysis of the trained matrix -- mass weighting + Eckart projection, as `hessian_compare`
+computes a frequency -- never the training loss), the msRRHO entropy at the
 engine's own minima, the Held-out generator's frames binned by RMS displacement (H, E, F
 against the base), the MD temperature ramp (run only when asked for). The gate is CLOSED
 for now (S0-C-60): every row is reported against its number and the verdict reads

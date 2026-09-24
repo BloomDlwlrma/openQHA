@@ -13,14 +13,6 @@ Gaussian one is strictly the larger (the kurtosis term 2 sum_i B_ii^2); the vari
 falls as 1/k; the probe is the RAW draw and r_j = H_r v_j. Refused: an unknown probe
 mode, `modes` (there is no such probe any more), a `metric` or masses in the signature,
 and a Label that is not square.
-
-THE VIBRATIONAL ANALYSIS block at the end of `phl` is not a training path: it is the
-judge's and the smoke fit's, and it is asserted here as it always was (P symmetric,
-idempotent and killing V; ||A||_F^2/n_vib = `hessian_compare` family 4; Weyl
-0.3427 <= 0.3697 <= 0.5448; a rigid-block perturbation changes nothing; H_r := H_theta
-gives 0; H_r := 0.81 H_theta gives 0.19^2 ||K~||_F^2/n_vib; the entropy weights equal
-the analytic harmonic derivative to 4 digits at 131 cm^-1 and eq. 3 holds to 1e-16).
-It goes with its last caller, tickets 36 and 38.
 """
 import math
 import sys
@@ -40,8 +32,6 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha.qm_interfaces import orca                                  # noqa: E402
 from openqha.store import layout                                        # noqa: E402
-from openqha.thermochem import hessian as hessian_mod                   # noqa: E402
-from openqha.thermochem import hessian_compare as hc                    # noqa: E402
 from openqha.training import phl                                        # noqa: E402
 
 FIX = ROOT / "tests" / "data" / "propanal_molecule"
@@ -154,61 +144,7 @@ def main():
     except ValueError as exc:
         check("a Label that is not square is refused", "square" in str(exc))
 
-    # === the vibrational analysis (the judge's and the smoke fit's; tickets 36, 38) ==========
-    P, inv_m, V = phl.projector(masses, x_r)
-    check("P symmetric, idempotent, P V = 0 (1e-12)",
-          np.abs(P - P.T).max() < 1e-12 and np.abs(P @ P - P).max() < 1e-12 and np.abs(P @ V).max() < 1e-12)
-    L_r, lam_r = phl.reference_modes(H_r, masses, x_r)
-    n_vib = L_r.shape[1]
-    pr = hc.projected(H_r, masses, x_r)
-    check("reference modes = hessian_compare.projected (n_vib {}, eigenvalues to 1e-12)".format(n_vib),
-          n_vib == 24 and np.abs(lam_r - pr["lam"]).max() < 1e-12
-          and np.abs(np.abs(np.sum(L_r * pr["vec"], axis=0)) - 1).max() < 1e-10)
-    check("L_r L_r^T = P (1e-12)", np.abs(L_r @ L_r.T - P).max() < 1e-12)
-    L_full = phl.projected_loss_full(H_t, H_r, masses, x_r)
-    D, lam = phl.mode_basis_terms(H_t, H_r, masses, x_r)
-    rhs = (np.sum((np.diag(D) - lam) ** 2) + np.sum((D - np.diag(np.diag(D))) ** 2)) / n_vib
-    check("||A||_F^2/n_vib = [sum (D_ii - lam_i)^2 + sum_{i!=j} D_ij^2]/n_vib to 1e-14",
-          abs(L_full - rhs) < 1e-14, abs(L_full - rhs))
-    cmp = hc.compare_hessians(H_t, H_r, masses, x_r)
-    d_along = np.asarray(cmp["OMEGA_ALONG_REF_CM"], dtype=float)
-    d_ii = np.sign(d_along) * (d_along / hessian_mod.CM_INV_PER_SQRT_EV_A2_AMU) ** 2
-    check("D_ii = hessian_compare OMEGA_ALONG_REF_CM^2 (1e-12)", np.abs(d_ii - np.diag(D)).max() < 1e-12)
-    mixing = np.linalg.norm(D - np.diag(np.diag(D))) / np.linalg.norm(D)
-    check("MIXING = ||D - diag D||_F / ||D||_F (1e-10)", abs(mixing - cmp["MIXING"]) < 1e-10, (mixing, cmp["MIXING"]))
-    A = phl.error_operator(H_t, H_r, masses, x_r)
-    lam_t = hc.projected(H_t, masses, x_r)["lam"]
-    weyl = np.abs(lam_t - lam_r).max(); spec = np.linalg.norm(A, 2); fro = math.sqrt(np.sum(A * A))
-    check("Weyl: max|lam^theta - lam^r| {:.4f} <= ||A||_2 {:.4f} <= ||A||_F {:.4f}".format(weyl, spec, fro),
-          weyl <= spec <= fro and abs(weyl - 0.3427) < 5e-4 and abs(spec - 0.3697) < 5e-4 and abs(fro - 0.5448) < 5e-4)
-    m3, _ = phl.mass_vectors(masses)
-    rigid = np.sqrt(np.outer(m3, m3)) * (V @ V.T) * 5.0                       # eps sqrt(m m^T) V V^T
-    check("a rigid-block perturbation of H_r changes the projected diagnostic by 0 (1e-14)",
-          abs(phl.projected_loss_full(H_t, H_r + rigid, masses, x_r) - L_full) < 1e-14)
-    check("H_r := H_theta -> 0", phl.projected_loss_full(H_t, H_t, masses, x_r) < 1e-20)
-    K_t = P @ phl.mass_weighted(H_t, masses) @ P
-    a6 = 0.19 ** 2 * np.sum(K_t * K_t) / n_vib
-    check("H_r := 0.81 H_theta -> 0.19^2 ||K~||_F^2 / n_vib (1e-12 relative)",
-          abs(phl.projected_loss_full(H_t, 0.81 * H_t, masses, x_r) / a6 - 1) < 1e-12)
-    omega_r = hessian_mod.eigenvalues_to_cm_inv(lam_r)
-    w, ds = phl.entropy_weights(omega_r, masses, x_r)
-    R = 1.987204259
-    u = 1.438776877 * omega_r / 298.15
-    ds_ho = R * u * np.exp(u) / (np.exp(u) - 1) ** 2 * (1.438776877 / 298.15)
-    i0 = 0
-    check("|dS_msRRHO/d nu| at {:.1f} cm^-1 = analytic HO derivative to 4 digits ({:.4e} vs {:.4e})".format(
-          omega_r[i0], ds[i0], ds_ho[i0]), abs(ds[i0] / ds_ho[i0] - 1) < 2e-3 and abs(omega_r[i0] - 131.1) < 1)
-    check("weights normalised: max 1, monotone decreasing with omega above the rotor cap",
-          w.max() == 1.0 and np.all(np.diff(w[3:]) <= 1e-12) and w[-1] < 1e-3, w)
-    L_w = phl.projected_loss_full(H_t, H_r, masses, x_r, weights=w)
-    rhs_w = np.sum(np.outer(w, w) * (D - np.diag(lam_r)) ** 2) / n_vib
-    check("||A_W||_F^2/n_vib = sum w_i w_j (D_ij - lam_i d_ij)^2 / n_vib (1e-16)",
-          abs(L_w - rhs_w) < 1e-16, abs(L_w - rhs_w))
-    check("the weighted diagnostic ~1e-5 against the unweighted ~1e-2 (the low modes carry it)",
-          1e-6 < L_w < 1e-4 and 1e-3 < L_full < 1e-1, (L_w, L_full))
-    del inv_m
-
-    print("\n{} checks, {} failed".format(26, len(FAIL)))
+    print("\n{} checks, {} failed".format(17, len(FAIL)))
     return 1 if FAIL else 0
 
 

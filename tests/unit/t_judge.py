@@ -1,8 +1,8 @@
 """Ticket 14 of the Hessian-learning set: the judge's arithmetic, its set-aside rule and
 its verdict lines -- no engine (a fake calculator answers with stored Hessians).
 
-Asserted: a per-frame row reproduces `hessian_compare`'s numbers and `||A||_F^2/n_vib`
-equals ticket 11's `projected_loss_full` to 1e-14; `ScaledCalculator(0.9)` gives
+Asserted: a per-frame row reproduces `hessian_compare`'s numbers and the training target
+`||H - H_r||_F^2 / (9 N^2)` exactly (the gate's quantity); `ScaledCalculator(0.9)` gives
 frequencies 0.9x to 1e-10 and a Hessian scaled by 0.81; the distribution of a molecule
 (in_distribution beats out_of_molecule beats interpolation); class and distribution
 aggregation add up; the `[Anharmonic]` rule sets aside a 20 cm^-1 mode, keeps a 40 cm^-1
@@ -118,8 +118,6 @@ def main():
               and abs(r["freq_mae_cm"] - cmp_e["FREQ_MAE_CM"]) < 1e-8
               and abs(r["hessian_mae"] - cmp_e["HESSIAN_MAE"]) < 1e-12
               and abs(r["mixing"] - cmp_e["MIXING"]) < 1e-10, r)
-        check("`loss_exact` = ticket 11's projected_loss_full (1e-12, the same round trip)",
-              abs(r["loss_exact"] - phl.projected_loss_full(H_t, H_r, masses, x_r)) < 1e-12)
         check("the base columns are filled and the classes come from index.dat",
               r["base_freq_mae_cm"] == r["freq_mae_cm"] and r["classes"] == "aldehyde;ketone")
         check("a shipped molecule is in_distribution, not out_of_molecule",
@@ -139,17 +137,17 @@ def main():
 
     # --- aggregation ------------------------------------------------------------------------------------
     rows = [dict(qm9_index="a", distribution="interpolation", classes="epoxide", freq_mae_low_cm=2.0,
-                 freq_mae_cm=4.0, hessian_mae=0.1, eigval_mae_eckart=0.2, loss_exact=1.0, loss_cartesian=0.5,
+                 freq_mae_cm=4.0, hessian_mae=0.1, eigval_mae_eckart=0.2, loss_cartesian=0.5,
                  base_freq_mae_low_cm=4.0, base_freq_mae_cm=8.0, base_hessian_mae=0.2,
-                 base_eigval_mae_eckart=0.4, base_loss_exact=2.0, base_loss_cartesian=1.0),
+                 base_eigval_mae_eckart=0.4, base_loss_cartesian=1.0),
             dict(qm9_index="b", distribution="interpolation", classes="epoxide;amide", freq_mae_low_cm=4.0,
-                 freq_mae_cm=6.0, hessian_mae=0.3, eigval_mae_eckart=0.4, loss_exact=3.0, loss_cartesian=1.5,
+                 freq_mae_cm=6.0, hessian_mae=0.3, eigval_mae_eckart=0.4, loss_cartesian=1.5,
                  base_freq_mae_low_cm=8.0, base_freq_mae_cm=12.0, base_hessian_mae=0.6,
-                 base_eigval_mae_eckart=0.8, base_loss_exact=6.0, base_loss_cartesian=3.0),
+                 base_eigval_mae_eckart=0.8, base_loss_cartesian=3.0),
             dict(qm9_index="c", distribution="in_distribution", classes="-", freq_mae_low_cm=1.0,
-                 freq_mae_cm=1.0, hessian_mae=0.05, eigval_mae_eckart=0.05, loss_exact=0.5, loss_cartesian=0.25,
+                 freq_mae_cm=1.0, hessian_mae=0.05, eigval_mae_eckart=0.05, loss_cartesian=0.25,
                  base_freq_mae_low_cm=1.0, base_freq_mae_cm=1.0, base_hessian_mae=0.05,
-                 base_eigval_mae_eckart=0.05, base_loss_exact=0.5, base_loss_cartesian=0.25)]
+                 base_eigval_mae_eckart=0.05, base_loss_cartesian=0.25)]
     dist, cls = judge.aggregate(rows)
     check("per distribution: the means and the molecule counts",
           [d["DISTRIBUTION"] for d in dist] == ["interpolation", "in_distribution"]
