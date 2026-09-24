@@ -1,0 +1,67 @@
+================================================================================================
+                                         openQHA frames
+                     the Frame set of dsgdb9nsd_000035 at mace-off23_medium
+================================================================================================
+
+
+------------------------------------------------------------------------------------------------
+conventions
+------------------------------------------------------------------------------------------------
+  ENGINE.................................. MACE-OFF23_medium
+  LEVEL................................... mace-off23_medium
+  ENGINE PARAMS SHA256.................... e986a6cffd75c3a54b8f5d1f6511c6af00523872a173c5d2e0e8083751a5d7df
+  ENGINE PIN STATUS....................... matches
+  TEMPERATURE............................. 450
+  DISTRIBUTION............................ nms
+  N DISPLACED PER BASIN................... 1
+  DISPLACED HESSIAN....................... no
+  N ENGINE HESSIAN........................ 3
+  MAX RMS................................. nan A
+  ENERGY WINDOW KCAL...................... 275
+  BOND CUTOFF MULT........................ 1.2
+  BOND BREAK MULT......................... 1.35
+  BOND FORM MULT.......................... 0.95
+  N BOND CHANGED.......................... 0
+  N BASINS................................ 3
+  N FRAMES................................ 6
+  N DROPPED............................... 0
+
+------------------------------------------------------------------------------------------------
+per generator
+------------------------------------------------------------------------------------------------
+  generator  kept  dropped  file
+  ---------  ----  -------  ----------------------------------
+      basin     3        0  basin.mace-off23_medium.extxyz
+  displaced     3        0  displaced.mace-off23_medium.extxyz
+     merged     0        0  -
+     saddle     0        0  -
+
+------------------------------------------------------------------------------------------------
+per frame (eV; dE in kcal/mol above the basin; eV/A; A; cm^-1)
+------------------------------------------------------------------------------------------------
+  generator  basin  k  source     rms             E     dE  |F|max  lowest  bonds  status  reason
+  ---------  -----  -  ------  ------  ------------  -----  ------  ------  -----  ------  ------
+      basin      0  0       0  0.0000  -5259.188956   0.00  0.0001   128.5      -    kept  -
+  displaced      0  0      -1  0.0763  -5258.708870  11.07  2.0100     nan      -    kept  -
+      basin      1  0       2  0.0000  -5259.152703   0.00  0.0001    74.0      -    kept  -
+  displaced      1  0      -1  0.1962  -5258.215870  21.60  5.8667     nan      -    kept  -
+      basin      2  0       1  0.0000  -5259.152703   0.00  0.0001    74.0      -    kept  -
+  displaced      2  0      -1  0.1275  -5258.611612  12.48  2.9266     nan      -    kept  -
+  * a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term
+    included -- the Hessian-learning target, not a frequency. The basin frame reuses the basin's
+    stored hessian.npy; merged and saddle frames get one from the engine; a DISPLACED frame gets
+    none (ticket 29: 3N backward passes nothing downstream reads) and its 'lowest' is blank. dE
+    of a displaced frame is the ENGINE's energy at the drawn geometry; what the draw put in is
+    the harmonic part of it -- normal-mode sampling bounds that at (3/2) N_a k_B T with mean
+    (3/4) N_a k_B T (9.4 kcal/mol mean, 18.7 max for 14 atoms at 450 K). The only filter is the
+    energy window (275 kcal/mol; SPICE cuts at 2390), as the published sets do; 'bonds' reports
+    a broken or formed bond at perception tolerances (RDKit 1.3 / Open Babel ~1.4) and never
+    drops a frame. Hot-MD, cooled and hot normal-mode frames (SPICE, OpenREACT) were considered
+    and not built (rulings 2026-09-18).
+
+------------------------------------------------------------------------------------------------
+generated 2026-09-24 16:25:08 by openqha.report  (stage 0)
+this file is the Report, laid out for people (numbers truncated to a fixed number of places); what a program reads back, at full float64 precision, is the Property file (.toml) or the Table (.dat) of the same stem.
+------------------------------------------------------------------------------------------------
+
+openQHA frames terminated normally

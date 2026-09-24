@@ -1,4 +1,4 @@
-"""The ruler: what a fine-tuned potential is judged by (Algorithm 3 of design-phl-loss.md).
+"""The ruler: what a fine-tuned potential is judged by (Algorithm 5 of spec-phl-verbatim.md).
 
 PRODUCTION. Ticket 14 of the Hessian-learning set.
 
@@ -45,7 +45,9 @@ What one judge run reports:
                    in_distribution no-degradation; the forgetting line. Everything
                    computed FROM the matrix afterwards is post-processing and a REFERENCE
                    row, reported with PASS / FAIL against its number and never moving the
-                   verdict: the low-mode frequency line, the msRRHO entropy at the
+                   verdict: the low-mode frequency line (the standard vibrational analysis
+                   of the trained matrix -- mass weighting + Eckart projection -- never the
+                   training loss), the msRRHO entropy at the
                    engine's own minima, the held-out generator's H against the base (the
                    RMS bins), the MD ramp
 
