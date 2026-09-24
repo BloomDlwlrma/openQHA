@@ -303,7 +303,10 @@ def open_archive(cfg=None):
         return None
     key = str(p)
     if key not in _ARCHIVE_CACHE:
-        _ARCHIVE_CACHE[key] = Archive(p)
+        try:
+            _ARCHIVE_CACHE[key] = Archive(p)
+        except Exception as e:                                              # noqa: BLE001
+            raise RuntimeError(_unreadable(p, None, e)) from e
     return _ARCHIVE_CACHE[key]
 
 
@@ -384,6 +387,27 @@ def _to_int(qm9_index):
     return int(m.group(1))
 
 
+def _unreadable(path, n, e):
+    """The message for an archive that answers with an HDF5 error. A damaged copy and a
+    copy being overwritten while it is read both answer with these errors; a healthy one
+    cannot (measured 2026-09-24: three Tianhe molecules died on `incorrect metadata
+    checksum after all read attempts` while 6 455 read fine). The sentence carries the
+    file, the group, and the command that decides which it is."""
+    return ("the archive {} {}. ({}: {})\n"
+            "  A damaged copy answers exactly like this -- a truncated one says "
+            "'truncated file', a damaged one 'incorrect metadata checksum after all read "
+            "attempts' -- and a healthy one does not. Check with:\n"
+            "      python scripts/tooling/s0_verify_curated_qm9.py{}\n"
+            "  and, if the same group fails there, re-copy the archive the packer wrote "
+            "(write a temporary name, move it into place; never overwrite the file a "
+            "campaign is reading).".format(
+                path,
+                "could not be opened" if n is None else
+                "could not be read for {}".format(group_name(n)),
+                type(e).__name__, e,
+                "" if n is None else " --only {}".format(n)))
+
+
 def find(qm9_index, cfg=None):
     """Return (path, pattern_name) for a QM9 index, or (None, None).
 
@@ -397,8 +421,16 @@ def find(qm9_index, cfg=None):
     if hit is not None:
         return hit[1], hit[0]
     arc = open_archive(cfg)
-    if arc is not None and n in arc:
-        return arc.extract(n), arc.pattern_name(n)
+    if arc is not None:
+        try:
+            inside = n in arc
+        except Exception as e:                                              # noqa: BLE001
+            raise RuntimeError(_unreadable(arc.path, n, e)) from e
+        if inside:
+            try:
+                return arc.extract(n), arc.pattern_name(n)
+            except Exception as e:                                          # noqa: BLE001
+                raise RuntimeError(_unreadable(arc.path, n, e)) from e
     return None, None
 
 

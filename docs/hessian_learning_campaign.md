@@ -20,6 +20,25 @@ scp data/qm9/curated_qm9.h5 tianhe:~/openQHA-main/data/qm9/
 # it is asked for -- 6,458 files for the campaign, not 133,661
 ```
 
+**Verify the copy on the cluster before the campaign reads it — and re-copy atomically.**
+A damaged copy of the archive OPENS fine and fails only the molecules whose groups lost
+their metadata (measured 2026-09-24: three of the draw's 6,458 died with `incorrect
+metadata checksum after all read attempts`, rc=1 in 21 s each, while everything else read
+fine). `scp` overwrites the destination IN PLACE, so a reader that opens the file mid-copy
+sees the same errors: copy to a temporary name, then `mv` it into place, then check both
+sides. The tool reads every group back and exits 1 on damage; `--digest` writes a
+per-group fingerprint to diff the two sides, the only way to catch a corruption HDF5's
+checksums cannot see (they cover metadata, not dataset bytes):
+
+```bash
+# on both sides: the size and sha256 must be equal (seconds)
+python scripts/tooling/s0_verify_curated_qm9.py --sha
+# on the cluster: every group, minutes; exit 0 only when nothing is damaged
+python scripts/tooling/s0_verify_curated_qm9.py
+# a molecule the campaign is failing on
+python scripts/tooling/s0_verify_curated_qm9.py --only 14156,65586,88898
+```
+
 The rules this page follows (rulings 2026-09-18 … 22): nothing runs on the login node
 except the second-long steps and, for step 03, the parsl **driver** in `tmux` — a process
 that polls `squeue` and submits blocks, no chemistry; every test is a `debug` job; a job
@@ -156,7 +175,7 @@ merged / saddle: `EnGrad Freq`) and ~12 gradient jobs (displaced: `EnGrad`; roun
 
 | stage | per unit | basis | draw300 (12 nodes) | measured on the campaign |
 |---|---|---|---|---|
-| A branch A | 283–1,493 s / molecule at 16 per node, 3 of 16 still running at the 30-min debug cap **[measured 2026-09-21, debug gate on draw300, 9 heavy atoms; the smoke set gave 460–590 s on 2026-09-19]** | 6,458 × ~1,000 s × 4 cores ≈ 7,200 core-h | **~10 h** (array `--time=1-00:00:00` is slack; a molecule past `TIMEOUT_S=3600` is skipped with rc≠0 and stays pending) | — |
+| A branch A | 283–1,493 s / molecule at 16 per node, 3 of 16 still running at the 30-min debug cap **[measured 2026-09-21, debug gate on draw300, 9 heavy atoms; the smoke set gave 460–590 s on 2026-09-19]** | 6,458 × ~1,000 s × 4 cores ≈ 7,200 core-h | **~10 h** (array `--time=1-00:00:00` is slack; a molecule past `TIMEOUT_S=3600` is skipped with rc≠0 and stays pending; the whole worker is capped at `WALL_S` = 3 × `TIMEOUT_S` + 1 h — rc=124, nothing written, rerun next round) | — |
 | 02 frames | **122 s / molecule at 1 thread [measured 2026-09-23]**: ~8.6 frames with an engine Hessian at 13.4 s (19 atoms, 3N backward passes) + ~22 displaced at 0.21 s (energy and forces only since ticket 29) | 6,458 × 122 s × 1 core = 219 core-h | **~2 h** on 12 nodes at 64 × 1 (the 25 min/molecule of 2026-09-22 was Hessians at every frame, 3.4x, and 64-way contention) | — |
 | 03 Hessian jobs | 10 atoms: 245–305 s **[measured]**; 19 atoms: 40–80 min **[estimate, N³–N⁴ scaling]** | 6,458 × 4 × 60 min × 4 cores = 103,000 core-h | 5.6 days | — |
 | 03 gradient jobs | 19 atoms: 3–5 min **[estimate]** | 6,458 × 12 × 4 min × 4 = 20,700 core-h | 1.1 days | — |
@@ -226,7 +245,7 @@ Logs land in `logs/slurm/` of the checkout (the directory the job was submitted 
 
 | stage | the lines | a bad sign |
 |---|---|---|
-| A | `branchA: N drawn, M pending, K for task i/n -> list[; F failed earlier]` at the top; one `qid rc=0 S s CREST reports C conformers … -> B basins` per molecule; last: `== A  K done, 0 not done, of K in this task; wall W s` | two kinds of `rc=1` (measured 2026-09-22: ~4 % + ~5 % of draw300): **(i)** `terminated EARLY N; shake used 1; fell back True … all criteria passed: False … written branchA.toml` — the published SHAKE=2 run lost some metadynamics, the SHAKE=1 retry (or, since ticket 26, the published run itself when the retry crashed) supplied the ensemble; criterion 10 records it; the molecule is **done**; **(ii)** `FileNotFoundError: CREST produced no ensemble` — neither attempt left an ensemble; `_records/branchA.failed` is written (reason, both attempts' last lines, the rerun command), the molecule is **not rerun** by any round and shows in the progress table's `A failed` column; a human reads the marker and reruns `s0_A_pipeline.py --species <qid> --tag draw300` by hand (a success clears the marker). `not done` > 0 also for a molecule cut by the walltime — the next submission redoes it |
+| A | `branchA: N drawn, M pending, K for task i/n -> list[; F failed earlier]` at the top; one `qid rc=0 S s CREST reports C conformers … -> B basins` per molecule; last: `== A  K done, 0 not done, of K in this task; wall W s` | two kinds of `rc=1` (measured 2026-09-22: ~4 % + ~5 % of draw300): **(i)** `terminated EARLY N; shake used 1; fell back True … all criteria passed: False … written branchA.toml` — the published SHAKE=2 run lost some metadynamics, the SHAKE=1 retry (or, since ticket 26, the published run itself when the retry crashed) supplied the ensemble; criterion 10 records it; the molecule is **done**; **(ii)** `FileNotFoundError: CREST produced no ensemble` — neither attempt left an ensemble; `_records/branchA.failed` is written (reason, both attempts' last lines, the rerun command), the molecule is **not rerun** by any round and shows in the progress table's `A failed` column; a human reads the marker and reruns `s0_A_pipeline.py --species <qid> --tag draw300` by hand (a success clears the marker). **All other crashes are this kind too since 2026-09-24**: a runtime error raised anywhere in the pipeline (a damaged `curated_qm9.h5` group; the census refusing an empty basin list — its message now lists every condemned candidate with its imaginary count and lowest frequency, and the tighten's convergence count) leaves the same `_records/branchA.failed` with the traceback tail, so a molecule that crashes every round becomes one `A failed` row instead of staying `pending` forever. **One exception stays retryable: a CREST timeout** — §2's rule is that a molecule past `TIMEOUT_S` is skipped and the next round tries it again, so it keeps staying `pending` (don't park a molecule for the sin of landing on a busy node). `rc=124` is the worker's own ceiling, `WALL_S` = 3 × `TIMEOUT_S` + 1 h (`hl_branchA_worker.sh`), fired after a hang outside CREST (the tighten / Hessian / MACE-socket phase had no bound before 2026-09-24): nothing was written, the next round reruns it whole. `not done` > 0 also for a molecule cut by the walltime — the next submission redoes it |
 | 02 | one `qid rc=0 S s` per molecule; last: `== 02  K Frame sets written, 0 not, of K in this task; wall W s` | `not` > 0 → the molecule's `02_frames.py --species` on debug, read its Record |
 | 03 | `frames  T pending, K for this task`; `timeout    ORCA per frame TIMEOUT_S=28800 s`; one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `failed` (earlier, not rerun) / `running` / `FAILED …` (now)); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table with its `failed` count, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` whose ORCA `.out` ends with the `TIMEOUT_S` trailer (the Hessian is bigger than estimated: read it, `--retry` with a larger `TIMEOUT_S` if it deserves one); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
 | 04 | `dataset 'draw300' at <level> (split by frame): N molecules (7 test), F frames: train … valid … test … pool …; H with a Hessian`; `per class:` table; `merged …/mace_draw300.<level>.extxyz` | `pool` > 0 after the driver ended → frames still without a job (its blocks were cut, or the driver died): run command 5 again; frames the Batch table calls `failed` stay out until a human `--retry`s them |

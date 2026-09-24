@@ -177,6 +177,31 @@ def _add_conformer(mol, positions):
 # ======================================================================================
 # 2. Tighten, deduplicate, Hessian -- the basin list under this repository's criteria
 # ======================================================================================
+def _empty_basin_message(saddles, converged, fmaxes):
+    """The refusal, with the evidence a reader needs to decide what to do next.
+
+    "No basin survives" is deliberate (the module's rule: a saddle is thrown out, not
+    accommodated). Without the numbers it is also unactionable -- the Tianhe run of
+    dsgdb9nsd_052993 (2026-09-24) cost a session to find out *which* candidates the
+    filter condemned and by how much. A condemned basin's lowest frequency is the whole
+    difference between "the engine says this molecule's minimum is a saddle" (a real
+    finding, a human decides) and "a soft mode near zero flipped sign on a geometry the
+    tighten did not fully land" (a different conversation), so it is printed.
+    """
+    lines = ["no basin survives the tightening and the imaginary-frequency filter -- "
+             "refusing to report an empty basin list",
+             "  {} candidate(s) condemned, every one with at least one imaginary mode "
+             "(lowest frequency, cm^-1):".format(len(saddles))]
+    for s in saddles:
+        lines.append("    conformer {:>3}: {} imaginary, lowest {:+.2f} cm^-1, "
+                     "E {:.6f} eV".format(s["conformer_id"], s["n_imaginary"],
+                                          s["lowest_frequency_cm_inv"], s["energy_eV"]))
+    n_nc = int(sum(1 for c in converged if not c))
+    lines.append("  tighten: {} of {} frame(s) did not reach fmax; max residual {:.2e} "
+                 "eV/A".format(n_nc, len(converged), float(max(fmaxes)) if fmaxes else float("nan")))
+    return "\n".join(lines)
+
+
 def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.30,
                        temperature_K=298.15, do_hessian=True,
                        reject_imaginary=True, species=None, comments=None,
@@ -284,8 +309,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
                 progress("hessian", j + 1, len(hess) + len(saddles))
 
     if not kept:
-        raise RuntimeError("no basin survives the tightening and the imaginary-frequency "
-                           "filter -- refusing to report an empty basin list")
+        raise RuntimeError(_empty_basin_message(saddles, converged, fmaxes))
 
     if molecule_dir is not None:
         # Basin i is kept[i]: the survivors in ascending energy, saddles removed. The

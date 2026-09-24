@@ -42,6 +42,8 @@ _superseded/
 *.bak
 *.part
 env_openqha.sh                        # written by install_dependency.sh, machine-specific
+_*.sh
+_*.py
 
 # ---- python ----------------------------------------------------------------------------
 __pycache__/

@@ -48,6 +48,7 @@ import argparse
 import json
 import os
 import platform
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -965,6 +966,66 @@ def _basins_xyz_text(basins, labelled, qid, record):
     return "\n".join(lines) + "\n"
 
 
+# ======================================================================================
+# A molecule that crashes leaves the marker too (ticket 26's rule, every crash)
+# ======================================================================================
+def crash_marker_text(qid, tag, exc, when=None):
+    """The text `_records/branchA.failed` carries when a molecule's pipeline raised.
+
+    Ticket 26 gave the missing-ensemble case a marker so a molecule is attempted once and
+    a human decides. Every other crash raised straight out of `main()` and left NOTHING:
+    the molecule stayed in the pending list and every round ran it again. Measured
+    2026-09-24 on Tianhe: three molecules whose archive groups were damaged (rc=1 in 21 s
+    each) and one whose census refused an empty basin list (rc=1 in 130 s) were retried by
+    every resubmission, unnoticed -- the marker makes them a row in `A failed` that a
+    human reads, with the reason and the rerun command. Success clears it.
+    """
+    import traceback
+    tail = "".join(traceback.format_exception(type(exc), exc,
+                                              exc.__traceback__)).strip().splitlines()[-12:]
+    return "\n".join([
+        "branch A crashed for {} under tag {} on {}".format(
+            qid, tag, when or time.strftime("%Y-%m-%dT%H:%M:%S")),
+        "{}: {}".format(type(exc).__name__, exc),
+        "last lines of the traceback:",
+    ] + ["    " + l for l in tail] + [
+        "not rerun by any round. To rerun by hand (the marker is cleared on success):",
+        "    python scripts/production/s0_A_pipeline.py --species {} --tag {} --threads 4 "
+        "--hessian-mode analytic".format(qid, tag)]) + "\n"
+
+
+def crash_marker_applies(exc):
+    """Does this crash leave the marker (one attempt, a human decides), or is it retryable?
+
+    Every crash does -- except ONE: a CREST `TimeoutExpired`. The campaign's rule is that
+    a molecule past `TIMEOUT_S` is skipped and the next round tries it again, on a quieter
+    node or with a raised `TIMEOUT_S` (docs/hessian_learning_campaign.md section 2); a
+    timeout says nothing about the molecule, so it must not park it. A hang OUTSIDE CREST
+    is not this case: the worker's `WALL_S` ends it with nothing written (rc=124) and the
+    next round reruns it whole.
+    """
+    return not isinstance(exc, subprocess.TimeoutExpired)
+
+
+def mark_crashed(qid, tag, cfg, exc):
+    """Write the crash marker, unless one is already on disk (the missing-ensemble path
+    writes its own, with both attempts' last lines). Never raises: failing to leave the
+    marker must not replace the failure being reported."""
+    try:
+        from openqha.store import basins as _basins, layout
+        label = str(qid)
+        if _basins.failed_path(label, tag, cfg).is_file():
+            return False
+        molecule = layout.molecule_dir(config.runs_root(cfg), tag, label)
+        _basins.write_failed(layout.records_dir(molecule),
+                             crash_marker_text(label, tag, exc))
+        return True
+    except Exception as e:                                                  # noqa: BLE001
+        print("openQHA: could not write the failure marker for {}: {}: {}".format(
+            qid, type(e).__name__, e), file=sys.stderr)
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1043,6 +1104,14 @@ def main():
     try:
         record = run_species(args.species, cfg, args, calc, prov,
                          smiles=args.smiles, label=label)
+    except Exception as exc:                                                # noqa: BLE001
+        # Attempted once, decided by a human (ticket 26's rule, now for every crash --
+        # see `crash_marker_text` for what ignoring this cost on 2026-09-24; a CREST
+        # timeout is the one exception, see `crash_marker_applies`). Re-raised either
+        # way: the traceback stays in the job's log and the worker exits non-zero.
+        if crash_marker_applies(exc):
+            mark_crashed(args.species or label, args.tag, cfg, exc)
+        raise
     finally:
         if servers:
             crest.stop_servers(servers)
