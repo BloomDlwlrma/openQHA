@@ -1,6 +1,11 @@
 # Spec: Hessian learning for MACE-OFF23 (`workflows/hessian_learning/`, steps 00-06)
 
-Concluded 2026-09-20. Synthesised from grilling rounds 1-5 (`grilling-round-{1..5}*.md`)
+Concluded 2026-09-20. **The training side ("The loss, in one place", the training rows of the
+Implementation decisions, tickets 10-16) is superseded by `spec-fine-tune-basins.md`
+(S0-C-53..57, amended 2026-09-22 to S0-C-58/59/60): the Cartesian matrix is the target, basin
+frames only, one production row R4 with `w_H` = the balance by default, the judge gates on the
+matrix itself and the gate is closed.** Steps 00-04 and tickets 01-09 stand as written here.
+Synthesised from grilling rounds 1-5 (`grilling-round-{1..5}*.md`)
 and their rulings, the loss design `design-phl-loss.md` (approved 2026-09-18; its long form
 with every derivation executed is `docs/tutorials/T03_openQHA_Theory_Projected_Hessian_Loss.ipynb`),
 and tickets 01-09 as built. The 2026-09-18 version of this file covered steps 01-04 only
@@ -197,11 +202,11 @@ The loss and the mace rewrite (round 2 Q4/Q5/Q7/Q13 as approved in the design, T
 | R2 Q1 label level | de facto (a) | wB97M-D3(BJ)/def2-TZVPPD, ticket 03 built on it |
 | R2 Q2 set | superseded by R5 | `draw300`, 6,458 molecules, per class |
 | R2 Q3 geometries | (b), n = 4; Q14 (b) classical | S0-C-46; (c) line points not in the set |
-| R2 Q4 loss | design approved | PHL trains, `modes` / full matrix measures |
-| R2 Q5 weighting | design approved | entropy weights (eq. 3) |
+| R2 Q4 loss | design approved; target re-ruled S0-C-53 | PHL trains on the **Cartesian** matrix (B = I); `modes` / full matrix measure; validation by four fixed probes (S0-C-55) |
+| R2 Q5 weighting | superseded by S0-C-53 | `cartesian` is the default; entropy / none are diagnostics |
 | R2 Q6 anharmonic modes | OPEN, assumed (a) | the judge sets aside modes with `omega_r < 30` or an FD self-check > 5 cm^-1 into `[Anharmonic]`; the loss keeps their Label with their weight |
-| R2 Q7 forgetting | design approved (a) | multihead replay; judge = E/F on a 5,000-frame SPICE test draw within 15 % |
-| R2 Q8 thresholds | OPEN, assumed as stated | held-out low-mode MAE below the in-distribution 8.5 cm^-1, abs(`MODEL_ERROR_S_REF`) <= 0.2 cal/mol/K excluding Q6 modes; in-distribution no HIP metric worse by > 15 %; must-fail on 0.9x, must-pass on base |
+| R2 Q7 forgetting | design approved (a); the Replay ruled S0-C-56/60 | multihead replay = a drawn SPICE train-split file (R4: 4 x `N_TRAIN_HESSIAN` frames at `config_weight` 10); judge = E/F on a 5,000-frame SPICE test draw within 15 % (the 15 % is a placeholder, never ruled) |
+| R2 Q8 thresholds | OPEN, assumed as stated; **the gate re-ruled S0-C-59 and CLOSED S0-C-60** | gate rows: the held-out Hessian matrix itself (engine / base - 1 <= 0), in-distribution no HIP metric worse by > 15 %, forgetting <= 1.15x; reference rows: low-mode MAE 8.5 cm^-1, abs(`MODEL_ERROR_S_REF`) <= 0.2 cal/mol/K, RMS bins, the ramp; with the gate closed every row is reported and `VERDICT = REPORTED`; must-fail on 0.9x / must-pass on base holds with the gate open |
 | R2 Q9 nouns/files | built | CONTEXT Frame / Frame set / Dataset / Workflow; `_datasets/<name>/`; extxyz with the flattened Hessian, HDF5 as export |
 | R2 Q10 where | OPEN, assumed | smoke fit local or A800; campaign on the A800 |
 | R2 Q11 CCSD(T) route | OPEN | msRRHO ticket 32/33, not this Workflow |
@@ -264,13 +269,14 @@ the loss curve on `smoke_fit`; `06_judge` must-pass on the base model and must-f
 | 07 | classes in the selection and the Dataset; by-frame split; the MACE-form file | open | 05 |
 | 08 | campaign runbook, cost, progress | open | 05, 06, 07 |
 | 09 | the flat molecule tree, NAME = TAG | code done 09-20; tianhe migration open | 06 |
-| 10 | the mace fork `BloomDlwlrma/openQHA-Hessian@openqha-hessian` and the HVP entry points (`openqha/training/hvp.py`, `provenance()`, the install line) | proposed | -- |
-| 11 | probes, weights and the projected loss (`openqha/training/phl.py`, `phl_loss.py` with `build(args)`) | proposed | 10 |
-| 12 | the Label in the batch -- fork commit A (`data/utils.py`, `data/atomic_data.py`, `--hessian_key`) | proposed | 07, 10 |
-| 13 | fork commit B (`--loss external`, `evaluate` full matrix, the flags) and `05_train.py` as openQHA's entry point, `hl_train.slurm` | proposed | 11, 12 |
-| 14 | the judge, `06_judge.py` | proposed | 01, 07 (runs on the base model before 13) |
-| 15 | the smoke fit: cost, ceiling, `w_H`, must-pass / must-fail | proposed | 13, 14 |
-| 16 | the campaign fine-tune on `draw300` and its judge table | proposed | 08 (labels), 15 |
+| 10 | the mace fork `BloomDlwlrma/openQHA-Hessian@openqha-hessian` and the HVP entry points (`openqha/training/hvp.py`, `provenance()`, the install line) | done 09-20 | -- |
+| 11 | probes, weights and the projected loss (`openqha/training/phl.py`, `phl_loss.py` with `build(args)`) | done 09-20; Cartesian path added by 21 | 10 |
+| 12 | the Label in the batch -- fork commit A (`data/utils.py`, `data/atomic_data.py`, `--hessian_key`) | done 09-20 | 07, 10 |
+| 13 | fork commit B (`--loss external`, `evaluate` full matrix, the flags) and `05_train.py` as openQHA's entry point, `hl_train.slurm` | done 09-20; commit C by 18 | 11, 12 |
+| 14 | the judge, `06_judge.py` | done 09-21; rows re-ordered by 22 (S0-C-58/59/60) | 01, 07 (runs on the base model before 13) |
+| 15 | the smoke fit: cost, ceiling, `w_H`, must-pass / must-fail | done 09-21 (the 65-frame programme is the tianhe run) | 13, 14 |
+| 16 | the campaign fine-tune on `draw300` and its judge table | rewritten in `spec-fine-tune-basins.md`: ONE row R4, code done 09-22 | 08 (labels), 15 |
+| 18-23 | the fine-tune as ruled (S0-C-53..60) | see `spec-fine-tune-basins.md` | -- |
 
 ## Further notes
 
