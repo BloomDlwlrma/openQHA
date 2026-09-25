@@ -4,10 +4,21 @@ Status: ready for ticket approval
 Date: 2026-09-16 (grilled 2026-09-15/16, three rounds; record in `grilling-rounds.md`)
 Vocabulary: CONTEXT.md (Engine, Engine folder, Record, Report, Property file, Calculation,
 Batch, Basin, Level, Level folder, Enantiomer degeneracy). Decisions: docs/adr/0004 (new),
+`docs/adr/0007` (the 2026-09-25 imaginary-mode ruling),
 `S0-B-54/55`, `S0-B-60`. Facts this spec was written from:
 `.mem/notes/notes_2026-09-15_msrrho-crest-source.md`,
 `.mem/notes/notes_2026-09-15_2_chemsci-msrrho-workflow.md`, and the propanal mirror test
 in `grilling-rounds.md` (gauche-propanal is an enantiomer pair, g' = 2).
+
+> **Ruled 2026-09-25 (ticket set 34-40; `docs/adr/0007-one-imaginary-mode-policy-floor-and-the-two-principles.md`).**
+> The imaginary-mode regime became: one production policy `invert_below` on the frequency
+> floor `ithr = -50 cm^-1` (CREST's `-ithr`); `refuse` and `[Imaginary_Spread]` removed; a
+> mode with |omega| < 1 cm^-1 dropped from the thermochemistry sums with the value recorded,
+> three or more raising; the census floor with the **inversion window** (a basin whose
+> lowest mode lies in [ithr, 0)); the tighten certified against ORCA's default line
+> (`TolMaxG = 1.543e-2 eV/A`) with one bounded second optimisation pass; the reference-level
+> soft-saddle retry. Every stale sentence below is replaced or annotated with a dated note;
+> ticket 34's text is left as written.
 
 ## Problem Statement
 
@@ -61,9 +72,11 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
 3. As a user, I want `grimme2012` (tau 100, B_av = 1e-44) and `xtb` (tau 50, ithr -20)
    as named presets, so that the spread between published parameterisations is one
    error-bar line in the Report.
-4. As a user, I want the imaginary-mode policy `refuse` applied and named in the
-   Property file, so that a basin with an imaginary mode is excluded from that level's
-   ensemble, listed with its lowest frequency, and never silently fixed.
+4. As a user, I want the imaginary-mode policy named in the Property file, so that a
+   basin's exclusion or inversion has a stated provenance and is never silently fixed.
+   *(Ruled 2026-09-25: `invert_below` with ithr = -50 cm^-1 -- a mode in [ithr, 0) is
+   inverted and recorded as an inversion window; only below the floor is the basin
+   excluded and listed; tickets 34/35/37, ADR 0007.)*
 5. As a user, I want `g'_i` obtained by CREST's own algorithm from CREST's own rotamer
    file, so that gauche-propanal gets `g' = 2` for the same reason CREST gives it.
 6. As a user, I want `g'` to agree with `cre_degen2` for every conformer of a GFN2
@@ -113,9 +126,11 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
     S'_conf, dS_bar, H_conf, Cp_conf, S_abs, G_total) compared between the MACE and
     reference levels at each level's own geometry, so that `level_compare` answers the
     whole thermochemistry question and not one number of it.
-24. As a user, I want the three imaginary-mode policies (`refuse`, `invert_below`,
-    CREST's actual behaviour `crest_native`) run on every real level and their spread
-    written into the record, so that the production policy is chosen on numbers.
+24. As a user, I want one production imaginary-mode policy, so that production has no
+    choice to get wrong. *(Ruled 2026-09-25: `invert_below` on the frequency floor
+    ithr = -50 cm^-1; `crest_native` kept for the GFN2 seam only; the per-record spread
+    block was removed with `refuse` (ticket 35) and the four-molecule spread table was
+    never built; tickets 34/35, ADR 0007.)*
 25. As a user, I want the GFN2 seam to reproduce CREST's per-conformer treatment of a
     sub-ithr mode, so that the Hessian tier of the seam closes to the difference between
     two Hessians of the same geometry and nothing else.
@@ -133,9 +148,14 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   `[Calculation_Info]`.
 - **Spectrum.** `hessian.npy` (raw eV/A^2) Eckart-projected and mass-weighted by the
   existing routine; rigid-body modes identified by overlap with the rigid-body subspace.
-  A projected mode below 1 cm^-1 is a hard error (CREST's `vibthr` as an assertion).
-- **Imaginary-mode policy** `refuse` everywhere in this spec; `invert_below(ithr)` exists
-  in the module for the seam with `crest --thermo` but is not used by any Calculation.
+  *(2026-09-25: a projected mode with |omega| < 1 cm^-1 is dropped from the
+  thermochemistry sums and recorded (`N_BELOW_FLOOR` with its value); three or more in
+  one spectrum raise -- ORCA's `CutOffFreq` drop with a tripwire; ticket 35, ADR 0007.)*
+- **Imaginary-mode policy** *(ruled 2026-09-25)*: `invert_below` with the frequency floor
+  `ithr = -50 cm^-1` (CREST's `-ithr`) is the one production policy, the default of every
+  Calculation; `crest_native` remains reachable only by the GFN2 seam; `refuse` is
+  removed; records written before that date that name `refuse` stay readable as data.
+  Tickets 34/35, ADR 0007.
 - **Degeneracy.** Port of `intraconfRMSD`: build rotor groups by CREST's topology
   heuristics (equivalent nuclei bonded to one common neighbour with at most one other
   neighbour; rings once), exclude their atoms, quaternion-Kabsch RMSD on the rest with
@@ -200,15 +220,15 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   states `DIPOLE_DERIVATIVES_PRESENT = false`. `level_compare` grows: `[[Level]]`
   carries S_REF, S_CONF, DS_BAR, H_CONF, CP_CONF, G_TOTAL, N_BASINS, N_BASINS_90 and
   `[Tiers]` a MODEL_ERROR_ line for each of them; the Report prints the per-basin table.
-- **Imaginary-mode policies on real data.** A third policy `crest_native` reproduces
-  CREST 3.0.2 (`thermocalc.f90:209`, `thermo.f90:135`): modes in (ithr, 0) inverted,
-  modes below ithr kept negative with zero entropy but present in ZPE, H_vib and Cp.
-  Every `thermo_msrrho` record gains `[Imaginary_Spread]`: S_ABS, G_TOTAL, N_INVERTED,
-  N_KEPT_NEGATIVE, N_EXCLUDED under each of the three policies; `ITHR_POLICY` names the
-  one the `[Result]` block used. The production default stays `refuse` until the ruling
-  is taken on the spread across the four molecules; the seam (`crest_entropy`) uses
-  `crest_native`. A sub-ithr mode is reported per basin with its frequency whatever the
-  policy.
+- **Imaginary-mode policies on real data.** *(Ruled 2026-09-25; the four-molecule
+  spread table was superseded before it was built.)* `crest_native` reproduces CREST 3.0.2
+  (`thermocalc.f90:209`, `thermo.f90:135`): modes in (ithr, 0) inverted, modes below
+  ithr kept negative with zero entropy but present in ZPE, H_vib and Cp; it survives
+  only for the seam (`crest_entropy`). Production is `invert_below`
+  (ithr = -50 cm^-1); `ITHR_POLICY` names the policy in `[Calculation_Info]`; the
+  `[Imaginary_Spread]` block (S_ABS, G_TOTAL, N_INVERTED, N_KEPT_NEGATIVE, N_EXCLUDED
+  under each policy) was removed with `refuse` (ticket 35). A sub-ithr mode is reported
+  per basin with its frequency whatever the policy.
 - **Continuous chirality.** `procrustes` (qc-procrustes; Meng et al., Comput. Phys.
   Commun. 2022, 276, 108334, key `meng2022procrustes`) becomes a dependency of the
   `openqha` environment. In `degeneracy.py` the mirror-pair test reports
@@ -260,8 +280,10 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
 - **Imaginary-policy seams**: the synthetic checks of ticket 22 extended with a sub-ithr
   mode under `crest_native` (kept, S = 0, ZPE lowered by |nu|/2); on the GFN2 seam
   fixture `crest_native` reproduces CREST's S_vib for conformer 3 (5.035 cal/mol/K) to
-  0.02 and the dS_bar tier of the seam closes below 0.03 cal/mol/K; at the MACE and
-  reference levels (0 imaginary) the three policies give the same S_ABS to 1e-9.
+  0.02 and the dS_bar tier of the seam closes below 0.03 cal/mol/K. *(2026-09-25: the
+  three-policy-agreement check went with `[Imaginary_Spread]`; the sub-1 rule and the
+  window inversion are pinned by `t_msrrho_presets` and `t_census_convergence`; the
+  second pass's engine-file append by `t_census_second_pass`; ADR 0007.)*
 - **Chirality seams**: the library's own CHFClBr pair reproduces rotational error 26.09
   and orthogonal error 4.4e-8; propanal cis (Cs) gives `MIRROR_SELF_RMSD` below the
   threshold and gauche above; the two `--entropy` runs (c1 / cs label flip) give the
@@ -296,8 +318,10 @@ folders. Branch B's trajectory entropy is neither replaced nor spliced.
   + records + experimental comparison; 25 GFN2 seam via `crest --entropy`; 26 reference
   level on deimos + merge map + `level_compare`.
 - Round 4 tickets: 27 `hessian_compare` + `level_compare` on every quantity; 28 the
-  three imaginary policies on real data (`crest_native`, `[Imaginary_Spread]`); 29
-  continuous chirality with `procrustes`.
+  three imaginary policies on real data (`crest_native`, `[Imaginary_Spread]`) -- closed
+  2026-09-25 as superseded: ticket 34's ruling (ticket set 34-40, ADR 0007) made
+  `invert_below` the one production policy and removed `refuse` and
+  `[Imaginary_Spread]`; 29 continuous chirality with `procrustes`.
 - Measured 2026-09-16: CREST's own numerical Hessian gives -68.42 cm^-1 for propanal's
   third `--entropy` conformer, below its ithr; CREST keeps the conformer with S = 0 for
   that mode (S_vib 5.035 vs 8.97 / 8.47), which is the dS_bar residual of the seam.

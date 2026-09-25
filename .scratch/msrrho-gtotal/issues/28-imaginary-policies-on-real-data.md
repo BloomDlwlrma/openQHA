@@ -4,7 +4,7 @@
 
 **Blocked by:** 25 (seam), 26 (reference level records).
 
-**Status:** done 2026-09-17; the remaining open item was closed as SUPERSEDED by ticket 35 on 2026-09-25 (one production policy, `[Imaginary_Spread]` removed)
+**Status:** done 2026-09-17; the remaining open item (the four molecules' spread table) was closed as SUPERSEDED by the ticket set 34-40 on 2026-09-25 -- one production policy `invert_below` on the CREST floor (`ithr = -50 cm^-1`), `refuse` and `[Imaginary_Spread]` removed (`docs/adr/0007-one-imaginary-mode-policy-floor-and-the-two-principles.md`; built by ticket 35)
 
 - [x] synthetic (ticket 22's acetone literals plus one mode at -61.68): under `crest_native` the mode is kept, its S contribution is 0, ZPE is lowered by 30.84 cm^-1, and `n_kept_negative = 1`; under `invert_below` the same input still raises; a mode at -35.74 is inverted under both
 - [x] on the GFN2 seam fixture, `crest_native` reproduces CREST's per-conformer S_vib for conformer 3 (5.035 cal/mol/K) to 0.02 and the seam's dS_bar difference falls below 0.03 cal/mol/K for both runs; the algebraic terms stay at 1e-6

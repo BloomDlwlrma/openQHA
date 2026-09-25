@@ -54,8 +54,19 @@ tests on IRC and normal‑mode frames. None checks bond graphs.
 Per frame ORCA runs `! <level single point> EnGrad Freq` (analytic Hessian; `NumFreq`
 for a level without one) **at the frame's fixed geometry** — a single point, never an
 optimisation: the label of a displaced frame is the raw Cartesian Hessian there, gradient
-term included, which is what the loss compares to the engine's. Units are converted
-once (Eh → eV, Eh/bohr → eV/Å, Eh/bohr² → eV/Å²); positions in the labelled file are
+term included, which is what the loss compares to the engine's.
+
+**The D1 guard (2026-09-25): never optimise a frame before labelling it.** The
+same-method rule that governs the census and the msRRHO thermochemistry —
+interpret frequencies only at a stationary point of the method that produced them
+(ADR 0007) — is a rule about interpreting a frequency, and it does NOT reach a curvature
+label at a fixed geometry. Labels are computed at the frame's own geometry and are never
+optimised; training rows are stationary basin frames, the off-stationary generators
+(`displaced`, `merged`, `saddle`) are held out (ADR 0005; Rodriguez 2025; PHL's NMS
+rationale). "Fixing" a displaced frame by relaxing it first would destroy the raw
+off-stationary curvature the loss trains on and invalidate the held-out rows.
+
+Units are converted once (Eh → eV, Eh/bohr → eV/Å, Eh/bohr² → eV/Å²); positions in the labelled file are
 the MACE file's verbatim, and a `.hess` geometry whose shape is more than 1e‑7 Å away is refused (ORCA writes the `.hess` in the centre‑of‑mass frame; the translation is removed and reported; the residual is ORCA's print precision, ~1e‑8 Å). The
 full `.out` of every job is kept.
 
