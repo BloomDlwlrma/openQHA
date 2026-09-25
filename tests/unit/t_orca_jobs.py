@@ -1,11 +1,14 @@
-"""Ticket 32: the hkuhpc job bundle of a numerical reference level, and the numerical-route
-bookkeeping (no ORCA).
+"""Tickets 32 + 36: the hkuhpc job bundle of a numerical reference level, the
+numerical-route bookkeeping (no ORCA), and the declared projection state.
 
 Asserted: the bundle holds one input per job with the level's keywords and blocks, %pal
 and the 75 % maxcore rule, a worker that skips finished jobs and publishes only on the
 terminal line, a SLURM script with the concurrency that fits the node, a README with the
-(6N)^2 point estimate; `orca.LEVELS` names both reference levels with their routes;
-`final_rms_gradient` / `n_single_points` / `hessian_route` read the propanal fixture.
+(6N)^2 point estimate; `orca.LEVELS` names both reference levels with their routes and
+EVERY reference level's blocks pin `ProjectTR` / `TransInvar` / `CutOffFreq 1.0` (ticket
+36: the projection state declared, not inherited) so that a generated input file shows
+them; `final_rms_gradient` / `n_single_points` / `hessian_route` read the propanal
+fixture.
 """
 import sys
 import tempfile
@@ -25,6 +28,15 @@ from openqha.qm_interfaces import orca, orca_jobs            # noqa: E402
 
 FAIL = []
 
+#: The pinned projection state a generated reference-level input must carry (ticket 36):
+#: the three options and the comment that names their source in the ORCA 6 manual.
+PINS = ("%freq", "ProjectTR true", "TransInvar true", "CutOffFreq 1.0",
+        "ORCA 6 manual 6.5", "7.27")
+
+
+def pinned(text):
+    return all(k in text for k in PINS)
+
 
 def check(label, ok, detail=""):
     print("  {:78s} {}".format(label, "ok" if ok else "FAIL " + str(detail)[:200]))
@@ -42,6 +54,14 @@ def main():
         check("an unknown level raises naming the known ones", False)
     except KeyError as exc:
         check("an unknown level raises naming the known ones", "wb97m" in str(exc))
+    check("every reference level's blocks pin the projection state (ProjectTR, TransInvar, CutOffFreq 1.0; ticket 36)",
+          all(pinned(orca.level_spec(lv)["blocks"]) for lv in orca.LEVELS),
+          {lv: orca.level_spec(lv)["blocks"] for lv in orca.LEVELS})
+    ref_spec = orca.level_spec("wb97m-d3bj_def2-tzvppd")
+    ref_inp = orca.input_text(["O", "H", "H"], [[0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]],
+                              ref_spec["keywords"], 8, 3000, blocks=ref_spec["blocks"])
+    check("the generated wB97M input (the reference level, through input_text -- the writer optimise_and_hessian uses) shows the pins",
+          pinned(ref_inp), ref_inp)
     est = orca_jobs.point_estimate(10)
     check("point estimate for 10 atoms: 600 opt + 3600 NumFreq", est["opt"] == 600 and est["numfreq"] == 3600)
     text = (ROOT / "tests/data/propanal_molecule/msrrho/orca.wb97m-d3bj_def2-tzvppd.basin00.out").read_text(encoding="utf-8", errors="replace")
@@ -59,6 +79,8 @@ def main():
         check("one input per job with the level's keyword line, blocks, %pal 8 and the 75 % maxcore",
               inp.startswith("! " + spec["keywords"]) and "%mdci" in inp and "TCutPairs 1e-6" in inp
               and "%pal nprocs 8 end" in inp and "%maxcore 3072" in inp and out["maxcore"] == 3072)
+        check("the generated input file shows the pinned projection block and its source comment (ticket 36)",
+              pinned(inp), inp)
         check("4 concurrent 8-rank jobs on a 32-core node", out["concurrent"] == 4)
         sb = out["sbatch"].read_text()
         check("run.sbatch: one task with all cores, xargs -P 4, ORCA_BIN_DIR checked, logs/ and results/ made",

@@ -45,33 +45,53 @@ BOHR_PER_ANGSTROM = 1.0 / 0.529177210903
 DEFAULT_BIN = "/home/ubuntu/packages/orca_6_0_1/orca"   # local testing; production runs
                                                         # on deimos
 
+#: The `%freq` block pinned into EVERY reference-level input (ticket 36). ORCA's own
+#: defaults are `ProjectTR true`, `TransInvar true` and `CutOffFreq 1.0` (ORCA 6 manual
+#: 6.5 for the first two, 7.27 for the third); pinning them puts the projection state of
+#: every reference Hessian into the job input instead of leaving it inherited from a
+#: build default. With `ProjectTR` off, transrotational modes cross `CutOffFreq` and the
+#: entropy shows a finite jump (manual 6.5, "strongly discouraged"). `TransInvar`'s
+#: acoustic-sum-rule correction is applied inside ORCA's frequency step and is NOT
+#: written back into the `.hess` this package reads (checked once; note above
+#: `parse_hess`), and `CutOffFreq 1.0` is the same 1 cm^-1 floor as the imaginary count
+#: of `optimise_and_hessian`.
+FREQ_BLOCK = "\n".join([
+    "# projection state declared (ORCA 6 manual 6.5 / 7.27; defaults, pinned)",
+    "%freq",
+    "   ProjectTR true",
+    "   TransInvar true",
+    "   CutOffFreq 1.0",
+    "end",
+])
+
 #: The reference levels ORCA runs, by level name (CONTEXT.md spelling). `keywords` is
-#: the `!` line of the Opt + Hessian job, `blocks` the extra `%` input, `route` what the
-#: Hessian is. wB97M: the analytic Hessian works in ORCA 6.0.1 (ticket 26). DLPNO-CCSD(T):
+#: the `!` line of the Opt + Hessian job, `blocks` the extra `%` input (every level pins
+#: its projection state there -- `FREQ_BLOCK`, ticket 36), `route` what the Hessian is.
+#: wB97M: the analytic Hessian works in ORCA 6.0.1 (ticket 26). DLPNO-CCSD(T):
 #: ORCA has no analytic gradient for it, so geometry and Hessian are numerical end to end
 #: (Opt NumGrad + NumFreq, (6N)^2 single points for the Hessian; ticket 32); keywords are
 #: the hkuhpc convention (`core-bind/orca.md`) plus TightPNO, because the PNO truncation
 #: noise between displaced geometries is the error source of a numerical curvature.
 LEVELS = {
     "wb97m-d3bj_def2-tzvppd": dict(
-        keywords="wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF", blocks="", route="analytic",
+        keywords="wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF", blocks=FREQ_BLOCK, route="analytic",
         single_point="wB97M-D3BJ def2-TZVPPD TightSCF"),
     # the wavefunction ladder at its own minima (2026-09-18): HF has an analytic Hessian
     # (not with RIJK -- ORCA refuses; exact integrals), RI-MP2 an analytic gradient (NumFreq =
     # second differences of analytic gradients, the "semi-numerical" route; its noise floor
     # is read like a numerical one)
     "hf_cc-pvtz": dict(
-        keywords="RHF cc-pVTZ TightOpt Freq TightSCF", blocks="", route="analytic",
+        keywords="RHF cc-pVTZ TightOpt Freq TightSCF", blocks=FREQ_BLOCK, route="analytic",
         single_point="RHF cc-pVTZ TightSCF"),
     "ri-mp2_cc-pvtz": dict(
-        keywords="RI-MP2 cc-pVTZ cc-pVTZ/C cc-pVTZ/JK RIJK TightOpt NumFreq TightSCF", blocks="",
+        keywords="RI-MP2 cc-pVTZ cc-pVTZ/C cc-pVTZ/JK RIJK TightOpt NumFreq TightSCF", blocks=FREQ_BLOCK,
         route="numerical", single_point="RI-MP2 cc-pVTZ cc-pVTZ/C cc-pVTZ/JK RIJK TightSCF"),
     "ri-mp2_aug-cc-pvtz": dict(
-        keywords="RI-MP2 aug-cc-pVTZ aug-cc-pVTZ/C cc-pVTZ/JK RIJK TightOpt NumFreq TightSCF", blocks="",
+        keywords="RI-MP2 aug-cc-pVTZ aug-cc-pVTZ/C cc-pVTZ/JK RIJK TightOpt NumFreq TightSCF", blocks=FREQ_BLOCK,
         route="numerical", single_point="RI-MP2 aug-cc-pVTZ aug-cc-pVTZ/C cc-pVTZ/JK RIJK TightSCF"),
     "dlpno-ccsdt_cc-pvtz": dict(
         keywords="DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C TightPNO TightSCF Opt NumGrad NumFreq",
-        blocks="%mdci\n   TCutPairs 1e-6\nend\n%loc\n   LocMet AHFB\n   OCC true\nend",
+        blocks=FREQ_BLOCK + "\n%mdci\n   TCutPairs 1e-6\nend\n%loc\n   LocMet AHFB\n   OCC true\nend",
         route="numerical",
         single_point="DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C TightPNO TightSCF"),
 }
@@ -304,6 +324,10 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
     SINGLE POINT ENERGY of the `.out`), the parsed Hessian record (`parse_hess`), whether the
     Hessian was analytic or numerical, the wall time, and ORCA's version.
 
+    `n_imaginary` counts the entries of ORCA's printed spectrum below -1 cm^-1 -- the
+    1 cm^-1 floor of the `CutOffFreq 1.0` pinned in `FREQ_BLOCK` (ORCA 6 manual 7.27),
+    so a negative mode inside (-1, 0) cm^-1 sits inside the floor and is not counted.
+
     The FULL `<stem>.out` is the engine record and is kept as ORCA wrote it -- in the file
     group and in every fixture copied from one (user ruling 2026-09-17). Never trim it
     to the lines a parser happens to read: the optimisation trajectory, SCF convergence,
@@ -334,6 +358,8 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
                 energy_eh=final_energy_from_out(text), hess=parsed,
                 hessian_route=hessian_route(text), seconds=seconds,
                 orca_version=m.group(1) if m else "unknown", nprocs=int(nprocs),
+                # -1.0 cm^-1: the same 1 cm^-1 floor as the `CutOffFreq 1.0` pinned in
+                # FREQ_BLOCK (ORCA 6 manual 7.27); a mode inside (-1, 0) is not counted
                 n_imaginary=int((np.asarray(parsed["frequencies_cm_inv"]) < -1.0).sum()))
 
 
@@ -511,6 +537,23 @@ def force_metrics(f_ref, f_test):
 #
 # `verify_hess_frequencies` turns that one-off check into an assertion that runs on
 # every sample. A one-off check is not a criterion (memory-discard section 6 rule 9).
+#
+# THE STORED MATRIX IS THE PRE-ASR HESSIAN (checked once, 2026-09-25; ticket 36).
+# `TransInvar true` -- ORCA's default, pinned in `FREQ_BLOCK` -- enforces translation
+# invariance (the acoustic sum rule, ASR) during ORCA's frequency step, but the
+# correction is not written back into the file. On the three ORCA 6.0.1 propanal
+# fixtures (analytic route,
+# `tests/data/propanal_molecule/msrrho/orca.wb97m-d3bj_def2-tzvppd.basin0{0,1,2}.hess`)
+# the stored `$hessian`'s row sums -- the translation-mode residual sum_j H_ij -- are
+# 1.14e-4, 3.89e-5 and 1.21e-4 Eh/Bohr^2 (up to 1.7e-4 of the largest element), where
+# an enforced sum rule would leave ~1e-16. So the label this module reads is the raw
+# matrix as written: re-applying a row-mean sum-rule correction to it shifts the
+# Eckart-projected modes by <= 0.062 cm^-1 (rms <= 0.015) on those basins, inside the
+# 0.5 cm^-1 round-trip tolerance, and `verify_hess_frequencies` keeps asserting that
+# ORCA's own printed frequencies are reproduced from the stored matrix (there: the same
+# order of agreement, <= 0.057 cm^-1). `n_imaginary`, the frequencies and everything
+# downstream are computed on this raw matrix; the ASR correction is ORCA's internal
+# act, not a property of the file.
 # =========================================================================================
 
 #: Wavenumber conversion: sqrt(eV / (A^2 * amu)) -> cm^-1.
