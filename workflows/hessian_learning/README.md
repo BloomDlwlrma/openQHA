@@ -72,9 +72,16 @@ full `.out` of every job is kept.
 
 **One attempt per frame** (ticket 24, S0‑G‑96): an ORCA job that did not terminate normally
 — a crash, or the `TIMEOUT_S` kill (8 h; its `.out` ends with an `openQHA: ORCA killed
-after TIMEOUT_S=…` line) — leaves a **failed** frame that no round reruns; the reader judges
-from the `.out` and the worker's `FAILED` line, and `python -m openqha.data.frame_labels
-<molecule> <generator> <basin> <k> --retry` is the human's rerun. A frame **cut** before
+after TIMEOUT_S=…` line) — leaves a **failed** frame that no ordinary round reruns; the
+reader judges from the `.out` and the worker's `FAILED` line. A failed frame is
+re‑attempted at most **once** (ticket 02 of the ORCA‑Slurm set): `RETRY_FAILED=1` makes
+the array round's task list also carry the failures without an archive (its 5th column
+`retry`/`-` tells the worker to pass the CLI's `--retry`), and the failed `.out` is
+renamed to `<stem>.failed.out` before ORCA overwrites it — the one archive slot, replaced
+each time it is written, and the durable marker that makes a retried‑and‑failed frame
+final. The per‑frame `python -m openqha.data.frame_labels <molecule> <generator> <basin>
+<k> --retry` is the human's lever (refused once the archive exists); `--force` is the
+deliberate full relabel, never a round. A frame **cut** before
 anything came back (walltime, a dead node) has no `.out` and is rerun whole; nothing
 resumes. While ORCA runs the frame is held by `frames/<stem>.running` — the lock names its
 Slurm job and is touched every minute; it counts as held only while Slurm does not call

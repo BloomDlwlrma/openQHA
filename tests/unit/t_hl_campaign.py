@@ -104,6 +104,13 @@ def main():
         check("after four finished file groups, one fresh claim and one .out without the terminal line: labelled 4, failed 1 (that .out), unlabelled 10, running 1 (the claim only)",
               (t["frames"], t["labelled"], t["failed"], t["unlabelled"], t["running"]) == (15, 4, 1, 10, 1)
               and later["classes"]["aldehyde"]["labelled"] == 4 and later["classes"]["ketone"]["labelled"] == 0, t)
+        # ticket 02: the retry archive sits beside the file group and is inert -- every parser
+        # reads the exact <stem>.out, so a `<stem>.failed.out` changes no counter
+        frame_labels.failed_archive(layout.frames_dir(mol_a),
+                                    layout.orca_frame_stem(LEVEL, "displaced", 2, 0)).write_text("older failure\n", encoding="utf-8")
+        archived = hp.progress(root, [TAG], "p", LEVEL)
+        check("ticket 02: a <stem>.failed.out archive beside the failed .out changes no progress counter (failed stays failed; no parser reads the archive; no schema change)",
+              archived["total"] == later["total"] and archived["classes"] == later["classes"], (archived["total"], later["total"]))
         threaded = hp.progress(root, [TAG], "p", LEVEL, workers=4)
         check("the threaded walk (workers=4) returns the same counters as the single-threaded one -- threading is an implementation detail",
               threaded["total"] == later["total"] and threaded["classes"] == later["classes"]
@@ -133,9 +140,11 @@ def main():
           not missing and not foreign and len(page) >= 6, (missing, foreign, len(page)))
     text = PAGE.read_text(encoding="utf-8")
     check("the page names the progress script, the exit-code signal, the resubmit-as-is rule, TIMEOUT_S = 28800, "
-          "the failed state and --retry (ticket 24)",
+          "the failed state, --retry (ticket 24) and the one-shot retry round with its sequencing (ticket 02)",
           all(s in text for s in ("s0_hl_progress.py --tag draw300", "assemble exits 0", "resubmitted **as it is**",
-                                  "3-00:00:00", "TIMEOUT_S=28800", "**failed**", "--retry", "touched within 30 min")))
+                                  "3-00:00:00", "TIMEOUT_S=28800", "**failed**", "--retry", "touched within 30 min",
+                                  "RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm",
+                                  "--retry-failed", "the one retry is spent", "count the failures", "verify ONE frame by hand")))
     sequence = ("TIMEOUT_S=14400 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm",
                 "TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm",
                 "python workflows/hessian_learning/01_select.py --tag draw300",

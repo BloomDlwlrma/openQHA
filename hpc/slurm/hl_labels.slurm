@@ -8,6 +8,7 @@
 #     sbatch hpc/slurm/hl_labels.slurm                                        # tag smoke, deimos, 1 node, 4 h
 #     sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm      # the same on the short queue
 #     TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # 12 nodes: an ARRAY, one node each; one round of three (docs/hessian_learning_campaign.md)
+#     RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # THE ONE-SHOT RETRY ROUND (ticket 02): the failed frames without an archive, re-attempted ONCE, the failed .out archived first
 #
 # LAYOUT: the job ASKS for the node (`--exclusive --ntasks=1 --cpus-per-task=64 --mem=0`)
 # and DERIVES the layout from what Slurm granted: CONCURRENCY = CORES / NPROCS, so 16 x 4
@@ -40,6 +41,11 @@ MEM_MB="${SLURM_MEM_PER_NODE:-0}"
 
 TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
+# RETRY_FAILED=1 turns this round into the ONE-SHOT RETRY ROUND (ticket 02): the task list
+# additionally carries the FAILED frames whose failure has no archive, re-attempted once
+# (the failed .out is archived as <stem>.failed.out before ORCA runs). 0 (the default) is
+# an ordinary round -- exactly 1 arms it, so `RETRY_FAILED=0` cannot burn a frame's shot.
+RETRY_FAILED="${RETRY_FAILED:-0}"
 export LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
 export NPROCS="${NPROCS:-4}"
 # %maxcore is per RANK: 0.75 x the node's memory / cores (512 GB / 64 = 8 GB -> 6000 MB),
@@ -82,23 +88,31 @@ if [ $((CONCURRENCY * NPROCS)) -gt "$CORES" ]; then
 fi
 
 # ---- 2. the task list: pending frames of the selection, this array task's share --------
+# `RETRY_FAILED=1` makes the list additionally include the FAILED frames without an
+# archive (the one-shot retry, ticket 02); its 5th column (`retry`/`-`) is what tells the
+# worker to pass the frame CLI's `--retry`.
+RETRY_FLAG=""
+[ "$RETRY_FAILED" = 1 ] && RETRY_FLAG="--retry-failed"
 LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
 python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" \
-    ${LIMIT_FRAMES:+--limit-frames "$LIMIT_FRAMES"} --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+    ${LIMIT_FRAMES:+--limit-frames "$LIMIT_FRAMES"} $RETRY_FLAG --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
 [ -f "$LIST" ] || { echo "openQHA: no task list written" >&2; exit 1; }
 TOTAL=$(wc -l < "$LIST")
 MINE="$LIST.task$ARRAY_ID"
 awk -v id="$ARRAY_ID" -v n="$ARRAY_N" '(NR - 1) % n == id' "$LIST" > "$MINE"
 echo "frames     $TOTAL pending, $(wc -l < "$MINE") for this task"
-echo "timeout    ORCA per frame TIMEOUT_S=$TIMEOUT_S s; a failed frame is not rerun (--retry by hand)"
+echo "timeout    ORCA per frame TIMEOUT_S=$TIMEOUT_S s; a failed frame is not rerun by an ordinary round"
+if [ "$RETRY_FAILED" = 1 ]; then
+    echo "retry      RETRY_FAILED=1: this round re-attempts the failed frames without an archive ONCE; the failed .out is archived as <stem>.failed.out before ORCA starts and a failed retry stays final"
+fi
 
 # ---- 3. the work: one worker per line, a core range per slot (hkuhpc's awk + xargs) ------
 echo; echo "== 03 labels"
 started=$(date +%s)
 awk -v nc="$CONCURRENCY" -v np="$NPROCS" '{
         slot = (NR - 1) % nc; s = slot * np; e = s + np - 1
-        printf "%s %s %s %s %d-%d\n", $1, $2, $3, $4, s, e
-    }' "$MINE" | xargs -r -n 5 -P "$CONCURRENCY" bash hpc/slurm/hl_label_worker.sh
+        printf "%s %s %s %s %s %d-%d\n", $1, $2, $3, $4, $5, s, e
+    }' "$MINE" | xargs -r -n 6 -P "$CONCURRENCY" bash hpc/slurm/hl_label_worker.sh
 echo "== 03 wall $(( $(date +%s) - started )) s for $(wc -l < "$MINE") frames"
 
 # ---- 4. assemble + the Dataset (the first array task; the others' frames are on disk) ----

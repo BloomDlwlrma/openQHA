@@ -9,6 +9,14 @@ molecule writes `<generator>.<level>.extxyz` and the Record `frames/labels.<leve
 toml}`. Finished frames (terminal line + `.hess`) are skipped, so a resubmission continues
 where the last one stopped. The Slurm log is the Batch's report.
 
+`--retry-failed` (ticket 02 of the ORCA-Slurm set) is the one-shot retry round: the task
+list additionally includes every FAILED frame whose failure has no archive
+(`frame_labels.retryable`), carries the per-frame retry intent to the worker, and the
+failed `.out` is archived as `<stem>.failed.out` before ORCA overwrites it. After that
+retry the frame is final whatever the outcome -- a failed retry keeps its archive and is
+never selected again, a cut retry leaves no `.out` and the ordinary policy reruns it
+whole.
+
 TWO WAYS TO RUN IT (user ruling 2026-09-19):
   * a submitted job, plain bash + xargs, NO parsl: `hpc/slurm/hl_labels.slurm` calls this
     driver with `--list FILE` (the pending frames, one per line), runs
@@ -65,16 +73,19 @@ from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels, frames       # noqa: E402
 from openqha.store import basins as basin_reader, layout     # noqa: E402
 
-COMPLETION = "<molecule>/frames/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists; a .out without that line is a failed frame, not rerun"
+COMPLETION = "<molecule>/frames/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists; a .out without that line is a failed frame -- a round skips it, `--retry-failed` re-attempts it once (archiving the old .out first), and an archived failure is final"
 
 
 # ======================================================================================
 # The task. It runs in a worker process, so it must be self-contained.
 # ======================================================================================
-def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, repo_root, env=None, timeout_s=None):
+def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, repo_root, env=None, timeout_s=None,
+                     retry=False):
     """One frame's ORCA job in a worker: `frame_labels.label_one` with the node-local
     scratch (`S0_SCRATCH`, set by hpc/env/*.sh) when there is one and `timeout_s` (the
-    driver's `--timeout`, else the environment's `TIMEOUT_S`). Returns the Batch row; an
+    driver's `--timeout`, else the environment's `TIMEOUT_S`). `retry` is the round's
+    per-frame retry intent (`--retry-failed`), mapped to the frame's existing one retry.
+    Returns the Batch row; an
     exception is caught and returned as `error` so one frame never loses the batch. A
     `SystemExit` (the frame was CUT: SIGTERM at a block's time limit) is not an Exception
     and propagates -- parsl then reruns the task on another block (ticket 24)."""
@@ -93,7 +104,7 @@ def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, 
         if timeout_s is None and _os.environ.get("TIMEOUT_S"):
             timeout_s = float(_os.environ["TIMEOUT_S"])
         lab = _fl.label_one(molecule_dir, level, generator, basin, k, nprocs=int(nprocs), maxcore=int(maxcore),
-                            scratch=scratch, timeout_s=timeout_s)
+                            scratch=scratch, timeout_s=timeout_s, retry=retry)
         row.update(rc=0, seconds=lab["seconds"] if lab["seconds"] is not None else lab["wall_seconds"],
                    status=lab["status"], record=lab["out"], route=lab["hessian_route"],
                    memory_mb=lab["memory_mb"], floor_cm=lab["noise_floor_cm"], orca_version=lab["orca_version"],
@@ -120,13 +131,18 @@ def choose(mols, limit, stratify):
     return [r["molecule_dir"] for r in dataset.apply_limit(rows, limit, stratify)]
 
 
-def pending(mols, level, generators):
-    """(molecule, generator, basin, k) for every kept frame with NO ORCA job on disk, and
-    per molecule (frames, finished, failed). A finished frame is skipped; a failed one (a
-    `.out` without the terminal line) is skipped too -- one attempt per frame, the reader
-    judges, `python -m openqha.data.frame_labels ... --retry` reruns it (round 11 Q3); a
-    frame another process holds (`running_elsewhere`: its job alive and its heartbeat
-    fresh) is left to it."""
+def pending(mols, level, generators, retry_failed=False):
+    """(molecule, generator, basin, k, retry) for every frame this round should attempt:
+    every kept frame with NO ORCA job on disk, and -- with `retry_failed` (ticket 02) --
+    every FAILED frame whose failure is not archived yet (the one-shot retry), `retry`
+    True exactly for the latter. Per molecule (frames, finished, failed) -- the counts are
+    the disk's, the same with or without `retry_failed`.
+
+    A finished frame is skipped always; a failed one is skipped unless `retry_failed`
+    selects it (`retryable`: the `.out` lacks the terminal line and no `<stem>.failed.out`
+    exists -- one retry per frame, ever); a frame another process holds (`running_elsewhere`:
+    its job alive and its heartbeat fresh) is left to it. The per-frame manual lever
+    stays `python -m openqha.data.frame_labels ... --retry`."""
     todo, counts = [], {}
     for mol in mols:
         n_all = n_done = n_failed = 0
@@ -139,15 +155,17 @@ def pending(mols, level, generators):
                 continue
             if frame_labels.failed(folder, stem):
                 n_failed += 1
+                if retry_failed and frame_labels.retryable(folder, stem) and not frame_labels.running_elsewhere(folder, stem):
+                    todo.append((mol, g, b, k, True))
                 continue
             if frame_labels.running_elsewhere(folder, stem):
                 continue                                   # another process holds it
-            todo.append((mol, g, b, k))
+            todo.append((mol, g, b, k, False))
         counts[mol.name] = (n_all, n_done, n_failed)
     return todo, counts
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", required=True)
     g = ap.add_mutually_exclusive_group()
@@ -157,6 +175,10 @@ def main():
                                   "the default when neither --species nor --all is given: the tag")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="reference level (orca.LEVELS)")
     ap.add_argument("--generators", nargs="*", default=None, help="subset of {}".format(", ".join(frames.GENERATORS)))
+    ap.add_argument("--retry-failed", action="store_true",
+                    help="also attempt the FAILED frames that have no archive yet -- the one-shot retry round (ticket 02); "
+                         "the previous failed .out is archived as <stem>.failed.out before ORCA runs, and a frame whose "
+                         "retry is spent (archive present) is left alone")
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules")
     ap.add_argument("--stratify", action="store_true", help="spread --limit evenly over the sorted index list")
     ap.add_argument("--limit-frames", type=int, default=None, help="at most N frames in this Batch (the debug job)")
@@ -172,14 +194,14 @@ def main():
     ap.add_argument("--debug", action="store_true", help="the site's short partition, one allocation")
     ap.add_argument("--dry-run", action="store_true", help="print the frame list and submit nothing")
     ap.add_argument("--list", metavar="FILE", default=None,
-                    help="write the pending frames as a task list (molecule_dir generator basin k, one per line) for "
-                         "the xargs worker of hpc/slurm/hl_labels.slurm, and stop")
+                    help="write the pending frames as a task list (molecule_dir generator basin k retry, one per line; "
+                         "retry is `retry` or `-`) for the xargs worker of hpc/slurm/hl_labels.slurm, and stop")
     ap.add_argument("--assemble", action="store_true",
                     help="run no ORCA: assemble every chosen molecule's files and Record from the finished jobs on disk")
     ap.add_argument("--timeout", type=float, default=None,
                     help="seconds per ORCA job before it is killed and the frame marked failed (default: $TIMEOUT_S, "
                          "28800 in hl_labels.slurm; round 11 Q2)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     cfg = config.load()
     if not (args.species or args.all or args.name):
@@ -195,9 +217,10 @@ def main():
         mols = choose(mols, args.limit, args.stratify)
     if not mols:
         raise SystemExit("no molecule with a Frame set under tag {!r} (run 02_frames first)".format(args.tag))
-    todo, counts = pending(mols, args.level, args.generators)
+    todo, counts = pending(mols, args.level, args.generators, retry_failed=args.retry_failed)
     if args.limit_frames:
         todo = todo[:args.limit_frames]
+    n_retry = sum(1 for e in todo if e[4])
 
     import resource_configs
     res = resource_configs.load(args.resource)
@@ -216,30 +239,48 @@ def main():
     print("molecules    {} ({})".format(len(mols), "given" if args.species else
                                          "selection {!r}".format(args.name) if args.name else
                                          "every Frame set under tag {!r}".format(args.tag)))
-    print("frames       {} to label, {} finished already, {} failed earlier (not rerun; --retry per frame)   ({})".format(
-        len(todo), sum(d for _a, d, _f in counts.values()), sum(f for _a, _d, f in counts.values()), COMPLETION))
+    if args.retry_failed:
+        print("frames       {} to label, {} of them the one retry of a failed frame without an archive, {} finished already, {} failed frames on disk   ({})".format(
+            len(todo), n_retry, sum(d for _a, d, _f in counts.values()), sum(f for _a, _d, f in counts.values()), COMPLETION))
+        print("retry rule   --retry-failed: the failed .out is archived as <stem>.failed.out before ORCA starts; "
+              "a retry that fails stays failed and is never selected again (one attempt per frame, ever)")
+    else:
+        print("frames       {} to label, {} finished already, {} failed earlier (not rerun; --retry per frame)   ({})".format(
+            len(todo), sum(d for _a, d, _f in counts.values()), sum(f for _a, _d, f in counts.values()), COMPLETION))
     print("timeout      {} s per ORCA job".format(args.timeout if args.timeout is not None else
                                                  os.environ.get("TIMEOUT_S", "none")))
-    print("resume       finished and failed frames are skipped; a cut frame (no .out) is rerun whole; "
-          "the Record per molecule is rewritten by assemble")
+    if args.retry_failed:
+        print("resume       finished frames are skipped; a failed frame whose retry is spent (archive present) is "
+              "final; a cut frame (no .out) is rerun whole; the Record per molecule is rewritten by assemble")
+    else:
+        print("resume       finished and failed frames are skipped; a cut frame (no .out) is rerun whole; "
+              "the Record per molecule is rewritten by assemble")
     print()
     print("frame list:")
-    for mol, g, b, k in todo:
-        print("  {}  {}".format(mol.name, frame_labels.frame_tag(g, b, k)))
+    for mol, g, b, k, retry in todo:
+        print("  {}  {}{}".format(mol.name, frame_labels.frame_tag(g, b, k), "  (retry)" if retry else ""))
+    retried = {}
+    for mol, _g, _b, _k, retry in todo:
+        if retry:
+            retried[mol.name] = retried.get(mol.name, 0) + 1
     for name, (n_all, n_done, n_failed) in counts.items():
         if n_all == n_done:
             print("  {}  all {} frames finished".format(name, n_all))
         elif n_all == n_done + n_failed:
-            print("  {}  {} frames finished, {} failed -- nothing pending".format(name, n_done, n_failed))
+            print("  {}  {} frames finished, {} failed{}".format(
+                name, n_done, n_failed,
+                " ({} retried in this round)".format(retried[name]) if name in retried else " -- nothing pending"))
     print()
     if args.dry_run:
         print(json.dumps(dict(level=args.level, keywords=keywords, resource=described, n_molecules=len(mols),
-                              n_frames=len(todo), nprocs=args.nprocs, maxcore=maxcore), indent=2, default=str))
+                              n_frames=len(todo), retry_failed=args.retry_failed, n_retries=n_retry,
+                              nprocs=args.nprocs, maxcore=maxcore), indent=2, default=str))
         return 0
     if args.list:
         Path(args.list).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.list).write_text("".join("{} {} {} {}\n".format(mol, g, b, k) for mol, g, b, k in todo), encoding="utf-8")
-        print("task list    {} ({} frames)".format(args.list, len(todo)))
+        Path(args.list).write_text("".join("{} {} {} {} {}\n".format(mol, g, b, k, "retry" if retry else "-")
+                                          for mol, g, b, k, retry in todo), encoding="utf-8")
+        print("task list    {} ({} frames, {} retries; column 5: retry or -)".format(args.list, len(todo), n_retry))
         return 0
     if args.assemble:
         todo = []                                        # nothing runs; the assembly below reads the disk
@@ -251,9 +292,9 @@ def main():
     if args.assemble:
         pass
     elif todo and args.local:
-        for mol, g, b, k in todo:
+        for mol, g, b, k, retry in todo:
             r = label_frame_task(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough,
-                                 timeout_s=args.timeout)
+                                 timeout_s=args.timeout, retry=retry)
             results.append(r)
             print("  {}  {}  {}  {}".format(r["species"], r["frame"], r["status"], r.get("error_line", "")), flush=True)
     elif todo:
@@ -282,8 +323,8 @@ def main():
         print("executor     {}   mode {}".format(label, getattr(res, "LAST_MODE", None) or "local"), flush=True)
         app = python_app(label_frame_task, executors=[label])
         futures = [app(str(mol), args.level, g, b, k, args.nprocs, maxcore, str(ROOT), env=passthrough,
-                       timeout_s=args.timeout)
-                   for mol, g, b, k in todo]
+                       timeout_s=args.timeout, retry=retry)
+                   for mol, g, b, k, retry in todo]
         for f in futures:
             try:
                 results.append(f.result())

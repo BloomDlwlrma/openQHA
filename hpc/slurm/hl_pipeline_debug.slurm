@@ -95,8 +95,8 @@ echo; echo "== 03 labels (at most $LIMIT_FRAMES frames, ${CONCURRENCY} x ${NPROC
 export LEVEL NPROCS MAXCORE="${MAXCORE:-6000}"
 LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
 python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL"     --limit-frames "$LIMIT_FRAMES" --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
-awk -v nc="$CONCURRENCY" -v np="$NPROCS" '{ slot = (NR - 1) % nc; s = slot * np; printf "%s %s %s %s %d-%d
-", $1, $2, $3, $4, s, s + np - 1 }' "$LIST"     | xargs -r -n 5 -P "$CONCURRENCY" bash hpc/slurm/hl_label_worker.sh
+awk -v nc="$CONCURRENCY" -v np="$NPROCS" '{ slot = (NR - 1) % nc; s = slot * np; printf "%s %s %s %s %s %d-%d
+", $1, $2, $3, $4, $5, s, s + np - 1 }' "$LIST"     | xargs -r -n 6 -P "$CONCURRENCY" bash hpc/slurm/hl_label_worker.sh
 python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --assemble 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
 
 # ---- 04. the Dataset ---------------------------------------------------------------------
