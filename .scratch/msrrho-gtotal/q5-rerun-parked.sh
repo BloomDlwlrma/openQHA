@@ -16,13 +16,15 @@
 # HOW IT RUNS  There is no ssh from the workstation. This file is copied to the Tianhe
 #            checkout and used BY HAND there. One file, THREE ROLES:
 #
-#   1. LAUNCHER -- run on the login node, from the checkout root:
+#   1. LAUNCHER -- finds the parked set (the Q5 grep: "no basin survives" under
+#      $S0_RUNS_ROOT/draw300), shows it, and submits ONE 'deimos' job per molecule
+#      (24 h, exclusive node -- hl_branchA.slurm's shape). Two ways to run it:
 #        cd ~/openQHA-main
-#        bash .scratch/msrrho-gtotal/q5-rerun-parked.sh
-#      Checks the checkout carries the fix, finds the parked set (the Q5 grep:
-#      "no basin survives" under $S0_RUNS_ROOT/draw300), shows it, and submits ONE
-#      'deimos' job per molecule (24 h, exclusive node -- hl_branchA.slurm's shape).
-#      Nothing heavy runs on the login node. YES=1 skips the prompt; DRY_RUN=1 prints
+#        bash .scratch/msrrho-gtotal/q5-rerun-parked.sh     # login node; asks to confirm
+#        sbatch .scratch/msrrho-gtotal/q5-rerun-parked.sh   # NO QID: the job itself is the
+#                                                           # launcher; it submits the
+#                                                           # workers and exits in a minute
+#      Nothing heavy runs in either form. YES=1 skips the prompt; DRY_RUN=1 prints
 #      without doing (launcher: the submissions; worker: the resolved command).
 #
 #   2. WORKER -- the per-molecule job the launcher submits (or by hand:
@@ -121,6 +123,7 @@ q5-rerun-parked.sh -- ticket 41 Q5: rerun the draw300 molecules parked by the ol
 imaginary-frequency filter, under the frequency-floor census screen.
 
   bash q5-rerun-parked.sh            launcher: find, show, submit (run from the checkout)
+  sbatch <this file>                 the same launcher from inside a job (no QID needed)
   bash q5-rerun-parked.sh --status   one line per molecule, now
   sbatch --export=HOME="$HOME",QID=<qid> <this file>   worker: rerun that one molecule
 
@@ -132,13 +135,20 @@ EOF
 
 # ---- 1. which role is this -----------------------------------------------------------
 ROLE=launcher
+FROM_JOB=0
 case "${1:-}" in
     --status) ROLE=status ;;
     -h|--help) usage; exit 0 ;;
     "") ;;
     *) usage >&2; die "unknown argument: $1" 2 ;;
 esac
-if [ "$ROLE" = launcher ] && [ -n "${SLURM_JOB_ID:-}" ]; then ROLE=worker; fi
+if [ "$ROLE" = launcher ] && [ -n "${SLURM_JOB_ID:-}" ]; then
+    if [ -n "${QID:-}" ]; then
+        ROLE=worker
+    else
+        FROM_JOB=1        # a bare `sbatch` of this file: dispatch from the job
+    fi
+fi
 
 # ---- 2. shared helpers ---------------------------------------------------------------
 check_checkout() {
@@ -212,6 +222,14 @@ record_fields() {
     RB_WINTOT="$(grep '^N_INVERSION_WINDOW' "$rec" | awk '{s += $3} END {print s + 0}')"
 }
 
+checkout_self() {
+    # Inside a submitted job $0 is Slurm's node-local copy (/tmp/slurmd/jobNNN/
+    # slurm_script); when the checkout's own path exists, use it for messages and
+    # child submissions.
+    local p="$PWD/.scratch/msrrho-gtotal/q5-rerun-parked.sh"
+    if [ -f "$p" ]; then printf '%s\n' "$p"; else printf '%s\n' "$SELF"; fi
+}
+
 find_molecule_dir() {
     # <qid> -> molecule directory on stdout; rc 1 when not found. The marker path is
     # tried first (it is where the parked molecule's evidence is), then the directory
@@ -247,7 +265,11 @@ case "$ROLE" in
 
 launcher)
     if [ -n "$CHECKOUT" ]; then cd "$CHECKOUT" || die "no checkout at $CHECKOUT" 2; fi
+    SELF_USE="$(checkout_self)"
     say "OPENQHA-Q5: launcher -- the draw300 parked molecules (ticket 41, Q5)"
+    if [ "$FROM_JOB" = 1 ]; then
+        say "OPENQHA-Q5: submitted without QID -- the job IS the launcher (dispatching below)"
+    fi
     say "OPENQHA-Q5: checkout  $PWD"
     check_checkout || exit 2
     resolve_root || exit 2
@@ -309,15 +331,16 @@ launcher)
         for qid in "${PARKED[@]}"; do
             say "  sbatch --job-name=q5_$qid --partition=$PARTITION --time=$TIME_LIMIT \\"
             say "      --export=HOME=$HOME,QID=$qid,TAG=$TAG,REUSE=$REUSE,THREADS=$THREADS,TIMEOUT_S=$TIMEOUT_S,WALL_S=$WALL_S,BACKUP_DIR=$BACKUP_DIR,CHECKOUT=$PWD \\"
-            say "      $SELF"
+            say "      $SELF_USE"
         done
         exit 0
     fi
 
-    if [ ! -t 0 ] && [ "$YES" != 1 ]; then
+    if [ "$FROM_JOB" = 1 ]; then
+        say "OPENQHA-Q5: no prompt in a submitted job; ${#PARKED[@]} worker job(s) follow."
+    elif [ ! -t 0 ] && [ "$YES" != 1 ]; then
         die "stdin is not a terminal; rerun interactively, or set YES=1" 2
-    fi
-    if [ "$YES" != 1 ]; then
+    elif [ "$YES" != 1 ]; then
         confirm "submit ${#PARKED[@]} job(s) to $PARTITION?" || { say "nothing submitted."; exit 0; }
     fi
 
@@ -334,19 +357,21 @@ launcher)
         fi
         out="$(sbatch --job-name="q5_$qid" --partition="$PARTITION" --time="$TIME_LIMIT" \
               --export=HOME="$HOME",QID="$qid",TAG="$TAG",REUSE="$REUSE",THREADS="$THREADS",TIMEOUT_S="$TIMEOUT_S",WALL_S="$WALL_S",BACKUP_DIR="$BACKUP_DIR",CHECKOUT="$PWD" \
-              "$SELF" 2>&1)"
+              "$SELF_USE" 2>&1)"
         if [ "$?" != 0 ]; then warn "sbatch failed for $qid: $out"; continue; fi
         jid="${out##* }"
         say "  $qid  ->  job $jid   (log logs/slurm/q5_${qid}_${jid}.out)"
     done
     say ""
-    say "when the jobs finish:  bash $SELF --status"
+    say "when the jobs finish:  bash $SELF_USE --status"
     say "then paste each worker block (the 'paste this back' section of its log) into ticket 41."
+    if [ "$FROM_JOB" = 1 ]; then
+        say "OPENQHA-Q5: dispatcher job ${SLURM_JOB_ID} exits now; 'squeue -u \$USER -n q5_*' lists the workers (scancel cancels one)."
+    fi
     exit 0
 ;;
 
 worker)
-    [ -n "${QID:-}" ] || die "the worker role needs QID; submit through the launcher, or: sbatch --export=HOME=\"\$HOME\",QID=<qid> $SELF" 4
     cd "${CHECKOUT:-${SLURM_SUBMIT_DIR:-$PWD}}" || die "no checkout directory" 4
     say "OPENQHA-Q5: worker -- $QID   tag $TAG   job ${SLURM_JOB_ID:-interactive} on $(hostname) partition ${SLURM_JOB_PARTITION:-?}"
     say "OPENQHA-Q5: checkout  $PWD"
