@@ -153,8 +153,9 @@ fi
 # ---- 2. shared helpers ---------------------------------------------------------------
 check_checkout() {
     # Ticket 41's precondition: nothing is submitted before the change is on the
-    # checkout. The commit check is exact; the file check is for a clone without that
-    # object (a shallow or re-created tree) and pins the census screen by content.
+    # checkout. The commit check is exact; the file check is for a tree without that
+    # object (a shallow, re-created or file-copy tree) and identifies the version by
+    # content. A pin must be a string on ONE source line -- grep matches per line.
     if [ -d .git ] && command -v git >/dev/null 2>&1; then
         if git cat-file -e "$FIX_COMMIT^{commit}" 2>/dev/null; then
             if git merge-base --is-ancestor "$FIX_COMMIT" HEAD 2>/dev/null; then
@@ -166,14 +167,30 @@ check_checkout() {
             return 2
         fi
         say "OPENQHA-Q5: note: commit $FIX_COMMIT is not in this clone; checking file contents instead"
+    else
+        say "OPENQHA-Q5: note: no .git in this checkout; checking file contents instead"
     fi
-    if grep -qF 'the frequency-floor screen' openqha/conformer_search/crest_census.py 2>/dev/null \
-       && grep -qF 'converged_orca_default' openqha/conformer_search/crest_census.py 2>/dev/null \
-       && grep -qF 'n_inversion_window' openqha/conformer_search/crest_census.py 2>/dev/null; then
+    # The pins: 'hessian_screen(basins, calc, ithr_cm=' is a line only the ticket-41
+    # census carries (the parent carries 'reject_imaginary=True' instead), and the two
+    # identifiers below are what the screen reads. The original third pin, 'the
+    # frequency-floor screen', is split across two source lines in the module -- grep
+    # matches per line, so it refused every content check, current file or not. That
+    # was the Tianhe refusal of 2026-09-25.
+    local census=openqha/conformer_search/crest_census.py
+    local pins_ok=1 pin
+    for pin in 'hessian_screen(basins, calc, ithr_cm=' \
+               'converged_orca_default' \
+               'n_inversion_window'; do
+        if ! grep -qF "$pin" "$census" 2>/dev/null; then
+            say "OPENQHA-Q5:   census pin missing: [$pin]"
+            pins_ok=0
+        fi
+    done
+    if [ "$pins_ok" = 1 ]; then
         say "OPENQHA-Q5: checkout carries the frequency-floor census screen (content check)"
         return 0
     fi
-    say "OPENQHA-Q5: REFUSED -- openqha/conformer_search/crest_census.py is not the floor-screen version."
+    say "OPENQHA-Q5: REFUSED -- $census is not the floor-screen version."
     say "  sync the checkout (git pull) and resubmit."
     return 2
 }
