@@ -633,6 +633,11 @@ def main():
               and '-n 6' in sl_t and "$5, s, e" in sl_t and "--retry-failed" in sl_t and "RETRY_FAILED" in sl_t
               and '-n 6' in dbg_t and "$4, $5, s, s + np - 1" in dbg_t,
               ("--force" in drv_t, "--force" in wk_t, "-n 6" in sl_t, "$5, s, e" in sl_t, "$4, $5, s, s + np - 1" in dbg_t))
+        check("the scope ruling rides the round: hl_labels.slurm takes GENERATORS into BOTH the task list and the assemble, so task 0's exit 0 means every IN-SCOPE frame is labelled",
+              'GENERATORS="${GENERATORS:-}"' in sl_t and 'GENERATORS_FLAG="--generators $GENERATORS"' in sl_t
+              and sl_t.count("$GENERATORS_FLAG") == 2 and "$GENERATORS_FLAG --assemble" in sl_t
+              and "GENERATORS=basin" in sl_t and "GENERATORS=basin RETRY_FAILED=1" in sl_t and "--generators" in drv_t,
+              (sl_t.count("$GENERATORS_FLAG"), "$GENERATORS_FLAG --assemble" in sl_t, "GENERATORS=basin" in sl_t))
 
     # --- ticket 09 A: one campaign, one tag, one Dataset -------------------------------
     heads = "".join((ROOT / "hpc" / "slurm" / f).read_text(encoding="utf-8") for f in

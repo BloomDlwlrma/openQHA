@@ -78,6 +78,21 @@ _Avoid_: run name, experiment, label
 The directory the molecule directories are written under, on the shared filesystem.
 _Avoid_: runs root, scratch, keep dir
 
+**Structure class**:
+One of the 23 SMARTS/ring rules of `configs/structure_classes.yaml` (rings:
+three_membered_ring, small_ring, bicyclic, polycyclic, aromatic, eight_membered_ring,
+heterocyclic; groups: carbonitrile, secondary_alcohol, primary_alcohol, trialkylamine,
+tertiary_amine, aliphatic_amine, aromatic_amine, alkyne, dialkyl_ether, epoxide, aldehyde,
+ketone, amide, carboxylic_acid, ester, cyclopropane). A molecule belongs to EVERY class it
+matches -- the classes are no partition (draw300: 5.4 classes per molecule on average) --
+so a class's membership is larger than what the draw took for it. A draw (`00_draw.py
+--per-class N`) takes N molecules per class from the gated QM9 targets outside
+MACE-OFF23's SPICE training file, seeded by `(seed, class)`; the campaign's molecule list
+is the UNION over the classes plus the pinned seven. A class with fewer candidates than N
+takes all of them; the shortfall stands in the draw's Record (draw300: 22 classes at 300,
+`carboxylic_acid` 0 -- QM9 contains no carboxylic acid).
+_Avoid_: category, group, family (for the class itself)
+
 **Level**:
 The model chemistry that produced a number: `gfn2`, `wb97m-d3bj_def2-tzvppd`,
 `dlpno-ccsdt_cc-pvtz`, `mace-off23_medium`. Lower-case, method first, basis second,

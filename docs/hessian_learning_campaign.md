@@ -70,9 +70,9 @@ TIMEOUT_S=14400 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_b
 TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm                        # 2  02: 2 submissions, ~1 h, after A
 python workflows/hessian_learning/01_select.py --tag draw300                                     # 3  01: select.dat, seconds, after 02
 tmux new -s hl-labels                                                                            # 4  a session the driver survives logout in
-python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu \
+python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu --generators basin \
     --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw300_$(date +%F_%H%M).log
-                                                                                                 # 5  03: the parsl driver, <= 12 blocks of 3 days, ~8 days
+                                                                                                 # 5  03: the parsl driver, <= 12 blocks of 3 days, basin frames only (scope ruling 2026-09-25, §3), ~3.5 days
 python workflows/hessian_learning/04_dataset.py --tag draw300 --split-by molecule --export openreact   # 6  04: after the driver ends
 python scripts/tooling/s0_hl_progress.py --tag draw300                                           # any time, a minute or two (threaded walk; §5)
 ```
@@ -168,49 +168,62 @@ a 32-core node with 8 × 4 instead of failing:
 `nproc` is not a way to ask how many cores a job has: it honours `OMP_NUM_THREADS`, which
 `common.sh` sets to 1, and it answered **1** on a 64-core node on 2026-09-20 — the guard
 in the branch A and labels scripts then refused the job. `SLURM_CPUS_PER_TASK` (or
-`nproc --all` off a cluster) is the answer. 12 nodes = 768 cores. The draw: 6,458 molecules, 83 %
-with 9 heavy atoms (≈ 19 atoms); a molecule's Frame set is ~3 basins × (1 + 4 displaced)
-plus merged / saddle frames ≈ 15–17 frames, of which 3–5 are Hessian jobs (basin /
-merged / saddle: `EnGrad Freq`) and ~12 gradient jobs (displaced: `EnGrad`; round 5 Q7 b).
+`nproc --all` off a cluster) is the answer. 12 nodes = 768 cores. The draw (census 2026-09-25,
+`$S0_RUNS_ROOT/draw300`): 6,458 molecules, **297,522 kept frames** over 5,994 Frame sets —
+per set ≈ **7.4 basin + 29.2 displaced + 12.9 merged + 0.09 saddle**. Every kept frame is
+an ORCA job, and only basin / merged / saddle are Hessian jobs (`EnGrad Freq`; 122,537 in
+all); the displaced frames are `EnGrad`-only (174,985; round 5 Q7 b).
 
 | stage | per unit | basis | draw300 (12 nodes) | measured on the campaign |
 |---|---|---|---|---|
 | A branch A | 283–1,493 s / molecule at 16 per node, 3 of 16 still running at the 30-min debug cap **[measured 2026-09-21, debug gate on draw300, 9 heavy atoms; the smoke set gave 460–590 s on 2026-09-19]** | 6,458 × ~1,000 s × 4 cores ≈ 7,200 core-h | **~10 h** [estimate] *for the gate's small molecules* — **measured 2026-09-24 on draw300's flexible tail: single molecules to 71 453 s (19.8 h), task walls 15–22 h against `--time=1-00:00:00`**, the census after two CREST attempts dominating; that tail's resubmission wants 2–3 days (a molecule cut by the wall loses its node-local CREST directory and reruns whole). A molecule past `TIMEOUT_S` is skipped with rc≠0 and stays pending; `WALL_S`, if set, cuts the whole molecule loose (rc=124, nothing written, rerun next round) — **no default**, the 19.8 h molecule is the reason | — |
 | 02 frames | **122 s / molecule at 1 thread [measured 2026-09-23]**: ~8.6 frames with an engine Hessian at 13.4 s (19 atoms, 3N backward passes) + ~22 displaced at 0.21 s (energy and forces only since ticket 29) | 6,458 × 122 s × 1 core = 219 core-h | **~2 h** on 12 nodes at 64 × 1 (the 25 min/molecule of 2026-09-22 was Hessians at every frame, 3.4x, and 64-way contention) | — |
-| 03 Hessian jobs | 10 atoms: 245–305 s **[measured]**; 19 atoms: 40–80 min **[estimate, N³–N⁴ scaling]** | 6,458 × 4 × 60 min × 4 cores = 103,000 core-h | 5.6 days | — |
-| 03 gradient jobs | 19 atoms: 3–5 min **[estimate]** | 6,458 × 12 × 4 min × 4 = 20,700 core-h | 1.1 days | — |
-| 03 total | | **≈ 125,000–155,000 core-h** | **≈ 7–8.5 days** → 3 rounds of 3 days | — |
+| 03 Hessian jobs | **1,303 s (21.7 min) median per basin frame at 4 ranks [measured 2026-09-25 on the 193 draw300 labels records]**; basin / merged / saddle: `EnGrad Freq` | 44,480 basin jobs × 1,303 s × 4 cores ≈ **64,400 core-h** (all four generators' Hessian frames: 122,537 jobs ≈ 177,000 core-h) | **basin only: ≈ 3.5 days** (full scope ≈ 11.7 days — not run, §3) | — |
+| 03 gradient jobs | **185 s (3.1 min) at 4 ranks [measured: the ticket-01 site gate, a displaced frame]** | displaced: 174,985 jobs × 185 s × 4 ≈ 36,000 core-h | **not run**: the 2026-09-25 scope ruling labels basin frames only (§3) | — |
+| 03 total | the scope ruling runs basin frames only (§3) | | **≈ 64,400 core-h ≈ 3.5 days of 12 nodes → two rounds** | — |
 | 04 Dataset | seconds per molecule, login node or task 0 | | minutes | — |
 
 The formula behind the 03 rows, for N molecules with F frames each at T per frame on
-P cores: `N × F × T × P / 768` hours of 12 nodes. The gate's log (§4) gives T for both
-job kinds on the draw's own molecules; write them into the last column; the driver's
-first blocks (§1, command 5) fill the campaign column, and if the Hessian is over 80 min
-the driver simply runs longer — there is no round count to change.
+P cores: `N × F × T × P / 768` hours of 12 nodes. T is measured since 2026-09-25
+(1,303 s per Hessian job, 185 s per gradient job, on the draw's own molecules) and the
+census fixes F; a scope change re-derives the total from the same formula.
 
 Storage, kept (no `.gbw`, `.loc`, `property.txt`; round 5 Q8): ~0.35 MB per frame
-(`inp` + full `out` + `hess` or `engrad`; a 19-atom `.hess` is ~0.15 MB) → **~35 GB** for
-~100,000 frames; ~1 MB per molecule of branch A / Frame sets → 6.5 GB; the Dataset:
+(`inp` + full `out` + `hess` or `engrad`; a 19-atom `.hess` is ~0.15 MB) → **~16 GB** for
+draw300's 44,480 basin jobs (a full-scope ~297,000 frames would be ~100 GB); ~1 MB per
+molecule of branch A / Frame sets → 6.5 GB; the Dataset:
 ~7 GB of extxyz per level per 100,000 frames (three split files + the merged one =
 twice that) and 2.6 GB of HDF5. Node-local scratch holds ORCA's integrals during a job
 (GB per analytic Hessian) and is removed with the run directory.
 
 ## 3. The frames' states; the sbatch rounds as the fallback route
 
+**The scope ruling (2026-09-25): draw300 labels *basin frames only*.** The census
+(297,522 kept frames: 44,480 basin, 174,985 displaced, 77,542 merged, 515 saddle) and the
+measured job times put the full four-generator scope at ≈ 216,000 core-h (≈ 12 days of 12
+nodes) against ≈ 64,000 core-h (≈ 3.5 days) for the basin frames alone. Training and the
+msRRHO chain need the basin Hessians (S0-C-54: the fine-tune learns basin Hessians only);
+the other three generators are the Judge's held-out evidence — **deferred, not deleted**:
+their frames stay unlabelled in the Dataset's `pool`, nothing is removed, and a later
+round can label them (`GENERATORS=merged`, …). The rounds therefore carry
+`GENERATORS=basin`: the task list holds only basin frames, and task 0's assemble counts
+only them, so its exit-0 signal keeps meaning "every IN-SCOPE frame is labelled". The
+retry round carries the same flag.
+
 **The fallback: labels as sbatch arrays.** If the tmux gate (§1) fails and the fix is not at
 hand, step 03 runs as rounds of the array script — the same on-disk state, the same
 per-frame worker, no parsl:
 
 ```bash
-TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # a round; the next when this one has ENDED
+GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm     # a round; the next when this one has ENDED
 ```
 
 `deimos` allows 7 days, but a 3-day walltime queues faster and loses at most 3 days of one
-node to a crash; ~8 days of labels are three rounds. Each of the 12 tasks lists the PENDING
+node to a crash; ~3.5 days of labels are two rounds. Each of the 12 tasks lists the PENDING
 frames of the selection at its start (`03_labels.py --list`: no ORCA job on disk, not held
-by another process), takes every 12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a
+by another process, in the round's generators), takes every 12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a
 time under `taskset`. At the end task 0 assembles every molecule's label files and builds
-the Dataset; its exit code is **0 when no frame is without an ORCA job, 1 otherwise** — the
+the Dataset; its exit code is **0 when no IN-SCOPE frame is without an ORCA job, 1 otherwise** — the
 signal for the next round, which is the same command again, until task 0's assemble exits 0. The rounds are submitted one
 at a time, by hand, each when the previous has ended: pre-queued they would take 36 of the
 tenant's 32 submissions (§1), and a `--dependency` chain would hold them idle for days. The
@@ -236,7 +249,7 @@ deliberately — never by an ordinary round. The sequencing is a rule, not a pre
       ->  verify ONE frame by hand (`python -m openqha.data.frame_labels ... --retry`)  ->  this round
 
 ```bash
-RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm
+GENERATORS=basin RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm
 ```
 
 The task list the round writes then also contains the failed frames whose failure has no
@@ -273,7 +286,7 @@ Logs land in `logs/slurm/` of the checkout (the directory the job was submitted 
 |---|---|---|
 | A | `branchA: scanning N drawn molecule record(s) ...` then the scan's seconds (the shared-pool record walk; `--workers` its threads — 6 min 19 s × 12 tasks single-threaded on 2026-09-24), then `branchA: N drawn, M pending, K for task i/n -> list[; F failed earlier]` at the top; one `qid rc=0 S s CREST reports C conformers … -> B basins` per molecule; last: `== A  K done, 0 not done, of K in this task; wall W s` | two kinds of `rc=1` (measured 2026-09-22: ~4 % + ~5 % of draw300): **(i)** `terminated EARLY N; shake used 1; fell back True … all criteria passed: False … written branchA.toml` — the published SHAKE=2 run lost some metadynamics, the SHAKE=1 retry (or, since ticket 26, the published run itself when the retry crashed) supplied the ensemble; criterion 10 records it; the molecule is **done**; **(ii)** `FileNotFoundError: CREST produced no ensemble` — neither attempt left an ensemble; `_records/branchA.failed` is written (reason, both attempts' last lines, the rerun command), the molecule is **not rerun** by any round and shows in the progress table's `A failed` column; a human reads the marker and reruns `s0_A_pipeline.py --species <qid> --tag draw300` by hand (a success clears the marker). **All other crashes are this kind too since 2026-09-24**: a runtime error raised anywhere in the pipeline (a damaged `curated_qm9.h5` group; the census refusing an empty basin list — its message now lists every condemned candidate with its imaginary count and lowest frequency, and the tighten's convergence count) leaves the same `_records/branchA.failed` with the traceback tail, so a molecule that crashes every round becomes one `A failed` row instead of staying `pending` forever. **One exception stays retryable: a CREST timeout** — §2's rule is that a molecule past `TIMEOUT_S` is skipped and the next round tries it again, so it keeps staying `pending` (don't park a molecule for the sin of landing on a busy node). `rc=124` is `WALL_S`, the worker's opt-in ceiling (`hl_branchA_worker.sh`; **no default** — molecules legitimately reach ~20 h, §2), fired after a hang outside CREST (the tighten / Hessian / MACE-socket phase had no bound before 2026-09-24): nothing was written, the next round reruns it whole. `not done` > 0 also for a molecule cut by the walltime — the next submission redoes it |
 | 02 | one `qid rc=0 S s` per molecule; last: `== 02  K Frame sets written, 0 not, of K in this task; wall W s` | `not` > 0 → the molecule's `02_frames.py --species` on debug, read its Record |
-| 03 | `frames  T pending, K for this task`; `timeout    ORCA per frame TIMEOUT_S=28800 s` (the one-shot retry round also prints `retry      RETRY_FAILED=1: …` and marks its frame list `(retry)`); one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `failed` (earlier, not rerun) / `running` / `FAILED …` (now)); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table with its `failed` count, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` whose ORCA `.out` ends with the `TIMEOUT_S` trailer (the Hessian is bigger than estimated: read it, `--retry` with a larger `TIMEOUT_S` if it deserves one); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
+| 03 | `frames  T pending, K for this task`; `timeout    ORCA per frame TIMEOUT_S=28800 s` (the one-shot retry round also prints `retry      RETRY_FAILED=1: …` and marks its frame list `(retry)`; a scope-limited round prints `generators basin only …` and runs only those frames); one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `failed` (earlier, not rerun) / `running` / `FAILED …` (now)); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table with its `failed` count, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` whose ORCA `.out` ends with the `TIMEOUT_S` trailer (the Hessian is bigger than estimated: read it, `--retry` with a larger `TIMEOUT_S` if it deserves one); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
 | 04 | `dataset 'draw300' at <level> (split by frame): N molecules (7 test), F frames: train … valid … test … pool …; H with a Hessian`; `per class:` table; `merged …/mace_draw300.<level>.extxyz` | `pool` > 0 after the driver ended → frames still without a job (its blocks were cut, or the driver died): run command 5 again; frames the Batch table calls `failed` stay out until the one-shot `--retry-failed` round (§3) or a human `--retry` touches them |
 
 The per-frame `<s>` of the gate's 03 log, averaged over `basin_*` (Hessian) and

@@ -7,8 +7,8 @@
 #     cd $HOME/openQHA-main
 #     sbatch hpc/slurm/hl_labels.slurm                                        # tag smoke, deimos, 1 node, 4 h
 #     sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm      # the same on the short queue
-#     TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # 12 nodes: an ARRAY, one node each; one round of three (docs/hessian_learning_campaign.md)
-#     RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # THE ONE-SHOT RETRY ROUND (ticket 02): the failed frames without an archive, re-attempted ONCE, the failed .out archived first
+#     GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # the draw300 campaign: 12 nodes, one node each; BASIN frames only (scope ruling 2026-09-25, docs/hessian_learning_campaign.md §3); ~3.5 days in two rounds
+#     GENERATORS=basin RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # THE ONE-SHOT RETRY ROUND (ticket 02): the failed basin frames without an archive, re-attempted ONCE, the failed .out archived first
 #
 # LAYOUT: the job ASKS for the node (`--exclusive --ntasks=1 --cpus-per-task=64 --mem=0`)
 # and DERIVES the layout from what Slurm granted: CONCURRENCY = CORES / NPROCS, so 16 x 4
@@ -46,6 +46,13 @@ NAME="${NAME:-$TAG}"
 # (the failed .out is archived as <stem>.failed.out before ORCA runs). 0 (the default) is
 # an ordinary round -- exactly 1 arms it, so `RETRY_FAILED=0` cannot burn a frame's shot.
 RETRY_FAILED="${RETRY_FAILED:-0}"
+# GENERATORS restricts the round to a subset of the frame generators (`--generators`): the
+# 2026-09-25 scope ruling runs draw300 BASIN-ONLY -- training and the msRRHO chain need
+# the basin Hessians; the other generators stay unlabelled in the Dataset's `pool` (docs/
+# hessian_learning_campaign.md §3). It reaches BOTH the task list and the assemble below,
+# so task 0's exit-0 keeps meaning "every IN-SCOPE frame is labelled". Empty = every
+# generator of the Frame set.
+GENERATORS="${GENERATORS:-}"
 export LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
 export NPROCS="${NPROCS:-4}"
 # %maxcore is per RANK: 0.75 x the node's memory / cores (512 GB / 64 = 8 GB -> 6000 MB),
@@ -93,9 +100,11 @@ fi
 # worker to pass the frame CLI's `--retry`.
 RETRY_FLAG=""
 [ "$RETRY_FAILED" = 1 ] && RETRY_FLAG="--retry-failed"
+GENERATORS_FLAG=""
+[ -n "$GENERATORS" ] && GENERATORS_FLAG="--generators $GENERATORS"
 LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
 python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" \
-    ${LIMIT_FRAMES:+--limit-frames "$LIMIT_FRAMES"} $RETRY_FLAG --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+    ${LIMIT_FRAMES:+--limit-frames "$LIMIT_FRAMES"} $RETRY_FLAG $GENERATORS_FLAG --list "$LIST" 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
 [ -f "$LIST" ] || { echo "openQHA: no task list written" >&2; exit 1; }
 TOTAL=$(wc -l < "$LIST")
 MINE="$LIST.task$ARRAY_ID"
@@ -104,6 +113,9 @@ echo "frames     $TOTAL pending, $(wc -l < "$MINE") for this task"
 echo "timeout    ORCA per frame TIMEOUT_S=$TIMEOUT_S s; a failed frame is not rerun by an ordinary round"
 if [ "$RETRY_FAILED" = 1 ]; then
     echo "retry      RETRY_FAILED=1: this round re-attempts the failed frames without an archive ONCE; the failed .out is archived as <stem>.failed.out before ORCA starts and a failed retry stays final"
+fi
+if [ -n "$GENERATORS" ]; then
+    echo "generators $GENERATORS only (scope ruling 2026-09-25): the other frame generators stay unlabelled"
 fi
 
 # ---- 3. the work: one worker per line, a core range per slot (hkuhpc's awk + xargs) ------
@@ -118,7 +130,7 @@ echo "== 03 wall $(( $(date +%s) - started )) s for $(wc -l < "$MINE") frames"
 # ---- 4. assemble + the Dataset (the first array task; the others' frames are on disk) ----
 if [ "$ARRAY_ID" = 0 ]; then
     echo; echo "== 03 assemble"
-    python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --assemble 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+    python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" $GENERATORS_FLAG --assemble 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
     rc=${PIPESTATUS[0]}
     echo; echo "== 04 Dataset"
     python -u workflows/hessian_learning/04_dataset.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --export openreact 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
