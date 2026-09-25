@@ -18,11 +18,13 @@ unset untouched -- the ORCA invariant no longer depends on it.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** code complete 2026-09-25; not done -- the site-verification criterion is
-unpaid. Evidence: unit suite 64/64 (`t_orca_child_env.py` pass among them; its 7 seam
-checks + 5 totality checks pass); `py_compile` clean on the four edited Python files.
-Site verification (the frame re-run on Tianhe) needs the site and stays the gate ticket 02
-waits for.
+**Status:** done 2026-09-25. Evidence: unit suite 64/64 (`t_orca_child_env.py` included;
+its 7 seam checks + 5 totality checks pass); `py_compile` clean on the four edited Python
+files; **site verification passed** -- job 7673439 on cnode2448 (`debug`, TianheXY-CN) via
+`.scratch/orca-slurm/verify-orca-one.sh`: the in-job seam self-check read `none / none`
+with `SLURM_JOBID` armed, `dsgdb9nsd_006885 displaced_b01_k3` retried once -> `labelled
+185 65`, and the fresh `.out` ends `****ORCA TERMINATED NORMALLY****` (ORCA 3 min 5 s,
+exit 0). The two additions in the table below keep their OPEN dispositions.
 
 - [x] The ORCA child environment seam deletes every variable whose name starts with `SLURM`
       or `PMI`, keeps `S0_ORCA_PATH`/`S0_ORCA_LIB` prepended to PATH / LD_LIBRARY_PATH, and
@@ -39,11 +41,16 @@ waits for.
 - [x] Offline unit tests: a fabricated environment full of Slurm/PMI variables comes back
       stripped, with the shims and the binding knob intact; a check that no ORCA launch
       bypasses the seam (the launchers pass its environment) -- `tests/unit/t_orca_child_env.py`.
-- [ ] Site verification: one known-failed draw300 frame, re-run by hand with the existing
+- [x] Site verification: one known-failed draw300 frame, re-run by hand with the existing
       per-frame retry on Tianhe, terminates normally (the fresh `.out` carries
-      `****ORCA TERMINATED NORMALLY****`) -- the gate the retry round waits for. **Not
-      done: needs Tianhe; sequencing rule (fix -> count -> verify one frame -> retry
-      round) stands.**
+      `****ORCA TERMINATED NORMALLY****`) -- the gate the retry round waits for. **Done
+      2026-09-25, job 7673439 (cnode2448, `debug`), `dsgdb9nsd_006885 displaced_b01_k3`**:
+      the old `.out` read the incident's `ras_base_allocate` force-terminate before the
+      retry; the retry printed `labelled 185 65`; the fresh `.out` ends with the terminal
+      line; the old output is kept at
+      `$HOME/orca_verify_backup/orca.wb97m-d3bj_def2-tzvppd.displaced_b01_k3.old.out`.
+      The frame's one manual retry is spent; the next step per the sequencing rule is the
+      failure count (`s0_hl_progress --tag draw300`), then ticket 02's retry round.
 - [x] ADR 0007 records "ORCA children are Slurm-blind; the worker owns placement", with the
       rejected alternatives (Slurm-shaped allocation, `srun` steps, MCA exclusions) and the
       OpenMPI-source evidence. **Number changed to 0008**: 0007 was taken the same day by
