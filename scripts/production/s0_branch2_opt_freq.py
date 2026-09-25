@@ -67,6 +67,7 @@ def _repo_root():
 sys.path.insert(0, str(_repo_root()))
 
 from openqha import S0_ROOT
+from openqha.qm_interfaces import orca
 
 ORCA = os.environ.get("S0_ORCA_BIN", "/home/ubuntu/packages/orca_6_0_1/orca")
 XYZ_DIR = S0_ROOT / "analysis" / "package1" / "1_16000" / "1_4000" / "xyz"
@@ -268,7 +269,7 @@ def run_one(qm9_index, basin, outdir, nprocs, maxcore, timeout_s,
     with open(str(stem) + ".out", "w") as fh:
         code = subprocess.call([ORCA, str(stem) + ".inp"], stdout=fh,
                                stderr=subprocess.STDOUT, cwd=str(d),
-                               timeout=timeout_s)
+                               env=orca.subprocess_env(), timeout=timeout_s)
     wall = time.time() - t0
     text = Path(str(stem) + ".out").read_text(encoding="utf-8", errors="replace")
     ok = "****ORCA TERMINATED NORMALLY****" in text

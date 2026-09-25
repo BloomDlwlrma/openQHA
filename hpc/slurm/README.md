@@ -37,7 +37,15 @@ TAG=prod yhbatch hpc/slurm/branchB_collect.slurm          # back on the CPU clus
 
 2. **Unset inherited `SLURM_*` / `PMI_*` variables.** They make a child process misread
    the task layout and try to relaunch itself through the scheduler. CREST forks its own
-   parallel workers and is exposed to exactly that.
+   parallel workers and is exposed to exactly that. This loop is the **narrow layer**:
+   it serves the non-ORCA payloads' scheduling variables. ORCA is handled one layer
+   lower, in its child environment: `openqha.qm_interfaces.orca.subprocess_env()` deletes
+   EVERY `SLURM*`/`PMI*` variable from an ORCA child and sets
+   `OMPI_MCA_hwloc_base_binding_policy=none`, so the worker's `taskset` range is
+   placement's only owner (ADR 0008). Do not widen this loop to "repair" ORCA, and do
+   not add ORCA variables here. If an ORCA launch ever reports "not enough slots", the
+   documented fallback is `OMPI_MCA_rmaps_base_oversubscribe=1` for that launch; it is
+   not set by default.
 
 3. **`xargs -P`, not `yhrun`.** Every task is an independent single-node process, so there
    is nothing for the launcher to lay out — and going through it would re-import the

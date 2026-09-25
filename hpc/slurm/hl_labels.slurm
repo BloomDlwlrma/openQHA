@@ -60,6 +60,10 @@ ARRAY_N="${SLURM_ARRAY_TASK_COUNT:-1}"
 # ---- 1. site environment ---------------------------------------------------------------
 module purge 2>/dev/null || true
 module load anaconda3/202309 2>/dev/null || module load anaconda3/2023.09 2>/dev/null || true
+# The NARROW unset (hpc/slurm/README.md rule 2): scheduling variables for the non-ORCA
+# payloads. ORCA children are made Slurm-blind one layer down, in
+# openqha.qm_interfaces.orca.subprocess_env() (ADR 0008) -- do NOT widen this loop to
+# "repair" ORCA.
 for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
     unset "$v"
 done

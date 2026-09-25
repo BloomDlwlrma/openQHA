@@ -196,7 +196,8 @@ def level_rimp2(symbols, positions, masses, workdir, nprocs, maxcore, timeout_s,
     t0 = time.time()
     with open(str(stem) + ".out", "w") as fh:
         subprocess.call([orca.orca_binary(), str(stem) + ".inp"], stdout=fh,
-                        stderr=subprocess.STDOUT, cwd=str(workdir), timeout=timeout_s)
+                        stderr=subprocess.STDOUT, cwd=str(workdir),
+                        env=orca.subprocess_env(), timeout=timeout_s)
     seconds = time.time() - t0
     out = Path(str(stem) + ".out").read_text(encoding="utf-8", errors="replace")
     if "****ORCA TERMINATED NORMALLY****" not in out:

@@ -86,7 +86,7 @@ specification guarantees that one of them is wasted.
 | quasi-harmonic trajectories — unbiased MACE MD | B | basin × seed | **GPU** (TianheXY-A) | **1 card**, 8/node | user ruling 2026-09-07. **Cost UNMEASURED there** — see below |
 | collection — quasi-harmonic analysis of finished trajectories | B | molecules | **CPU** (TianheXY-C) | **1 core**, 64 on **one** node | small, serial, float64; its real cost is Lustre metadata |
 | QM labels — `xtb --hess`, ORCA RI-MP2 | C | structures | CPU | xtb 1 core; ORCA 4 processes | `NumFreq` parallelises over displacements; ORCA 1.85 GB/process measured |
-| reference E-F-H labels per frame — ORCA wB97M-D3BJ single point + EnGrad + analytic Hessian (`workflows/hessian_learning/03_labels.py`, role `labels`) | Hessian learning | frames | **CPU** (TianheXY-C, `sbatch`) | **4 ranks**, 16/node, `%maxcore 6000` | user ruling 2026-09-18; 1 node smoke / 12 nodes draw; ORCA 6.1.1 from conda env `orca611` via `hpc/env/orca.sh` |
+| reference E-F-H labels per frame — ORCA wB97M-D3BJ single point + EnGrad + analytic Hessian (`workflows/hessian_learning/03_labels.py`, role `labels`) | Hessian learning | frames | **CPU** (TianheXY-C, `sbatch`) | **4 ranks**, 16/node, `%maxcore 6000` | user ruling 2026-09-18; 1 node smoke / 12 nodes draw; ORCA 6.1.1 from conda env `orca611` via `hpc/env/orca.sh`; the job script's narrow unset serves the non-ORCA payloads while ORCA children are made Slurm-blind and unbound in `subprocess_env()` (ADR 0008 — the worker's `taskset` owns placement) |
 | training — MACE + PHL loss | C | data-parallel | **GPU** | 1 card | the first workload here that batches naturally |
 
 Three things follow directly, and only one of them is a preference:

@@ -182,12 +182,31 @@ def orca_binary():
 
 
 def subprocess_env():
-    """The environment an ORCA subprocess runs in. `S0_ORCA_PATH` and `S0_ORCA_LIB`, when
-    set, are prepended to PATH and LD_LIBRARY_PATH FOR THE SUBPROCESS ONLY: on tianhe ORCA
-    6.1.1 and its OpenMPI live in the conda env `orca611` (`~/env_orca611.sh`), which a
-    worker running in the `openqha` env must not activate -- its libraries would shadow
-    the worker's own (hpc/env/orca.sh records the two paths without activating)."""
+    """The environment an ORCA subprocess runs in -- Slurm-blind, and the ONE seam
+    every ORCA launch goes through (ADR 0008). `S0_ORCA_PATH` and `S0_ORCA_LIB`, when
+    set, are prepended to PATH and LD_LIBRARY_PATH FOR THE SUBPROCESS ONLY: on tianhe
+    ORCA 6.1.1 and its OpenMPI live in the conda env `orca611` (`~/env_orca611.sh`),
+    which a worker running in the `openqha` env must not activate -- its libraries
+    would shadow the worker's own (hpc/env/orca.sh records the two paths without
+    activating).
+
+    Every variable whose NAME starts with `SLURM` or `PMI` is deleted. The PREFIX RULE
+    (not a pattern list) is deliberate: the draw300 failure of 2026-09-25 happened
+    because a narrow pattern removed `SLURM_TASKS_PER_NODE` while keeping the
+    `SLURM_JOBID` that arms OpenMPI 4.1's slurm components -- `ras/slurm` then
+    force-terminates when a required variable is absent (research note, 2026-09-25).
+    With `SLURM_JOBID` gone no `ras`/`plm`/`ess` slurm component is even eligible, and
+    ORTE falls back to the local host. The worker keeps its own Slurm view; only the
+    ORCA child is blind.
+
+    `OMPI_MCA_hwloc_base_binding_policy=none` is ORCA's documented off-switch for
+    OpenMPI's own CPU binding, so placement's only owner is the worker's `taskset`
+    range. `OMPI_MCA_rmaps_base_oversubscribe=1` is the documented fallback only (set
+    if a "not enough slots" line ever appears) and is deliberately not set here."""
     env = dict(os.environ)
+    for name in [k for k in env if k.startswith(("SLURM", "PMI"))]:
+        del env[name]
+    env["OMPI_MCA_hwloc_base_binding_policy"] = "none"
     if env.get("S0_ORCA_PATH"):
         env["PATH"] = env["S0_ORCA_PATH"] + os.pathsep + env.get("PATH", "")
     if env.get("S0_ORCA_LIB"):
@@ -248,7 +267,7 @@ def single_point(symbols, positions, method, basis, workdir=None, nprocs=8,
     with open(str(stem) + ".out", "w") as fh:
         rc = subprocess.call([orca_binary(), str(stem) + ".inp"],
                              stdout=fh, stderr=subprocess.STDOUT, cwd=str(tmp),
-                             timeout=timeout_s)
+                             env=subprocess_env(), timeout=timeout_s)
     seconds = time.time() - t0
     out = Path(str(stem) + ".out").read_text(encoding="utf-8", errors="replace")
     if "****ORCA TERMINATED NORMALLY****" not in out:

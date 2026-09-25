@@ -53,6 +53,7 @@ def _repo_root():
 
 sys.path.insert(0, str(_repo_root()))
 from openqha import S0_ROOT, config, thermo
+from openqha.qm_interfaces import orca
 
 CFG = config.load()
 T_REF = config.temperature(CFG)
@@ -101,7 +102,8 @@ def run_orca(workdir, inp_name, log):
         t0 = time.time()
         with (tmp / (inp_name.replace(".inp", ".out"))).open("w") as fh:
             proc = subprocess.run([ORCA, inp_name], cwd=tmp, stdout=fh,
-                                  stderr=subprocess.STDOUT)
+                                  stderr=subprocess.STDOUT,
+                                  env=orca.subprocess_env())
         seconds = time.time() - t0
         for pat in ("*.out", "*.hess", "*.engrad", "*.xyz"):
             for f in tmp.glob(pat):
