@@ -80,6 +80,16 @@ ITHR_KEY = ("package2", "ithr_cm")
 #: thermochemistry cannot drift apart (ticket 37).
 ITHR_CM_DEFAULT = thermo.MSRRHO_PRESETS["crest"]["ithr_cm"]
 
+#: ORCA's default max-gradient, the second certification line of the census tighten
+#: (ticket 38): TolMaxG = 3e-4 Eh/bohr = 1.543e-2 eV/A (1 Eh/bohr = 51.4221 eV/A;
+#: 3e-4 x 51.4221 = 1.5427e-2, the ticket's fixed 1.543e-2). It is the line a geometry
+#: handed over by CREST/ORCA has actually reached when its optimisation is only
+#: "normally" converged -- 150x looser than this repository's own target. A candidate
+#: whose residual stays above this line after its single second optimisation pass is
+#: NOT certified: rejected, listed with its residual, a class of its own next to the
+#: frequency-floor saddles.
+ORCA_DEFAULT_TOLMAXG_EV_A = 1.543e-2
+
 
 # ======================================================================================
 # 1. Read the ensemble into an RDKit molecule whose **atom order matches the template**
@@ -208,26 +218,76 @@ def census_verdict(frequencies_cm, ithr_cm):
         n_inversion_window=thermo.n_in_window(nu, ithr_cm))
 
 
-def _empty_basin_message(saddles, converged, fmaxes, ithr_cm):
+def convergence_class(residual_eV_A, second_pass=None, fmax_eV_A=1e-4,
+                      orca_default_eV_A=ORCA_DEFAULT_TOLMAXG_EV_A):
+    """The census's certification of one candidate's tighten -- pure, no engine (the
+    prototype's `convergenceClass`, lifted 2026-09-25; ticket 38, amended the same day:
+    the class that stays above the line is REJECTED, where the prototype admitted it
+    with a flag).
+
+    Two lines certify the tighten: the repository's own target (`fmax_eV_A`, package 2's
+    1e-4 eV/A) and ORCA's default max-gradient (`orca_default_eV_A`), the line a frame
+    the engines handed over has actually reached. Four outcomes, plus the transient that
+    triggers the single second optimisation pass:
+
+        converged               residual at or below the target -- our own tighten done
+        converged_orca_default  above the target, inside ORCA's line -- admitted, and
+                                `tighten_converged = false`, because it missed our target
+        converged_second_pass   the single second pass brought it inside the line
+        not_certified           still above the line after the pass -- rejected, listed
+
+    `second_pass` is None when no second pass ran (nothing needed one; the residual was
+    inside the line and the class is final). When one ran, it says whether that pass
+    brought the residual to or below the line, and the class follows from the pass
+    having done its one job -- "at most once" is the caller's contract, and the caller
+    is the tighten step of `census_from_frames`.
+    """
+    if residual_eV_A <= fmax_eV_A:
+        return "converged"
+    if residual_eV_A <= orca_default_eV_A:
+        return "converged_orca_default"
+    if second_pass is None:
+        return "needs_second_pass"
+    return "converged_second_pass" if second_pass else "not_certified"
+
+
+def _empty_basin_message(saddles, not_certified, converged, fmaxes, ithr_cm):
     """The refusal, with the evidence a reader needs to decide what to do next.
 
-    Since ticket 37 the screen ejects only what the frequency floor does not allow, so
-    "below ithr" is the whole verdict and the message names the floor it applied. The
-    numbers stay: without them the message is unactionable -- the Tianhe run of
-    dsgdb9nsd_052993 (2026-09-24) cost a session to find out *which* candidates the
-    filter condemned and by how much. A condemned candidate's lowest frequency is the
-    whole difference between "the engine says this molecule's minimum is a saddle" (a
-    real finding, a human decides) and "a soft mode near zero flipped sign on a geometry
-    the tighten did not fully land" (a different conversation), so it is printed.
+    Two rejection classes, in separate sections since ticket 38:
+
+    * **below the frequency floor** (ticket 37): "below ithr" is the whole verdict and
+      the floor is named, so the number is printed. A condemned candidate's lowest
+      frequency is the whole difference between "the engine says this molecule's
+      minimum is a saddle" (a real finding, a human decides) and "a mode near zero
+      flipped sign on a geometry the tighten did not fully land" (a different
+      conversation).
+    * **not certified**: the single second optimisation pass did not bring the tighten
+      residual inside ORCA's default line, so the candidate is not at a stationary
+      point this repository can stand behind. The residual is printed for the same
+      reason a saddle's lowest frequency is.
+
+    The tighten line stays: without the numbers the message is unactionable -- the
+    Tianhe run of dsgdb9nsd_052993 (2026-09-24) cost a session to find out *which*
+    candidates the filter condemned and by how much.
     """
-    lines = ["no basin survives the tightening and the frequency-floor screen -- "
-             "refusing to report an empty basin list",
-             "  {} candidate(s) condemned, every one with at least one mode below "
-             "ithr = {:g} cm^-1 (lowest frequency, cm^-1):".format(len(saddles), ithr_cm)]
-    for s in saddles:
-        lines.append("    conformer {:>3}: {} below ithr, lowest {:+.2f} cm^-1, "
-                     "E {:.6f} eV".format(s["conformer_id"], s["n_below_ithr"],
-                                          s["lowest_frequency_cm_inv"], s["energy_eV"]))
+    lines = ["no basin survives the tightening, the convergence certification and the "
+             "frequency-floor screen -- refusing to report an empty basin list"]
+    if saddles:
+        lines.append("  {} candidate(s) condemned, every one with at least one mode below "
+                     "ithr = {:g} cm^-1 (lowest frequency, cm^-1):".format(len(saddles), ithr_cm))
+        for s in saddles:
+            lines.append("    conformer {:>3}: {} below ithr, lowest {:+.2f} cm^-1, "
+                         "E {:.6f} eV".format(s["conformer_id"], s["n_below_ithr"],
+                                              s["lowest_frequency_cm_inv"], s["energy_eV"]))
+    if not_certified:
+        lines.append("  {} candidate(s) NOT certified: the tighten residual is still "
+                     "above ORCA's default line (TolMaxG = 3e-4 Eh/bohr = {:.3e} "
+                     "eV/A) after the single second pass (residual, eV/A):".format(
+                         len(not_certified), ORCA_DEFAULT_TOLMAXG_EV_A))
+        for c in not_certified:
+            lines.append("    conformer {:>3}: residual {:.2e} eV/A".format(
+                c["conformer_id"], c["residual_eV_A"]))
     n_nc = int(sum(1 for c in converged if not c))
     lines.append("  tighten: {} of {} frame(s) did not reach fmax; max residual {:.2e} "
                  "eV/A".format(n_nc, len(converged), float(max(fmaxes)) if fmaxes else float("nan")))
@@ -261,7 +321,14 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
     1. **Tighten** to `fmax` (package 2's 1e-4 eV/A by default, tighter than CREST's
        `tight`); the number of optimisation steps is recorded at the same time -- **the
        step count is itself a measure of how far the geometry CREST handed over was from
-       the minimum**.
+       the minimum** (for a frame that needed the second optimisation pass, it is both
+       passes together) -- and **certify** the result (ticket 38): at or below `fmax`,
+       `converged`; inside ORCA's default line (TolMaxG = 3e-4 Eh/bohr = 1.543e-2 eV/A),
+       `converged_orca_default` -- admitted, and marked `tighten_converged = false`
+       because it missed our own target; above the line, ONE bounded second optimisation
+       pass runs (the same `conformers.optimise`, appending to the same engine files) and
+       a residual still above the line is `not_certified`: rejected, listed with its
+       residual, and kept out of the deduplication.
     2. **Compare the connectivity matrix before and after** -- a structure that reacted
        during the optimisation must be seen, and may not enter the sum silently.
     3. **Deduplicate**: all-atom best root-mean-square deviation (minimised over the
@@ -288,6 +355,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
     from ..store import layout
 
     energies, fmaxes, converged, steps, graph_changed = [], [], [], [], []
+    classes, not_certified = [], []
     for j, cid in enumerate(cids):
         atoms = conformers._mol_to_atoms(mol, cid)
         a0 = conformers.connectivity(atoms.numbers, atoms.positions)
@@ -298,22 +366,64 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
             traj, log = str(d / "opt.traj"), str(d / "opt.log")
         e, fm, ok, ns = conformers.optimise(atoms, calc, fmax=fmax, steps=max_opt_steps,
                                             logfile=log, trajectory=traj)
+        steps_frame = int(ns)
+        # ---- certify the tighten (ticket 38) ----------------------------------------
+        # Against two lines: this repository's own target (`fmax`) and ORCA's default
+        # max-gradient. Above the line, ONE bounded second optimisation pass runs --
+        # `conformers.optimise` again, appending to the same engine files (`opt.log`
+        # opens in append mode; the open Trajectory appends by construction) -- and
+        # the residual is taken again. Still above the line: not certified, rejected
+        # with its residual, a class of its own next to the frequency-floor saddles.
+        cls = convergence_class(fm, fmax_eV_A=fmax,
+                                orca_default_eV_A=ORCA_DEFAULT_TOLMAXG_EV_A)
+        if cls == "needs_second_pass":
+            first_residual = fm
+            second_traj = None
+            if traj is not None:
+                from ase.io import Trajectory
+                second_traj = Trajectory(traj, mode="a")
+            try:
+                e, fm, ok, ns = conformers.optimise(
+                    atoms, calc, fmax=fmax, steps=max_opt_steps,
+                    logfile=log, trajectory=second_traj)
+            finally:
+                if second_traj is not None:
+                    second_traj.close()
+            steps_frame += int(ns)
+            cls = convergence_class(
+                first_residual, fmax_eV_A=fmax,
+                orca_default_eV_A=ORCA_DEFAULT_TOLMAXG_EV_A,
+                second_pass=bool(fm <= ORCA_DEFAULT_TOLMAXG_EV_A))
         if molecule_dir is not None:
             _write_extxyz(layout.mace_conformer_dir(molecule_dir, j) / "conf.extxyz", atoms,
                           conformer=j, crest_comment=(comments[j] if comments else ""))
         a1 = conformers.connectivity(atoms.numbers, atoms.positions)
         conformers._set_conf(mol, cid, atoms.positions)
-        energies.append(e); fmaxes.append(fm); converged.append(ok); steps.append(ns)
+        energies.append(e); fmaxes.append(fm); converged.append(ok)
+        steps.append(steps_frame)
         graph_changed.append(bool(not np.array_equal(a0, a1)))
+        classes.append(cls)
+        if cls == "not_certified":
+            not_certified.append(dict(conformer_id=int(cid), residual_eV_A=float(fm)))
         if progress is not None:
             progress("tighten", j + 1, len(cids))
 
     # ---- the energies CREST reports itself, for diagnostics only --------------------
     crest_rel = _crest_relative_kcal(comments) if comments else None
 
+    # ---- not-certified candidates are rejected BEFORE the deduplication -------------
+    # Every rejected candidate carries one reason: not certified is the tighten's, a
+    # saddle is the frequency floor's. And a frame that is not at a stationary point
+    # must not absorb a certified duplicate of the same basin -- with the uncertified
+    # frames out of the pool, the certified one survives on its own. A reader tracing
+    # those frames finds them in `not_certified`; they are not in `duplicate_map`.
+    certified = [cid for cid, cls in zip(cids, classes) if cls != "not_certified"]
+    e_of = {cid: float(x) for cid, x in zip(cids, energies)}
+    fm_of = {cid: float(x) for cid, x in zip(cids, fmaxes)}
+    cls_of = {cid: cls for cid, cls in zip(cids, classes)}
     blocked = {}
     kept, mapping, merge_warn = conformers.dedup(
-        mol, cids, energies, threshold_A=threshold_A,
+        mol, certified, [e_of[c] for c in certified], threshold_A=threshold_A,
         ethr_kcal=ethr_kcal, bthr_rel=bthr_rel, blocked=blocked)
     e = np.asarray(energies)
     kept = sorted(kept, key=lambda c: e[cids.index(c)])
@@ -340,6 +450,8 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
                          n_below_ithr=verdict["n_below_ithr"],
                          n_inversion_window=verdict["n_inversion_window"],
                          verdict=verdict["verdict"],
+                         convergence_class=cls_of[cid],
+                         tighten_converged=bool(fm_of[cid] <= fmax),
                          frequencies_cm_inv=[float(x) for x in nu])
             hess[int(cid)] = rec_h
             if verdict["verdict"] == "saddle" and reject_imaginary:
@@ -353,7 +465,8 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
                 progress("hessian", j + 1, len(hess) + len(saddles))
 
     if not kept:
-        raise RuntimeError(_empty_basin_message(saddles, converged, fmaxes, ithr_cm))
+        raise RuntimeError(_empty_basin_message(saddles, not_certified, converged,
+                                                fmaxes, ithr_cm))
 
     if molecule_dir is not None:
         # Basin i is kept[i]: the survivors in ascending energy, saddles removed. The
@@ -384,6 +497,11 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
         n_graph_changed=int(sum(graph_changed)),
         max_residual_force_eV_A=float(max(fmaxes)),
         fmax_criterion_eV_A=float(fmax),
+        n_converged=int(classes.count("converged")),
+        n_converged_orca_default=int(classes.count("converged_orca_default")),
+        n_converged_second_pass=int(classes.count("converged_second_pass")),
+        n_not_certified=len(not_certified),
+        not_certified=not_certified,
         ithr_cm=float(ithr_cm),
         opt_steps_per_frame=[int(s) for s in steps],
         opt_steps_total=int(sum(steps)),

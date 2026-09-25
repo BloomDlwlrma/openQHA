@@ -9,10 +9,11 @@ UNIT. No CREST, no engine. Held:
     B. `mark_crashed`: writes `_records/branchA.failed` under the run root; a marker already
        on disk (the missing-ensemble path writes its own) is NOT clobbered; `basins.failed`
        is True afterwards and False after `clear_failed` (a success).
-    C. `crest_census._empty_basin_message`: the refusal names the frequency floor and
-       lists every condemned candidate with its below-floor count and lowest frequency,
-       and the tighten's convergence count -- the numbers the Tianhe 2026-09-24 run of
-       dsgdb9nsd_052993 did not print.
+    C. `crest_census._empty_basin_message`: the refusal names the frequency floor or
+       ORCA's default line, each rejection class in its own section -- every condemned
+       candidate with its below-floor count and lowest frequency, every not-certified
+       candidate with its residual -- and the tighten's convergence count: the numbers
+       the Tianhe 2026-09-24 run of dsgdb9nsd_052993 did not print.
     D. `crest_census.census_verdict`: the pure floor screen -- a -6.84 cm^-1 candidate
        (dsgdb9nsd_052993) is a basin with one window mode, a -195.79 cm^-1 candidate is
        a saddle, and the counters are the ones the record carries.
@@ -100,16 +101,21 @@ def main():
                             lowest_frequency_cm_inv=-64.20, energy_eV=-100.0),
                        dict(conformer_id=5, n_imaginary=2, n_below_ithr=2,
                             lowest_frequency_cm_inv=-201.5, energy_eV=-99.5)]
-            msg = crest_census._empty_basin_message(saddles, [True, False, True],
+            not_certified = [dict(conformer_id=7, residual_eV_A=2.7e-2)]
+            msg = crest_census._empty_basin_message(saddles, not_certified,
+                                                    [True, False, True],
                                                     [9.9e-5, 3.3e-4, 1.1e-6], -50.0)
-            check("C: the refusal names the floor, lists every condemned candidate "
-                  "(modes below ithr, lowest frequency, energy) and the tighten's "
-                  "convergence count -- the numbers a reader needs to tell a real saddle "
-                  "from a soft mode at the noise floor",
+            check("C: the two rejection classes have separate sections -- the floor "
+                  "saddles (lowest frequency, energy) and the not-certified candidates "
+                  "(the final residual, against ORCA's named line) -- and the tighten's "
+                  "convergence count is printed",
                   "no basin survives" in msg
                   and "below ithr = -50 cm^-1" in msg
                   and "conformer   2: 1 below ithr, lowest -64.20 cm^-1" in msg
                   and "conformer   5: 2 below ithr, lowest -201.50 cm^-1" in msg
+                  and "1 candidate(s) NOT certified" in msg
+                  and "TolMaxG = 3e-4 Eh/bohr = 1.543e-02 eV/A" in msg
+                  and "conformer   7: residual 2.70e-02 eV/A" in msg
                   and "1 of 3 frame(s) did not reach fmax" in msg
                   and "max residual 3.30e-04" in msg, msg)
 

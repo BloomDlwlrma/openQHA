@@ -134,6 +134,22 @@ def main():
               h0.get("verdict") == "basin" and h0.get("n_below_ithr") == 0
               and h0.get("n_inversion_window") == 0
               and h0.get("lowest_frequency_cm_inv") == min(h0["frequencies_cm_inv"]), h0)
+
+        print("E. the census certified the tighten (ticket 38)")
+        classes = (rec.get("n_converged", 0) + rec.get("n_converged_orca_default", 0)
+                   + rec.get("n_converged_second_pass", 0) + rec.get("n_not_certified", 0))
+        check("the summary counts every class and rejects none",
+              classes == rec.get("n_frames_in") and rec.get("n_not_certified") == 0
+              and rec.get("not_certified") == [],
+              (classes, rec.get("n_frames_in"), rec.get("n_not_certified")))
+        # no second pass runs on a fixture whose residuals are at the repository target;
+        # the class names which line the tighten reached, and `tighten_converged` is the
+        # same statement as "the class is converged" when no pass ran
+        check("the basin's class and tighten_converged answer to the two lines",
+              h0.get("convergence_class") in ("converged", "converged_orca_default")
+              and h0.get("tighten_converged")
+              == (h0.get("convergence_class") == "converged"),
+              (h0.get("convergence_class"), h0.get("tighten_converged")))
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

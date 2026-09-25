@@ -409,7 +409,8 @@ def _locate_reference(mol, rec, ref_frame_index):
                     was_merged=bool(home != cid))
     return dict(basin_index=None, conformer_id=home,
                 note="the reference geometry did not survive the imaginary-frequency "
-                     "screen, or merged into a rejected structure")
+                     "screen or the tighten certification, or merged into a rejected "
+                     "structure")
 
 
 # ======================================================================================
@@ -921,8 +922,10 @@ def write_branch_a_report(record, path):
     r.section("Census: tighten, deduplicate, Hessian")
     for k in ("ithr_cm", "n_frames_from_crest", "n_reference_geometries_pooled",
               "n_input_frames_total", "n_not_converged", "n_graph_changed",
-              "max_residual_force_eV_A", "n_basins_by_repo_criteria",
-              "n_saddle_points_rejected"):
+              "max_residual_force_eV_A",
+              "n_converged", "n_converged_orca_default", "n_converged_second_pass",
+              "n_not_certified",
+              "n_basins_by_repo_criteria", "n_saddle_points_rejected"):
         if k in cv:
             r.kv(k, cv[k])
     r.section("Basins")
