@@ -314,15 +314,18 @@ def n_single_points(out_text):
 
 def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORDS,
                          nprocs=8, maxcore=3000, charge=0, mult=1, stem="job",
-                         timeout_s=None, blocks=""):
+                         timeout_s=None, blocks="", rerun=False):
     """Geometry optimisation plus Hessian at one level, published as the file group
     `<workdir>/<stem>.{inp,out,hess,xyz}` (`_run_job`; `workdir` = `layout.msrrho_dir`,
     `stem` = `layout.orca_level_stem`).
 
     Skips ORCA when `workdir/<stem>.hess` exists and the `.out` terminated normally, so a
-    Batch can be resumed. Returns the relaxed geometry (A), energy (Eh, the last FINAL
-    SINGLE POINT ENERGY of the `.out`), the parsed Hessian record (`parse_hess`), whether the
-    Hessian was analytic or numerical, the wall time, and ORCA's version.
+    Batch can be resumed. `rerun=True` runs anyway and REPLACES the file group: the
+    ticket-39 soft-saddle retry re-runs the same job from the relaxed geometry, and the
+    file group keeps its one meaning -- the basin's final job at this level. Returns the
+    relaxed geometry (A), energy (Eh, the last FINAL SINGLE POINT ENERGY of the `.out`),
+    the parsed Hessian record (`parse_hess`), whether the Hessian was analytic or
+    numerical, the wall time (None when reused), and ORCA's version.
 
     `n_imaginary` counts the entries of ORCA's printed spectrum below -1 cm^-1 -- the
     1 cm^-1 floor of the `CutOffFreq 1.0` pinned in `FREQ_BLOCK` (ORCA 6 manual 7.27),
@@ -339,6 +342,7 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
     out = workdir / (stem + ".out")
     hess = workdir / (stem + ".hess")
     done = hess.is_file() and out.is_file() and TERMINAL in out.read_text(encoding="utf-8", errors="replace")
+    done = done and not rerun
     seconds = None
     if not done:
         rc, seconds, text = _run_job(workdir, stem, input_text(symbols, positions, keywords, nprocs, maxcore,

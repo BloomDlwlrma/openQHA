@@ -189,9 +189,9 @@ def main():
               sub[1]["excluded"] is False and sub[1]["n_below_floor"] == 1
               and sub[1]["dropped_frequencies_cm"] == [-0.5])
         check("every [[Basin]] row carries N_IMAGINARY / N_INVERTED / N_KEPT_NEGATIVE / "
-              "N_BELOW_FLOOR = 0 on a clean molecule",
+              "N_BELOW_FLOOR = 0 and SOFT_SADDLE = false on a clean molecule (ticket 39)",
               all(r["N_IMAGINARY"] == 0 and r["N_INVERTED"] == 0 and r["N_KEPT_NEGATIVE"] == 0
-                  and r["N_BELOW_FLOOR"] == 0 for r in doc["Basin"]))
+                  and r["N_BELOW_FLOOR"] == 0 and r["SOFT_SADDLE"] is False for r in doc["Basin"]))
         check("... and no clean row carries INVERTED_CM / DROPPED_CM (empty lists are absent)",
               all("INVERTED_CM" not in r and "DROPPED_CM" not in r for r in doc["Basin"]))
         # a record written before 2026-09-25 carries the removed policy name: data, not code

@@ -11,11 +11,22 @@ MACE basin exactly once with its status and displacement; the Hessian route is r
 ticket-24 blocks; level_compare states an absent level as PRESENT = false and computes the
 tiers only where both sides exist; on the basins the fixture holds, S_abs at the reference
 level is compared with the declared experiment.
+
+Ticket 39 adds: `relaxation_verdict` on the shared floor classifier (minimum / below-floor
+saddle / window soft saddle, the floor line itself in the window); `relax_with_retry`'s
+branches with a fake `run` (one job on a minimum and on a below-floor saddle; one retry
+from the ORCA-relaxed geometry with `rerun=True` into a minimum or another saddle; a
+stay-saddle retry reported `soft_saddle = true` with the final lowest; no second retry of
+a job already on disk); the merge map's `soft_saddle` / `lowest_frequency_cm` columns and
+the record's SOFT_SADDLE key (false on the clean fixture). The wired ORCA path is
+`tests/integration/t_reference_level_retry.py` (a fake binary, the propanal fixture).
 """
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+import numpy as np
 
 
 def _repo_root():
@@ -29,10 +40,12 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha.thermochem import msrrho_ensemble as me         # noqa: E402
 from openqha.thermochem import reference_level as rl         # noqa: E402
+from openqha.thermochem import thermo                        # noqa: E402
 from openqha.store import dat, layout, property as prop, report   # noqa: E402
 
 SRC = ROOT / "tests" / "data" / "propanal_molecule"
 LEVEL = "wb97m-d3bj_def2-tzvppd"
+ITHIR = thermo.MSRRHO_PRESETS["crest"]["ithr_cm"]
 FAIL = []
 
 
@@ -40,6 +53,24 @@ def check(label, ok, detail=""):
     print("  {:74s} {}".format(label, "ok" if ok else "FAIL " + str(detail)[:200]))
     if not ok:
         FAIL.append(label)
+
+
+def _relax(records):
+    """A `run(positions, rerun)` for `relax_with_retry`: returns `records` in order."""
+    calls = []
+
+    def run(positions, rerun):
+        rec = records[len(calls)]
+        calls.append((np.asarray(positions, dtype=float), bool(rerun), rec))
+        return (dict(seconds=rec["seconds"], positions_A=rec["positions_A"]),
+                dict(lowest_cm_inv=rec["lowest"]))
+
+    return run, calls
+
+
+def _relax_case(records, start=((1.0, 2.0, 3.0),)):
+    run, calls = _relax(records)
+    return rl.relax_with_retry(run, np.asarray(start, dtype=float), ITHIR), calls
 
 
 def main():
@@ -64,14 +95,19 @@ def main():
               sorted(int(r["mace_basin"]) for r in rows) == available)
         check("every row has a status in {kept, merged, saddle} and a displacement RMSD",
               all(r["status"] in ("kept", "merged", "saddle") and r["rmsd_displacement_A"] >= 0 for r in rows))
+        check("merge map rows carry soft_saddle (false here) and the lowest frequency (ticket 39)",
+              all(r["soft_saddle"] is False and r["lowest_frequency_cm"] > 0 for r in rows),
+              [(r["mace_basin"], r["soft_saddle"], r["lowest_frequency_cm"]) for r in rows])
         check("the frequency round-trip on every .hess is below 0.5 cm^-1",
               all(r["roundtrip_cm"] < 0.5 for r in rows), [r["roundtrip_cm"] for r in rows])
         doc = prop.load(layout.level_file(mol, LEVEL, "thermo_msrrho.toml"))
         check("msrrho/thermo/<level>.thermo_msrrho.toml has the ticket-24 blocks (no [Imaginary_Spread]) and LEVEL = " + LEVEL,
               set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result"}
               and doc["Calculation_Info"]["LEVEL"] == LEVEL)
-        check("[Calculation_Info].ITHR_POLICY = invert_below at the reference level (ticket 35)",
+        check("[Calculation_Info].ITHR_POLICY = invert_below at the reference level (tickets 35/39)",
               doc["Calculation_Info"]["ITHR_POLICY"] == "invert_below")
+        check("every [[Basin]] row carries SOFT_SADDLE = false on a clean molecule (ticket 39)",
+              all(r["SOFT_SADDLE"] is False for r in doc["Basin"]))
         check("the Report ends with the terminal line",
               report.terminated_normally(layout.level_file(mol, LEVEL, "thermo_msrrho.out"), "thermo_msrrho"))
         res = doc["Result"]
@@ -117,6 +153,54 @@ def main():
         check("level_compare.toml starts with [Calculation_Status]; report ends with its terminal line",
               next(iter(cdoc)) == "Calculation_Status"
               and report.terminated_normally(layout.thermo_file(mol, "level_compare.out"), "level_compare"))
+
+        # ---- ticket 39: the soft-saddle retry ---------------------------------------
+        print("      ticket 39: the retry is decided on the shared floor classifier")
+        for lowest, want in ((131.14, "minimum"), (0.0, "minimum"), (-0.5, "soft_saddle"),
+                             (-6.84, "soft_saddle"), (ITHIR, "soft_saddle"),
+                             (ITHIR - 1e-9, "saddle"), (-195.79, "saddle")):
+            check("relaxation_verdict(%+.2f, ithr) = %s" % (lowest, want),
+                  rl.relaxation_verdict(lowest, ITHIR) == want, rl.relaxation_verdict(lowest, ITHIR))
+        check("a preset with no floor has no window: a negative mode is a saddle, never a retry",
+              rl.relaxation_verdict(-6.84, None) == "saddle"
+              and rl.relaxation_verdict(12.0, None) == "minimum")
+
+        clean = [dict(lowest=131.14, seconds=100.0, positions_A=[[1.0, 2.0, 3.0]])]
+        step, calls = _relax_case(clean)
+        check("a minimum: one job, no retry, verdict minimum, no soft flag",
+              len(calls) == 1 and calls[0][1] is False and step["verdict"] == "minimum"
+              and step["retried"] is False and step["soft_saddle"] is False)
+        below = [dict(lowest=-195.79, seconds=100.0, positions_A=[[1.0, 0.0, 0.0]])]
+        step, calls = _relax_case(below)
+        check("a saddle below the floor: excluded as today, no retry, no soft flag",
+              len(calls) == 1 and step["verdict"] == "saddle" and step["retried"] is False
+              and step["soft_saddle"] is False)
+        to_min = [dict(lowest=-6.84, seconds=100.0, positions_A=[[1.0, 2.0, 3.0]]),
+                  dict(lowest=128.5, seconds=105.0, positions_A=[[4.0, 5.0, 6.0]])]
+        step, calls = _relax_case(to_min)
+        check("a window saddle: the retry starts from the ORCA-relaxed geometry with rerun=True",
+              len(calls) == 2 and calls[1][1] is True
+              and np.allclose(calls[1][0], [[1.0, 2.0, 3.0]], atol=1e-12), calls[1][0].tolist())
+        check("... and a retry into a minimum enters normally (no soft flag)",
+              step["verdict"] == "minimum" and step["retried"] is True
+              and step["soft_saddle"] is False and step["record"]["seconds"] == 105.0)
+        still = [dict(lowest=-6.84, seconds=100.0, positions_A=[[1.0, 2.0, 3.0]]),
+                 dict(lowest=-5.2, seconds=105.0, positions_A=[[1.0, 2.0, 3.0]])]
+        step, calls = _relax_case(still)
+        check("a retry that stays a soft saddle: soft_saddle = true and the final lowest",
+              len(calls) == 2 and step["verdict"] == "soft_saddle" and step["soft_saddle"] is True
+              and step["record"]["seconds"] == 105.0
+              and step["roundtrip"]["lowest_cm_inv"] == -5.2)
+        drops = [dict(lowest=-6.84, seconds=100.0, positions_A=[[1.0, 2.0, 3.0]]),
+                 dict(lowest=-61.68, seconds=105.0, positions_A=[[1.0, 2.0, 3.0]])]
+        step, calls = _relax_case(drops)
+        check("a retry that ends below the floor is a plain saddle (soft false), still retried",
+              len(calls) == 2 and step["verdict"] == "saddle" and step["retried"] is True
+              and step["soft_saddle"] is False)
+        reused = [dict(lowest=-6.84, seconds=None, positions_A=[[1.0, 2.0, 3.0]])]
+        step, calls = _relax_case(reused)
+        check("a job already on disk (seconds None, a Batch resume) is not retried again",
+              len(calls) == 1 and step["retried"] is False and step["soft_saddle"] is True)
     if FAIL:
         print("FAIL: " + ", ".join(FAIL))
         sys.exit(1)

@@ -10,6 +10,7 @@ is run on the survivors, and a merge map says where every MACE basin landed:
 
     merge_map.dat   mace_basin  reference_basin (or -1)  status  rmsd_displacement_A
                     rmsd_to_representative_A  energy_eh  n_imaginary  hessian_route
+                    ...  lowest_frequency_cm  soft_saddle
 
 `status` is `kept` (the basin is a reference basin), `merged` (it relaxed into another
 reference basin: the same minimum at this level), or `saddle` (an imaginary mode at the
@@ -17,6 +18,15 @@ relaxed geometry: excluded from the reference ensemble, and a topology disagreem
 worth a label later). The RMSD before is MACE geometry -> its own relaxed geometry
 (the geometry shift of the level); the RMSD after is relaxed geometry -> the kept
 representative it merged into (0 for a kept basin).
+
+Ticket 39, the same-method rule: a relaxation that ends with its lowest mode inside the
+inversion window [ithr, 0) is re-optimised once from the ORCA-relaxed geometry before
+any verdict -- a frequency is interpreted only at a stationary point of the method that
+produced it. The retry replaces the basin's file group (same stem, no new convention). A
+retry that reaches a minimum enters normally; one that does not is excluded, listed and
+marked `soft_saddle = true`, with the lowest frequency it ended on. A saddle below the
+floor is excluded as before. `lowest_frequency_cm` is ORCA's own lowest vibrational mode
+-- the number the classification used; `roundtrip_cm` says how far it is from ours.
 
 Engine files: `msrrho/orca.<level>.basinNN.{inp,out,hess,xyz}` (a file group, ticket 09b).
 Records: `msrrho/thermo/<level>.thermo_msrrho.{out,toml}` (ticket-24 shape) and
@@ -107,6 +117,75 @@ COMPARE_SCHEMA = {
 }
 
 
+# ====================================================================== the retry
+def relaxation_verdict(lowest_cm, ithr_cm):
+    """The reference level's reading of one relaxed basin, from its lowest vibrational
+    mode and the shared floor classifier (ticket 39; `thermo.floor_verdict`, the rule
+    the census screen applies).
+
+    `minimum`      every mode is positive: the basin enters normally.
+    `saddle`       the lowest mode is below the floor: a true saddle. No retry; excluded
+                   and listed as before.
+    `soft_saddle`  the lowest mode lies in the inversion window [ithr, 0): the relaxation
+                   had not arrived at a stationary point of the method, so the basin is
+                   re-optimised once from its relaxed geometry before any verdict.
+
+    A preset with no floor has no inversion window (`grimme2012`): any negative mode is a
+    saddle.
+    """
+    if ithr_cm is None:
+        return "minimum" if lowest_cm >= 0.0 else "saddle"
+    return {"clean": "minimum", "below_floor": "saddle",
+            "window": "soft_saddle"}[thermo.floor_verdict(lowest_cm, ithr_cm)]
+
+
+def relax_with_retry(run, start, ithr_cm):
+    """One basin's reference-level ORCA step, with ticket 39's retry: a soft saddle is
+    re-optimised once from the ORCA-relaxed geometry before any verdict (the same-method
+    rule -- frequencies are read only at a stationary point of that method).
+
+    `run(positions, rerun)` performs one Opt+Freq job and returns `(record, roundtrip)`;
+    production binds `orca.optimise_and_hessian` to the basin's stem (`rerun=True`
+    replaces the file group, no new engine-file convention) and
+    `orca.verify_hess_frequencies` to the check. The verdict on the final spectrum is
+    reported with `soft_saddle = True` when the basin still lies in the window (a retry
+    that clears it enters normally; one that settles below the floor is a plain saddle,
+    its reason saying it was retried). A job already on disk (`seconds is None`) is not
+    re-run: a Batch that resumes reads the job it produced, so the retry costs one
+    geometry pass per basin and a rerun costs none.
+    """
+    start = np.asarray(start, dtype=float)
+    record, roundtrip = run(start, False)
+    verdict = relaxation_verdict(roundtrip["lowest_cm_inv"], ithr_cm)
+    retried = False
+    if verdict == "soft_saddle" and record["seconds"] is not None:
+        record, roundtrip = run(np.asarray(record["positions_A"], dtype=float), True)
+        verdict = relaxation_verdict(roundtrip["lowest_cm_inv"], ithr_cm)
+        retried = True
+    return dict(record=record, roundtrip=roundtrip, verdict=verdict, retried=retried,
+                soft_saddle=verdict == "soft_saddle")
+
+
+#: The merge map's columns, in the column-comment form of ADR 0003 (amendment 2026-09-16).
+MERGE_MAP_SCHEMA = {
+    "mace_basin": ("Integer", None, "the branch A basin (the key of the row)"),
+    "reference_basin": ("Integer", None, "the reference basin it landed on, or -1 for a saddle"),
+    "status": ("String", None, "kept (a reference basin), merged (into another), saddle (excluded)"),
+    "rmsd_displacement_A": ("Double", "A", "the geometry shift: MACE geometry -> relaxed geometry"),
+    "rmsd_to_representative_A": ("Double", "A", "relaxed geometry -> the kept representative it merged into (0 for kept; NA for a saddle)"),
+    "energy_eh": ("Double", "Eh", "the last FINAL SINGLE POINT ENERGY of the job"),
+    "n_imaginary": ("Integer", None, "ORCA's printed modes below -1 cm^-1 (the CutOffFreq floor)"),
+    "hessian_route": ("String", None, "analytic or numerical, as the .out says"),
+    "roundtrip_cm": ("Double", "cm^-1", "max deviation of our projection from ORCA's printed frequencies"),
+    "noise_floor_cm": ("Double", "cm^-1", "largest |eigenvalue| of the unprojected rigid-body block"),
+    "opt_grad_rms": ("Double", "Eh/bohr", "final RMS gradient of the optimisation"),
+    "n_single_points": ("Integer", None, "energy evaluations the ORCA job spent"),
+    "seconds": ("Double", "s", "wall time of the job (NA when a finished job was reused)"),
+    "lowest_frequency_cm": ("Double", "cm^-1", "ORCA's lowest vibrational mode: the number the minimum/saddle verdict used"),
+    "soft_saddle": ("Boolean", None, "excluded as a soft saddle: that lowest mode lies in the inversion window [ithr, 0) (ticket 39)"),
+}
+
+
 # ====================================================================== reference level
 def _mol_with_conformers(smiles, symbols, geometries):
     """An RDKit molecule in branch A's atom order (SMILES -> AddHs) carrying one
@@ -134,6 +213,11 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     """Re-optimise and Hessian every branch A basin (or the subset `basins`) at `level`,
     re-deduplicate, assemble, write the merge map and the level's thermo_msrrho record.
     ORCA is skipped for a basin whose engine folder already holds a finished job.
+
+    A basin the optimisation leaves with its lowest mode inside the inversion window is
+    re-optimised once from the relaxed geometry (ticket 39) before the minimum/saddle
+    verdict; a retry that stays a saddle is recorded `soft_saddle = true`.
+
     `keywords` / `blocks` default to `orca.LEVELS[level]`; `start_from` names another
     level whose relaxed geometries are the starting points (a numerical optimisation
     starts better from the wB97M minimum than from the MACE one; the MACE basin index is
@@ -162,6 +246,9 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     info_a = doc.get("Calculation_Info") or {}
     T = float(temperature_K if temperature_K is not None else info_a.get("TEMPERATURE", thermo.T_REF))
     qid = qm9_index if qm9_index is not None else info_a.get("QM9_INDEX")
+    # the floor the classification and the thermochemistry share (tickets 35/39): the
+    # preset's ithr, CREST's -50 cm^-1 for `crest`
+    ithr_cm = thermo.MSRRHO_PRESETS[preset]["ithr_cm"]
     rows = {int(r["INDEX"]): r for r in branch_a_property.basin_rows(doc)}
     files = {int(p.parent.name[len("basin"):]): p for p in basins_mod.basin_files(molecule)}
     wanted = sorted(files) if basins is None else [int(b) for b in basins]
@@ -176,15 +263,21 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
         g_prime = {int(r["INDEX"]): (int(r["G_PRIME"]), str(r["G_PRIME_SOURCE"]))
                    for r in prop.load(deg_path).get("Basin", [])}
 
-    # ---- ORCA per basin ------------------------------------------------------------
+    # ---- ORCA per basin (ticket 39: a soft saddle is retried once) --------------------
     relaxed = []
     for b in wanted:
         atoms = read(str(files[b]), format="extxyz")
         start = starts.get(b, atoms.get_positions())
-        r = orca.optimise_and_hessian(atoms.get_chemical_symbols(), start, layout.msrrho_dir(molecule),
-                                      stem=layout.orca_level_stem(level, b),
-                                      keywords=keywords, nprocs=nprocs, maxcore=maxcore, blocks=blocks)
-        rt = orca.verify_hess_frequencies(r["hess"])
+
+        def _job(positions, rerun, symbols=atoms.get_chemical_symbols(),
+                 stem=layout.orca_level_stem(level, b)):
+            r = orca.optimise_and_hessian(symbols, positions, layout.msrrho_dir(molecule),
+                                          stem=stem, keywords=keywords, nprocs=nprocs,
+                                          maxcore=maxcore, blocks=blocks, rerun=rerun)
+            return r, orca.verify_hess_frequencies(r["hess"])
+
+        step = relax_with_retry(_job, start, ithr_cm)
+        r, rt = step["record"], step["roundtrip"]
         pos_mace = atoms.get_positions()
         pos_ref = np.asarray(r["positions_A"])
         # the noise floor of the Hessian: the rigid-body block of the unprojected matrix,
@@ -198,6 +291,8 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
                             hessian=orca.hessian_to_ev_per_angstrom2(r["hess"]["hessian_eh_bohr2"]),
                             n_imaginary=r["n_imaginary"], hessian_route=r["hessian_route"],
                             roundtrip_cm=float(rt["max_deviation_cm_inv"]),
+                            lowest_cm=float(rt["lowest_cm_inv"]), verdict=step["verdict"],
+                            soft_saddle=bool(step["soft_saddle"]), retried=bool(step["retried"]),
                             noise_floor_cm=noise_floor, opt_grad_rms=r.get("opt_grad_rms"),
                             n_single_points=r.get("n_single_points"),
                             rmsd_displacement=degeneracy.kabsch_rmsd(pos_mace, pos_ref),
@@ -205,8 +300,8 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
                             orca_version=r["orca_version"], seconds=r["seconds"]))
 
     # ---- re-deduplicate with branch A's rule ----------------------------------------
-    minima = [x for x in relaxed if x["n_imaginary"] == 0]
-    saddles = [x for x in relaxed if x["n_imaginary"] > 0]
+    minima = [x for x in relaxed if x["verdict"] == "minimum"]
+    saddles = [x for x in relaxed if x["verdict"] != "minimum"]
     kept_map = {}
     if minima:
         mol, cids = _mol_with_conformers(info_a.get("SMILES"), minima[0]["symbols"],
@@ -226,7 +321,7 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     # ---- merge map ------------------------------------------------------------------
     merge_rows = []
     for x in relaxed:
-        if x["n_imaginary"] > 0:
+        if x["verdict"] != "minimum":
             status, rb, rmsd_after = "saddle", -1, None
         else:
             rb = kept_map[x["mace_basin"]]
@@ -239,9 +334,11 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
                                n_imaginary=x["n_imaginary"], hessian_route=x["hessian_route"],
                                roundtrip_cm=x["roundtrip_cm"], noise_floor_cm=x["noise_floor_cm"],
                                opt_grad_rms=x["opt_grad_rms"], n_single_points=x["n_single_points"],
-                               seconds=x["seconds"]))
+                               seconds=x["seconds"], lowest_frequency_cm=x["lowest_cm"],
+                               soft_saddle=x["soft_saddle"]))
     layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
-    dat.write_table(layout.level_file(molecule, level, "merge_map.dat"), merge_rows)
+    dat.write_table(layout.level_file(molecule, level, "merge_map.dat"), merge_rows,
+                    list(MERGE_MAP_SCHEMA), MERGE_MAP_SCHEMA)
 
     # ---- assembly on the reference basins -------------------------------------------
     ref_basins = []
@@ -260,10 +357,23 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
         rec["n_single_points"] = x["n_single_points"]
         ref_basins.append(rec)
     for x in saddles:
+        if x["soft_saddle"]:
+            reason = ("soft saddle at {}: lowest mode {:+.2f} cm^-1 inside the inversion "
+                      "window [ithr = {:g}, 0){}".format(
+                          level, x["lowest_cm"], ithr_cm,
+                          "; retried once from the relaxed geometry" if x["retried"]
+                          else "; the finished job on disk was not re-run"))
+        elif x["retried"]:
+            reason = ("saddle at {}: lowest mode {:+.2f} cm^-1 below the floor "
+                      "(ithr = {:g}); retried once from the relaxed geometry".format(
+                          level, x["lowest_cm"], ithr_cm))
+        else:
+            reason = "saddle at {}: {} imaginary mode(s)".format(level, x["n_imaginary"])
         rec = dict(index=len(ref_basins) + saddles.index(x) + 100, excluded=True,
-                   excluded_reason="saddle at {}: {} imaginary mode(s)".format(level, x["n_imaginary"]),
+                   excluded_reason=reason,
                    E_el_kcal=x["energy_eV"] * me.EV_TO_KCAL, sigma=x["sigma_mace"], g0=x["g0"],
-                   g_prime=1, g_prime_source="saddle", lowest_frequency_cm=float("nan"),
+                   n_imaginary=int(x["n_imaginary"]), g_prime=1, g_prime_source="saddle",
+                   lowest_frequency_cm=float(x["lowest_cm"]), soft_saddle=bool(x["soft_saddle"]),
                    mace_basin=x["mace_basin"])
         ref_basins.append(rec)
     ens = me.assemble(ref_basins, T, ptot)
@@ -274,8 +384,9 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
             "LEVEL": str(level), "ENGINE": "ORCA {} ({})".format(relaxed[0]["orca_version"], keywords),
             "PRESET": preset, "TAU": float(thermo.MSRRHO_PRESETS[preset]["tau_cm"]),
             "ROTOR_CAP_RULE": str(thermo.MSRRHO_PRESETS[preset]["rotor_cap"]),
-            "ITHR_POLICY": "invert_below", "FSCAL": 1.0, "TEMPERATURE": T, "PRESSURE": float(thermo.P_STD),
-            "REFERENCE_BASIN": ens["reference_basin"], "PTOT": float(ptot), "EXTRAPOLATION": "none"}
+            "ITHR_POLICY": thermo.PRODUCTION_POLICY, "FSCAL": 1.0, "TEMPERATURE": T,
+            "PRESSURE": float(thermo.P_STD), "REFERENCE_BASIN": ens["reference_basin"],
+            "PTOT": float(ptot), "EXTRAPOLATION": "none"}
     me.write_records(molecule, level, info, ref_basins, ens, spread, exp)
     out = dict(ens)
     out.update(basins=ref_basins, merge_map=merge_rows, info=info, experimental=exp,

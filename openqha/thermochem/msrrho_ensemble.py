@@ -93,6 +93,7 @@ SCHEMA = {
         "N_BELOW_FLOOR": ("Integer", None, "modes with |omega| < 1 cm^-1 dropped from every sum (ORCA CutOffFreq)"),
         "INVERTED_CM": ("ArrayOfDoubles", "cm^-1", "the inverted modes (ithr <= omega < 0); absent when none"),
         "DROPPED_CM": ("ArrayOfDoubles", "cm^-1", "the dropped modes (|omega| < 1 cm^-1); absent when none"),
+        "SOFT_SADDLE": ("Boolean", None, "excluded as a soft saddle: the relaxed lowest mode lies in the inversion window [ithr, 0) at the reference level (ticket 39)"),
         "EXCLUDED": ("Boolean", None, "left out of the ensemble (lowest mode below ithr, unprojected signature, or a policy the preset cannot apply)"),
         "HESSIAN_ROUTE": ("String", None, "analytic or numerical (reference levels)"),
         "NOISE_FLOOR_CM": ("Double", "cm^-1", "largest |eigenvalue| of the rigid-body block of the unprojected Hessian: 5-30 cm^-1 analytic at a tight minimum (residual gradient in the rotational block), plus the finite-difference noise of a numerical one"),
@@ -337,7 +338,8 @@ def write_records(molecule, level, info, basins, ens, spread, exp, extra_blocks=
                "N_BELOW_FLOOR": b.get("n_below_floor", 0),
                "INVERTED_CM": b.get("inverted_frequencies_cm") or None,
                "DROPPED_CM": b.get("dropped_frequencies_cm") or None,
-               "EXCLUDED": bool(b["excluded"]), "POPULATION": b.get("population", 0.0),
+               "EXCLUDED": bool(b["excluded"]), "SOFT_SADDLE": bool(b.get("soft_saddle", False)),
+               "POPULATION": b.get("population", 0.0),
                "HESSIAN_ROUTE": b.get("hessian_route"), "NOISE_FLOOR_CM": b.get("noise_floor_cm"),
                "OPT_GRAD_RMS": b.get("opt_grad_rms"), "N_SINGLE_POINTS": b.get("n_single_points")}
         if not b["excluded"]:
