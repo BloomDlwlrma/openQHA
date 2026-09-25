@@ -296,7 +296,7 @@ def _empty_basin_message(saddles, not_certified, converged, fmaxes, ithr_cm):
 
 def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.30,
                        temperature_K=298.15, do_hessian=True,
-                       reject_imaginary=True, ithr_cm=ITHR_CM_DEFAULT, species=None,
+                       ithr_cm=ITHR_CM_DEFAULT, species=None,
                        comments=None, max_opt_steps=2000, progress=None,
                        hessian_mode=HESSIAN_MODE_DEFAULT,
                        ethr_kcal=conformers.CREGEN_ETHR_KCAL,
@@ -454,7 +454,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
                          tighten_converged=bool(fm_of[cid] <= fmax),
                          frequencies_cm_inv=[float(x) for x in nu])
             hess[int(cid)] = rec_h
-            if verdict["verdict"] == "saddle" and reject_imaginary:
+            if verdict["verdict"] == "saddle":
                 saddles.append(dict(conformer_id=int(cid),
                                     n_imaginary=int(hr["n_imaginary"]),
                                     n_below_ithr=verdict["n_below_ithr"],
@@ -781,8 +781,8 @@ def saturation_curve(membership, n_global):
 
 
 # ======================================================================================
-# 5. Two pieces the batch workflow needs: tightening alone, and the imaginary-frequency
-#    filter alone
+# 5. Two pieces the batch workflow needs: tightening alone, and the frequency-floor
+#    screen alone
 # ======================================================================================
 # `census_from_frames` binds "tighten -> deduplicate -> Hessian" into one step, which is
 # enough for a single species.
@@ -821,38 +821,58 @@ def tighten_frames(smiles, frames, calc, fmax=1e-4, max_opt_steps=2000, progress
     return rec, [conformers._mol_to_atoms(mol, c) for c in cids], energies
 
 
-def hessian_screen(basins, calc, reject_imaginary=True, progress=None,
+def hessian_screen(basins, calc, ithr_cm=ITHR_CM_DEFAULT, progress=None,
                    mode=HESSIAN_MODE_DEFAULT):
-    """One Hessian plus Eckart projection per basin, counting imaginary frequencies.
+    """One Hessian plus Eckart projection per basin, and the **frequency floor** decides
+    (tickets 37 and 41) -- the same rule `census_from_frames` applies, the pure
+    `census_verdict` reached once and reused, not a second definition.
 
-    Returns (a record per basin, the surviving indices, records of the saddle points thrown
-    out).
-    **A small gradient is not a minimum** -- a saddle point has zero gradient too. Package 2
-    caught a -195.79 cm^-1 cyclopropanol saddle point sitting in a basin list because of
-    this.
+    A candidate whose lowest projected mode lies in the inversion window [ithr, 0) is
+    a Basin, kept and carrying its lowest frequency and window count (the production
+    thermochemistry inverts the mode); only a lowest mode strictly below ithr is a
+    saddle -- not invertible -- so it is thrown out of the basin list and recorded
+    separately, listed with its below-floor count and lowest frequency. Thrown out,
+    not accommodated by relaxing the criterion.
+
+    `ithr_cm` is the floor. The batch driver passes the configured
+    `cfg["package2"]["ithr_cm"]`; with nothing passed, the default is the `crest`
+    preset's own value (one unit test holds them equal), so the census and the
+    thermochemistry cannot drift apart. No literal floor lives in this function.
+
+    **A small gradient is not a minimum** -- a saddle point has zero gradient too.
+    Package 2 caught a -195.79 cm^-1 cyclopropanol saddle point sitting in a basin
+    list because of this.
 
     `mode` defaults to "analytic" (defect 64 / D0-P1-47). The finite-difference
     path is still reachable, and whichever was used is written into every record
     under `hessian_mode`.
+
+    Returns (a record per basin, the surviving indices, records of the saddle points
+    thrown out).
     """
     recs, keep, saddles = [], [], []
     for i, atoms in enumerate(basins):
         h, asym = hessian.hessian(atoms, calc, mode=mode)
         hr = hessian.project_and_diagonalise(h, atoms.get_masses(), atoms.get_positions())
         nu = np.asarray(hr["frequencies_cm_inv"], dtype=float)
+        verdict = census_verdict(nu, ithr_cm)
         r = dict(index=i, n_imaginary=int(hr["n_imaginary"]),
                  hessian_mode=mode,
                  n_rigid_modes_removed=int(hr["n_rigid_modes_removed"]),
                  separation_gap_ratio=hr.get("separation_gap_ratio"),
                  hessian_asymmetry_eV_A2=float(asym),
-                 lowest_frequency_cm_inv=float(nu.min()),
+                 lowest_frequency_cm_inv=verdict["lowest_frequency_cm_inv"],
+                 n_below_ithr=verdict["n_below_ithr"],
+                 n_inversion_window=verdict["n_inversion_window"],
+                 verdict=verdict["verdict"],
                  frequencies_cm_inv=[float(x) for x in nu])
         recs.append(r)
-        if hr["n_imaginary"] == 0 or not reject_imaginary:
+        if verdict["verdict"] == "basin":
             keep.append(i)
         else:
             saddles.append(dict(index=i, n_imaginary=int(hr["n_imaginary"]),
-                                lowest_frequency_cm_inv=float(nu.min())))
+                                n_below_ithr=verdict["n_below_ithr"],
+                                lowest_frequency_cm_inv=verdict["lowest_frequency_cm_inv"]))
         if progress is not None:
             progress(i + 1, len(basins))
     return recs, keep, saddles

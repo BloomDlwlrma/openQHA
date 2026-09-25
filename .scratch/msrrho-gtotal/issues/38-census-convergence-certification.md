@@ -20,12 +20,12 @@ Notes:
 - The record shape follows the user's ruling of 2026-09-25: the census hessian record carries `convergence_class` + `tighten_converged` (final residual at or below `fmax`); the top level carries the four class counts and the `not_certified` list; no per-frame arrays, no ORCA-line value at the record top, `branchA.toml` untouched.
 - The refusal prints each rejection section only when its list is non-empty (message test C holds the two-section form; D holds a refusal where nothing was floor-screened).
 
-## Review record (2026-09-25): additions beyond this ticket's text — dispositions OPEN
+## Review record (2026-09-25): additions beyond this ticket's text — closed 2026-09-25: accepted, default keep
 
 The two-axis review (Standards / Spec) of this change set raised the following judgement
-calls. None blocks the acceptance criteria; the keep/revert decision is the user's and is
-**open** (ticket 37's record is the pattern). This table is the implementer's
-recommendation, not a ruling.
+calls. None blocks the acceptance criteria; **the user accepted every row below on
+2026-09-25 (default keep)** — the rows stand as committed, ticket 37's record is the
+pattern, and a revert of any row is mechanical where its "where" column points.
 
 | # | addition / finding | where | basis | recommendation |
 |---|--------------------|-------|-------|----------------|

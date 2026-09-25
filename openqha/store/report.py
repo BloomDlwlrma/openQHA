@@ -11,7 +11,7 @@ products contain two kinds of thing with entirely different natures:
 
 | Content | Example | The form that suits it |
 |---|---|---|
-| **Narrative and provenance**: settings, criteria, what happened, verdicts | the engine and its SHA-256, the CREST version, "anything with a non-zero imaginary frequency is thrown out" | **`.log`** -- banner, sections, aligned tables, units in the header |
+| **Narrative and provenance**: settings, criteria, what happened, verdicts | the engine and its SHA-256, the CREST version, "a mode below the frequency floor ithr is thrown out" | **`.log`** -- banner, sections, aligned tables, units in the header |
 | **Large amounts of homogeneous numbers** | 4000 molecules x several basins each x 3N-6 frequencies per basin | **parquet** -- one line to read into pandas, no scrolling in a text editor |
 
 **JSON is not deleted; it is demoted to an archive.** Three reasons:

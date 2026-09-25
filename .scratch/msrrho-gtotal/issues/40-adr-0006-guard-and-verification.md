@@ -169,12 +169,13 @@ all 78 test(s) passed
 own conformer id — came after this transcript; the test was re-run standalone after it:
 `py_compile` clean and PASS, the check set identical.)
 
-## Review record (2026-09-25): the two-axis review of this change set — dispositions OPEN
+## Review record (2026-09-25): the two-axis review of this change set — closed 2026-09-25: accepted, default keep
 
 The two-axis review (Standards / Spec) of the working-tree change set raised the findings
-below. The acceptance criteria are paid; the keep/revert of each judgement call is the
-user's and is **open** (the tickets-37/38 record is the pattern). This table is the
-implementer's recommendation, not a ruling.
+below. The acceptance criteria are paid; **the user accepted every row below on 2026-09-25
+(default keep)** — the fixed rows stand as fixed, the judgement calls stand as committed,
+and a revert of any row is mechanical at the location its "where" column names (tickets
+37/38's records are the pattern).
 
 | # | finding | where | basis | disposition |
 |---|---------|-------|-------|-------------|

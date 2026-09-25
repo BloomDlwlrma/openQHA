@@ -96,16 +96,25 @@ from openqha import (S0_ROOT, config, conformers, crest, crest_census, engine,
 
 CFG = config.load()
 P1 = config.package(1, CFG)
+P2 = config.package(2, CFG)
 CB = P1["crest_batch"]
 C = CFG["crest"]
 T_REF = config.temperature(CFG)
 
+#: The frequency floor the batch screen applies (ticket 41): the configured value,
+#: `package2.ithr_cm` -- the same number `MSRRHO_PRESETS["crest"].ithr_cm` carries
+#: (a unit test holds them equal), so the screen and the thermochemistry cannot drift.
+ITHR_CM = float(P2["ithr_cm"])
+
 FULL_RANGE = tuple(P1["qm9_range"])
 CHUNK = (FULL_RANGE[0], FULL_RANGE[0] + int(P1["chunk_size"]) - 1)
 DEDUP_A = float(P1["dedup_rmsd_A"])
-FMAX_COARSE = float(P1["fmax_census_eV_A"])
-FMAX_TIGHT = float(CB["tighten_fmax_eV_A"])
-ORDER_SEED = int(CB["order_seed"])
+# These three keys live outside `crest_batch` since the configuration split (it carries
+# only the batch's own settings -- scratch, timeout, parallelism), and these reads named
+# the pre-split layout: the module could not even be imported until ticket 41 fixed them.
+FMAX_COARSE = float(P1["etkdg_retired"]["fmax_census_eV_A"])
+FMAX_TIGHT = float(P1["tighten_fmax_eV_A"])
+ORDER_SEED = int(P1["order_seed"])
 
 # Result root: the user specified `{root}/result-s0tf_1_16000/1_4000` on 2026-08-31.
 # The root is overridable by S0_RESULT_ROOT (pointed at shared storage on a cluster); the default stays under analysis/ in the repository.
@@ -380,7 +389,7 @@ def _slim(rec):
     keep = ("qm9_index", "smiles", "n_conformers_reported_by_crest", "n_basins",
             "n_basins_crest_only", "n_basins_etkdg_only", "n_basins_both",
             "n_saddles_rejected", "conformational_correction_kcal",
-            "total_seconds", "analysis_seconds")
+            "total_seconds", "analysis_seconds", "ithr_cm")
     out = {k: rec.get(k) for k in keep}
     out["crest_seconds"] = (rec.get("crest_run") or {}).get("seconds")
     out["crest_reused"] = (rec.get("crest_run") or {}).get("reused_scratch", False)
@@ -447,9 +456,16 @@ def analyse_one(qid, smiles, workdir, calc, start_info, run_rec, do_hessian=True
                                             threshold_A=DEDUP_A)
     hess, keep, saddles = ([], list(range(len(pooled))), [])
     if do_hessian:
-        hess, keep, saddles = crest_census.hessian_screen(pooled, calc)
+        hess, keep, saddles = crest_census.hessian_screen(pooled, calc, ithr_cm=ITHR_CM)
     if not keep:
-        raise RuntimeError("no basin survives pooling, deduplication and the imaginary-frequency filter")
+        lines = ["no basin survives the pooling, the deduplication and the "
+                 "frequency-floor screen (ithr = {:g} cm^-1) -- refusing to report an "
+                 "empty basin list".format(ITHR_CM)]
+        for s in saddles:
+            lines.append("    pooled candidate {:>3}: {} mode(s) below ithr, lowest "
+                         "{:+.2f} cm^-1".format(s["index"], s["n_below_ithr"],
+                                                s["lowest_frequency_cm_inv"]))
+        raise RuntimeError("\n".join(lines))
 
     e_pool = np.asarray(gb["global_energies_eV"])[keep]
     order = np.argsort(e_pool)
@@ -485,6 +501,7 @@ def analyse_one(qid, smiles, workdir, calc, start_info, run_rec, do_hessian=True
                      global_relative_kcal=list(gb["global_relative_kcal"])),
         hessian_all_pooled=hess, n_saddles_rejected=len(saddles), saddles=saddles,
         basin_hessian=[hess[i] for i in keep] if hess else [],
+        ithr_cm=ITHR_CM,
         n_basins=len(keep),
         basin_energies_eV=[float(x) for x in e_pool],
         basin_relative_kcal=[float(x) for x in rel],

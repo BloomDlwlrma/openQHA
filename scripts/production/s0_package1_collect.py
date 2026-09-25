@@ -42,8 +42,8 @@ from openqha import S0_ROOT, record, report
 #: The molecule-level columns (everything else is basin-level). Used with drop_duplicates to split out the molecule table.
 BASIN_COLS = ("basin", "energy_eV", "relative_kcal", "provenance",
               "boltzmann_weight", "n_imaginary", "n_rigid_modes_removed",
-              "lowest_frequency_cm_inv", "hessian_asymmetry_eV_A2",
-              "frequencies_cm_inv")
+              "lowest_frequency_cm_inv", "n_below_ithr", "n_inversion_window",
+              "hessian_asymmetry_eV_A2", "frequencies_cm_inv")
 
 
 def main():
@@ -140,11 +140,23 @@ def main():
         r.section("criteria")
         r.verdict("every molecule CREST run must have terminated EARLY exactly 0 times",
                   "{} molecule(s) are non-zero".format(int((e > 0).sum())), bool((e > 0).sum() == 0))
-    if "n_imaginary" in basins.columns:
-        im = pd.to_numeric(basins["n_imaginary"], errors="coerce").fillna(0)
-        r.verdict("a structure entering the basin list must have no imaginary frequency",
-                  "{} basin(s) have a non-zero imaginary count".format(int((im > 0).sum())),
-                  bool((im > 0).sum() == 0))
+    if "n_below_ithr" in basins.columns:
+        # a concat of new and pre-floor tables fills the old rows with 0 here, which is
+        # their true reading: the old rule admitted only zero-imaginary basins
+        below = pd.to_numeric(basins["n_below_ithr"], errors="coerce").fillna(0)
+    elif "n_imaginary" in basins.columns:
+        # a table written entirely before the floor rule (2026-09-25): its basins were
+        # admitted only with a zero imaginary count, so that count is the equivalent
+        # reading
+        below = pd.to_numeric(basins["n_imaginary"], errors="coerce").fillna(0)
+    else:
+        below = None
+    if below is not None:
+        r.verdict("a structure entering the basin list must have no mode below the "
+                  "frequency floor ithr (a mode in [ithr, 0) is admitted as an "
+                  "inversion window and inverted by the thermochemistry)",
+                  "{} basin(s) have a mode below ithr".format(int((below > 0).sum())),
+                  bool((below > 0).sum() == 0))
     if "shake_fallback_used" in mols.columns:
         n_fb = int(mols["shake_fallback_used"].notna().sum())
         r.section("SHAKE fallback")

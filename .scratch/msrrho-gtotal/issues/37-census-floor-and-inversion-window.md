@@ -14,3 +14,28 @@ The decision shape came from the prototype (`prototype_imaginary_mode_state_mach
 - [x] The census verdict itself is testable without an engine (pure helper `census_verdict`, built on ticket 35's `floor_verdict` / `n_below_ithr` / `n_in_window`); the wired path stays covered by the MACE integration test.
 
 Notes: the package-1 batch screen (`hessian_screen`, `s0_package1_crest_census.py`) is deliberately untouched — the ticket 34 decision names only `census_from_frames`, and ticket 38 extends that same function. CONTEXT.md redefines **Basin** via the floor and adds **Inversion window**; the branch-A report prints `ithr_cm` and the window counts.
+
+## Review record (2026-09-25): additions beyond this ticket's text — closed 2026-09-25: accepted, default keep
+
+The two-axis review of commit `8b5ed52` found a few fields and phrases that this ticket's
+own text does not name. All of them are in the commit; **the user accepted every row below
+on 2026-09-25 (default keep)**, with one execution: row 7's deferred option was taken in
+ticket 41. This table records the ruling.
+
+| # | addition | where | basis | recommendation |
+|---|----------|-------|-------|----------------|
+| 1 | `verdict` (`basin`/`saddle`) per candidate | census hessian record | prototype row shape; ticket 38 hangs `convergence_class` on the same record | keep |
+| 2 | `n_below_ithr` per Basin (criterion 4 reads it) | branch-A basin record | ticket 34's census bullet lists it; this ticket's line does not | keep |
+| 3 | `ithr_cm` at the census record top level + printed in the report | census record; branchA.out | not named in any ticket; criterion 4 and provenance need it | keep |
+| 4 | `n_below_ithr` per condemned candidate | census `saddles`; refusal message | the prototype's message prints the count | keep |
+| 5 | `ITHR_KEY` (no code reads it) | `crest_census.py` | mirrors the existing `FMAX_KEY` / `DEDUP_KEY` | keep |
+| 6 | `ithr_cm` default = the `crest` preset's value | `crest_census.py` | ticket 34 says "read from the package2 config section"; this avoids a third copy of −50 | keep |
+| 7 | `reject_imaginary` parameter kept; production stopped passing it | `census_from_frames` | ticket 34's "stops hard-coding the old flag" is met in the caller | accepted; the deferred option was taken — deleted in ticket 41 (ruling Q1) |
+| 8 | the refusal header prints the floor value | `_empty_basin_message` | the prototype prints "below ithr" without a value | keep |
+| 9 | README / `docs/branchA_workflow.md` / config headers / property docstrings reworded | commit `8b5ed52` | this ticket names CONTEXT.md only; ticket 34 says the wording follows the floor | keep |
+
+Not done by this ticket: the package-1 batch screen still kept the old "any imaginary
+mode is rejected" rule here — **that was ticket 41, done 2026-09-25**, whose commit wired
+`hessian_screen` to the same floor. A revert of any row above is mechanical; rerun
+`t_branch_a_crash`, `t_branch_a_property`, `t_msrrho_presets` and the MACE integration test
+after it.

@@ -115,7 +115,7 @@ def census_of(smiles, ens_path, calc, cfg, args):
         fmax=float(pkg2["fmax_hessian_eV_A"]),
         threshold_A=float(pkg1["dedup_rmsd_A"]),
         temperature_K=config.temperature(cfg),
-        do_hessian=True, reject_imaginary=True, comments=comments,
+        do_hessian=True, comments=comments,
         hessian_mode=args.hessian_mode,
         ethr_kcal=float(pkg1["dedup_ethr_kcal"]),
         bthr_rel=float(pkg1["dedup_bthr_relative"]))
@@ -219,7 +219,7 @@ def main():
         smiles, pooled, calc,
         fmax=float(cfg["package2"]["fmax_hessian_eV_A"]),
         threshold_A=float(cfg["package1"]["dedup_rmsd_A"]),
-        temperature_K=temperature, do_hessian=True, reject_imaginary=True,
+        temperature_K=temperature, do_hessian=True,
         hessian_mode=args.hessian_mode,
         ethr_kcal=float(cfg["package1"]["dedup_ethr_kcal"]),
         bthr_rel=float(cfg["package1"]["dedup_bthr_relative"]))

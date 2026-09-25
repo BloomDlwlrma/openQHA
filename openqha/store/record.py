@@ -70,6 +70,10 @@ def record_to_rows(rec):
         n_basins_both=rec.get("n_basins_both"),
         n_saddles_rejected=rec.get("n_saddles_rejected"),
         conformational_correction_kcal=rec.get("conformational_correction_kcal"),
+        # the floor the Hessian screen applied (ticket 41): the counters n_below_ithr /
+        # n_inversion_window in the basin rows belong to this number, so it travels
+        # with them into the machine-readable table
+        ithr_cm=rec.get("ithr_cm"),
         weight_of_lowest=pop.get("weight_of_lowest"),
         n_within_1kT=pop.get("n_within_1kT"),
         n_within_5kT=pop.get("n_within_5kT"),
@@ -111,6 +115,8 @@ def record_to_rows(rec):
                  n_imaginary=h.get("n_imaginary"),
                  n_rigid_modes_removed=h.get("n_rigid_modes_removed"),
                  lowest_frequency_cm_inv=h.get("lowest_frequency_cm_inv"),
+                 n_below_ithr=h.get("n_below_ithr"),
+                 n_inversion_window=h.get("n_inversion_window"),
                  hessian_asymmetry_eV_A2=h.get("hessian_asymmetry_eV_A2"),
                  frequencies_cm_inv=[float(x) for x in
                                      (h.get("frequencies_cm_inv") or [])])
@@ -121,6 +127,7 @@ def record_to_rows(rec):
         r.update(basin=None, energy_eV=None, relative_kcal=None, provenance=None,
                  boltzmann_weight=None, n_imaginary=None,
                  n_rigid_modes_removed=None, lowest_frequency_cm_inv=None,
+                 n_below_ithr=None, n_inversion_window=None,
                  hessian_asymmetry_eV_A2=None, frequencies_cm_inv=[])
         rows.append(r)
     return rows
@@ -147,6 +154,10 @@ def write_log(rec, path):
     r.section("criteria and settings")
     r.kv("tighten_fmax_eV_A", rec.get("tighten_fmax_eV_A"))
     r.kv("dedup_threshold_A", rec.get("dedup_threshold_A"))
+    r.kv("ithr_cm", rec.get("ithr_cm"),
+         note="the frequency floor of the Hessian screen: a lowest mode in "
+              "[ithr, 0) is admitted as an inversion window (the thermochemistry "
+              "inverts it); only a lowest mode below ithr is a saddle, thrown out")
     r.kv("temperature_K", rec.get("temperature_K"))
     run = rec.get("crest_run") or {}
     st = run.get("settings") or {}
@@ -196,13 +207,24 @@ def write_log(rec, path):
     r.kv("n_pooled_frames", pool.get("n_pooled_frames"))
     r.kv("n_global_before_hessian", pool.get("n_global_before_hessian"))
     r.kv("n_saddles_rejected", rec.get("n_saddles_rejected"),
-         note="anything with a non-zero imaginary frequency is thrown out (the "
-              "criterion is not relaxed)")
+         note="candidates whose lowest mode lies below the frequency floor ithr are "
+              "thrown out and listed with their below-floor count and lowest "
+              "frequency (the criterion is not relaxed)")
     for s in rec.get("saddles") or []:
-        r.warn("saddle rejected: index {} has {} imaginary frequency/frequencies, "
-               "lowest {:.2f} cm^-1".format(
-            s.get("index"), s.get("n_imaginary"),
-            s.get("lowest_frequency_cm_inv") or float("nan")))
+        if s.get("n_below_ithr") is None:
+            # a record written before the floor rule (the migration path re-renders
+            # those): its rejection counter is the imaginary count, and its lowest
+            # mode need not lie below ithr -- the 2026-09-25 rule is what made that
+            # distinction
+            r.warn("saddle rejected: index {} has {} imaginary mode(s), lowest "
+                   "{:.2f} cm^-1".format(
+                s.get("index"), s.get("n_imaginary"),
+                s.get("lowest_frequency_cm_inv") or float("nan")))
+        else:
+            r.warn("saddle rejected: index {} has {} mode(s) below ithr, lowest "
+                   "{:.2f} cm^-1".format(
+                s.get("index"), s.get("n_below_ithr"),
+                s.get("lowest_frequency_cm_inv") or float("nan")))
     for wmsg in pool.get("merge_energy_warnings") or []:
         r.warn("merge consistency warning: {}".format(wmsg))
 
@@ -219,12 +241,13 @@ def write_log(rec, path):
                      "{:.4f}".format(w[i]) if i < len(w) else "-",
                      "+".join(prov[i]) if i < len(prov) else "-",
                      h.get("n_imaginary"),
+                     h.get("n_inversion_window"),
                      "{:.2f}".format(h["lowest_frequency_cm_inv"])
                      if h.get("lowest_frequency_cm_inv") is not None else "-"])
     if rows:
         r.table(["basin", "energy", "relative", "weight", "origin", "imaginary",
-                 "lowest"], rows,
-                units=["", "eV", "kcal/mol", "", "", "", "cm^-1"])
+                 "window", "lowest"], rows,
+                units=["", "eV", "kcal/mol", "", "", "", "", "cm^-1"])
     r.kv("conformational_correction_kcal", rec.get("conformational_correction_kcal"))
     r.kv("weight_of_lowest", pop.get("weight_of_lowest"))
     if rec.get("free_energy_note"):

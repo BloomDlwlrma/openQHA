@@ -108,6 +108,11 @@ def main():
     w0 = np.array([r["populations"]["weight_of_lowest"] for r in ok])
     sec = np.array([r.get("total_seconds") or np.nan for r in ok], dtype=float)
     sad = np.array([r["n_saddles_rejected"] for r in ok])
+    # Basins admitted with an inversion window (ticket 41): the lowest mode lies in
+    # [ithr, 0) and the thermochemistry inverts it -- production's new class. Absent on
+    # records written before 2026-09-25, which admitted no window basins.
+    nwin = np.array([sum(int(h.get("n_inversion_window") or 0)
+                         for h in (r.get("basin_hessian") or [])) for r in ok])
     gch = np.array([r["tighten_crest"]["n_graph_changed"] for r in ok])
     steps_c = np.concatenate([r["tighten_crest"]["opt_steps_per_frame"] for r in ok])
     _se = [r["tighten_etkdg"]["opt_steps_per_frame"] for r in ok
@@ -163,8 +168,10 @@ def main():
         w0.mean(), (w0 < 0.9).mean()))
     print("  conformational correction  mean {:+.4f} +/- {:.4f}  median {:+.4f}  most negative {:+.4f}".format(
         corr.mean(), ci95(corr), np.median(corr), corr.min()))
-    print("  saddle points rejected  {} molecule(s) ({:.1%}), {} in total".format(
+    print("  saddle points rejected (below the frequency floor ithr)  {} molecule(s) ({:.1%}), {} in total".format(
         int((sad > 0).sum()), (sad > 0).mean(), int(sad.sum())))
+    print("  basins admitted with an inversion window  {} molecule(s) ({:.1%}), {} window mode(s) in total".format(
+        int((nwin > 0).sum()), (nwin > 0).mean(), int(nwin.sum())))
     print("  connectivity matrix changed  {} molecule(s) ({:.1%}) -- each must be inspected".format(
         int((gch > 0).sum()), (gch > 0).mean()))
 
@@ -220,6 +227,8 @@ def main():
         correction=dict(mean=float(corr.mean()), ci95=ci95(corr),
                         median=float(np.median(corr)), min=float(corr.min())),
         saddles=dict(n_molecules=int((sad > 0).sum()), n_total=int(sad.sum())),
+        inversion_windows=dict(n_molecules=int((nwin > 0).sum()),
+                               n_modes_total=int(nwin.sum())),
         graph_changed=dict(n_molecules=int((gch > 0).sum())),
         cost=dict(seconds_per_job_mean=per_job,
                   seconds_per_job_median=float(np.nanmedian(sec)),
