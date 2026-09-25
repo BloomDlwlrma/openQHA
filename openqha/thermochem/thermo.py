@@ -77,8 +77,11 @@ def vibrational(frequencies_cm, temperature_K=T_REF, qrrho=False,
                 nu0_cm=QRRHO_NU0_CM, moments_amu_A2=None):
     """A / E / S / zero-point energy over all vibrational modes.
 
-    An imaginary frequency (negative wavenumber) is rejected; it is never "fixed" by
-    taking an absolute value.
+    This helper is strict on purpose: a non-positive wavenumber is rejected here, and it
+    is never "fixed" by taking an absolute value. The imaginary-mode policies live one
+    level up (`msrrho`, `g_minus_eel`), which apply the inversion / sub-1 cm^-1 drop
+    rule to the spectrum BEFORE calling this function -- thermochemistry is never
+    computed with projection off (ticket 35).
     """
     nu = np.asarray(frequencies_cm, dtype=float)
     bad = nu[nu <= 0.0]
@@ -150,13 +153,49 @@ MSRRHO_PRESETS = {
     "grimme2012": dict(tau_cm=100.0, ithr_cm=None, rotor_cap=1.0e-44,
                        interpolate=("S",)),
 }
-#: CREST's `vibthr`: it DROPS |omega| < 1 cm^-1 as rigid-body leftovers of an
-#: unprojected Hessian. Our spectra are Eckart-projected before they get here, so the
-#: same number is an assertion: a projected mode this low is a projection error.
+#: The sub-1 cm^-1 rule (ticket 35): CREST's `vibthr` and ORCA's `CutOffFreq 1.0` drop
+#: |omega| < 1 cm^-1 from every thermochemistry sum. One or two such modes in one
+#: spectrum are dropped ORCA-style and recorded (`N_BELOW_FLOOR` plus the values); three
+#: or more raise -- that count has no plausible physical explanation at a converged,
+#: projected minimum and is the signature of a spectrum without projection.
 VIBTHR_CM = 1.0
 #: Per-mode table cut-off in the report (CREST prints up to max(300, w=0.99 point)).
 MODE_TABLE_MAX_CM = 300.0
 C_CM_PER_S = 2.99792458e10
+
+
+def floor_verdict(lowest_cm, ithr_cm):
+    """A spectrum's standing against the frequency floor `ithr` -- the one rule ticket
+    37's census and ticket 39's reference level will call, and the rule the
+    thermochemistry's own policy layer applies (ticket 35):
+
+    `below_floor`  the lowest mode is below ithr: not invertible. The census ejects the
+                   candidate, the reference level lists it as a saddle, the ensemble
+                   excludes the basin.
+    `window`       the lowest mode is in [ithr, 0): inverted under the production policy.
+    `clean`        every mode is positive: the policy has nothing to do.
+    """
+    if lowest_cm < ithr_cm:
+        return "below_floor"
+    if lowest_cm < 0.0:
+        return "window"
+    return "clean"
+
+
+def n_below_ithr(frequencies_cm, ithr_cm):
+    """Modes below the floor (strictly: a mode exactly on the line is in the window and
+    invertible, as `floor_verdict` and the policy layer both have it); 0 for an admitted
+    basin."""
+    nu = np.asarray(frequencies_cm, dtype=float)
+    return int((nu < ithr_cm).sum())
+
+
+def n_in_window(frequencies_cm, ithr_cm):
+    """Modes in [ithr, 0): the geometric inversion window. A mode with |omega| < 1 cm^-1
+    inside it is in the window by value but the sub-1 rule drops it rather than inverting
+    it; the drop has its own counter (`n_below_floor`)."""
+    nu = np.asarray(frequencies_cm, dtype=float)
+    return int(((nu >= ithr_cm) & (nu < 0.0)).sum())
 
 
 def _free_rotor_s_kcal_per_K(nu_cm, rotor_cap_kg_m2, temperature_K):
@@ -177,65 +216,104 @@ def _cp_ho_kcal_per_K(nu_cm, temperature_K):
     return KB_KCAL * x * x * ex / (1.0 - ex) ** 2
 
 
-#: The three imaginary-mode policies. CREST 3.0.2 has three regimes, not two
-#: (`thermocalc.f90:207-216`, `thermo.f90:135-138`; measured on propanal 2026-09-16):
-#: a mode in (ithr, 0) is inverted; a mode below ithr is KEPT negative, carries zero
-#: entropy, and still enters the zero-point energy (0.5 sum nu), H(T)-H(0) and Cp with
-#: its negative frequency. `refuse` and `invert_below` raise where CREST keeps.
-IMAGINARY_POLICIES = ("refuse", "invert_below", "crest_native")
+#: The imaginary-mode policies (one production policy plus the GFN2 seam's; ticket 35):
+#:
+#: `invert_below`  PRODUCTION, the default everywhere. A mode in [ithr, 0) takes |omega|
+#:                 (the floor line itself is inside the window); a mode below ithr is not
+#:                 invertible, so the structure has no thermochemistry under this policy
+#:                 and the caller excludes it with the reason recorded. `ithr = -50 cm^-1`
+#:                 is CREST's `-ithr` default (the `crest` preset's, see MSRRHO_PRESETS).
+#: `crest_native`  the GFN2 seam only. CREST 3.0.2 line for line (`thermocalc.f90:207-216`,
+#:                 `thermo.f90:135-138`; measured on propanal 2026-09-16): a mode in
+#:                 [ithr, 0) is inverted; a mode below ithr is KEPT negative, carries
+#:                 zero entropy, and still enters the zero-point energy (0.5 sum nu),
+#:                 H(T)-H(0) and Cp with its negative frequency.
+#:
+#: `refuse` (any imaginary mode excluded the basin) was deleted on 2026-09-25 (ticket 35):
+#: the spread over the three policies on real data showed no molecule needed it. Records
+#: written before that date that name it stay readable as data.
+#: The one production policy: the default of every entry point in this package, taken
+#: as a named constant so the signatures cannot drift apart.
+PRODUCTION_POLICY = "invert_below"
+IMAGINARY_POLICIES = (PRODUCTION_POLICY, "crest_native")
 
 
 def _apply_imaginary_policy(nu, policy, ithr_cm):
-    """Return (frequencies, n_inverted, n_kept_negative) or raise.
+    """Return `(frequencies, counters)` or raise.
 
-    `refuse`        raises on any non-positive mode.
-    `invert_below`  takes |omega| for modes in (ithr, 0); raises below ithr.
-    `crest_native`  takes |omega| for modes in (ithr, 0); KEEPS modes below ithr
-                    negative, line for line as CREST does (see IMAGINARY_POLICIES).
+    A negative mode the sub-1 rule does not remove needs a policy that can act on it, so
+    the preset's applicability is decided first: no ithr at all raises (nothing can be
+    said about a mode below zero), and under `invert_below` a mode below ithr raises --
+    the basin has no thermochemistry under the production floor.
+
+    The sub-1 cm^-1 rule then applies for every policy: a mode with |omega| < VIBTHR_CM
+    is removed from every thermochemistry sum (S, Cp, H, ZPE) and counted, ORCA's
+    `CutOffFreq`-style drop. THREE or more such modes in one spectrum raise instead --
+    a converged, projected minimum has no plausible spectrum with three rigid-body
+    leftovers, and silent dropping must not absorb the signature of a spectrum that was
+    never projected.
+
+    Then the policy (see IMAGINARY_POLICIES): `invert_below` takes |omega| for modes in
+    [ithr, 0); `crest_native` takes |omega| in [ithr, 0) and KEEPS modes below ithr
+    negative, exactly as CREST does.
+
+    `counters` is a dict: n_inverted, n_kept_negative, n_below_floor,
+    inverted_frequencies_cm, dropped_frequencies_cm.
     """
     nu = np.asarray(nu, dtype=float)
     if policy not in IMAGINARY_POLICIES:
         raise ValueError("imaginary_policy must be one of {}, received {!r}".format(
             ", ".join(IMAGINARY_POLICIES), policy))
     tiny = np.abs(nu) < VIBTHR_CM
-    if tiny.any():
-        raise ValueError("{} projected mode(s) below {} cm^-1 (|omega| = {:.3f}): a "
-                         "rigid-body leftover, the spectrum was not projected"
-                         .format(int(tiny.sum()), VIBTHR_CM, float(np.abs(nu).min())))
-    neg = nu < 0.0
-    if not neg.any():
-        return nu, 0, 0
-    lowest = float(nu.min())
-    if policy == "refuse":
-        raise ValueError("{} imaginary mode(s), lowest {:.2f} cm^-1: not a minimum, "
-                         "refusing under the 'refuse' policy".format(int(neg.sum()), lowest))
-    if ithr_cm is None:
+    stays = ~tiny
+    needs_policy = bool((nu[stays] < 0.0).any())   # a negative the drop does not remove
+    if needs_policy and ithr_cm is None:
         raise ValueError("this preset defines no ithr; '{}' is not available".format(policy))
-    invertible = neg & (nu > ithr_cm)
+    if policy == "invert_below" and needs_policy and float(nu[stays].min()) < ithr_cm:
+        raise ValueError("imaginary mode {:.2f} cm^-1 is below ithr = {:.1f} cm^-1: not "
+                         "invertible".format(float(nu[stays].min()), ithr_cm))
+    n_tiny = int(tiny.sum())
+    if n_tiny >= 3:
+        raise ValueError("unprojected signature: {} mode(s) with |omega| < {} cm^-1 in "
+                         "one spectrum (|omega| = {}) -- refusing to compute "
+                         "thermochemistry on it".format(
+                             n_tiny, VIBTHR_CM,
+                             ", ".join("{:.2f}".format(abs(x)) for x in nu[tiny])))
+    counts = dict(n_inverted=0, n_kept_negative=0, n_below_floor=n_tiny,
+                  inverted_frequencies_cm=[],
+                  dropped_frequencies_cm=[float(x) for x in nu[tiny]])
+    out = nu[stays].copy()
+    neg = out < 0.0
+    if not neg.any():
+        return out, counts
+    # the floor line itself is inside the window (floor_verdict says the same): below the
+    # floor is strictly lower than ithr, and the min check above has already refused it
+    invertible = neg & (out >= ithr_cm)
     below = neg & ~invertible
-    if below.any() and policy == "invert_below":
-        raise ValueError("imaginary mode {:.2f} cm^-1 is below ithr = {:.1f}: not "
-                         "invertible".format(lowest, ithr_cm))
-    out = nu.copy()
+    counts["inverted_frequencies_cm"] = [float(x) for x in out[invertible]]
+    counts["n_inverted"] = int(invertible.sum())
+    counts["n_kept_negative"] = int(below.sum())
     out[invertible] = np.abs(out[invertible])
-    return out, int(invertible.sum()), int(below.sum())
+    return out, counts
 
 
 def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_REF,
-           imaginary_policy="refuse", fscal=1.0):
+           imaginary_policy=PRODUCTION_POLICY, fscal=1.0):
     """The modified (and scaled) RRHO vibrational term of one basin under a preset.
 
     Per mode: S = w S_HO + (1 - w) S_FR and, for presets that say so, Cp likewise;
     H(T) - H(0) and the zero-point energy are always harmonic. The free rotor has
     sigma = 1 and a capped moment; see MSRRHO_PRESETS. Returns the totals, the per-mode
-    table (ascending omega) and every convention that produced the number.
+    table (ascending omega) and every convention that produced the number -- including
+    the policy's counters: `n_inverted`, `n_kept_negative`, `n_below_floor` and the
+    inverted / dropped frequencies themselves.
     """
     if preset not in MSRRHO_PRESETS:
         raise ValueError("unknown msRRHO preset {!r}; known: {}".format(
             preset, ", ".join(sorted(MSRRHO_PRESETS))))
     p = MSRRHO_PRESETS[preset]
     nu = np.asarray(frequencies_cm, dtype=float) * float(fscal)
-    nu, n_inverted, n_kept = _apply_imaginary_policy(nu, imaginary_policy, p["ithr_cm"])
+    nu, counts = _apply_imaginary_policy(nu, imaginary_policy, p["ithr_cm"])
     nu = np.sort(nu)
     if p["rotor_cap"] == "mean_principal_moment":
         cap = float(np.mean(principal_moments(masses, positions))) * AMU_KG * 1e-20
@@ -271,8 +349,11 @@ def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_RE
     return dict(preset=preset, tau_cm=tau, ithr_cm=p["ithr_cm"],
                 rotor_cap_kg_m2=cap, rotor_cap_rule=p["rotor_cap"],
                 interpolated=list(p["interpolate"]), fscal=float(fscal),
-                imaginary_policy=imaginary_policy, n_inverted=n_inverted,
-                n_kept_negative=n_kept,
+                imaginary_policy=imaginary_policy,
+                n_inverted=counts["n_inverted"], n_kept_negative=counts["n_kept_negative"],
+                n_below_floor=counts["n_below_floor"],
+                inverted_frequencies_cm=counts["inverted_frequencies_cm"],
+                dropped_frequencies_cm=counts["dropped_frequencies_cm"],
                 temperature_K=float(temperature_K),
                 S_vib_kcal_per_K=float(s_tot), S_vib_HO_kcal_per_K=float(s_ho_tot),
                 TS_vib_kcal=float(temperature_K * s_tot),
@@ -285,7 +366,7 @@ def msrrho(frequencies_cm, masses, positions, preset="crest", temperature_K=T_RE
 
 
 def preset_spread(frequencies_cm, masses, positions, temperature_K=T_REF,
-                  imaginary_policy="refuse", fscal=1.0):
+                  imaginary_policy=PRODUCTION_POLICY, fscal=1.0):
     """T*S_vib under every preset, and the spread: the error-bar line for the choice of
     convention (on acetone 0.19 kcal/mol between `crest` and `grimme2012`)."""
     ts, absent = {}, {}
@@ -295,9 +376,10 @@ def preset_spread(frequencies_cm, masses, positions, temperature_K=T_REF,
                        temperature_K=temperature_K, imaginary_policy=imaginary_policy,
                        fscal=fscal)
         except ValueError as exc:
-            # a preset without ithr (grimme2012) cannot apply invert_below / crest_native
-            # to an imaginary mode: that preset is absent from the spread, and says why,
-            # rather than the whole record failing after the assembly succeeded
+            # a preset that cannot apply this policy to this spectrum (grimme2012 defines
+            # no ithr; crest / xtb call a below-floor mode not invertible) is absent from
+            # the spread, and says why, rather than the whole record failing after the
+            # assembly succeeded
             absent[name] = str(exc)
             continue
         ts[name] = r["TS_vib_kcal"]
@@ -392,9 +474,22 @@ def electronic(degeneracy, temperature_K=T_REF):
 
 # ------------------------------------------------------------------ assembly
 def g_minus_eel(masses, positions, frequencies_cm, symmetry_number, degeneracy,
-                temperature_K=T_REF, pressure_Pa=P_STD, qrrho=False):
-    """(G - E_el) for one species, all four terms, each kept in the record."""
-    vib = vibrational(frequencies_cm, temperature_K, qrrho=qrrho,
+                temperature_K=T_REF, pressure_Pa=P_STD, qrrho=False,
+                imaginary_policy=PRODUCTION_POLICY):
+    """(G - E_el) for one species, all four terms, each kept in the record.
+
+    The imaginary-mode policy is applied to the spectrum BEFORE the strict sums
+    (`vibrational` itself stays strict, so thermochemistry is never computed with
+    projection off): under the production `invert_below` -- floor = the `crest` preset's
+    `ithr` = -50 cm^-1 -- a mode in [ithr, 0) is inverted, a mode with |omega| < 1 cm^-1
+    is dropped ORCA-style and counted, and a mode below the floor raises. A caller that
+    gets that raise (the census, branch A's labels) has its answer: this structure has no
+    thermochemistry under the production policy, and it records the reason.
+    """
+    nu, counts = _apply_imaginary_policy(np.asarray(frequencies_cm, dtype=float),
+                                         imaginary_policy,
+                                         MSRRHO_PRESETS["crest"]["ithr_cm"])
+    vib = vibrational(nu, temperature_K, qrrho=qrrho,
                       moments_amu_A2=principal_moments(masses, positions))
     rot = rotational(masses, positions, symmetry_number, temperature_K)
     tr = translational(float(np.sum(masses)), temperature_K, pressure_Pa, kind="helmholtz")
@@ -405,7 +500,11 @@ def g_minus_eel(masses, positions, frequencies_cm, symmetry_number, degeneracy,
                vibrational=vib, rotational=rot, translational=tr, electronic=el,
                A_minus_Eel_kcal=float(a_total),
                pV_kcal=float(kt),
-               G_minus_Eel_kcal=float(a_total + kt))
+               G_minus_Eel_kcal=float(a_total + kt),
+               imaginary_policy=imaginary_policy,
+               n_inverted=counts["n_inverted"], n_below_floor=counts["n_below_floor"],
+               inverted_frequencies_cm=counts["inverted_frequencies_cm"],
+               dropped_frequencies_cm=counts["dropped_frequencies_cm"])
     if qrrho and "A_vib_qrrho_kcal" in vib:
         d = vib["A_vib_qrrho_kcal"] - vib["A_vib_kcal"]
         out["G_minus_Eel_qrrho_kcal"] = float(a_total + kt + d)

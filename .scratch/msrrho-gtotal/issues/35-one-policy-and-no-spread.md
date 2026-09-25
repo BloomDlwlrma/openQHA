@@ -1,0 +1,17 @@
+# 35: One production policy on the CREST floor; the three-policy spread removed
+
+**What to build:** the msRRHO layer has exactly one production policy. `invert_below` with the frequency floor `ithr = -50 cm⁻¹` (CREST's `-ithr` default) is the default everywhere: the per-basin thermochemistry, the ensemble, branch A's RRHO label, and the census's optional free energy. `refuse` no longer exists in code, tests or docs; historical records that carry it stay readable as data, but their recomputation is out of scope. The sub-1 cm⁻¹ rule is ORCA-style: a vibrational mode with |frequency| < 1 cm⁻¹ is dropped from every thermochemistry sum (S, Cp, H, ZPE) and recorded (`N_BELOW_FLOOR` plus the dropped values); three or more in one spectrum raise — the signature of a spectrum without projection. The strict mode-summing helper stays strict; the policy is applied before its sums. `crest_native` remains, reachable only by the GFN2 seam, whose record keeps its own counters. Every thermo record (mace / reference / GFN2 seam) loses the `[Imaginary_Spread]` block, its schema entry and its writers; the spread function and its CLI printout are deleted; the record-key tests and the TOML round-trip test follow. Ticket 28's spread item is recorded as superseded. A shared pure floor classifier — `floor_verdict(lowest_cm, ithr_cm) -> below_floor | window | clean`, plus `n_below_ithr` / `n_in_window` — is added next to the preset; the census and the reference level will call it in later tickets. The production step's CLI loses `--policy` (an impossible choice cannot be wrong) and prints per-basin inverted/dropped counts instead of the spread. CONTEXT.md's "Imaginary-mode policy" entry describes the two policies with the removal dated; the README policy paragraph follows.
+
+The decision-rich shapes came from the prototype (`prototype_imaginary_mode_state_machine.html`, `thermoOutcome`): excluded if the lowest mode is below the floor; raised if three or more modes sit below 1 cm⁻¹; otherwise drop the sub-1 modes (counted) and invert the window modes (counted).
+
+**Blocked by:** None (can start immediately)
+
+**Status:** done 2026-09-25 (unit suite 62/62; `t_mace_engine_folder` integration pass; py_compile + `--help` clean)
+
+- [x] Synthetic spectra through the msRRHO seam: window modes inverted with `N_INVERTED`; a single sub-1 mode dropped with `N_BELOW_FLOOR = 1` and its value stored; a three-sub-1 spectrum raises; `crest_native` behaviour and counters unchanged (`t_msrrho_presets`).
+- [x] `refuse` is absent from the code, the CLI surface, the tests and the docs; a record written before 2026-09-25 that carries it still loads (`t_thermo_msrrho_calculation`, the historical-record check).
+- [x] `g_minus_eel` (and therefore branch A's RRHO labels) applies the same policy before the strict sums; its test shows a window mode inverted rather than refused (`t_msrrho_presets`).
+- [x] Every thermo record round-trips without `[Imaginary_Spread]`; the GFN2 seam record keeps its counters; the record-key tests and the round-trip test pass with the new key set; ticket 28's spread item is marked superseded.
+- [x] The floor classifier's tests cover all three classes and both counts (`t_msrrho_presets`; `floor_verdict`, `n_below_ithr`, `n_in_window` live next to the preset in `thermo`).
+- [x] The production step has no `--policy` flag; its printout lists per-basin inverted/dropped counts.
+- [x] CONTEXT.md and README no longer promise three policies; the removal date is recorded.

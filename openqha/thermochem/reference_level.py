@@ -269,20 +269,16 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     ens = me.assemble(ref_basins, T, ptot)
     ref = next(b for b in ref_basins if b["index"] == ens["reference_basin"])
     spread = thermo.preset_spread(ref["frequencies_cm"], ref["masses"], ref["positions"], temperature_K=T)
-    # the three imaginary-mode policies on the reference basins (a saddle, excluded by the
-    # merge map before any policy, has no spectrum here and stays excluded under all three)
-    imag = me.imaginary_spread(ref_basins, T, preset, 1.0, ptot)
     exp = config.experimental_entropy(qid, cfg) if qid else None
     info = {"MOLECULE_DIR": str(molecule), "QM9_INDEX": qid, "TAG": info_a.get("TAG"),
             "LEVEL": str(level), "ENGINE": "ORCA {} ({})".format(relaxed[0]["orca_version"], keywords),
             "PRESET": preset, "TAU": float(thermo.MSRRHO_PRESETS[preset]["tau_cm"]),
             "ROTOR_CAP_RULE": str(thermo.MSRRHO_PRESETS[preset]["rotor_cap"]),
-            "ITHR_POLICY": "refuse", "FSCAL": 1.0, "TEMPERATURE": T, "PRESSURE": float(thermo.P_STD),
+            "ITHR_POLICY": "invert_below", "FSCAL": 1.0, "TEMPERATURE": T, "PRESSURE": float(thermo.P_STD),
             "REFERENCE_BASIN": ens["reference_basin"], "PTOT": float(ptot), "EXTRAPOLATION": "none"}
-    me.write_records(molecule, level, info, ref_basins, ens, spread, exp, imaginary=imag)
+    me.write_records(molecule, level, info, ref_basins, ens, spread, exp)
     out = dict(ens)
     out.update(basins=ref_basins, merge_map=merge_rows, info=info, experimental=exp,
-               imaginary_spread=imag,
                record=layout.level_file(molecule, level, "thermo_msrrho.toml"), hessian_routes=sorted({x["hessian_route"] for x in relaxed}))
     return out
 

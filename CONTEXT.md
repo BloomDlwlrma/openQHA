@@ -109,11 +109,16 @@ _Avoid_: CCSD(T) Hessian (as if it were analytic), NumFreq level, high level
 
 **Imaginary-mode policy**:
 What a `thermo_msrrho` Calculation does with a negative projected frequency, named in
-every record: `refuse` (the basin is excluded and listed), `invert_below` (a mode in
-(ithr, 0) takes |omega|, a mode below ithr excludes the basin), `crest_native` (CREST
-3.0.2 line for line: inverted in (ithr, 0), kept negative with zero entropy below ithr,
-still in ZPE, H and Cp). Every record carries `[Imaginary_Spread]`, S_abs under all
-three. Production uses `refuse`; the GFN2 seam uses `crest_native`.
+every record. Since 2026-09-25 there is exactly one production policy, `invert_below`:
+a mode in [ithr, 0) takes |omega| with ithr = -50 cm^-1 (the frequency floor, CREST's
+`-ithr` default), and a mode below ithr excludes the basin, which is listed with its
+reason. `crest_native` remains for the GFN2 seam only (CREST 3.0.2 line for line:
+inverted in [ithr, 0), kept negative with zero entropy below ithr, still in ZPE, H and
+Cp). The third policy, `refuse` (any imaginary mode excluded the basin), was removed on
+2026-09-25 with the ruling; records written before that date that name it stay readable
+as data. A mode with |omega| < 1 cm^-1 is dropped from every thermochemistry sum --
+ORCA's `CutOffFreq` rule, counted in `N_BELOW_FLOOR` with its value recorded -- and
+three or more in one spectrum raise: the signature of an unprojected spectrum.
 _Avoid_: ithr handling, frequency cleaning, fixing imaginary modes
 
 **Enantiomer degeneracy**:

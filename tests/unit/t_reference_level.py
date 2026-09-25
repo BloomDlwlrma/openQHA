@@ -67,9 +67,11 @@ def main():
         check("the frequency round-trip on every .hess is below 0.5 cm^-1",
               all(r["roundtrip_cm"] < 0.5 for r in rows), [r["roundtrip_cm"] for r in rows])
         doc = prop.load(layout.level_file(mol, LEVEL, "thermo_msrrho.toml"))
-        check("msrrho/thermo/<level>.thermo_msrrho.toml has the ticket-24 blocks and LEVEL = " + LEVEL,
-              set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result", "Imaginary_Spread"}
+        check("msrrho/thermo/<level>.thermo_msrrho.toml has the ticket-24 blocks (no [Imaginary_Spread]) and LEVEL = " + LEVEL,
+              set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result"}
               and doc["Calculation_Info"]["LEVEL"] == LEVEL)
+        check("[Calculation_Info].ITHR_POLICY = invert_below at the reference level (ticket 35)",
+              doc["Calculation_Info"]["ITHR_POLICY"] == "invert_below")
         check("the Report ends with the terminal line",
               report.terminated_normally(layout.level_file(mol, LEVEL, "thermo_msrrho.out"), "thermo_msrrho"))
         res = doc["Result"]

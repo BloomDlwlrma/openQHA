@@ -71,9 +71,6 @@ def main():
                     help="comma-separated MACE basin indices to run at the reference level "
                          "(default: all)")
     ap.add_argument("--preset", default="crest", choices=("crest", "xtb", "grimme2012"))
-    ap.add_argument("--policy", default="refuse", choices=("refuse", "invert_below", "crest_native"),
-                    help="imaginary-mode policy of the [Result] block at the MACE level; every "
-                         "record carries [Imaginary_Spread] with all three (ticket 28)")
     args = ap.parse_args()
     if args.level is None:
         # the two families of steps mean different things by --level: probing the reference
@@ -89,21 +86,23 @@ def main():
     if args.step == "mace":
         from openqha.thermochem import msrrho_ensemble as me
         level = engine.level_name(rec["Calculation_Info"]["ENGINE"])
-        out = me.run_calculation(molecule, level=level, qm9_index=args.species, preset=args.preset,
-                                 imaginary_policy=args.policy)
+        out = me.run_calculation(molecule, level=level, qm9_index=args.species, preset=args.preset)
         print("level {}: S_abs = {:.3f} cal/mol/K  G_total = {:.4f} kcal/mol  basins {} (excluded {})"
               .format(level, out["S_abs_cal_per_K"], out["G_total_kcal"], out["n_basins"], out["n_excluded"]))
         if out["experimental"]:
             print("experiment {:.2f} [{}]: S_abs - experiment = {:+.3f}".format(
                 out["experimental"][0], out["experimental"][1],
                 out["S_abs_cal_per_K"] - out["experimental"][0]))
-        for r in out["imaginary_spread"]:
-            if r.get("AVAILABLE") is False:            # a preset without an ithr: the policy has no answer
-                print("  policy {:13s} not available for this preset".format(r["POLICY"]))
+        # the one production policy is invert_below with the floor at -50 cm^-1 (CREST's
+        # -ithr): per basin, how many modes it inverted and how many it dropped ORCA-style
+        for b in out["basins"]:
+            if b.get("excluded"):
+                print("  basin {:>2}: EXCLUDED by the frequency floor: {}".format(
+                    b["index"], b.get("excluded_reason")))
                 continue
-            print("  policy {:13s} S_abs {}  included {} excluded {} inverted {} kept negative {}".format(
-                r["POLICY"], "{:.4f}".format(r["S_ABS"]) if r.get("S_ABS") is not None else "-",
-                r.get("N_INCLUDED", "-"), r.get("N_EXCLUDED", "-"), r.get("N_INVERTED", "-"), r.get("N_KEPT_NEGATIVE", "-")))
+            print("  basin {:>2}: lowest {:9.2f} cm^-1  inverted {}  dropped |omega|<1 cm^-1 {}"
+                  .format(b["index"], b["lowest_frequency_cm"], b.get("n_inverted", 0),
+                          b.get("n_below_floor", 0)))
         print("record  {}".format(out["record"]))
     elif args.step == "reference":
         from openqha.qm_interfaces import orca

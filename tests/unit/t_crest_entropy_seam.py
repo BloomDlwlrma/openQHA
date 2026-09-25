@@ -13,7 +13,10 @@ What is asserted (spec, Testing Decisions; the ticket's criteria):
     CREST's numerical one (measured +0.011).
   * ticket 28: under `crest_native` (CREST's own regime: a mode below ithr is kept with
     zero entropy) the third conformer is kept and dS_bar closes to 0.03 (measured
-    -0.002 / -0.022; it was +0.10 / +0.12 while `refuse` dropped that conformer).
+    -0.002 / -0.022; it was +0.10 / +0.12 while the retired exclude-any-imaginary
+    policy dropped that conformer).
+  * ticket 35: the record has no `[Imaginary_Spread]` block; the seam keeps its own
+    counters (N_KEPT_NEGATIVE / N_INVERTED), and `crest_native` is reachable only here.
   * two runs are recorded with their spread; a single run is refused.
   * the records live in msrrho/thermo/gfn2.* and nowhere else.
 """
@@ -92,13 +95,12 @@ def main():
               % (third["lowest_frequency_cm"], third["S_vib_cal_per_K"]))
         check("its S_vib reproduces CREST's --numhess printout (5.035 cal/mol/K) to 0.02",
               abs(third["S_vib_cal_per_K"] - 5.035) < 0.02, third["S_vib_cal_per_K"])
-        check("[Calculation_Info].ITHR_POLICY = crest_native and [Imaginary_Spread] has three rows",
+        check("[Calculation_Info].ITHR_POLICY = crest_native; no [Imaginary_Spread] block since ticket 35",
               doc["Calculation_Info"]["ITHR_POLICY"] == "crest_native"
-              and {r["POLICY"] for r in doc["Imaginary_Spread"]} == {"refuse", "invert_below", "crest_native"})
-        sp = {r["POLICY"]: r for r in doc["Imaginary_Spread"]}
-        check("under refuse and invert_below that conformer is excluded (spread rows say so)",
-              sp["refuse"]["N_EXCLUDED"] == 1 and sp["invert_below"]["N_EXCLUDED"] == 1
-              and sp["crest_native"]["N_EXCLUDED"] == 0)
+              and "Imaginary_Spread" not in doc)
+        row = next(r for r in doc["Basin"] if int(r["INDEX"]) == 2)
+        check("the record keeps the seam's own counters: conformer 3 included, 1 kept negative, 0 dropped",
+              row["EXCLUDED"] is False and row["N_KEPT_NEGATIVE"] == 1 and row["N_BELOW_FLOOR"] == 0)
         try:
             ce.run_calculation(mol, run_crest=False, runs=(1,))
             check("a single run is refused", False)

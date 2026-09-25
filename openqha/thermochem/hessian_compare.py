@@ -192,11 +192,11 @@ def _ts_per_mode(freqs_cm, masses, positions, preset, temperature_K):
             # a non-positive curvature along this reference mode (negative, or inside
             # CREST's vibthr) has no harmonic entropy: it contributes nothing and is
             # counted (N_NONPOSITIVE_ALONG_REF). Inverting it would give it the entropy
-            # of |omega| and make the deltas jump at ithr; refusing would lose the record.
+            # of |omega| and make the deltas jump at ithr; raising would lose the record.
             ts.append(0.0); s.append(0.0); zpe.append(0.0); n_dropped += 1
             continue
         r = thermo.msrrho([float(f)], masses, positions, preset=preset,
-                          temperature_K=temperature_K, imaginary_policy="refuse")
+                          temperature_K=temperature_K)
         ts.append(r["modes"][0]["TS_kcal"])
         s.append(r["S_vib_kcal_per_K"] * 1000.0)
         zpe.append(r["ZPE_kcal"])

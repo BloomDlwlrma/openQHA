@@ -23,9 +23,12 @@ evaluates the paper's eq. 10 with the conformers' ELECTRONIC energies instead; t
 number is written too, as S_CONF_PRIME_E, for the GFN2 seam of ticket 25.
 
 Conventions are declared, never defaulted silently: preset (tau, rotor cap, what is
-interpolated), the imaginary-mode policy (`refuse`: the basin is excluded from the
-ensemble and listed), fscal = 1.0 for MACE. No extrapolation to ensemble completeness
-(the paper's eq. 15): the basins come from one branch A search. No rotamer factor exists.
+interpolated), the imaginary-mode policy (`invert_below`, the production default: a mode
+in [ithr, 0) with ithr = -50 cm^-1 is inverted, a mode with |omega| < 1 cm^-1 is dropped
+ORCA-style and counted, a mode below the floor excludes the basin, which is listed with
+its reason; `crest_native` exists for the GFN2 seam only), fscal = 1.0 for MACE. No
+extrapolation to ensemble completeness (the paper's eq. 15): the basins come from one
+branch A search. No rotamer factor exists.
 """
 import math
 from pathlib import Path
@@ -56,7 +59,7 @@ SCHEMA = {
         "PRESET": ("String", None, "msRRHO preset: crest, xtb or grimme2012"),
         "TAU": ("Double", "cm^-1", "rotor interpolation crossover of the preset"),
         "ROTOR_CAP_RULE": ("String", None, "mean_principal_moment, or a fixed B_av"),
-        "ITHR_POLICY": ("String", None, "imaginary-mode policy the [Result] block used: refuse, invert_below or crest_native"),
+        "ITHR_POLICY": ("String", None, "imaginary-mode policy the [Result] block used: invert_below (production, floor -50 cm^-1) or crest_native (GFN2 seam only)"),
         "FSCAL": ("Double", None, "frequency scaling factor (1.0: declared, none published for MACE)"),
         "TEMPERATURE": ("Double", "K", "temperature"),
         "PRESSURE": ("Double", "Pa", "standard pressure of the translational term"),
@@ -85,23 +88,16 @@ SCHEMA = {
         "POPULATION": ("Double", None, "g' exp(-G_i/kT) normalised over the included basins"),
         "LOWEST_FREQ": ("Double", "cm^-1", "lowest projected frequency"),
         "N_IMAGINARY": ("Integer", None, "imaginary modes of the projected spectrum"),
-        "N_INVERTED": ("Integer", None, "modes in (ithr, 0) inverted under the policy"),
+        "N_INVERTED": ("Integer", None, "modes in [ithr, 0) inverted under the policy"),
         "N_KEPT_NEGATIVE": ("Integer", None, "modes below ithr kept negative (crest_native only)"),
-        "EXCLUDED": ("Boolean", None, "left out of the ensemble under the imaginary-mode policy"),
+        "N_BELOW_FLOOR": ("Integer", None, "modes with |omega| < 1 cm^-1 dropped from every sum (ORCA CutOffFreq)"),
+        "INVERTED_CM": ("ArrayOfDoubles", "cm^-1", "the inverted modes (ithr <= omega < 0); absent when none"),
+        "DROPPED_CM": ("ArrayOfDoubles", "cm^-1", "the dropped modes (|omega| < 1 cm^-1); absent when none"),
+        "EXCLUDED": ("Boolean", None, "left out of the ensemble (lowest mode below ithr, unprojected signature, or a policy the preset cannot apply)"),
         "HESSIAN_ROUTE": ("String", None, "analytic or numerical (reference levels)"),
         "NOISE_FLOOR_CM": ("Double", "cm^-1", "largest |eigenvalue| of the rigid-body block of the unprojected Hessian: 5-30 cm^-1 analytic at a tight minimum (residual gradient in the rotational block), plus the finite-difference noise of a numerical one"),
         "OPT_GRAD_RMS": ("Double", "Eh/bohr", "final RMS gradient of the optimisation (numerical gradient for a numerical level)"),
         "N_SINGLE_POINTS": ("Integer", None, "energy evaluations the ORCA job spent"),
-    },
-    "Imaginary_Spread": {
-        "POLICY": ("String", None, "refuse, invert_below or crest_native"),
-        "S_ABS": ("Double", "cal/mol/K", "S_abs under this policy"),
-        "G_TOTAL": ("Double", "kcal/mol", "G_total under this policy"),
-        "N_INCLUDED": ("Integer", None, "basins in the ensemble under this policy"),
-        "N_EXCLUDED": ("Integer", None, "basins refused under this policy"),
-        "N_INVERTED": ("Integer", None, "modes inverted over the included basins"),
-        "N_KEPT_NEGATIVE": ("Integer", None, "modes kept negative over the included basins"),
-        "AVAILABLE": ("Boolean", None, "false when the preset defines no ithr and a basin has an imaginary mode: the policy cannot be applied"),
     },
     "Ensemble": {
         "S_CONF_PRIME": ("Double", "cal/mol/K", "mixing entropy of the populations (exact at one level)"),
@@ -116,7 +112,7 @@ SCHEMA = {
         "G_TOTAL": ("Double", "kcal/mol", "-kT ln sum g' exp(-G_i/kT)"),
         "N_BASINS": ("Integer", None, "basins in branchA.toml"),
         "N_INCLUDED": ("Integer", None, "basins in the ensemble"),
-        "N_EXCLUDED": ("Integer", None, "basins refused for an imaginary mode"),
+        "N_EXCLUDED": ("Integer", None, "basins excluded by the frequency floor (lowest mode below ithr, or the unprojected signature)"),
         "N_BASINS_90": ("ArrayOfIntegers", None, "basins carrying PTOT of the population, most populated first"),
         "PRESET_SPREAD": ("Double", "kcal/mol", "max - min of T*S_vib over the presets, at the reference basin"),
         "S_EXPERIMENT": ("Double", "cal/mol/K", "declared experimental S at 298.15 K"),
@@ -129,7 +125,7 @@ SCHEMA = {
 # ====================================================================== per basin
 def basin_thermochemistry(index, hessian_eV_A2, masses, positions, energy_eV, sigma, g0,
                           temperature_K=thermo.T_REF, preset="crest",
-                          imaginary_policy="refuse", fscal=1.0):
+                          imaginary_policy=thermo.PRODUCTION_POLICY, fscal=1.0):
     """Project the stored Hessian and hand the spectrum to
     `basin_thermochemistry_from_frequencies`."""
     proj = hessian_mod.project_and_diagonalise(np.asarray(hessian_eV_A2, dtype=float),
@@ -146,14 +142,18 @@ def basin_thermochemistry(index, hessian_eV_A2, masses, positions, energy_eV, si
 
 
 def basin_thermochemistry_from_frequencies(rec, temperature_K=thermo.T_REF, preset="crest",
-                                           imaginary_policy="refuse", fscal=1.0):
+                                           imaginary_policy=thermo.PRODUCTION_POLICY, fscal=1.0):
     """S_i, H_i, G_i of one basin from its spectrum, masses, positions, E_el, sigma, g0.
-    Under `refuse`, a basin with an imaginary mode comes back with `excluded = True` and
-    the reason, and no thermochemistry."""
+
+    Under the production policy a mode in [ithr, 0) is inverted and a mode with
+    |omega| < 1 cm^-1 dropped (both counted, their values in the record); a basin whose
+    lowest mode is below the floor -- or whose spectrum carries the unprojected signature
+    -- comes back with `excluded = True`, the reason, and no thermochemistry."""
     rec = dict(rec)
     rec["lowest_frequency_cm"] = float(min(rec["frequencies_cm"]))
     rec.setdefault("n_imaginary", int(sum(1 for f in rec["frequencies_cm"] if f < 0)))
-    rec.update(imaginary_policy=imaginary_policy, n_inverted=0, n_kept_negative=0)
+    rec.update(imaginary_policy=imaginary_policy, n_inverted=0, n_kept_negative=0,
+               n_below_floor=0, inverted_frequencies_cm=[], dropped_frequencies_cm=[])
     try:
         vib = thermo.msrrho(rec["frequencies_cm"], rec["masses"], rec["positions"],
                             preset=preset, temperature_K=temperature_K,
@@ -176,6 +176,9 @@ def basin_thermochemistry_from_frequencies(rec, temperature_K=thermo.T_REF, pres
     rec.update(
         excluded=False, preset=preset, tau_cm=vib["tau_cm"],
         n_inverted=int(vib["n_inverted"]), n_kept_negative=int(vib["n_kept_negative"]),
+        n_below_floor=int(vib["n_below_floor"]),
+        inverted_frequencies_cm=list(vib["inverted_frequencies_cm"]),
+        dropped_frequencies_cm=list(vib["dropped_frequencies_cm"]),
         rotor_cap_rule=vib["rotor_cap_rule"], fscal=float(fscal),
         ZPE_kcal=vib["ZPE_kcal"], H_thermal_kcal=vib["H_thermal_kcal"],
         G_rot_kcal=rot["A_rot_kcal"], G_trans_kcal=tr["value_kcal"],
@@ -244,45 +247,6 @@ def assemble(basins, temperature_K=thermo.T_REF, ptot=PTOT):
                 basins_90=n90, ptot=float(ptot))
 
 
-def imaginary_spread(basins, temperature_K=thermo.T_REF, preset="crest", fscal=1.0, ptot=PTOT):
-    """S_abs and G_total under each of the three imaginary-mode policies, from per-basin
-    records that carry their spectrum (`frequencies_cm`, `masses`, `positions`, `E_el_kcal`,
-    `sigma`, `g0`, `g_prime`). A basin without a spectrum (a reference-level saddle) is
-    excluded under every policy. One row per policy, `[Imaginary_Spread]` of the record;
-    S_ABS is absent when no basin survives a policy."""
-    rows = []
-    no_ithr = thermo.MSRRHO_PRESETS[preset]["ithr_cm"] is None
-    any_imag = any(b.get("n_imaginary", 0) > 0 or min(b.get("frequencies_cm", [1.0])) < 0
-                   for b in basins if "frequencies_cm" in b)
-    for policy in thermo.IMAGINARY_POLICIES:
-        if policy != "refuse" and no_ithr and any_imag:
-            # the preset cannot apply this policy; saying so beats a row that silently
-            # repeats the refuse numbers under another name
-            rows.append({"POLICY": policy, "AVAILABLE": False})
-            continue
-        recs = []
-        for b in basins:
-            if "frequencies_cm" not in b:
-                recs.append(dict(index=b["index"], excluded=True, g_prime=b.get("g_prime", 1)))
-                continue
-            r = basin_thermochemistry_from_frequencies(
-                {k: b[k] for k in ("index", "energy_eV", "E_el_kcal", "sigma", "g0", "masses",
-                                   "positions", "frequencies_cm", "n_imaginary") if k in b},
-                temperature_K, preset, policy, fscal)
-            r["g_prime"] = b.get("g_prime", 1)
-            recs.append(r)
-        inc = [r for r in recs if not r.get("excluded")]
-        row = {"POLICY": policy, "AVAILABLE": True, "N_INCLUDED": len(inc),
-               "N_EXCLUDED": len(recs) - len(inc),
-               "N_INVERTED": int(sum(r.get("n_inverted", 0) for r in inc)),
-               "N_KEPT_NEGATIVE": int(sum(r.get("n_kept_negative", 0) for r in inc))}
-        if inc:
-            ens = assemble(recs, temperature_K, ptot)
-            row.update({"S_ABS": ens["S_abs_cal_per_K"], "G_TOTAL": ens["G_total_kcal"]})
-        rows.append(row)
-    return rows
-
-
 # ====================================================================== the Calculation
 def _read_basins(molecule, doc):
     """Per-basin inputs from branchA.toml's [[Basin]] rows and the mace engine folder."""
@@ -308,7 +272,7 @@ def _read_basins(molecule, doc):
 
 
 def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
-                    temperature_K=None, imaginary_policy="refuse", fscal=1.0, ptot=PTOT):
+                    temperature_K=None, imaginary_policy=thermo.PRODUCTION_POLICY, fscal=1.0, ptot=PTOT):
     """Run `thermo_msrrho` for one molecule directory at `level`; write the Record to the
     level folder; return the full record (per-basin detail included)."""
     molecule = Path(molecule)
@@ -320,9 +284,6 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
     T = float(temperature_K if temperature_K is not None else info_a.get("TEMPERATURE", thermo.T_REF))
     qid = qm9_index if qm9_index is not None else info_a.get("QM9_INDEX")
     layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
-    if imaginary_policy != "refuse" and thermo.MSRRHO_PRESETS[preset]["ithr_cm"] is None:
-        raise ValueError("preset '{}' defines no ithr: the '{}' policy cannot be applied; use "
-                         "'refuse' or a preset with ithr (crest, xtb)".format(preset, imaginary_policy))
 
     # g' per basin: the degeneracy Calculation, run here when its record is absent
     deg_path = layout.level_file(molecule, level, "degeneracy.toml")
@@ -346,7 +307,6 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
     ref = next(b for b in basins if b["index"] == ens["reference_basin"])
     spread = thermo.preset_spread(ref["frequencies_cm"], ref["masses"], ref["positions"],
                                   temperature_K=T, imaginary_policy=imaginary_policy, fscal=fscal)
-    imag = imaginary_spread(basins, T, preset, fscal, ptot)
     exp = config.experimental_entropy(qid, cfg) if qid else None
 
     info = {"MOLECULE_DIR": str(molecule), "QM9_INDEX": qid, "TAG": info_a.get("TAG"),
@@ -356,15 +316,14 @@ def run_calculation(molecule, level, qm9_index=None, cfg=None, preset="crest",
             "ITHR_POLICY": imaginary_policy, "FSCAL": float(fscal), "TEMPERATURE": T,
             "PRESSURE": float(thermo.P_STD), "REFERENCE_BASIN": ens["reference_basin"],
             "PTOT": float(ptot), "EXTRAPOLATION": "none"}
-    write_records(molecule, level, info, basins, ens, spread, exp, imaginary=imag)
+    write_records(molecule, level, info, basins, ens, spread, exp)
     out = dict(ens)
-    out.update(basins=basins, info=info, preset_spread=spread, imaginary_spread=imag,
+    out.update(basins=basins, info=info, preset_spread=spread,
                experimental=exp, record=layout.level_file(molecule, level, "thermo_msrrho.toml"))
     return out
 
 
-def write_records(molecule, level, info, basins, ens, spread, exp, extra_blocks=None, schema=None,
-                  imaginary=None):
+def write_records(molecule, level, info, basins, ens, spread, exp, extra_blocks=None, schema=None):
     """Write `msrrho/thermo/<level>.thermo_msrrho.{toml,out}` from the pieces run_calculation
     (or a reference-level Calculation) assembled."""
     layout.thermo_dir(molecule).mkdir(parents=True, exist_ok=True)
@@ -375,6 +334,9 @@ def write_records(molecule, level, info, basins, ens, spread, exp, extra_blocks=
                "E_EL": b["E_el_kcal"], "LOWEST_FREQ": b["lowest_frequency_cm"],
                "N_IMAGINARY": b.get("n_imaginary"), "N_INVERTED": b.get("n_inverted", 0),
                "N_KEPT_NEGATIVE": b.get("n_kept_negative", 0),
+               "N_BELOW_FLOOR": b.get("n_below_floor", 0),
+               "INVERTED_CM": b.get("inverted_frequencies_cm") or None,
+               "DROPPED_CM": b.get("dropped_frequencies_cm") or None,
                "EXCLUDED": bool(b["excluded"]), "POPULATION": b.get("population", 0.0),
                "HESSIAN_ROUTE": b.get("hessian_route"), "NOISE_FLOOR_CM": b.get("noise_floor_cm"),
                "OPT_GRAD_RMS": b.get("opt_grad_rms"), "N_SINGLE_POINTS": b.get("n_single_points")}
@@ -399,19 +361,17 @@ def write_records(molecule, level, info, basins, ens, spread, exp, extra_blocks=
                            "DS_BAR": ens["dS_bar_cal_per_K"], "H_CONF": ens["H_conf_kcal"],
                            "CP_CONF": ens["Cp_conf_cal_per_K"]},
               "Result": result}
-    if imaginary is not None:
-        blocks["Imaginary_Spread"] = imaginary
     if extra_blocks:
         blocks.update(extra_blocks)
     missing = prop.write(layout.level_file(molecule, level, "thermo_msrrho.toml"), blocks, schema or SCHEMA,
                          prop.NORMAL_TERMINATION, PROGNAME)
     if missing:
         raise RuntimeError("thermo_msrrho.toml keys outside the schema: {}".format(missing))
-    _write_report(layout.level_file(molecule, level, "thermo_msrrho.out"), info, basins, ens, spread, exp, imaginary)
+    _write_report(layout.level_file(molecule, level, "thermo_msrrho.out"), info, basins, ens, spread, exp)
     return layout.level_file(molecule, level, "thermo_msrrho.toml")
 
 
-def _write_report(path, info, basins, ens, spread, exp, imaginary=None):
+def _write_report(path, info, basins, ens, spread, exp):
     rep = report.Report("openQHA thermo_msrrho",
                         "absolute entropy and free energy from the basins, Pracht & Grimme 2021 "
                         "assembly at one level ({})".format(info["LEVEL"]))
@@ -435,12 +395,13 @@ def _write_report(path, info, basins, ens, spread, exp, imaginary=None):
                for b in basins])
     for b in basins:
         if b["excluded"]:
-            rep.warn("basin {} excluded under the '{}' policy: {}".format(
-                b["index"], info["ITHR_POLICY"], b["excluded_reason"]))
-        elif b.get("n_kept_negative") or b.get("n_inverted"):
-            rep.warn("basin {}: {} mode(s) inverted, {} kept negative under '{}' (lowest {:.2f} cm^-1)"
-                     .format(b["index"], b.get("n_inverted", 0), b.get("n_kept_negative", 0),
-                             info["ITHR_POLICY"], b["lowest_frequency_cm"]))
+            rep.warn("basin {} excluded: {}".format(b["index"], b["excluded_reason"]))
+        elif b.get("n_kept_negative") or b.get("n_inverted") or b.get("n_below_floor"):
+            rep.warn("basin {}: {} mode(s) inverted, {} dropped (|omega| < 1 cm^-1), {} kept "
+                     "negative under '{}' (lowest {:.2f} cm^-1)".format(
+                         b["index"], b.get("n_inverted", 0), b.get("n_below_floor", 0),
+                         b.get("n_kept_negative", 0), info["ITHR_POLICY"],
+                         b["lowest_frequency_cm"]))
     for b in basins:
         if b["excluded"]:
             continue
@@ -466,21 +427,19 @@ def _write_report(path, info, basins, ens, spread, exp, imaginary=None):
     rep.note("dS_bar is an identity at one level (the reference subtraction cancels exactly); "
              "it is written out so that a two-level assembly drops into the same file. No "
              "extrapolation to ensemble completeness: the basins come from one search.")
-    if imaginary:
-        rep.section("imaginary-mode policies (the [Result] block used '{}')".format(info["ITHR_POLICY"]))
-        rep.table(["policy", "S_abs", "G_total", "included", "excluded", "inverted", "kept negative"],
-                  [[r["POLICY"], "%.4f" % r["S_ABS"] if r.get("S_ABS") is not None else "-",
-                    "%.4f" % r["G_TOTAL"] if r.get("G_TOTAL") is not None else "-",
-                    r.get("N_INCLUDED", "n/a"), r.get("N_EXCLUDED", "n/a"),
-                    r.get("N_INVERTED", "n/a"), r.get("N_KEPT_NEGATIVE", "n/a")]
-                   if r.get("AVAILABLE", True) else
-                   [r["POLICY"], "not available: preset has no ithr", "", "", "", "", ""]
-                   for r in imaginary])
-        rep.note("refuse: a basin with any imaginary mode is excluded. invert_below: modes in "
-                 "(ithr, 0) take |omega|, a mode below ithr excludes the basin. crest_native: "
-                 "CREST 3.0.2 line for line -- modes in (ithr, 0) inverted, modes below ithr "
-                 "kept negative with zero entropy but present in ZPE, H(T)-H(0) and Cp "
-                 "(thermocalc.f90:209, thermo.f90:135).")
+    rep.section("imaginary modes under the frequency floor")
+    rep.kv("policy", info["ITHR_POLICY"])
+    rep.table(["basin", "lowest cm^-1", "imaginary", "inverted", "dropped |omega|<1", "kept negative", "excluded"],
+              [[b["index"], "%.2f" % b["lowest_frequency_cm"], b.get("n_imaginary") or 0,
+                b.get("n_inverted", 0), b.get("n_below_floor", 0),
+                b.get("n_kept_negative", 0), "yes" if b["excluded"] else "no"]
+               for b in basins])
+    rep.note("invert_below (production): a mode in [ithr, 0) takes |omega|; a mode below "
+             "ithr excludes the basin. crest_native (the GFN2 seam only): CREST 3.0.2 line "
+             "for line -- modes in [ithr, 0) inverted, modes below ithr kept negative with "
+             "zero entropy but present in ZPE, H(T)-H(0) and Cp (thermocalc.f90:209, "
+             "thermo.f90:135). A mode with |omega| < 1 cm^-1 is dropped from every sum "
+             "ORCA-style and counted; three or more raise.")
     rep.section("experiment")
     if exp is None:
         rep.text("  no experimental entropy declared for this molecule")

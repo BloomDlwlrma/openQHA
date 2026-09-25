@@ -396,7 +396,8 @@ Records: `examples/02b_qha_openmm_propanal/sample_records/`.
 
 The msRRHO free energy (Pracht & Grimme, Chem. Sci. 2021, 12, 6551, assembled inside
 openQHA with CREST's conventions: tau = 25 cm^-1, rotor moment capped by the mean principal
-moment, entropy and Cp interpolated, imaginary modes refused) is one Calculation per level,
+moment, entropy and Cp interpolated, imaginary modes inverted inside the -50 cm^-1 floor
+while a mode below the floor excludes the basin) is one Calculation per level,
 written to the molecule's level folder (ADR 0004):
 
 ```bash
@@ -490,22 +491,25 @@ and says so through the ORCA version in the Report. On propanal (three MACE basi
 MACE level gives S_abs = 72.355 cal/mol/K against the experimental 72.75 (LBH set, see
 `docs/cite/cite_openQHA.bib`, keys `li2016lbh`, `nist_webbook`, `frenkel1994`).
 
-**Imaginary modes: three regimes, all three written.** CREST 3.0.2 does not have one
-rule for an imaginary mode but three (`src/entropy/thermocalc.f90:207-216` and
+**Imaginary modes: one production policy, and the seam's own.** CREST 3.0.2 does not
+have one rule for an imaginary mode but three (`src/entropy/thermocalc.f90:207-216` and
 `thermo.f90:135-138`, measured with `crest --numhess` on propanal, 2026-09-16): a mode in
 (ithr, 0) with ithr = -50 cm^-1 is inverted; a mode below ithr is **kept negative**,
 carries zero entropy, and still enters the zero-point energy, H(T)-H(0) and Cp with its
 negative frequency; nothing is ever refused. Propanal's third `--entropy` conformer has
 -68.4 cm^-1 in CREST's own numerical Hessian and went into CREST's dS_bar with
-S_vib = 5.035 cal/mol/K (its neighbours: 8.97, 8.47). openQHA names the three policies
-`refuse` (any imaginary mode excludes the basin), `invert_below` (CREST's inversion, a
-mode below ithr excludes the basin) and `crest_native` (CREST line for line), and every
-`thermo_msrrho` record carries `[Imaginary_Spread]` with S_abs under all three;
-`[Calculation_Info].ITHR_POLICY` names the one the `[Result]` block used. Production
-records use `refuse`; the GFN2 seam uses `crest_native`, which is what closed its Hessian
-tier (dS_bar within 0.03 of CREST instead of 0.1). On propanal the MACE and reference
-levels have no imaginary mode and the three policies agree to 1e-9; at GFN2 they differ
-by 0.09 cal/mol/K, all of it that one conformer.
+S_vib = 5.035 cal/mol/K (its neighbours: 8.97, 8.47). Since 2026-09-25 (ticket 35)
+openQHA runs **one production policy**: `invert_below` with the frequency floor
+ithr = -50 cm^-1 -- a mode in [ithr, 0) is inverted, a mode below the floor excludes the
+basin, which is listed with its reason -- and a mode with |omega| < 1 cm^-1 is dropped
+from every sum ORCA-style (`CutOffFreq`), counted in `N_BELOW_FLOOR` with its value
+recorded; three or more in one spectrum are the signature of an unprojected spectrum and
+raise. The third policy `refuse` was removed with the ruling (`[Imaginary_Spread]`, the
+spread over the policies, went with it); the GFN2 seam keeps `crest_native` (CREST line
+for line), which is what closed its Hessian tier (dS_bar within 0.03 of CREST instead of
+0.1). `[Calculation_Info].ITHR_POLICY` names the policy every record used. On propanal
+the MACE and reference levels have no imaginary mode; at GFN2 the seam's kept-negative
+conformer changes S_abs by 0.09 cal/mol/K, all of it that one conformer.
 
 **A numerical reference level, and what the dry run found (ticket 32, 2026-09-17).**
 `dlpno-ccsdt_cc-pvtz` is declared in `orca.LEVELS` with the hkuhpc keywords (`! DLPNO-CCSD(T)

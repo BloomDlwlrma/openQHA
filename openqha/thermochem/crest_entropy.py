@@ -227,6 +227,9 @@ def crest_enantiofac(run_dir, confs):
 #: The seam reproduces CREST, so it takes CREST's own imaginary-mode regime: modes in
 #: (ithr, 0) inverted, modes below ithr kept with zero entropy (ticket 28; measured on
 #: propanal's third conformer, -68.4 cm^-1 in CREST's numerical Hessian, kept by CREST).
+#: After ticket 35 (2026-09-25) this seam is the ONLY caller of `crest_native`; the
+#: record keeps its own counters (N_KEPT_NEGATIVE / N_INVERTED per basin and in [Seam]),
+#: and its old [Imaginary_Spread] block is gone with the other records'.
 SEAM_POLICY = "crest_native"
 
 
@@ -318,7 +321,6 @@ def evaluate_run(molecule, run, temperature_K=298.15, preset="crest", nprocs=4, 
         and abs(seam["CP_CONF_DELTA"]) < TOL_ALGEBRAIC_CAL)
     return dict(run=int(run), crest=crest_rec, basins=basins, ensemble=ens, seam=seam,
                 conformer_degeneracies=confs_deg, e_rel_kcal=e_rel,
-                imaginary_spread=me.imaginary_spread(basins, temperature_K, preset, 1.0),
                 imaginary_policy=imaginary_policy)
 
 
@@ -379,6 +381,9 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
                "LOWEST_FREQ": b["lowest_frequency_cm"], "EXCLUDED": bool(b["excluded"]),
                "N_IMAGINARY": b.get("n_imaginary"), "N_INVERTED": b.get("n_inverted", 0),
                "N_KEPT_NEGATIVE": b.get("n_kept_negative", 0),
+               "N_BELOW_FLOOR": b.get("n_below_floor", 0),
+               "INVERTED_CM": b.get("inverted_frequencies_cm") or None,
+               "DROPPED_CM": b.get("dropped_frequencies_cm") or None,
                "POPULATION": b.get("population", 0.0)}
         if not b["excluded"]:
             row.update({"ZPE": b["ZPE_kcal"], "H_THERMAL": b["H_thermal_kcal"],
@@ -396,7 +401,6 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
                          "G_TOTAL": ens["G_total_kcal"], "N_BASINS": ens["n_basins"],
                          "N_INCLUDED": ens["n_included"], "N_EXCLUDED": ens["n_excluded"],
                          "N_BASINS_90": ens["basins_90"], "PRESET_SPREAD": 0.0},
-              "Imaginary_Spread": first["imaginary_spread"],
               "Crest": [dict(r, N_RUNS=len(evals),
                              S_CONF_SPREAD=float(np.nanmax(s_confs) - np.nanmin(s_confs)),
                              S_TOTAL_SPREAD=float(np.nanmax(s_tots) - np.nanmin(s_tots)))

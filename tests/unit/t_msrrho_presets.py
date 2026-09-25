@@ -68,8 +68,8 @@ def main():
         check(abs(r["TS_vib_kcal"] - EXPECTED_TS[name]) < TOL_TS,
               "%s preset T*S_vib = %.4f (expected %.4f)" % (name, r["TS_vib_kcal"],
                                                             EXPECTED_TS[name]))
-        check(r["preset"] == name and r["fscal"] == 1.0 and r["imaginary_policy"] == "refuse",
-              "%s record names its preset, fscal 1.0 and the refuse policy" % name)
+        check(r["preset"] == name and r["fscal"] == 1.0 and r["imaginary_policy"] == "invert_below",
+              "%s record names its preset, fscal 1.0 and the production policy" % name)
     check(out["crest"]["tau_cm"] == 25.0 and out["xtb"]["tau_cm"] == 50.0
           and out["grimme2012"]["tau_cm"] == 100.0, "tau per preset is 25 / 50 / 100")
     check(abs(out["grimme2012"]["rotor_cap_kg_m2"] - 1.0e-44) < 1e-60,
@@ -97,27 +97,90 @@ def main():
     check(abs(sp["max_minus_min_kcal"] - (EXPECTED_TS["HO"] - EXPECTED_TS["grimme2012"]))
           < 2 * TOL_TS, "preset spread = %.4f kcal/mol on T*S" % sp["max_minus_min_kcal"])
 
-    # --- hard errors ----------------------------------------------------------------
+    # --- the floor, the drop rule and the one production policy (ticket 35) ----------
+    # The sub-1 cm^-1 rule is ORCA-style: one or two modes inside +-1 cm^-1 are dropped
+    # from every sum and counted; three or more are the signature of an unprojected
+    # spectrum and raise. The default policy is invert_below with the crest floor.
+    no_first = thermo.msrrho(ACETONE_OMEGA_CM[1:], preset="crest", **kw)
+    drop = thermo.msrrho([0.4] + ACETONE_OMEGA_CM[1:], preset="crest", **kw)
+    check(drop["n_below_floor"] == 1 and drop["dropped_frequencies_cm"] == [0.4]
+          and abs(drop["S_vib_kcal_per_K"] - no_first["S_vib_kcal_per_K"]) < 1e-12
+          and abs(drop["ZPE_kcal"] - no_first["ZPE_kcal"]) < 1e-12
+          and abs(drop["H_thermal_kcal"] - no_first["H_thermal_kcal"]) < 1e-12,
+          "one sub-1 cm^-1 mode is dropped from every sum, counted, and its value stored")
+    # a preset with no ithr can still take the sub-1 rule: with the -0.5 mode dropped,
+    # no negative mode is left for a policy to act on (the old order raised "no ithr")
+    gn = thermo.msrrho([-0.5] + ACETONE_OMEGA_CM[1:], preset="grimme2012", **kw)
+    check(gn["n_below_floor"] == 1 and gn["dropped_frequencies_cm"] == [-0.5]
+          and abs(gn["S_vib_kcal_per_K"]
+                  - thermo.msrrho(ACETONE_OMEGA_CM[1:], preset="grimme2012",
+                                  **kw)["S_vib_kcal_per_K"]) < 1e-12,
+          "grimme2012 (no ithr) with only a sub-1 cm^-1 negative: dropped, no ithr needed")
     try:
-        thermo.msrrho([0.4] + ACETONE_OMEGA_CM[1:], preset="crest", **kw)
-        check(False, "a projected mode below 1 cm^-1 must raise")
+        thermo.msrrho([-30.0] + ACETONE_OMEGA_CM[1:], preset="grimme2012", **kw)
+        check(False, "grimme2012 with a negative the drop does not remove must raise")
     except ValueError as exc:
-        check("rigid-body" in str(exc), "mode below 1 cm^-1 raises: " + str(exc)[:60])
+        check("no ithr" in str(exc), "grimme2012 names the missing ithr for a -30 mode")
     try:
-        thermo.msrrho([-35.74] + ACETONE_OMEGA_CM[1:], preset="crest", **kw)
-        check(False, "an imaginary mode under refuse must raise")
+        thermo.msrrho([0.2, -0.4, 0.7] + ACETONE_OMEGA_CM[3:], preset="crest", **kw)
+        check(False, "three sub-1 cm^-1 modes must raise (the unprojected signature)")
     except ValueError as exc:
-        check("-35.74" in str(exc), "imaginary mode refused with its frequency named")
-    inv = thermo.msrrho([-35.74] + ACETONE_OMEGA_CM[1:], preset="crest",
-                        imaginary_policy="invert_below", **kw)
-    check(inv["n_inverted"] == 1 and inv["imaginary_policy"] == "invert_below",
-          "invert_below inverts a -35.74 mode under the crest ithr of -50")
+        check("unprojected" in str(exc), "three sub-1 modes raise: " + str(exc)[:70])
+    inv = thermo.msrrho([-35.74] + ACETONE_OMEGA_CM[1:], preset="crest", **kw)
+    check(inv["n_inverted"] == 1 and inv["inverted_frequencies_cm"] == [-35.74]
+          and inv["imaginary_policy"] == "invert_below",
+          "a -35.74 mode is inverted by default (no policy passed), as found")
     try:
-        thermo.msrrho([-61.68] + ACETONE_OMEGA_CM[1:], preset="crest",
-                      imaginary_policy="invert_below", **kw)
-        check(False, "a mode below ithr must still raise under invert_below")
+        thermo.msrrho([-61.68] + ACETONE_OMEGA_CM[1:], preset="crest", **kw)
+        check(False, "a mode below ithr must raise under the production policy")
     except ValueError as exc:
-        check("-61.68" in str(exc), "invert_below refuses a mode below ithr")
+        check("-61.68" in str(exc) and "ithr" in str(exc),
+              "a below-floor mode is excluded, naming the frequency and the floor")
+    try:
+        thermo.msrrho(ACETONE_OMEGA_CM, preset="crest", imaginary_policy="refuse", **kw)
+        check(False, "'refuse' must be gone from the policy set")
+    except ValueError as exc:
+        check("invert_below" in str(exc) and "crest_native" in str(exc),
+              "'refuse' is no longer a policy; the error names the two that exist")
+
+    # --- the shared floor classifier (the census and the reference level call it) ----
+    check(thermo.floor_verdict(-60.0, -50.0) == "below_floor"
+          and thermo.floor_verdict(-6.84, -50.0) == "window"
+          and thermo.floor_verdict(ACETONE_OMEGA_CM[0], -50.0) == "clean",
+          "floor_verdict names each of the three classes")
+    check(thermo.n_below_ithr([-60.0, -30.0, 120.0], -50.0) == 1
+          and thermo.n_below_ithr([-50.0, 120.0], -50.0) == 0
+          and thermo.n_below_ithr(ACETONE_OMEGA_CM, -50.0) == 0,
+          "n_below_ithr is strict: a mode exactly on the line is in the window")
+    check(thermo.n_in_window([-60.0, -30.0, -6.84, 120.0], -50.0) == 2
+          and thermo.n_in_window([-50.0, -35.74, 120.0], -50.0) == 2,
+          "n_in_window counts the modes in [ithr, 0)")
+
+    # --- g_minus_eel applies the same policy before its strict sums (branch A labels) -
+    g = thermo.g_minus_eel(ACETONE_MASSES, ACETONE_POSITIONS, [-35.74] + ACETONE_OMEGA_CM[1:],
+                           symmetry_number=1, degeneracy=1, temperature_K=298.15)
+    check(g["n_inverted"] == 1
+          and abs(g["vibrational"]["ZPE_kcal"]
+                  - (out["crest"]["ZPE_kcal"]
+                     + 0.5 * thermo.HC_KCAL * (35.74 - ACETONE_OMEGA_CM[0]))) < 1e-12
+          and abs(g["G_minus_Eel_kcal"] - thermo.g_minus_eel(
+              ACETONE_MASSES, ACETONE_POSITIONS, [35.74] + ACETONE_OMEGA_CM[1:],
+              symmetry_number=1, degeneracy=1, temperature_K=298.15)["G_minus_Eel_kcal"]) < 1e-12,
+          "g_minus_eel inverts a window mode before the strict sums (never refuses it)")
+    g23 = thermo.g_minus_eel(ACETONE_MASSES, ACETONE_POSITIONS, ACETONE_OMEGA_CM[1:],
+                             symmetry_number=1, degeneracy=1, temperature_K=298.15)
+    g2 = thermo.g_minus_eel(ACETONE_MASSES, ACETONE_POSITIONS, [-0.5] + ACETONE_OMEGA_CM[1:],
+                            symmetry_number=1, degeneracy=1, temperature_K=298.15)
+    check(g2["n_below_floor"] == 1 and g2["dropped_frequencies_cm"] == [-0.5]
+          and abs(g2["G_minus_Eel_kcal"] - g23["G_minus_Eel_kcal"]) < 1e-12,
+          "g_minus_eel drops a sub-1 cm^-1 mode ORCA-style and says so")
+    try:
+        thermo.g_minus_eel(ACETONE_MASSES, ACETONE_POSITIONS, [-61.68] + ACETONE_OMEGA_CM[1:],
+                           symmetry_number=1, degeneracy=1, temperature_K=298.15)
+        check(False, "g_minus_eel must raise below the floor")
+    except ValueError as exc:
+        check("-61.68" in str(exc),
+              "g_minus_eel says a below-floor spectrum has no thermochemistry")
 
     # --- crest_native (ticket 28): CREST 3.0.2's third regime ------------------------
     # thermocalc.f90:209 inverts only modes in (ithr, 0); a mode below ithr stays
@@ -147,7 +210,7 @@ def main():
     check(abs(base["S_vib_kcal_per_K"]
               - thermo.msrrho(ACETONE_OMEGA_CM, preset="crest", imaginary_policy="crest_native",
                               **kw)["S_vib_kcal_per_K"]) < 1e-12,
-          "with no imaginary mode the three policies are the same number")
+          "with no imaginary mode the two policies are the same number")
 
     # a sub-ithr spectrum under crest_native: grimme2012 (no ithr) is absent from the
     # spread and says why; the spread itself is still a number (code-review finding)
@@ -156,10 +219,12 @@ def main():
           and "ithr" in sp2["presets_absent"]["grimme2012"],
           "preset_spread under crest_native: grimme2012 absent with its reason, crest/xtb present")
     try:
-        thermo.preset_spread([-61.68] + ACETONE_OMEGA_CM[1:], imaginary_policy="refuse", **kw)
-        check(False, "preset_spread under refuse must raise on an imaginary spectrum")
+        thermo.preset_spread([-61.68] + ACETONE_OMEGA_CM[1:], **kw)
+        check(False, "preset_spread must raise when no preset can evaluate the spectrum")
     except ValueError as exc:
-        check("no preset" in str(exc), "preset_spread under refuse raises when every preset refuses")
+        check("no preset" in str(exc),
+              "preset_spread under invert_below: a -61.68 mode is below every ithr, "
+              "so every preset is absent and the failure says why")
 
     # --- level names and the composite notation -------------------------------------
     check(engine.level_name("MACE-OFF23_medium") == "mace-off23_medium",
