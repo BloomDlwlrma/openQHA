@@ -63,8 +63,11 @@ and "ase" side by side read as one thing twice.
 _Avoid_: stage folder, branch folder, route folder
 
 **Basin**:
-One local minimum of a molecule that survived branch A's deduplication and Hessian
-screen; numbered from 00 in the order branch A lists them.
+One local minimum of a molecule that survived branch A's deduplication and its
+frequency-floor screen (ticket 37, 2026-09-25): its lowest projected mode lies at or
+above the frequency floor ithr = -50 cm^-1, and a lowest mode inside the **inversion
+window** is admitted -- inverted by the thermochemistry, never relaxed away. Numbered
+from 00 in the order branch A lists them.
 _Avoid_: conformer (that is what CREST reports before the screen), minimum, well
 
 **Tag**:
@@ -120,6 +123,14 @@ as data. A mode with |omega| < 1 cm^-1 is dropped from every thermochemistry sum
 ORCA's `CutOffFreq` rule, counted in `N_BELOW_FLOOR` with its value recorded -- and
 three or more in one spectrum raise: the signature of an unprojected spectrum.
 _Avoid_: ithr handling, frequency cleaning, fixing imaginary modes
+
+**Inversion window**:
+The band [ithr, 0) cm^-1 inside which the one production policy turns a negative
+projected frequency into |omega| instead of excluding the basin. Since 2026-09-25
+(ticket 37) the census screen admits a candidate whose lowest mode lies in it, records
+the window (`N_INVERSION_WINDOW` and `LOWEST_FREQ` of `[[Basin]]`) and ejects only what
+lies below the floor; the thermochemistry inverts the window modes.
+_Avoid_: negative band, soft mode (a soft mode is a low positive frequency)
 
 **Enantiomer degeneracy**:
 The factor `g'` of a basin in the Gibbs-Shannon sum: 2 for a conformer whose rotamer

@@ -19,7 +19,7 @@ A **basin list**. Each basin carries:
 |---|---|
 | geometry | converged on MACE-OFF23_medium to `fmax = 1e-4 eV/Å` |
 | electronic energy | on that geometry, `float64` |
-| analytic Hessian | zero imaginary frequencies, Eckart-projected |
+| analytic Hessian | lowest mode at or above the frequency floor `ithr = −50 cm⁻¹`, Eckart-projected (a mode in the inversion window is admitted; a mode below `ithr` is a saddle and is ejected) |
 | symmetry number σ | from the **geometry**, per basin |
 | RRHO terms | `G − E_el`, four terms, each recoverable |
 | Boltzmann weight | at 298.15 K |
@@ -268,7 +268,7 @@ rather than passing.
 |---|---|
 | 1 | workhorse identity — read back from the work directory's `input.toml`, not from what we passed in |
 | 2 | the cost claim is unambiguous (`wall_is_valid_cost` present either way) |
-| 4 | zero imaginary, exactly 6 rigid modes removed, separation > 1e8 |
+| 4 | no mode below `ithr`; the inversion-window modes are counted; exactly 6 rigid modes removed; separation > 1e8 |
 | 6 | reference geometry pooled and located — or explicitly **not applicable** |
 | 7 | CREST / pooled / basin counts are three separate numbers **that add up** |
 | 9 | σ is a group order, stable up to the working tolerance, positive margin |

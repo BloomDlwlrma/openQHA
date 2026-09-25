@@ -6,7 +6,7 @@ What a later step reads about branch A, and nothing else (CONTEXT.md, "Property 
     [Calculation_Info]     the molecule and every setting the run was given
     [CREST_Run]            how CREST ended, what it reported, which SHAKE actually ran
     [Census]               tightening, deduplication, the basin count
-    [[Basin]]              INDEX ENERGY RELATIVE SIGMA G0 N_IMAGINARY LOWEST_FREQ G_MINUS_EEL A_MINUS_EEL
+    [[Basin]]              INDEX ENERGY RELATIVE SIGMA G0 N_IMAGINARY LOWEST_FREQ N_INVERSION_WINDOW G_MINUS_EEL A_MINUS_EEL
     [Criteria]             N_PASSED N_TOTAL ALL_PASSED FAILED
 
 The readers: the ensemble report (RELATIVE, SIGMA, G0, G_MINUS_EEL per basin), 02a, 02c,
@@ -69,11 +69,11 @@ SCHEMA = {
         "N_POOLED": ("Integer", None, "reference geometries pooled"),
         "N_NOT_CONVERGED": ("Integer", None, "frames whose tightening did not converge"),
         "N_GRAPH_CHANGED": ("Integer", None, "frames whose bond graph changed in tightening"),
-        "N_SADDLES_REJECTED": ("Integer", None, "frames rejected for imaginary modes"),
+        "N_SADDLES_REJECTED": ("Integer", None, "frames rejected below the frequency floor ithr"),
         "N_BASINS": ("Integer", None, "after tightening and deduplication"),
         "BASIN_CONFORMER_IDS": ("ArrayOfIntegers", None, "the input frame each basin came from"),
         "DUPLICATE_MAP": ("ArrayOfIntegers", None, "per input frame j (index = j): the input frame it was merged into by the deduplication, or j itself when it survived (ticket 02 of the Hessian-learning set)"),
-        "SADDLE_CONFORMER_IDS": ("ArrayOfIntegers", None, "input frames that survived the deduplication and were then rejected for imaginary modes"),
+        "SADDLE_CONFORMER_IDS": ("ArrayOfIntegers", None, "input frames that survived the deduplication and were then rejected below the frequency floor ithr"),
         "MAX_RESIDUAL_FORCE": ("Double", "eV/A", "largest residual force after tightening"),
     },
     "Basin": {
@@ -85,6 +85,7 @@ SCHEMA = {
         "G0_SOURCE": ("String", None, "declared_in_config, or assumed_singlet"),
         "N_IMAGINARY": ("Integer", None, "imaginary modes of the Hessian"),
         "LOWEST_FREQ": ("Double", "cm^-1", "lowest harmonic frequency"),
+        "N_INVERSION_WINDOW": ("Integer", None, "modes in the inversion window [ithr, 0) at admission -- the thermochemistry inverts them (ticket 37)"),
         "G_MINUS_EEL": ("Double", "kcal/mol", "harmonic G - E_el at TEMPERATURE"),
         "A_MINUS_EEL": ("Double", "kcal/mol", "harmonic A - E_el at TEMPERATURE"),
     },
@@ -175,6 +176,7 @@ def blocks_from_record(record):
             "G0_SOURCE": b.get("electronic_degeneracy_source"),
             "N_IMAGINARY": _i(b.get("n_imaginary")),
             "LOWEST_FREQ": _f(b.get("lowest_frequency_cm_inv")),
+            "N_INVERSION_WINDOW": _i(b.get("n_inversion_window")),
             "G_MINUS_EEL": _f(th.get("G_minus_Eel_kcal")),
             "A_MINUS_EEL": _f(th.get("A_minus_Eel_kcal")),
         })

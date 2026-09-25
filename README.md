@@ -24,7 +24,7 @@ basin list with Boltzmann weights and thermodynamic terms.
  │                   MACE refines                              │             │
  │                                                             ▼             │
  │                       basin list ◀── σ per basin ◀── analytic Hessian     │
- │                       + Boltzmann       geometric      reject imaginary   │
+ │                       + Boltzmann       geometric      floor ithr -50     │
  │                         weights         superposition                     │
  └───────────────────────────────┬──────────────────────────────────────────┘
                                  │  basin GEOMETRIES  (never the trajectory)

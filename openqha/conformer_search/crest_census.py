@@ -58,7 +58,7 @@ from pathlib import Path
 import numpy as np
 
 from . import conformers
-from ..thermochem import hessian
+from ..thermochem import hessian, thermo
 
 #: Default Hessian instrument. "analytic" since 2026-09-03 -- defect 64 / D0-P1-47:
 #: finite differences at delta = 0.01 A resolve only to +-9 to 20 cm^-1, while the
@@ -72,6 +72,13 @@ HESSIAN_MODE_DEFAULT = "analytic"
 #: entry is used when nothing is passed".
 FMAX_KEY = ("package2", "fmax_hessian_eV_A")
 DEDUP_KEY = ("package1", "dedup_rmsd_A")
+ITHR_KEY = ("package2", "ithr_cm")
+#: The frequency floor the screen applies when the caller passes nothing -- the `crest`
+#: preset's own value (ticket 35), so there is no third copy of -50 cm^-1 to drift. A
+#: caller with the loaded configuration passes `cfg["package2"]["ithr_cm"]` (ITHR_KEY),
+#: and a unit test holds that value equal to this one, so the census and the
+#: thermochemistry cannot drift apart (ticket 37).
+ITHR_CM_DEFAULT = thermo.MSRRHO_PRESETS["crest"]["ithr_cm"]
 
 
 # ======================================================================================
@@ -177,24 +184,49 @@ def _add_conformer(mol, positions):
 # ======================================================================================
 # 2. Tighten, deduplicate, Hessian -- the basin list under this repository's criteria
 # ======================================================================================
-def _empty_basin_message(saddles, converged, fmaxes):
+def census_verdict(frequencies_cm, ithr_cm):
+    """The census screen's decision on one candidate -- pure, no engine (the prototype's
+    `censusVerdict`, lifted 2026-09-25; ticket 37).
+
+    `saddle`  the lowest mode is below the floor: not invertible, ejected and listed.
+    `basin`   otherwise: the lowest mode is inside the **inversion window** [ithr, 0)
+              (the production thermochemistry inverts it) or every mode is positive.
+
+    Returns the verdict with the counters the record carries: `lowest_frequency_cm_inv`,
+    `n_below_ithr` (strictly below the floor: a mode exactly on the line is in the
+    window) and `n_inversion_window`. Calls `thermo.floor_verdict` / `n_below_ithr` /
+    `n_in_window`, so the rule has one definition -- the same one the msRRHO layer and
+    the reference level apply.
+    """
+    nu = np.asarray(frequencies_cm, dtype=float)
+    lowest = float(nu.min())
+    return dict(
+        verdict=("saddle" if thermo.floor_verdict(lowest, ithr_cm) == "below_floor"
+                 else "basin"),
+        lowest_frequency_cm_inv=lowest,
+        n_below_ithr=thermo.n_below_ithr(nu, ithr_cm),
+        n_inversion_window=thermo.n_in_window(nu, ithr_cm))
+
+
+def _empty_basin_message(saddles, converged, fmaxes, ithr_cm):
     """The refusal, with the evidence a reader needs to decide what to do next.
 
-    "No basin survives" is deliberate (the module's rule: a saddle is thrown out, not
-    accommodated). Without the numbers it is also unactionable -- the Tianhe run of
+    Since ticket 37 the screen ejects only what the frequency floor does not allow, so
+    "below ithr" is the whole verdict and the message names the floor it applied. The
+    numbers stay: without them the message is unactionable -- the Tianhe run of
     dsgdb9nsd_052993 (2026-09-24) cost a session to find out *which* candidates the
-    filter condemned and by how much. A condemned basin's lowest frequency is the whole
-    difference between "the engine says this molecule's minimum is a saddle" (a real
-    finding, a human decides) and "a soft mode near zero flipped sign on a geometry the
-    tighten did not fully land" (a different conversation), so it is printed.
+    filter condemned and by how much. A condemned candidate's lowest frequency is the
+    whole difference between "the engine says this molecule's minimum is a saddle" (a
+    real finding, a human decides) and "a soft mode near zero flipped sign on a geometry
+    the tighten did not fully land" (a different conversation), so it is printed.
     """
-    lines = ["no basin survives the tightening and the imaginary-frequency filter -- "
+    lines = ["no basin survives the tightening and the frequency-floor screen -- "
              "refusing to report an empty basin list",
-             "  {} candidate(s) condemned, every one with at least one imaginary mode "
-             "(lowest frequency, cm^-1):".format(len(saddles))]
+             "  {} candidate(s) condemned, every one with at least one mode below "
+             "ithr = {:g} cm^-1 (lowest frequency, cm^-1):".format(len(saddles), ithr_cm)]
     for s in saddles:
-        lines.append("    conformer {:>3}: {} imaginary, lowest {:+.2f} cm^-1, "
-                     "E {:.6f} eV".format(s["conformer_id"], s["n_imaginary"],
+        lines.append("    conformer {:>3}: {} below ithr, lowest {:+.2f} cm^-1, "
+                     "E {:.6f} eV".format(s["conformer_id"], s["n_below_ithr"],
                                           s["lowest_frequency_cm_inv"], s["energy_eV"]))
     n_nc = int(sum(1 for c in converged if not c))
     lines.append("  tighten: {} of {} frame(s) did not reach fmax; max residual {:.2e} "
@@ -204,8 +236,8 @@ def _empty_basin_message(saddles, converged, fmaxes):
 
 def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.30,
                        temperature_K=298.15, do_hessian=True,
-                       reject_imaginary=True, species=None, comments=None,
-                       max_opt_steps=2000, progress=None,
+                       reject_imaginary=True, ithr_cm=ITHR_CM_DEFAULT, species=None,
+                       comments=None, max_opt_steps=2000, progress=None,
                        hessian_mode=HESSIAN_MODE_DEFAULT,
                        ethr_kcal=conformers.CREGEN_ETHR_KCAL,
                        bthr_rel=conformers.CREGEN_BTHR_REL,
@@ -235,12 +267,19 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
     3. **Deduplicate**: all-atom best root-mean-square deviation (minimised over the
        automorphisms), at package 1's threshold of 0.30 A. It calls **the very same
        function** `conformers.dedup`, so the two routes stay comparable.
-    4. **Hessian**: one finite-difference Hessian plus Eckart projection per surviving
-       basin, counting imaginary frequencies. With `reject_imaginary=True` a saddle point
-       is **thrown out** of the basin list (package 2's practice) and recorded separately
-       -- thrown out, not accommodated by relaxing the criterion.
+    4. **Hessian**: one Hessian plus Eckart projection per surviving candidate, and the
+       **frequency floor** decides (ticket 37): a lowest mode inside the inversion window
+       [ithr, 0) admits the candidate as a basin and is recorded as a window
+       (`n_inversion_window` and the lowest frequency -- the thermochemistry inverts
+       it); a mode below ithr is a saddle, **thrown out** of the basin list and recorded
+       separately. Thrown out, not accommodated by relaxing the criterion.
     5. If `species` supplies sigma and g0, the four-term free energy is computed as well;
        **without them nothing is computed**, and nothing is guessed.
+
+    `ithr_cm` is the floor the screen applies (default: the `crest` preset's own value,
+    CREST's `-ithr` default, -50 cm^-1). A caller with the loaded configuration passes
+    `cfg["package2"]["ithr_cm"]`; a unit test holds the two values equal, so the census
+    and the thermochemistry cannot drift apart.
 
     Returns (a record dict, a list of ase.Atoms for the surviving basins, mol).
     """
@@ -291,25 +330,30 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
             hr = hessian.project_and_diagonalise(h, atoms.get_masses(),
                                                  atoms.get_positions())
             nu = np.asarray(hr["frequencies_cm_inv"], dtype=float)
+            verdict = census_verdict(nu, ithr_cm)
             rec_h = dict(n_imaginary=int(hr["n_imaginary"]),
                          hessian_mode=hessian_mode,
                          n_rigid_modes_removed=int(hr["n_rigid_modes_removed"]),
                          separation_gap_ratio=hr.get("separation_gap_ratio"),
                          hessian_asymmetry_eV_A2=float(asym),
-                         lowest_frequency_cm_inv=float(nu.min()),
+                         lowest_frequency_cm_inv=verdict["lowest_frequency_cm_inv"],
+                         n_below_ithr=verdict["n_below_ithr"],
+                         n_inversion_window=verdict["n_inversion_window"],
+                         verdict=verdict["verdict"],
                          frequencies_cm_inv=[float(x) for x in nu])
             hess[int(cid)] = rec_h
-            if hr["n_imaginary"] > 0 and reject_imaginary:
+            if verdict["verdict"] == "saddle" and reject_imaginary:
                 saddles.append(dict(conformer_id=int(cid),
                                     n_imaginary=int(hr["n_imaginary"]),
-                                    lowest_frequency_cm_inv=float(nu.min()),
+                                    n_below_ithr=verdict["n_below_ithr"],
+                                    lowest_frequency_cm_inv=verdict["lowest_frequency_cm_inv"],
                                     energy_eV=float(e[cids.index(cid)])))
                 kept.remove(cid)
             if progress is not None:
                 progress("hessian", j + 1, len(hess) + len(saddles))
 
     if not kept:
-        raise RuntimeError(_empty_basin_message(saddles, converged, fmaxes))
+        raise RuntimeError(_empty_basin_message(saddles, converged, fmaxes, ithr_cm))
 
     if molecule_dir is not None:
         # Basin i is kept[i]: the survivors in ascending energy, saddles removed. The
@@ -340,6 +384,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
         n_graph_changed=int(sum(graph_changed)),
         max_residual_force_eV_A=float(max(fmaxes)),
         fmax_criterion_eV_A=float(fmax),
+        ithr_cm=float(ithr_cm),
         opt_steps_per_frame=[int(s) for s in steps],
         opt_steps_total=int(sum(steps)),
         tightened_energies_eV=[float(x) for x in e],

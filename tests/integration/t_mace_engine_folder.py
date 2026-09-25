@@ -70,7 +70,7 @@ def main():
         mol = layout.molecule_dir(tmp, "t05", QID)
         rec, basins, _m = crest_census.census_from_frames(
             smiles, frames, calc, name=QID, fmax=1e-3, threshold_A=0.30,
-            temperature_K=298.15, do_hessian=True, reject_imaginary=True,
+            temperature_K=298.15, do_hessian=True,
             comments=comments, hessian_mode="analytic", molecule_dir=mol)
 
         print("A. one folder per tightened conformer, three files each")
@@ -123,6 +123,17 @@ def main():
         print("C. nothing else under mace/")
         extra = sorted(p.name for p in mace.iterdir() if not (p.name.startswith("conf") or p.name.startswith("basin")))
         check("no other entries", extra == [], extra)
+
+        print("D. the census screen used the frequency floor (ticket 37)")
+        from openqha.thermochem import thermo
+        check("the record names the floor it applied",
+              rec.get("ithr_cm") == thermo.MSRRHO_PRESETS["crest"]["ithr_cm"],
+              rec.get("ithr_cm"))
+        h0 = rec["hessian"][str(rec["basin_conformer_ids"][0])]
+        check("the basin carries its verdict, lowest mode and window count",
+              h0.get("verdict") == "basin" and h0.get("n_below_ithr") == 0
+              and h0.get("n_inversion_window") == 0
+              and h0.get("lowest_frequency_cm_inv") == min(h0["frequencies_cm_inv"]), h0)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

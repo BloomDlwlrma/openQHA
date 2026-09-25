@@ -36,10 +36,12 @@ def check(label, ok, detail=""):
         FAIL.append(label)
 
 
-def _basin(i, e, rel, sigma, g_minus):
+def _basin(i, e, rel, sigma, g_minus, window=0):
     return dict(basin_index=i, energy_eV=e, relative_kcal=rel, electronic_degeneracy=1,
-                electronic_degeneracy_source="declared_in_config", lowest_frequency_cm_inv=100.0 + i,
-                n_imaginary=0,
+                electronic_degeneracy_source="declared_in_config",
+                lowest_frequency_cm_inv=(-6.84 if window else 100.0 + i),
+                n_imaginary=window,
+                n_below_ithr=0, n_inversion_window=window,
                 symmetry=dict(sigma=sigma, sigma_source="declared_in_config", tolerance_A=0.1,
                               pymsym_point_group="C1", sigma_values_over_sweep=[1, 7],
                               tolerance_sweep={"0.01": dict(sigma=1, n_improper=0), "0.4": dict(sigma=7, n_improper=5)}),
@@ -76,7 +78,7 @@ RECORD = dict(
     mace=dict(folder="/r/.../mace", basins=["/r/.../mace/basin00/basin.extxyz"]),
     basins=[_basin(0, -5259.1889563698605, 0.0, 1, 36.02523397086022),
             _basin(1, -5259.152703422143, 0.8360128348498219, 1, 35.77002194687515),
-            _basin(2, -5259.152703421603, 0.8360128472870755, 3, 35.77002194687515)],
+            _basin(2, -5259.152703421603, 0.8360128472870755, 3, 35.77002194687515, window=1)],
     criteria=[dict(number=1, criterion="workhorse identity", passed=True, detail="asked gfn2, input.toml records gfn2"),
               dict(number=2, criterion="cost claim is unambiguous", passed=True, detail="wall 224.2 s"),
               dict(number=9, criterion="sigma is a group order", passed=False, detail="basin 2 flips at 0.1 A")],
@@ -118,6 +120,10 @@ def main():
         check("SIGMA, G0, G_MINUS_EEL per basin", rows[2]["SIGMA"] == 3 and rows[2]["G0"] == 1
               and rows[0]["G_MINUS_EEL"] == 36.02523397086022 and rows[0]["ENERGY"] == -5259.1889563698605, rows[2])
         check("LOWEST_FREQ and N_IMAGINARY", rows[1]["LOWEST_FREQ"] == 101.0 and rows[1]["N_IMAGINARY"] == 0)
+        check("N_INVERSION_WINDOW: basin 2's -6.84 cm^-1 window is recorded",
+              rows[2]["N_INVERSION_WINDOW"] == 1 and rows[2]["N_IMAGINARY"] == 1
+              and rows[2]["LOWEST_FREQ"] == -6.84 and rows[0]["N_INVERSION_WINDOW"] == 0,
+              rows[2])
         crit = doc["Criteria"]
         check("criteria counts and the failed numbers", crit["N_PASSED"] == 2 and crit["N_TOTAL"] == 3
               and crit["ALL_PASSED"] is False and crit["FAILED"] == [9], crit)

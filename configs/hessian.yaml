@@ -25,6 +25,14 @@
 package2:
   fmax_hessian_eV_A: 0.0001          # numerical_tolerance: residual force contaminates
                                      # the curvature
+  ithr_cm: -50.0                     # frequency floor of the census screen (ticket 37):
+                                     # CREST's `-ithr` default, mirroring
+                                     # MSRRHO_PRESETS["crest"].ithr_cm -- a unit test in
+                                     # t_msrrho_presets holds the two equal. A candidate
+                                     # whose lowest mode lies in [ithr, 0) is admitted as
+                                     # an inversion window and inverted by the
+                                     # thermochemistry; a lowest mode below ithr is a
+                                     # saddle and is ejected.
   finite_difference_delta_A: 0.01    # modifiable_convention; convergence measured (D0-34)
   delta_scan_A: [0.005, 0.010, 0.020, 0.040]
   delta_scan_species: "dsgdb9nsd_000048"   # oxetane -- it has the softest ring-fold mode
@@ -32,7 +40,6 @@ package2:
                                      # of rigid-body vectors
   rigid_overlap_threshold: 0.5       # derived_criterion: the fraction of an eigenvector
                                      # lying in the rigid-body subspace
-  reject_imaginary_frequencies: true # derived_criterion: only true minima enter the sum
   qrrho_nu0_cm: 100.0                # literature_value: Grimme, Chem. Eur. J. 2012, 18, 9955
   # ---- Reference level (user ruling 2026-08-29: use the full composite, and stop
   # ---- computing CCSD(T)/cc-pVTZ directly) ---------------------------------------------

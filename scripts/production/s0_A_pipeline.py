@@ -7,8 +7,10 @@ number used to decide something, not a deliverable) or lives in scripts/_superse
 What comes out
 --------------
 A basin list. Each basin carries: the geometry converged on MACE-OFF23_medium, the
-electronic energy, an analytic Hessian with zero imaginary frequencies, its own
-external symmetry number, the RRHO thermodynamic terms, and a Boltzmann weight.
+electronic energy, an analytic Hessian whose lowest mode sits at or above the frequency
+floor ithr (a mode inside the inversion window is admitted and inverted by the RRHO
+terms, a mode below ithr is a saddle and is ejected), its own external symmetry number,
+the RRHO thermodynamic terms, and a Boltzmann weight.
 
 It is the ONLY structure source for the other two branches -- branch B starts its
 unbiased trajectories from these geometries, and branch C computes its
@@ -22,7 +24,7 @@ The six steps (plan_A section 3)
   3. pool in the reference geometry    -> an independent starting point
   4. tighten to fmax = 1e-4 eV/A       -> tighter than CREST's optlev="tight"
   5. all-atom best-RMSD dedup, 0.30 A  -> graph automorphism solves the atom mapping
-  6. analytic Hessian                  -> imaginary screen, sigma, RRHO, weights
+  6. analytic Hessian                  -> frequency-floor screen, sigma, RRHO, weights
 
 Steps 4-6 exist because CREST's conformer count is NOT a basin count. Measured
 (defect 54): acetone, CREST reports 2 conformers 0.8118 kcal/mol apart; tightened
@@ -356,7 +358,8 @@ def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=Non
 
     rec, basins, mol = crest_census.census_from_frames(
         smiles, frames, calc, name=qid, fmax=fmax, threshold_A=thr,
-        temperature_K=temperature, do_hessian=True, reject_imaginary=True,
+        temperature_K=temperature, do_hessian=True,
+        ithr_cm=float(pkg2["ithr_cm"]),    # the frequency floor, passed through
         species=None,                       # sigma is done per basin below, not here
         comments=comments,
         hessian_mode=args.hessian_mode,
@@ -441,8 +444,8 @@ def label_basins(qid, basins, rec, cfg, args):
             srec["declaration_is_conditional"] = True
             srec["conditional_note"] = spec.get("symmetry_reason")
 
-        nu = np.asarray(rec["hessian"][str(rec["basin_conformer_ids"][i])]
-                        ["frequencies_cm_inv"], dtype=float)
+        hrec = rec["hessian"][str(rec["basin_conformer_ids"][i])]
+        nu = np.asarray(hrec["frequencies_cm_inv"], dtype=float)
         g = thermo.g_minus_eel(
             atoms.get_masses(), atoms.get_positions(), nu,
             symmetry_number=int(srec["sigma"]),
@@ -457,9 +460,13 @@ def label_basins(qid, basins, rec, cfg, args):
             electronic_degeneracy_source=("declared_in_config" if spec
                                           else "assumed_singlet"),
             thermo={k: v for k, v in g.items()},
-            lowest_frequency_cm_inv=float(nu.min()),
-            n_imaginary=int(rec["hessian"][str(rec["basin_conformer_ids"][i])]
-                            ["n_imaginary"])))
+            lowest_frequency_cm_inv=hrec["lowest_frequency_cm_inv"],
+            n_imaginary=int(hrec["n_imaginary"]),
+            # The inversion window the census admitted this basin with (ticket 37):
+            # modes in [ithr, 0), inverted by `g_minus_eel` above, and never a mode
+            # below ithr (that would be a saddle and would not be here).
+            n_below_ithr=int(hrec["n_below_ithr"]),
+            n_inversion_window=int(hrec["n_inversion_window"])))
 
     if not spec:
         for b in out:
@@ -553,15 +560,25 @@ def check_criteria(record, cfg_shake_fallback=None):
             "  [reused: no cost to state, and none claimed]"
             if valid is False else ""))
 
-    # 4 -- zero imaginary frequencies, exactly 6 rigid modes removed, clean gap.
-    bad = [b["basin_index"] for b in basins if b["n_imaginary"]]
+    # 4 -- no mode below ithr; the window modes are counted; exactly 6 rigid modes
+    # removed, clean gap.
+    #
+    # The screen admits what the frequency floor allows (ticket 37): a basin's lowest
+    # mode may sit in the inversion window [ithr, 0) and the thermochemistry inverts it,
+    # so `n_imaginary` alone is no longer a failure. What fails is a mode below ithr (a
+    # saddle, which the screen must have ejected) or an unclean projection -- the rigid
+    # mode count and the separation gate are unchanged.
+    below = [b["basin_index"] for b in basins if b.get("n_below_ithr")]
     h = [rec["hessian"][str(cid)] for cid in rec["basin_conformer_ids"]]
     rigid_ok = all(x["n_rigid_modes_removed"] == 6 for x in h)
     gaps = [x["separation_gap_ratio"] for x in h if x["separation_gap_ratio"]]
-    add(4, "zero imaginary, 6 rigid modes removed, separation > 1e8",
-        not bad and rigid_ok and (not gaps or min(gaps) > 1e8),
-        "imaginary in basins {}; rigid modes {}; min separation ratio {:.3g}".format(
-            bad or "none",
+    add(4, "no mode below ithr, the window modes counted, 6 rigid modes removed, "
+           "separation > 1e8",
+        not below and rigid_ok and (not gaps or min(gaps) > 1e8),
+        "ithr = {} cm^-1; modes below it in basins {}; window modes {}; rigid modes {}; "
+        "min separation ratio {:.3g}".format(
+            rec.get("ithr_cm"), below or "none",
+            [int(x.get("n_inversion_window") or 0) for x in h],
             sorted({x["n_rigid_modes_removed"] for x in h}),
             min(gaps) if gaps else float("nan")))
 
@@ -902,9 +919,10 @@ def write_branch_a_report(record, path):
             r.kv(k, c[k])
     cv = record.get("census") or {}
     r.section("Census: tighten, deduplicate, Hessian")
-    for k in ("n_frames_from_crest", "n_reference_geometries_pooled", "n_input_frames_total",
-              "n_not_converged", "n_graph_changed", "max_residual_force_eV_A",
-              "n_basins_by_repo_criteria", "n_saddle_points_rejected"):
+    for k in ("ithr_cm", "n_frames_from_crest", "n_reference_geometries_pooled",
+              "n_input_frames_total", "n_not_converged", "n_graph_changed",
+              "max_residual_force_eV_A", "n_basins_by_repo_criteria",
+              "n_saddle_points_rejected"):
         if k in cv:
             r.kv(k, cv[k])
     r.section("Basins")

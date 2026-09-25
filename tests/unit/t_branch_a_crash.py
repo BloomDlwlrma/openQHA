@@ -9,9 +9,13 @@ UNIT. No CREST, no engine. Held:
     B. `mark_crashed`: writes `_records/branchA.failed` under the run root; a marker already
        on disk (the missing-ensemble path writes its own) is NOT clobbered; `basins.failed`
        is True afterwards and False after `clear_failed` (a success).
-    C. `crest_census._empty_basin_message`: the refusal lists every condemned candidate with
-       its imaginary count and lowest frequency, and the tighten's convergence count -- the
-       numbers the Tianhe 2026-09-24 run of dsgdb9nsd_052993 did not print.
+    C. `crest_census._empty_basin_message`: the refusal names the frequency floor and
+       lists every condemned candidate with its below-floor count and lowest frequency,
+       and the tighten's convergence count -- the numbers the Tianhe 2026-09-24 run of
+       dsgdb9nsd_052993 did not print.
+    D. `crest_census.census_verdict`: the pure floor screen -- a -6.84 cm^-1 candidate
+       (dsgdb9nsd_052993) is a basin with one window mode, a -195.79 cm^-1 candidate is
+       a saddle, and the counters are the ones the record carries.
 """
 import os
 import sys
@@ -56,7 +60,7 @@ def main():
             # A -- the marker text
             try:
                 raise RuntimeError("no basin survives the tightening and the "
-                                   "imaginary-frequency filter -- refusing to report an "
+                                   "frequency-floor screen -- refusing to report an "
                                    "empty basin list")
             except RuntimeError as exc:
                 text = A.crash_marker_text(qid, tag, exc, when="2026-09-24T18:00:00")
@@ -91,18 +95,45 @@ def main():
                   and path == basins.molecule_for(qid, tag, cfg) / "_records" / "branchA.failed"
                   and cleared is False, (wrote, again, kept[:150]))
 
-            # C -- the refusal carries the numbers
-            saddles = [dict(conformer_id=2, n_imaginary=1, lowest_frequency_cm_inv=-3.14, energy_eV=-100.0),
-                       dict(conformer_id=5, n_imaginary=2, lowest_frequency_cm_inv=-201.5, energy_eV=-99.5)]
-            msg = crest_census._empty_basin_message(saddles, [True, False, True], [9.9e-5, 3.3e-4, 1.1e-6])
-            check("C: the refusal lists every condemned candidate (imaginary count, lowest "
-                  "frequency, energy) and the tighten's convergence count -- the numbers a "
-                  "reader needs to tell a real saddle from a soft mode at the noise floor",
+            # C -- the refusal carries the numbers, in the floor vocabulary
+            saddles = [dict(conformer_id=2, n_imaginary=1, n_below_ithr=1,
+                            lowest_frequency_cm_inv=-64.20, energy_eV=-100.0),
+                       dict(conformer_id=5, n_imaginary=2, n_below_ithr=2,
+                            lowest_frequency_cm_inv=-201.5, energy_eV=-99.5)]
+            msg = crest_census._empty_basin_message(saddles, [True, False, True],
+                                                    [9.9e-5, 3.3e-4, 1.1e-6], -50.0)
+            check("C: the refusal names the floor, lists every condemned candidate "
+                  "(modes below ithr, lowest frequency, energy) and the tighten's "
+                  "convergence count -- the numbers a reader needs to tell a real saddle "
+                  "from a soft mode at the noise floor",
                   "no basin survives" in msg
-                  and "conformer   2: 1 imaginary, lowest -3.14 cm^-1" in msg
-                  and "conformer   5: 2 imaginary, lowest -201.50 cm^-1" in msg
+                  and "below ithr = -50 cm^-1" in msg
+                  and "conformer   2: 1 below ithr, lowest -64.20 cm^-1" in msg
+                  and "conformer   5: 2 below ithr, lowest -201.50 cm^-1" in msg
                   and "1 of 3 frame(s) did not reach fmax" in msg
                   and "max residual 3.30e-04" in msg, msg)
+
+            # D -- the census verdict, pure: the frequency floor decides (ticket 37).
+            # The two real spectra: dsgdb9nsd_052993's -6.84 cm^-1 candidate (Tianhe
+            # 2026-09-24; admitted and inverted by the thermochemistry) and the -195.79
+            # cm^-1 cyclopropanol saddle that motivated the screen (ejected).
+            v_win = crest_census.census_verdict([-6.84, 130.0, 420.0], -50.0)
+            v_sad = crest_census.census_verdict([-195.79, 130.0], -50.0)
+            v_line = crest_census.census_verdict([-50.0, 120.0], -50.0)
+            v_clean = crest_census.census_verdict([40.0, 120.0], -50.0)
+            check("D: -6.84 cm^-1 is a basin with one window mode; -195.79 is a saddle "
+                  "below the floor; the floor line itself is in the window; a clean "
+                  "spectrum is a basin with nothing to invert",
+                  v_win["verdict"] == "basin" and v_win["n_inversion_window"] == 1
+                  and v_win["n_below_ithr"] == 0
+                  and v_win["lowest_frequency_cm_inv"] == -6.84
+                  and v_sad["verdict"] == "saddle" and v_sad["n_below_ithr"] == 1
+                  and v_sad["n_inversion_window"] == 0
+                  and v_line["verdict"] == "basin" and v_line["n_inversion_window"] == 1
+                  and v_clean["verdict"] == "basin"
+                  and v_clean["n_inversion_window"] == 0
+                  and v_clean["n_below_ithr"] == 0,
+                  (v_win, v_sad, v_line, v_clean))
         finally:
             if old is None:
                 os.environ.pop("S0_RUNS_ROOT", None)

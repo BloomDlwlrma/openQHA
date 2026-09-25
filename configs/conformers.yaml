@@ -14,8 +14,10 @@
 #   one molecule  ->  one basin list
 #
 # Each basin carries: geometry converged on MACE-OFF23_medium, electronic energy, an
-# analytic Hessian with zero imaginary frequencies, its own external symmetry number,
-# RRHO thermodynamic terms, and a Boltzmann weight.
+# analytic Hessian whose lowest mode sits at or above the frequency floor `package2.ithr_cm`
+# (a mode in the inversion window [ithr, 0) is admitted and inverted; a mode below ithr is
+# a saddle and is ejected), its own external symmetry number, RRHO thermodynamic terms,
+# and a Boltzmann weight.
 #
 # It is the ONLY structure source for the other branches: branch B starts its unbiased
 # trajectories from these geometries, branch C computes RI-MP2 labels on them.
@@ -465,9 +467,11 @@ package1:
                                         # fire, and if it does the two are inconsistent.
 
   # ---- 2.3 Hessian screen -------------------------------------------------------------
+  # The screen's imaginary-mode criterion is the frequency floor `package2.ithr_cm`
+  # (ticket 37): in [ithr, 0) the candidate is admitted as an inversion window and the
+  # thermochemistry inverts it; below ithr it is a saddle and is ejected. The dead
+  # `reject_imaginary` flag was removed on 2026-09-25 (it was read by no code).
   hessian_check: true                   # derived_criterion: small gradient != minimum
-  reject_imaginary: true                # derived_criterion: eject saddles, do not relax
-                                        # the criterion to keep them
   hessian_mode: "analytic"              # analytic | finite_difference
   # ANALYTIC IS NOT AN OPTIMISATION, IT IS A CORRECTION. Defect 64 / D0-P1-47, measured
   # (mace 0.3.17):

@@ -156,6 +156,18 @@ def main():
           and thermo.n_in_window([-50.0, -35.74, 120.0], -50.0) == 2,
           "n_in_window counts the modes in [ithr, 0)")
 
+    # --- one floor number: the configuration and the preset cannot drift (ticket 37) --
+    # The census screen reads `cfg["package2"]["ithr_cm"]`; the thermochemistry uses
+    # MSRRHO_PRESETS["crest"]["ithr_cm"]. One value, two seams.
+    from openqha import config as _config
+    cfg = _config.load()
+    check(cfg["package2"]["ithr_cm"] == thermo.MSRRHO_PRESETS["crest"]["ithr_cm"],
+          "package2.ithr_cm equals MSRRHO_PRESETS['crest'].ithr_cm -- census and "
+          "thermochemistry cannot drift apart")
+    check("reject_imaginary_frequencies" not in cfg["package2"]
+          and "reject_imaginary" not in cfg["package1"],
+          "the dead reject-imaginary configuration keys are gone")
+
     # --- g_minus_eel applies the same policy before its strict sums (branch A labels) -
     g = thermo.g_minus_eel(ACETONE_MASSES, ACETONE_POSITIONS, [-35.74] + ACETONE_OMEGA_CM[1:],
                            symmetry_number=1, degeneracy=1, temperature_K=298.15)
