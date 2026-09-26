@@ -140,15 +140,40 @@ def main():
           not missing and not foreign and len(page) >= 6, (missing, foreign, len(page)))
     text = PAGE.read_text(encoding="utf-8")
     check("the page names the progress script, the exit-code signal, the resubmit-as-is rule, TIMEOUT_S = 28800, "
-          "the failed state, --retry (ticket 24), the one-shot retry round's sequencing (ticket 02) with ticket 04's "
-          "command lines (the flagless mass round carries the retry; RETRY_ONLY=1 sweeps the failures) "
-          "and the 2026-09-25 scope ruling (basin frames only, GENERATORS=basin on both commands)",
+          "the failed state, --retry (ticket 24), the one-shot retry's sequencing and ticket 06's wording -- the retry "
+          "rides every round by default, the sweep is RETRY_ONLY=1, the sequencing ends at **any round** (a round burns "
+          "the shots it touches) and the log-line table describes the rule / retry-only / per-task retry slice -- "
+          "with ticket 04's command lines and the 2026-09-25 scope ruling (basin frames only, GENERATORS=basin on both "
+          "commands); the old flag, its round and the old not-rerun claim are gone",
           all(s in text for s in ("s0_hl_progress.py --tag draw300", "assemble exits 0", "resubmitted **as it is**",
                                   "3-00:00:00", "TIMEOUT_S=28800", "**failed**", "--retry", "touched within 30 min",
                                   "GENERATORS=basin", "basin frames only",
                                   "GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm",
                                   "GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm",
-                                  "the one retry is spent", "count the failures", "verify ONE frame by hand")))
+                                  "the one retry is spent", "count the failures", "verify ONE frame by hand",
+                                  "**any round**", "rides every round by default", "carried by every round by default",
+                                  "burns the shots of the failures it touches",
+                                  "re-attempted ONCE in this round", "retries    R in this task",
+                                  "plus the failed frames without an archive (their one retry)"))
+          and "RETRY_FAILED" not in text and "--retry-failed" not in text and "(retry)" not in text
+          and "never by an ordinary round" not in text,
+          [s for s in ("**any round**", "rides every round by default", "re-attempted ONCE in this round", "retries    R in this task") if s not in text])
+    doc_readme = (ROOT / "workflows" / "hessian_learning" / "README.md").read_text(encoding="utf-8")
+    context_doc = (ROOT / "CONTEXT.md").read_text(encoding="utf-8")
+    check("ticket 06: the workflow README and CONTEXT.md carry the new retry contract -- every round carries the unarchived "
+          "failures by default and RETRY_ONLY=1 is the failures-only round; the next round re-attempts a failed frame once "
+          "with the archive as the durable marker; no RETRY_FAILED, no 'no ordinary round reruns', no 'until a human asks (--retry)'",
+          "RETRY_FAILED" not in doc_readme and "--retry-failed" not in doc_readme
+          and "no ordinary round reruns" not in doc_readme
+          and "every round carries the failures without an archive by default" in doc_readme
+          and "failed frame without an archive is carried once" in doc_readme
+          and "# the round's summary only" in doc_readme
+          and "RETRY_ONLY=1" in doc_readme
+          and "until a human asks" not in context_doc and "RETRY_FAILED" not in context_doc
+          and "the next round re-attempts it once by default" in context_doc
+          and "durable finality marker" in context_doc,
+          ("no ordinary round reruns" in doc_readme, "RETRY_ONLY=1" in doc_readme,
+           "until a human asks" in context_doc, "durable finality marker" in context_doc))
     sequence = ("TIMEOUT_S=14400 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm",
                 "TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm",
                 "python workflows/hessian_learning/01_select.py --tag draw300",

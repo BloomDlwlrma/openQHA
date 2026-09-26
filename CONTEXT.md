@@ -210,8 +210,10 @@ was generated, what was dropped and why, the seeds, the engine identity) and one
 per reference Level labelled (`labels.<level>`: what was labelled, reused, refused or
 failed, ORCA's wall time and memory per frame, the noise floor of every Hessian). A frame's
 reference job is attempted ONCE and bounded (`TIMEOUT_S`, 8 h): a job that did not terminate
-normally leaves its `.out` and is a failed frame -- read, not rerun, until a human asks
-(`--retry`); a job cut before anything came back (walltime, a dead node) left nothing and is
+normally leaves its `.out` and is a failed frame -- the next round re-attempts it once by default
+(ruling 2026-09-26; `RETRY_ONLY=1` sweeps just the failures), the archive `<stem>.failed.out`
+is the durable finality marker, and the frame CLI's `--retry` remains the human's lever;
+a job cut before anything came back (walltime, a dead node) left nothing and is
 rerun whole -- no unit checkpoints or resumes (round 11, S0-G-96). While it runs the frame is
 held by a `.running` lock that names its Slurm job and is touched every minute; another
 process treats the frame as held only while Slurm does not call that job dead AND the lock

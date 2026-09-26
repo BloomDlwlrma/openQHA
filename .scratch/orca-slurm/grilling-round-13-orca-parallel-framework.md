@@ -313,3 +313,17 @@ Base shape (a); the refinement questions ruled as follows.
 ### Q7 ruled: two tickets (a) -- 2026-09-25
 The ORCA child environment and the retry round, cut in the new `.scratch/orca-slurm/`
 tracker; this round and the research note move there with them.
+
+## Amendment 2026-09-26 (the retry's trigger reverses; tickets 03-06 of the set)
+
+Ruled 2026-09-26, after this round: the one-shot retry **rides every round by default**.
+A plain round's task list carries the failed frames without an archive (`retry` in the
+5th column -- Q5's mechanism unchanged), and `RETRY_ONLY=1` / `--retry-only` is the
+FAILURES-ONLY SWEEP; `RETRY_FAILED=1` / `--retry-failed` are deleted from code, script,
+comments and docs. Superseded here: Q5's `--retry-failed` as the deliberate recovery
+lever, Q5c's "`--retry-failed` is the only retry lever", and the "Sequencing
+consequence" above's retry round. Unchanged: the once-only cap, the single archive slot
+(Q5a = (b)), the Q5b predicate, Q5d's save and `--force`. The sequencing consequence
+reads: the fix deployed and verified -> count the failures -> verify ONE frame by hand
+-> **any round** (any round burns the retries it carries). No ADR: the change is
+reversible and page-recorded (tickets 02/04, `spec.md`'s amendment, this note).

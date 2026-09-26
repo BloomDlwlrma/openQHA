@@ -208,7 +208,7 @@ their frames stay unlabelled in the Dataset's `pool`, nothing is removed, and a 
 round can label them (`GENERATORS=merged`, …). The rounds therefore carry
 `GENERATORS=basin`: the task list holds only basin frames, and task 0's assemble counts
 only them, so its exit-0 signal keeps meaning "every IN-SCOPE frame is labelled". The
-retry round carries the same flag.
+failures-only sweep carries the same flag.
 
 **The fallback: labels as sbatch arrays.** If the tmux gate (§1) fails and the fix is not at
 hand, step 03 runs as rounds of the array script — the same on-disk state, the same
@@ -221,7 +221,8 @@ GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_
 `deimos` allows 7 days, but a 3-day walltime queues faster and loses at most 3 days of one
 node to a crash; ~3.5 days of labels are two rounds. Each of the 12 tasks lists the PENDING
 frames of the selection at its start (`03_labels.py --list`: no ORCA job on disk, not held
-by another process, in the round's generators), takes every 12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a
+by another process, in the round's generators, plus the failed frames without an archive (their one retry)),
+takes every 12th of them (`SLURM_ARRAY_TASK_ID`), and runs them 16 at a
 time under `taskset`. At the end task 0 assembles every molecule's label files and builds
 the Dataset; its exit code is **0 when no IN-SCOPE frame is without an ORCA job, 1 otherwise** — the
 signal for the next round, which is the same command again, until task 0's assemble exits 0. The rounds are submitted one
@@ -236,28 +237,32 @@ attempted **once**, bounded by `TIMEOUT_S` (8 h per ORCA job, `hl_labels.slurm`;
 | on disk | state | the next round |
 |---|---|---|
 | `<stem>.out` with `****ORCA TERMINATED NORMALLY****` and the `.hess` / `.engrad` | **finished** | skipped |
-| `<stem>.out` without that line (a crash; or the `TIMEOUT_S` kill, whose `.out` ends with `openQHA: ORCA killed after TIMEOUT_S=28800 s`) | **failed** | **not rerun** by an ordinary round — the reader judges from the worker's `FAILED` line in the Slurm `.out`, the `.err`, and the ORCA `.out`; the one-shot `--retry-failed` round (below) re-attempts it **once**, and `python -m openqha.data.frame_labels <molecule> <generator> <basin> <k> --retry` is the human's lever |
+| `<stem>.out` without that line (a crash; or the `TIMEOUT_S` kill, whose `.out` ends with `openQHA: ORCA killed after TIMEOUT_S=28800 s`) | **failed** | **re-attempted once** by the next round (the one-shot retry, carried by every round by default — ruling 2026-09-26) — the reader judges from the worker's `FAILED` line in the Slurm `.out`, the `.err`, and the ORCA `.out`, and `python -m openqha.data.frame_labels <molecule> <generator> <basin> <k> --retry` is the human's lever |
 | `<stem>.failed.out` (the archive of a previous failure) beside the job | **the one retry is spent** | nothing re-selects it — a frame is re-attempted at most once, ever; the archive is inert to every parser and to the progress walk |
 | no `<stem>.out` | never run, or **cut** (walltime, SIGKILL, a dead node: the node-local run directory is gone, nothing came back) | rerun whole — nothing resumes, ORCA's `.gbw` never leaves the node |
 
-**The one-shot retry round (ticket 02; the recovery path after a mass failure, like the
-2026-09-25 ORCA incident).** A failed frame is re-attempted **exactly once**, and
-deliberately — never by an ordinary round. The sequencing is a rule, not a preference:
+**The one-shot retry (ticket 02; the recovery path after a mass failure, like the
+2026-09-25 ORCA incident).** A failed frame is re-attempted **exactly once**, and since
+the 2026-09-26 ruling (ticket 03) the recovery rides every round by default: a plain
+round's task list carries the failed frames without an archive, so a forgotten flag
+cannot orphan them; `RETRY_ONLY=1` sweeps just those failures and nothing else. The
+sequencing is a rule, not a preference — a round burns the shots of the failures it touches:
 
-    the fix deployed and verified (ticket 01, its site gate passed) and the retry round's own code in the checkout
+    the fix deployed and verified (ticket 01, its site gate passed) and the round's own code in the checkout
       ->  count the failures (`s0_hl_progress.py --tag draw300`)
-      ->  verify ONE frame by hand (`python -m openqha.data.frame_labels ... --retry`)  ->  this round
+      ->  verify ONE frame by hand (`python -m openqha.data.frame_labels ... --retry`)  ->  **any round**
 
 ```bash
-GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm
+GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm              # the mass round; the retries ride it
+GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm # the failures-only sweep
 ```
 
-The task list the round writes then also contains the failed frames whose failure has no
+A round's task list carries the failed frames whose failure has no
 archive — its 5th column (`retry` or `-`) tells the worker to pass the frame CLI's
 `--retry` — and before ORCA starts the failed `.out` is renamed to `<stem>.failed.out`
 (one slot per frame, replaced each time it is written), so the evidence of the failure
 survives the retry. After that retry the frame is **final** whatever the outcome: success
-ends finished; a failure keeps its archive and no later `--retry-failed` selects it (the
+ends finished; a failure keeps its archive and no later round selects it (the
 archive is the durable marker); a retry **cut** before anything came back leaves no
 `.out`, the archive untouched, and the ordinary policy reruns the frame whole — the cap
 counts failures, not cuts. The archive never reaches a parser, the Dataset or the
@@ -286,8 +291,8 @@ Logs land in `logs/slurm/` of the checkout (the directory the job was submitted 
 |---|---|---|
 | A | `branchA: scanning N drawn molecule record(s) ...` then the scan's seconds (the shared-pool record walk; `--workers` its threads — 6 min 19 s × 12 tasks single-threaded on 2026-09-24), then `branchA: N drawn, M pending, K for task i/n -> list[; F failed earlier]` at the top; one `qid rc=0 S s CREST reports C conformers … -> B basins` per molecule; last: `== A  K done, 0 not done, of K in this task; wall W s` | two kinds of `rc=1` (measured 2026-09-22: ~4 % + ~5 % of draw300): **(i)** `terminated EARLY N; shake used 1; fell back True … all criteria passed: False … written branchA.toml` — the published SHAKE=2 run lost some metadynamics, the SHAKE=1 retry (or, since ticket 26, the published run itself when the retry crashed) supplied the ensemble; criterion 10 records it; the molecule is **done**; **(ii)** `FileNotFoundError: CREST produced no ensemble` — neither attempt left an ensemble; `_records/branchA.failed` is written (reason, both attempts' last lines, the rerun command), the molecule is **not rerun** by any round and shows in the progress table's `A failed` column; a human reads the marker and reruns `s0_A_pipeline.py --species <qid> --tag draw300` by hand (a success clears the marker). **All other crashes are this kind too since 2026-09-24**: a runtime error raised anywhere in the pipeline (a damaged `curated_qm9.h5` group; the census refusing an empty basin list — its message now lists every condemned candidate with its imaginary count and lowest frequency, and the tighten's convergence count) leaves the same `_records/branchA.failed` with the traceback tail, so a molecule that crashes every round becomes one `A failed` row instead of staying `pending` forever. **One exception stays retryable: a CREST timeout** — §2's rule is that a molecule past `TIMEOUT_S` is skipped and the next round tries it again, so it keeps staying `pending` (don't park a molecule for the sin of landing on a busy node). `rc=124` is `WALL_S`, the worker's opt-in ceiling (`hl_branchA_worker.sh`; **no default** — molecules legitimately reach ~20 h, §2), fired after a hang outside CREST (the tighten / Hessian / MACE-socket phase had no bound before 2026-09-24): nothing was written, the next round reruns it whole. `not done` > 0 also for a molecule cut by the walltime — the next submission redoes it |
 | 02 | one `qid rc=0 S s` per molecule; last: `== 02  K Frame sets written, 0 not, of K in this task; wall W s` | `not` > 0 → the molecule's `02_frames.py --species` on debug, read its Record |
-| 03 | `frames  T pending, K for this task`; `timeout    ORCA per frame TIMEOUT_S=28800 s` (the one-shot retry round also prints `retry      RETRY_FAILED=1: …` and marks its frame list `(retry)`; a scope-limited round prints `generators basin only …` and runs only those frames); one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `failed` (earlier, not rerun) / `running` / `FAILED …` (now)); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table with its `failed` count, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` whose ORCA `.out` ends with the `TIMEOUT_S` trailer (the Hessian is bigger than estimated: read it, `--retry` with a larger `TIMEOUT_S` if it deserves one); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
-| 04 | `dataset 'draw300' at <level> (split by frame): N molecules (7 test), F frames: train … valid … test … pool …; H with a Hessian`; `per class:` table; `merged …/mace_draw300.<level>.extxyz` | `pool` > 0 after the driver ended → frames still without a job (its blocks were cut, or the driver died): run command 5 again; frames the Batch table calls `failed` stay out until the one-shot `--retry-failed` round (§3) or a human `--retry` touches them |
+| 03 | `frames  T pending, K for this task`; `timeout    ORCA per frame TIMEOUT_S=28800 s`; `retry      the failed frames without an archive are re-attempted ONCE in this round; …` (the rule line every round prints; with `RETRY_ONLY=1` also `retry-only the list holds ONLY those failed frames; …`; a scope-limited round prints `generators basin only …` and runs only those frames); `retries    R in this task` and one line per retry frame this task will touch; one `<qid> <frame> <status> <s> <MB>` per frame (`labelled` / `reused` / `refused` / `failed` (earlier; nothing ran this call) / `running` / `FAILED …` (now)); `== 03 wall W s for K frames`; task 0 then `== 03 assemble`, the per-molecule table with its `failed` count, `== 04 Dataset`, `== assemble exit 0|1` | `refused` (geometry mismatch: a rerun of A / 02 after 03 — the frame is stale, rerun the label); `FAILED` whose ORCA `.out` ends with the `TIMEOUT_S` trailer (the Hessian is bigger than estimated: read it, `--retry` with a larger `TIMEOUT_S` if it deserves one); `MB` near 6000 (`%maxcore` exhausted: lower `CONCURRENCY`) |
+| 04 | `dataset 'draw300' at <level> (split by frame): N molecules (7 test), F frames: train … valid … test … pool …; H with a Hessian`; `per class:` table; `merged …/mace_draw300.<level>.extxyz` | `pool` > 0 after the driver ended → frames still without a job (its blocks were cut, or the driver died): run command 5 again; frames the Batch table calls `failed` stay out until the next round (§3: every round carries the unarchived failures once) or a human `--retry` touches them |
 
 The per-frame `<s>` of the gate's 03 log, averaged over `basin_*` (Hessian) and
 `displaced_*` (gradient) frames, is the measured column of §2.
@@ -302,7 +307,7 @@ frames total / labelled / **failed** / unlabelled / running — read from disk (
 the Frame set Record, the finished file groups, the `.out`s without the terminal line, the
 `.running` locks — `squeue` is asked only about the job a lock names). When `unlabelled`
 is 0 the campaign's computing is done and `failed` is the list a human reads (§3's table);
-the one-shot retry round (§3) is the recovery — once per frame; when `running` is 0 and
+the next round carries their one retry (§3) — that is the recovery; when `running` is 0 and
 `unlabelled` is not, no job is working on it: the driver has ended
 or died — start it again (§1, command 5), or submit a round of the fallback (§3).
 `01_select.py --tag draw300` prints the same facts per molecule (`select.out`) with the

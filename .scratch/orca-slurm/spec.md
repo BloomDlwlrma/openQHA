@@ -1,11 +1,24 @@
 # The ORCA child environment is Slurm-blind, and a failed frame is retried at most once
 
-Status: ready-for-agent
+Status: implemented through ticket 06 (amendment 2026-09-26); the live-round verification is the user's
 Date: 2026-09-25
 Vocabulary: CONTEXT.md (Frame set, Batch, Calculation; the reference levels of `orca.LEVELS`).
 Decisions: ADR 0007 (to be written with ticket A: ORCA children are Slurm-blind; the worker owns placement).
 Grilling: `grilling-round-13-orca-parallel-framework.md` (Q1-Q7, Q5a-Q5d; rulings 2026-09-25).
 Evidence: `research-orca-slurm-primary-sources.md` (ORCA 6.1 manual, OpenMPI v4.1.8 source, slurm.schedmd.com).
+
+**Amendment 2026-09-26 (post-grilling ruling; tickets 03/04; commit 256f1ef).** The
+one-shot retry now RIDES EVERY ROUND by default: a flagless round's task list carries
+the failed frames without an archive (5th column `retry`; the archive rule is
+unchanged), and `RETRY_ONLY=1` (`03_labels.py --retry-only`) sweeps ONLY those failures
+and nothing else. `RETRY_FAILED=1` / `--retry-failed` are deleted from the driver, the
+round script, the comments and the command examples. The sequencing rule becomes: the
+fix deployed and verified -> count the failures -> verify ONE frame by hand -> **any
+round** (every round burns the retries it carries). Statements below that name
+`--retry-failed` as "the retry round", or that a failed frame is "not rerun by an
+ordinary round", are superseded by this amendment. The quiet listing is ticket 05 (commit
+3263349); the page/README/record wording and the dated amendments are ticket 06. The
+live-round verification is the user's.
 
 ## Problem Statement
 

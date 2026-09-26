@@ -149,7 +149,7 @@ SCHEMA = {
         "N_COMPUTED": ("Integer", None, "frames ORCA ran in this call"),
         "N_REUSED": ("Integer", None, "frames whose finished ORCA job was on disk before this call"),
         "N_REFUSED": ("Integer", None, "finished jobs whose geometry did not match the MACE file"),
-        "N_FAILED": ("Integer", None, "frames whose ORCA job ran and did not terminate normally (a .out without the terminal line); not rerun -- a human's decision (ticket 24)"),
+        "N_FAILED": ("Integer", None, "frames whose ORCA job ran and did not terminate normally (a .out without the terminal line); carried once by the next round unless its archive marks the retry spent (tickets 02/04)"),
         "N_UNLABELLED": ("Integer", None, "frames with no ORCA job on disk: never run, or cut before anything came back; the next round runs them"),
         "SECONDS_PER_FRAME": ("Double", "s", "mean ORCA wall time of the labelled frames (TOTAL RUN TIME)"),
         "MAX_MEMORY_MB": ("Double", "MB", "largest 'Maximum memory used' ORCA reported over all frames, per rank"),
@@ -518,7 +518,8 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
     """ORCA on one frame. Returns the parsed label plus `status` ("labelled" when ORCA ran
     now, "reused" when its finished job was on disk, "refused" on a geometry mismatch,
     "failed" when a `.out` without the terminal line is on disk and the frame is not
-    being retried -- the frame ran once and is a human's decision now, nothing runs -- or
+    being retried -- the frame ran once; the round carries its one retry unless spent
+    (tickets 02/04), nothing runs -- or
     when `retry` is asked for a frame whose retry is spent (an archive exists); "running"
     when another process holds the frame -- nothing is parsed in the last two) and the
     wall seconds of this call. Raises when ORCA does not terminate normally -- the caller
@@ -645,7 +646,7 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
                    OUT=str(folder / (stem + ".out")))
         if not finished(folder, stem, hessian=wants_hessian(g)):
             if failed(folder, stem):
-                row.update(STATUS="failed", REASON="ORCA did not terminate normally ({}); not rerun -- read it, then --retry".format(
+                row.update(STATUS="failed", REASON="ORCA did not terminate normally ({}); carried once by the next round unless its archive marks the retry spent".format(
                     Path(row["OUT"]).name))
             else:
                 row["REASON"] = "no ORCA job {} in {} (never run, or cut)".format(stem, folder)
@@ -727,8 +728,9 @@ def record_path(molecule, level=DEFAULT_LEVEL):
 def run(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxcore=MAXCORE_MB,
         scratch=None, timeout_s=None, runner=None, progress=None):
     """Every frame of one molecule in sequence, then `assemble`. A frame whose ORCA fails
-    is reported (`failed`), not fatal: the Record says which; a rerun skips it (one attempt,
-    round 11 Q3) unless `label_one(retry=True)` is asked for that frame."""
+    is reported (`failed`), not fatal: the Record says which; a rerun skips it unless
+    `label_one(retry=True)` is asked for that frame -- the round's worker does that for
+    the unarchived failures (tickets 02/04)."""
     molecule = Path(molecule)
     mlevel = mace_level(molecule)
     computed, failures = [], []
@@ -745,7 +747,7 @@ def run(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxcore=M
             if progress:
                 progress("{} {} {}".format(molecule.name, frame_tag(g, b, k),
                                            "running elsewhere, skipped" if lab["status"] == "running"
-                                           else "failed earlier, not rerun (--retry)"))
+                                           else "failed earlier; the next round carries its one retry (--retry by hand)"))
             continue
         if lab["status"] == "labelled":
             computed.append(frame_tag(g, b, k))
@@ -783,9 +785,9 @@ def _write_report(path, info, gen_rows, rows):
              "refused frame's .hess geometry differs in shape from the MACE file: the two levels "
              "of a frame must sit at one geometry or the Dataset compares different points. A failed frame's "
              "ORCA ran once and did not terminate normally (its .out says why; a timeout ends with the "
-             "TIMEOUT_S trailer); a round does not rerun it -- read it, then `python -m openqha.data.frame_labels "
-             "<molecule> <generator> <basin> <k> --retry`. A failed frame is re-attempted ONCE (ticket 02): "
-             "the retry archives the failed .out as <stem>.failed.out BEFORE ORCA starts (one slot, replaced "
+             "TIMEOUT_S trailer); the next round carries its one retry (tickets 02/04) -- read the .out, or "
+             "`python -m openqha.data.frame_labels <molecule> <generator> <basin> <k> --retry` by hand. "
+             "The retry archives the failed .out as <stem>.failed.out BEFORE ORCA starts (one slot, replaced "
              "each time it is written), so the failure's evidence survives; an existing archive marks the "
              "retry as spent and the frame is final -- a retry that fails stays failed. `--force` is the "
              "deliberate re-run of every label, never a round. An unlabelled frame has no ORCA job on disk and the "
@@ -798,7 +800,7 @@ def main(argv=None):
     """One frame from the command line -- the `xargs` worker of hpc/slurm/hl_labels.slurm
     (the hkuhpc shape: a task list, one process per line, idempotent, judged by the
     terminal line). Prints one line `<tag> <status> <seconds> <MB>`; exit 0 when the frame
-    is labelled, reused, refused, failed earlier (not rerun) or running elsewhere, 1 when
+    is labelled, reused, refused, failed earlier (nothing run by this call) or running elsewhere, 1 when
     ORCA failed now, 143 when the job was cut (SIGTERM). `--timeout` defaults to the
     environment's `TIMEOUT_S` (hl_labels.slurm: 28800 s); `--retry` re-attempts a failed
     frame ONCE (the failed `.out` is archived as `<stem>.failed.out` first; refused when

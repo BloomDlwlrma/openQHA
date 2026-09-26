@@ -247,10 +247,10 @@ def main():
         out4 = frame_labels.run(mol, LEVEL, generators=("basin",), runner=fake4)
         r4 = {(r["BASIN"], r["K"]): r for r in out4["frames"]}
         check("an ORCA that does not terminate raises (the .out stays) and the frame is FAILED: run() does not rerun it (runner called once), "
-              "the Record counts N_FAILED 1 / N_UNLABELLED 0 with the reason naming the .out",
+              "the Record counts N_FAILED 1 / N_UNLABELLED 0 with the reason naming the .out and the retry the next round carries (ticket 06)",
               raised and fake4.calls == 1 and not out4["failures"] and out4["info"]["N_FAILED"] == 1
               and out4["info"]["N_UNLABELLED"] == 0 and out4["info"]["N_REUSED"] == 1
-              and r4[(2, 0)]["STATUS"] == "failed" and "not rerun" in r4[(2, 0)]["REASON"]
+              and r4[(2, 0)]["STATUS"] == "failed" and "carried once by the next round" in r4[(2, 0)]["REASON"]
               and layout.orca_frame_file(mol, LEVEL, "basin", 2, 0, ".out").is_file()
               and not (layout.frames_dir(mol) / ("." + layout.orca_frame_stem(LEVEL, "basin", 2, 0))).exists(),
               (raised, fake4.calls, out4["failures"], out4["info"]["N_FAILED"], out4["info"]["N_UNLABELLED"]))
@@ -656,7 +656,7 @@ def main():
         dbg_t = (ROOT / "hpc" / "slurm" / "hl_pipeline_debug.slurm").read_text(encoding="utf-8")
         check("--force lives only on the frame CLI (the deliberate full relabel): the round driver and the worker never pass it; the worker maps the 5th column to --retry; "
               "hl_labels.slurm takes RETRY_ONLY (any non-empty value) into `--retry-only`, used exactly once, on the LIST call only; RETRY_FAILED / --retry-failed are gone from the driver, the script, the worker and the frame CLI; "
-              "the old ordinary-round claims ('not rerun') are gone from the driver and the round script; both arrays carry the column through their awk and dispatch 6 fields",
+              "the old ordinary-round claims ('not rerun') are gone from the driver, the round script, the frame CLI and the debug script -- which says a killed frame is re-attempted once by the next round (ticket 06); both arrays carry the column through their awk and dispatch 6 fields",
               "--force" not in drv_t and "--force" not in wk_t and "--force" in fl_t
               and '[ "$retry" = "retry" ] && cmd+=(--retry)' in wk_t
               and "-n 6" in sl_t and "$5, s, e" in sl_t
@@ -666,9 +666,11 @@ def main():
               and "RETRY_FAILED" not in fl_t and "--retry-failed" not in fl_t
               and "RETRY_FAILED" not in drv_t and "--retry-failed" not in drv_t and "retry_failed" not in drv_t
               and "--retry-only" in drv_t and "retry_only=args.retry_only" in drv_t
-              and "not rerun" not in drv_t and "not rerun" not in sl_t
+              and "not rerun" not in drv_t and "not rerun" not in sl_t and "not rerun" not in fl_t
+              and "not rerun" not in dbg_t and "re-attempts it once" in dbg_t
               and '-n 6' in dbg_t and "$4, $5, s, s + np - 1" in dbg_t,
-              ("--force" in drv_t, "--force" in wk_t, "-n 6" in sl_t, "$5, s, e" in sl_t, "$4, $5, s, s + np - 1" in dbg_t))
+              ("--force" in drv_t, "--force" in wk_t, "-n 6" in sl_t, "$5, s, e" in sl_t, "$4, $5, s, s + np - 1" in dbg_t,
+               "not rerun" in fl_t, "not rerun" in dbg_t))
         check("the scope ruling rides the round: hl_labels.slurm takes GENERATORS into BOTH the task list and the assemble, so task 0's exit 0 means every IN-SCOPE frame is labelled",
               'GENERATORS="${GENERATORS:-}"' in sl_t and 'GENERATORS_FLAG="--generators $GENERATORS"' in sl_t
               and sl_t.count("$GENERATORS_FLAG") == 2 and "$GENERATORS_FLAG --assemble" in sl_t

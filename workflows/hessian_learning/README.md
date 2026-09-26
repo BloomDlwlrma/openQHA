@@ -72,11 +72,12 @@ full `.out` of every job is kept.
 
 **One attempt per frame** (ticket 24, S0‑G‑96): an ORCA job that did not terminate normally
 — a crash, or the `TIMEOUT_S` kill (8 h; its `.out` ends with an `openQHA: ORCA killed
-after TIMEOUT_S=…` line) — leaves a **failed** frame that no ordinary round reruns; the
-reader judges from the `.out` and the worker's `FAILED` line. A failed frame is
-re‑attempted at most **once** (ticket 02 of the ORCA‑Slurm set): `RETRY_FAILED=1` makes
-the array round's task list also carry the failures without an archive (its 5th column
-`retry`/`-` tells the worker to pass the CLI's `--retry`), and the failed `.out` is
+after TIMEOUT_S=…` line) — leaves a **failed** frame; the reader judges from the `.out`
+and the worker's `FAILED` line. A failed frame is re‑attempted at most **once**, and
+**every round carries the failures without an archive by default** (ticket 02 of the
+ORCA‑Slurm set; ruling 2026‑09‑26 of ticket 03): the array round's task list includes
+them (its 5th column `retry`/`-` tells the worker to pass the CLI's `--retry`), while
+`RETRY_ONLY=1` makes a round that sweeps **only** those failures; the failed `.out` is
 renamed to `<stem>.failed.out` before ORCA overwrites it — the one archive slot, replaced
 each time it is written, and the durable marker that makes a retried‑and‑failed frame
 final. The per‑frame `python -m openqha.data.frame_labels <molecule> <generator> <basin>
@@ -89,7 +90,7 @@ that job dead **and** it was touched within 30 min, and a walltime SIGTERM relea
 once (`frame_labels.running_elsewhere`, `_Heartbeat`).
 
 ```bash
-python workflows/hessian_learning/03_labels.py --tag rings --all --dry-run          # the frame list
+python workflows/hessian_learning/03_labels.py --tag rings --all --dry-run          # the round's summary only
 python workflows/hessian_learning/03_labels.py --tag rings --species dsgdb9nsd_000048 --local   # here, no Parsl
 ```
 
@@ -109,8 +110,9 @@ What follows is the mechanism.
 each slot a core range, `xargs -P 16` runs an idempotent worker under `taskset` on the
 node‑local scratch, the terminal line decides; many nodes = a Slurm **array**, the list
 split round‑robin. Nothing runs on the login node. Every stage script skips what is on
-disk (finished and failed frames alike), so a killed or time‑limited job is resubmitted as
-it is; `TIMEOUT_S` (default 28800) bounds one ORCA job.
+disk — a finished label stays done, and a failed frame without an archive is carried once
+by the round that comes next (ticket 04) — so a killed or time‑limited job is resubmitted
+as it is; `TIMEOUT_S` (default 28800) bounds one ORCA job.
 
 | stage | script | worker per line | layout |
 |---|---|---|---|

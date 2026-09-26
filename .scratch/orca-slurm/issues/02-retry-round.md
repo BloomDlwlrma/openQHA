@@ -68,3 +68,18 @@ mapping of the 5th column (pinned textually in the tests, not executed -- it nee
 - The on-site sequencing: count first (`s0_hl_progress --tag draw300`), then the retry
   round; the one frame the 01 site gate retried already spent its own shot
   (`dsgdb9nsd_006885 displaced_b01_k3`), so it will not be re-selected.
+
+## Amendment 2026-09-26 (the trigger reverses: the retry rides every round; tickets 03-06 of this set)
+
+The ruling of 2026-09-26 (ticket 03) reverses this ticket's trigger: **the one-shot
+retry rides every round by default**. A flagless round's task list carries the failed
+frames without an archive (this ticket's `retry` 5th column and archive mechanics,
+unchanged), and `RETRY_ONLY=1` / `03_labels.py --retry-only` is the FAILURES-ONLY SWEEP.
+`RETRY_FAILED=1` / `--retry-failed` are deleted from the driver, the round script, the
+comments and the docs; the sequencing rule becomes: the fix deployed and verified ->
+count the failures -> verify ONE frame by hand -> **any round** (every round burns the
+retries it carries). Unchanged: the once-only cap, the single archive slot, the worker's
+5th-column protocol, the cut policy and `--force`. No ADR -- the change is reversible and
+page-recorded (this note, `spec.md`'s amendment, the round-13 record's amendment, and
+ticket 06's page/README/CONTEXT wording). Implemented by commit 256f1ef (ticket 04) and
+commit 3263349 (ticket 05).
