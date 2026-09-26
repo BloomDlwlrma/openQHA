@@ -20,23 +20,22 @@
 #      $S0_RUNS_ROOT/draw300), shows it, and submits ONE 'deimos' job per molecule
 #      (24 h, exclusive node -- hl_branchA.slurm's shape). Two ways to run it:
 #        cd ~/openQHA-main
-#        bash .scratch/msrrho-gtotal/q5-rerun-parked.sh     # login node; asks to confirm
-#        sbatch .scratch/msrrho-gtotal/q5-rerun-parked.sh   # NO QID: the job itself is the
-#                                                           # launcher; it submits the
-#                                                           # workers and exits in a minute
+#        bash hpc/slurm/q5-rerun-parked.sh     # login node; asks to confirm
+#        sbatch hpc/slurm/q5-rerun-parked.sh   # NO QID: the job itself is the launcher;
+#                                              # it submits the workers and exits in a minute
 #      Nothing heavy runs in either form. YES=1 skips the prompt; DRY_RUN=1 prints
 #      without doing (launcher: the submissions; worker: the resolved command).
 #
 #   2. WORKER -- the per-molecule job the launcher submits (or by hand:
-#        sbatch --export=HOME="$HOME",QID=<qid> .scratch/msrrho-gtotal/q5-rerun-parked.sh,
-#      and inside an allocation: QID=<qid> bash .scratch/msrrho-gtotal/q5-rerun-parked.sh).
+#        QID=<qid> sbatch hpc/slurm/q5-rerun-parked.sh,
+#      and inside an allocation: QID=<qid> bash hpc/slurm/q5-rerun-parked.sh).
 #      Reruns ONE molecule with the same command hl_branchA_worker.sh runs, under the
 #      campaign environment (module purge, the NARROW unset, common.sh -> tianhe.sh,
 #      crest/xtb/python required), then reads the outcome FROM DISK and prints a
 #      paste-back block.
 #
 #   3. STATUS -- one line per molecule, now:
-#        bash .scratch/msrrho-gtotal/q5-rerun-parked.sh --status
+#        bash hpc/slurm/q5-rerun-parked.sh --status
 #
 # THE REUSE RULE (REUSE=1, the default)
 #      The parked runs died AT THE SCREEN, after CREST, so their draw300 ensembles
@@ -58,11 +57,15 @@
 #      design, ticket 26), anything else dying early -- restores the old marker:
 #      nothing was burned, the molecule stays parked, resubmit is the whole retry.
 #
-# SUBMISSION  The launcher submits with an explicit `--export` list, never
-#      `--export=ALL` -- and since sbatch's default IS all of the submitting shell's
-#      environment, the explicit list must be given. Only the job's own variables
-#      propagate (HOME included); the worker builds everything else from the checkout.
-#      See openQHA/AGENTS.md, "Submitting jobs" (user ruling, 2026-09-25).
+# SUBMISSION  The launcher submits the way the rest of hpc/slurm is submitted (user
+#      ruling, 2026-09-26): the default environment, the job's own variables as
+#      command prefixes -- `QID=... TAG=... sbatch ...`. No `--export` argument is
+#      written: the default already carries HOME, USER and LOGNAME. A restricted list
+#      would silently drop the identity ones, and a node whose passwd map cannot
+#      resolve the uid then kills every `getpass.getuser()` at torch's import -- that
+#      was job 7675703 (cnode5582, 2026-09-25); the draw300 hl_* jobs have always
+#      been submitted this way and never hit it.
+#      See openQHA/AGENTS.md, "Submitting jobs".
 #
 # EXPECTED SET  Typically five molecules; dsgdb9nsd_052993 is named in the repo as one
 #            (ticket 38's -6.84 cm^-1 case; t_branch_a_crash section D). A different
@@ -122,10 +125,10 @@ usage() {
 q5-rerun-parked.sh -- ticket 41 Q5: rerun the draw300 molecules parked by the old
 imaginary-frequency filter, under the frequency-floor census screen.
 
-  bash q5-rerun-parked.sh            launcher: find, show, submit (run from the checkout)
-  sbatch <this file>                 the same launcher from inside a job (no QID needed)
-  bash q5-rerun-parked.sh --status   one line per molecule, now
-  sbatch --export=HOME="$HOME",QID=<qid> <this file>   worker: rerun that one molecule
+  bash hpc/slurm/q5-rerun-parked.sh              launcher: find, show, submit (from the checkout)
+  sbatch hpc/slurm/q5-rerun-parked.sh            the same launcher from inside a job (no QID needed)
+  bash hpc/slurm/q5-rerun-parked.sh --status     one line per molecule, now
+  QID=<qid> sbatch hpc/slurm/q5-rerun-parked.sh  worker: rerun that one molecule
 
 Knobs (environment): TAG QIDS PARTITION TIME_LIMIT THREADS TIMEOUT_S WALL_S REUSE
 CHECKOUT BACKUP_DIR YES DRY_RUN FORCE BIND_CORES, and QID for the worker.
@@ -243,7 +246,7 @@ checkout_self() {
     # Inside a submitted job $0 is Slurm's node-local copy (/tmp/slurmd/jobNNN/
     # slurm_script); when the checkout's own path exists, use it for messages and
     # child submissions.
-    local p="$PWD/.scratch/msrrho-gtotal/q5-rerun-parked.sh"
+    local p="$PWD/hpc/slurm/q5-rerun-parked.sh"
     if [ -f "$p" ]; then printf '%s\n' "$p"; else printf '%s\n' "$SELF"; fi
 }
 
@@ -346,9 +349,9 @@ launcher)
         say ""
         say "DRY_RUN=1 -- nothing was submitted; the launcher would run, per qid:"
         for qid in "${PARKED[@]}"; do
-            say "  sbatch --job-name=q5_$qid --partition=$PARTITION --time=$TIME_LIMIT \\"
-            say "      --export=HOME=$HOME,QID=$qid,TAG=$TAG,REUSE=$REUSE,THREADS=$THREADS,TIMEOUT_S=$TIMEOUT_S,WALL_S=$WALL_S,BACKUP_DIR=$BACKUP_DIR,CHECKOUT=$PWD \\"
-            say "      $SELF_USE"
+            say "  QID=$qid TAG=$TAG REUSE=$REUSE THREADS=$THREADS TIMEOUT_S=$TIMEOUT_S \\"
+            say "      WALL_S=$WALL_S BACKUP_DIR=$BACKUP_DIR CHECKOUT=$PWD \\"
+            say "      sbatch --job-name=q5_$qid --partition=$PARTITION --time=$TIME_LIMIT $SELF_USE"
         done
         exit 0
     fi
@@ -363,17 +366,21 @@ launcher)
 
     mkdir -p logs/slurm || die "cannot create logs/slurm -- run from the checkout root" 2
     say ""
-    # Submit with an EXPLICIT --export list, never --export=ALL (AGENTS.md, "Submitting
-    # jobs"): only the job's own variables travel; the worker builds its environment
-    # from the checkout. sbatch's default would export the whole submitting environment.
+    # Submit the way the rest of hpc/slurm is submitted (user ruling, 2026-09-26):
+    # the default environment, the job's own variables as command prefixes -- no
+    # `--export` argument. The default carries HOME, USER and LOGNAME; a restricted
+    # list would drop the identity ones, and a node whose passwd map cannot resolve
+    # the uid then kills every `getpass.getuser()` at torch's import -- that was job
+    # 7675703 (cnode5582); the draw300 hl_* jobs, submitted this way, never hit it.
     for qid in "${PARKED[@]}"; do
         if [ "$FORCE" != 1 ] && command -v squeue >/dev/null 2>&1 \
            && squeue -h -u "$USER" -o '%j' 2>/dev/null | grep -qx "q5_$qid"; then
             warn "q5_$qid is already queued or running; skipped (FORCE=1 submits anyway)"
             continue
         fi
-        out="$(sbatch --job-name="q5_$qid" --partition="$PARTITION" --time="$TIME_LIMIT" \
-              --export=HOME="$HOME",QID="$qid",TAG="$TAG",REUSE="$REUSE",THREADS="$THREADS",TIMEOUT_S="$TIMEOUT_S",WALL_S="$WALL_S",BACKUP_DIR="$BACKUP_DIR",CHECKOUT="$PWD" \
+        out="$(QID="$qid" TAG="$TAG" REUSE="$REUSE" THREADS="$THREADS" TIMEOUT_S="$TIMEOUT_S" \
+              WALL_S="$WALL_S" BACKUP_DIR="$BACKUP_DIR" CHECKOUT="$PWD" \
+              sbatch --job-name="q5_$qid" --partition="$PARTITION" --time="$TIME_LIMIT" \
               "$SELF_USE" 2>&1)"
         if [ "$?" != 0 ]; then warn "sbatch failed for $qid: $out"; continue; fi
         jid="${out##* }"
@@ -382,6 +389,7 @@ launcher)
     say ""
     say "when the jobs finish:  bash $SELF_USE --status"
     say "then paste each worker block (the 'paste this back' section of its log) into ticket 41."
+    say "the remaining Frame sets follow:  TAG=$TAG sbatch --time=04:00:00 hpc/slurm/hl_frames.slurm"
     if [ "$FROM_JOB" = 1 ]; then
         say "OPENQHA-Q5: dispatcher job ${SLURM_JOB_ID} exits now; 'squeue -u \$USER -n q5_*' lists the workers (scancel cancels one)."
     fi
