@@ -25,7 +25,7 @@ DISPLACED_HESSIAN     = false                   # Boolean: was the engine Hessia
 N_FRAMES              = 6                       # Integer: frames kept, all generators
 N_DROPPED             = 0                       # Integer: frames dropped, all generators
 N_ENGINE_HESSIAN      = 3                       # Integer: kept frames carrying an engine Hessian (basin / merged / saddle, and displaced only with DISPLACED_HESSIAN)
-SECONDS               = 4.5799901485443115      # Double, s: wall time
+SECONDS               = 4.746299982070923       # Double, s: wall time
 
 [[Generator]]
 GENERATOR = "basin"                             # String: basin / displaced / merged / saddle

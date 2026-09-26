@@ -5,6 +5,7 @@
 .mem/
 # docs/*.md
 !docs/cite/
+docs/tutorials/archive/
 !docs/tutorials/
 
 # ---- data: large, redistributable by its owners, not by us --------------------------
