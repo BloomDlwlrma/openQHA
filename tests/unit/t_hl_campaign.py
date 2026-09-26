@@ -140,13 +140,15 @@ def main():
           not missing and not foreign and len(page) >= 6, (missing, foreign, len(page)))
     text = PAGE.read_text(encoding="utf-8")
     check("the page names the progress script, the exit-code signal, the resubmit-as-is rule, TIMEOUT_S = 28800, "
-          "the failed state, --retry (ticket 24), the one-shot retry round with its sequencing (ticket 02) "
+          "the failed state, --retry (ticket 24), the one-shot retry round's sequencing (ticket 02) with ticket 04's "
+          "command lines (the flagless mass round carries the retry; RETRY_ONLY=1 sweeps the failures) "
           "and the 2026-09-25 scope ruling (basin frames only, GENERATORS=basin on both commands)",
           all(s in text for s in ("s0_hl_progress.py --tag draw300", "assemble exits 0", "resubmitted **as it is**",
                                   "3-00:00:00", "TIMEOUT_S=28800", "**failed**", "--retry", "touched within 30 min",
                                   "GENERATORS=basin", "basin frames only",
-                                  "GENERATORS=basin RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm",
-                                  "--retry-failed", "the one retry is spent", "count the failures", "verify ONE frame by hand")))
+                                  "GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm",
+                                  "GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm",
+                                  "the one retry is spent", "count the failures", "verify ONE frame by hand")))
     sequence = ("TIMEOUT_S=14400 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm",
                 "TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm",
                 "python workflows/hessian_learning/01_select.py --tag draw300",

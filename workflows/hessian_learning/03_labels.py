@@ -9,13 +9,15 @@ molecule writes `<generator>.<level>.extxyz` and the Record `frames/labels.<leve
 toml}`. Finished frames (terminal line + `.hess`) are skipped, so a resubmission continues
 where the last one stopped. The Slurm log is the Batch's report.
 
-`--retry-failed` (ticket 02 of the ORCA-Slurm set) is the one-shot retry round: the task
-list additionally includes every FAILED frame whose failure has no archive
-(`frame_labels.retryable`), carries the per-frame retry intent to the worker, and the
-failed `.out` is archived as `<stem>.failed.out` before ORCA overwrites it. After that
-retry the frame is final whatever the outcome -- a failed retry keeps its archive and is
-never selected again, a cut retry leaves no `.out` and the ordinary policy reruns it
-whole.
+The one-shot retry (ticket 02) RIDES EVERY ROUND (ticket 04, ruling 2026-09-26): the
+task list carries every FAILED frame whose failure has no archive
+(`frame_labels.retryable`) alongside the never-run frames, marks it `retry` (the worker's
+5th column), and the failed `.out` is archived as `<stem>.failed.out` before ORCA
+overwrites it. `--retry-only` turns the round into the FAILURES-ONLY SWEEP: the list
+holds ONLY those failed frames and nothing else, so the recovery is a few hours instead
+of a full pass. After that retry the frame is final whatever the outcome -- a failed
+retry keeps its archive and is never selected again, a cut retry leaves no `.out` and the
+ordinary policy reruns it whole.
 
 TWO WAYS TO RUN IT (user ruling 2026-09-19):
   * a submitted job, plain bash + xargs, NO parsl: `hpc/slurm/hl_labels.slurm` calls this
@@ -73,7 +75,7 @@ from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels, frames       # noqa: E402
 from openqha.store import basins as basin_reader, layout     # noqa: E402
 
-COMPLETION = "<molecule>/frames/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists; a .out without that line is a failed frame -- a round skips it, `--retry-failed` re-attempts it once (archiving the old .out first), and an archived failure is final"
+COMPLETION = "<molecule>/frames/orca.<level>.<generator>_bBB_kK.out carries ****ORCA TERMINATED NORMALLY**** and the .hess (Hessian job) or .engrad (gradient job) exists; a .out without that line is a failed frame -- every round re-attempts it once (the old .out archived first), and an archived failure is final"
 
 
 # ======================================================================================
@@ -84,7 +86,8 @@ def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, 
     """One frame's ORCA job in a worker: `frame_labels.label_one` with the node-local
     scratch (`S0_SCRATCH`, set by hpc/env/*.sh) when there is one and `timeout_s` (the
     driver's `--timeout`, else the environment's `TIMEOUT_S`). `retry` is the round's
-    per-frame retry intent (`--retry-failed`), mapped to the frame's existing one retry.
+    per-frame retry intent (the task list's 5th column, `retry`/`-`), mapped to the
+    frame's existing one retry.
     Returns the Batch row; an
     exception is caught and returned as `error` so one frame never loses the batch. A
     `SystemExit` (the frame was CUT: SIGTERM at a block's time limit) is not an Exception
@@ -131,18 +134,19 @@ def choose(mols, limit, stratify):
     return [r["molecule_dir"] for r in dataset.apply_limit(rows, limit, stratify)]
 
 
-def pending(mols, level, generators, retry_failed=False):
+def pending(mols, level, generators, retry_only=False):
     """(molecule, generator, basin, k, retry) for every frame this round should attempt:
-    every kept frame with NO ORCA job on disk, and -- with `retry_failed` (ticket 02) --
-    every FAILED frame whose failure is not archived yet (the one-shot retry), `retry`
-    True exactly for the latter. Per molecule (frames, finished, failed) -- the counts are
-    the disk's, the same with or without `retry_failed`.
+    every kept frame with NO ORCA job on disk, PLUS (ticket 04, ruling 2026-09-26) every
+    FAILED frame whose failure is not archived yet -- the one-shot retry that rides every
+    round -- `retry` True exactly for the latter. With `retry_only` the list holds ONLY
+    those failed frames: the never-run frames are queued by no other sweep. Per molecule
+    (frames, finished, failed) -- the counts are the disk's, the same in every mode.
 
-    A finished frame is skipped always; a failed one is skipped unless `retry_failed`
-    selects it (`retryable`: the `.out` lacks the terminal line and no `<stem>.failed.out`
-    exists -- one retry per frame, ever); a frame another process holds (`running_elsewhere`:
-    its job alive and its heartbeat fresh) is left to it. The per-frame manual lever
-    stays `python -m openqha.data.frame_labels ... --retry`."""
+    A finished frame is skipped always; a failed frame is selected when `retryable` (the
+    `.out` lacks the terminal line and no `<stem>.failed.out` exists -- one retry per
+    frame, ever) and no other process holds it (`running_elsewhere`: its job alive and
+    its heartbeat fresh); with `retry_only` the never-run frames are left alone. The
+    per-frame manual lever stays `python -m openqha.data.frame_labels ... --retry`."""
     todo, counts = [], {}
     for mol in mols:
         n_all = n_done = n_failed = 0
@@ -155,9 +159,11 @@ def pending(mols, level, generators, retry_failed=False):
                 continue
             if frame_labels.failed(folder, stem):
                 n_failed += 1
-                if retry_failed and frame_labels.retryable(folder, stem) and not frame_labels.running_elsewhere(folder, stem):
+                if frame_labels.retryable(folder, stem) and not frame_labels.running_elsewhere(folder, stem):
                     todo.append((mol, g, b, k, True))
                 continue
+            if retry_only:
+                continue                                   # the sweep queues no mass work
             if frame_labels.running_elsewhere(folder, stem):
                 continue                                   # another process holds it
             todo.append((mol, g, b, k, False))
@@ -175,10 +181,10 @@ def main(argv=None):
                                   "the default when neither --species nor --all is given: the tag")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="reference level (orca.LEVELS)")
     ap.add_argument("--generators", nargs="*", default=None, help="subset of {}".format(", ".join(frames.GENERATORS)))
-    ap.add_argument("--retry-failed", action="store_true",
-                    help="also attempt the FAILED frames that have no archive yet -- the one-shot retry round (ticket 02); "
-                         "the previous failed .out is archived as <stem>.failed.out before ORCA runs, and a frame whose "
-                         "retry is spent (archive present) is left alone")
+    ap.add_argument("--retry-only", action="store_true",
+                    help="list ONLY the FAILED frames whose failure has no archive yet -- the failures-only sweep (ticket 04); "
+                         "a plain round already carries them once: the previous failed .out is archived as <stem>.failed.out "
+                         "before ORCA runs, and a frame whose retry is spent (archive present) is left alone")
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules")
     ap.add_argument("--stratify", action="store_true", help="spread --limit evenly over the sorted index list")
     ap.add_argument("--limit-frames", type=int, default=None, help="at most N frames in this Batch (the debug job)")
@@ -217,7 +223,7 @@ def main(argv=None):
         mols = choose(mols, args.limit, args.stratify)
     if not mols:
         raise SystemExit("no molecule with a Frame set under tag {!r} (run 02_frames first)".format(args.tag))
-    todo, counts = pending(mols, args.level, args.generators, retry_failed=args.retry_failed)
+    todo, counts = pending(mols, args.level, args.generators, retry_only=args.retry_only)
     if args.limit_frames:
         todo = todo[:args.limit_frames]
     n_retry = sum(1 for e in todo if e[4])
@@ -239,22 +245,16 @@ def main(argv=None):
     print("molecules    {} ({})".format(len(mols), "given" if args.species else
                                          "selection {!r}".format(args.name) if args.name else
                                          "every Frame set under tag {!r}".format(args.tag)))
-    if args.retry_failed:
-        print("frames       {} to label, {} of them the one retry of a failed frame without an archive, {} finished already, {} failed frames on disk   ({})".format(
-            len(todo), n_retry, sum(d for _a, d, _f in counts.values()), sum(f for _a, _d, f in counts.values()), COMPLETION))
-        print("retry rule   --retry-failed: the failed .out is archived as <stem>.failed.out before ORCA starts; "
-              "a retry that fails stays failed and is never selected again (one attempt per frame, ever)")
-    else:
-        print("frames       {} to label, {} finished already, {} failed earlier (not rerun; --retry per frame)   ({})".format(
-            len(todo), sum(d for _a, d, _f in counts.values()), sum(f for _a, _d, f in counts.values()), COMPLETION))
+    print("frames       {} to label, {} of them the one retry of a failed frame without an archive, {} finished already, {} failed frames on disk   ({})".format(
+        len(todo), n_retry, sum(d for _a, d, _f in counts.values()), sum(f for _a, _d, f in counts.values()), COMPLETION))
+    print("retry rule   every round carries the failed frames without an archive once: the failed .out is archived as "
+          "<stem>.failed.out before ORCA starts; a retry that fails stays failed and is never selected again")
+    if args.retry_only:
+        print("retry-only   the list holds ONLY the failed frames without an archive; nothing else is queued")
     print("timeout      {} s per ORCA job".format(args.timeout if args.timeout is not None else
                                                  os.environ.get("TIMEOUT_S", "none")))
-    if args.retry_failed:
-        print("resume       finished frames are skipped; a failed frame whose retry is spent (archive present) is "
-              "final; a cut frame (no .out) is rerun whole; the Record per molecule is rewritten by assemble")
-    else:
-        print("resume       finished and failed frames are skipped; a cut frame (no .out) is rerun whole; "
-              "the Record per molecule is rewritten by assemble")
+    print("resume       finished frames are skipped; a failed frame without an archive is re-attempted once; a frame "
+          "whose retry is spent (archive present) is final; a cut frame (no .out) is rerun whole; the Record per molecule is rewritten by assemble")
     print()
     print("frame list:")
     for mol, g, b, k, retry in todo:
@@ -273,7 +273,7 @@ def main(argv=None):
     print()
     if args.dry_run:
         print(json.dumps(dict(level=args.level, keywords=keywords, resource=described, n_molecules=len(mols),
-                              n_frames=len(todo), retry_failed=args.retry_failed, n_retries=n_retry,
+                              n_frames=len(todo), retry_only=args.retry_only, n_retries=n_retry,
                               nprocs=args.nprocs, maxcore=maxcore), indent=2, default=str))
         return 0
     if args.list:
@@ -371,11 +371,12 @@ def main(argv=None):
         print(l)
     n_fail, n_ref = sum(i["N_FAILED"] for i in summaries), sum(i["N_REFUSED"] for i in summaries)
     if args.assemble:
-        # 0 = nothing pending: no frame without an ORCA job. Failed and refused frames are
-        # not pending -- they are a human's decision (--retry) and are counted above.
-        print("frames failed (not rerun) {}, refused {} over the chosen molecules".format(n_fail, n_ref))
+        # 0 = no frame without an ORCA job. A failed frame does not set the exit code: the
+        # next round re-attempts it once unless its archive exists (tickets 02/04); a
+        # refused frame is a human's decision (--retry after a rerun of 02).
+        print("frames failed {}, refused {} over the chosen molecules (a failure without an archive is re-attempted once by the next round)".format(n_fail, n_ref))
         return 0 if all(i["N_UNLABELLED"] == 0 for i in summaries) else 1
-    print("molecules fully labelled          {}/{}  ({} frames still unlabelled; {} failed -- not rerun, {} refused)".format(
+    print("molecules fully labelled          {}/{}  ({} frames still unlabelled; {} failed, {} refused)".format(
         sum(1 for i in summaries if i["N_LABELLED"] == i["N_FRAMES"]), len(mols),
         sum(i["N_UNLABELLED"] for i in summaries), n_fail, n_ref))
     # the exit status is THIS Batch's: every frame it attempted labelled (a --limit-frames

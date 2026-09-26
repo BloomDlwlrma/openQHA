@@ -249,7 +249,7 @@ deliberately — never by an ordinary round. The sequencing is a rule, not a pre
       ->  verify ONE frame by hand (`python -m openqha.data.frame_labels ... --retry`)  ->  this round
 
 ```bash
-GENERATORS=basin RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm
+GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm
 ```
 
 The task list the round writes then also contains the failed frames whose failure has no

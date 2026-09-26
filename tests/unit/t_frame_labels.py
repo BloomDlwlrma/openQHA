@@ -19,8 +19,9 @@ the one-shot retry (ticket 02, seam B): a retry archives the failed .out as
 the runner runs), a retry whose archive already exists is refused without running, a
 failed retry keeps the archive and stays failed, a finished frame + retry is skipped with
 no archive, `--force` re-runs a finished frame and still archives a failed one first; the
-round's selection (ticket 02, seam C, `03_labels.py`): `--retry-failed` takes exactly the
-failed frames without an archive and marks them `retry` in the task list's 5th column,
+round's selection (ticket 04, seam C, `03_labels.py`): the default round carries the
+failed frames without an archive alongside the never-run frames, marking them `retry` in
+the task list's 5th column; `--retry-only` takes exactly those and nothing else;
 the counts are the disk's either way, and neither the round driver nor the worker ever
 passes `--force`;
 the lock (ticket 24): held only while Slurm does not call its job dead AND its heartbeat
@@ -127,8 +128,8 @@ def _raises(fn):
 
 def _load_driver():
     """`workflows/hessian_learning/03_labels.py` as a module (its name is not an
-    identifier): the round's `--retry-failed` selection and its task list are exercised
-    through it (ticket 02, seam C)."""
+    identifier): the round's default selection, its `--retry-only` sweep and its task
+    list are exercised through it (ticket 04, seam C)."""
     path = ROOT / "workflows" / "hessian_learning" / "03_labels.py"
     spec = importlib.util.spec_from_file_location("hl_03_labels", path)
     mod = importlib.util.module_from_spec(spec)
@@ -559,7 +560,7 @@ def main():
               and raised_w and fake_w2.calls == 1 and arc_f.read_text(encoding="utf-8") == pre_force,
               (lab_w["status"], fake_w.calls, raised_w, arc_f.read_text(encoding="utf-8")[:40] if arc_f.is_file() else None))
 
-        # --- ticket 02, seam C: the round's --retry-failed selection and its task list -----
+        # --- ticket 04, seam C: the round carries the retry; --retry-only sweeps it -------
         root_c = Path(tmp) / "retry_root"
         mol_c, basins_c = make_molecule(Path(tmp) / "retry_src", with_merged=False)
         dest_c = layout.molecule_dir(root_c, "fake", "dsgdb9nsd_000042")
@@ -582,61 +583,73 @@ def main():
         frame_labels.failed_archive(folder_c, layout.orca_frame_stem(LEVEL, "basin", 2, 0)).write_text("older failure\n", encoding="utf-8")
 
         ld = _load_driver()
-        todo_plain, counts_plain = ld.pending([dest_c], LEVEL, None)
-        todo_retry, counts_retry = ld.pending([dest_c], LEVEL, None, retry_failed=True)
-        plain_ids = [(g, b, k, r) for _m, g, b, k, r in todo_plain]
-        retry_ids = [(g, b, k, r) for _m, g, b, k, r in todo_retry]
-        check("seam C, pending(): the plain round lists only the never-run frames; --retry-failed adds exactly the failed frame WITHOUT an archive (retry True) and leaves "
-              "the archived failure, the finished and the never-run frames alone; the counts are the disk's either way",
-              sorted(plain_ids) == sorted([("displaced", 0, 0, False), ("displaced", 2, 0, False)])
-              and sorted(retry_ids) == sorted([("basin", 1, 0, True), ("displaced", 0, 0, False), ("displaced", 2, 0, False)])
-              and counts_plain == counts_retry == {dest_c.name: (6, 2, 2)},
-              (plain_ids, retry_ids, counts_plain, counts_retry))
+        todo_default, counts_default = ld.pending([dest_c], LEVEL, None)
+        todo_only, counts_only = ld.pending([dest_c], LEVEL, None, retry_only=True)
+        default_ids = [(g, b, k, r) for _m, g, b, k, r in todo_default]
+        only_ids = [(g, b, k, r) for _m, g, b, k, r in todo_only]
+        check("seam C, pending(): the default round lists the never-run frames AND the failed frame WITHOUT an archive (retry True); --retry-only lists exactly that failure -- "
+              "the archived failure, the finished and the never-run frames stay unqueued; the counts are the disk's either way",
+              sorted(default_ids) == sorted([("basin", 1, 0, True), ("displaced", 0, 0, False), ("displaced", 2, 0, False)])
+              and sorted(only_ids) == [("basin", 1, 0, True)]
+              and counts_default == counts_only == {dest_c.name: (6, 2, 2)},
+              (default_ids, only_ids, counts_default, counts_only))
 
         old_root = os.environ.get("S0_RUNS_ROOT")
         os.environ["S0_RUNS_ROOT"] = str(root_c)
         try:
-            cap = io.StringIO()
-            with contextlib.redirect_stdout(cap):
-                rc_r = ld.main(["--tag", "fake", "--all", "--level", LEVEL, "--retry-failed",
-                                "--list", str(Path(tmp) / "retry_list.txt")])
-                rc_p = ld.main(["--tag", "fake", "--all", "--level", LEVEL, "--list", str(Path(tmp) / "plain_list.txt")])
+            cap_d, cap_o = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(cap_d):
+                rc_d = ld.main(["--tag", "fake", "--all", "--level", LEVEL, "--list", str(Path(tmp) / "plain_list.txt")])
+            with contextlib.redirect_stdout(cap_o):
+                rc_o = ld.main(["--tag", "fake", "--all", "--level", LEVEL, "--retry-only",
+                                "--list", str(Path(tmp) / "only_list.txt")])
         finally:
             if old_root is None:
                 os.environ.pop("S0_RUNS_ROOT", None)
             else:
                 os.environ["S0_RUNS_ROOT"] = old_root
-        listing_r = (Path(tmp) / "retry_list.txt").read_text(encoding="utf-8")
-        listing_p = (Path(tmp) / "plain_list.txt").read_text(encoding="utf-8")
-        text_c = cap.getvalue()
-        want_r = sorted(["{} basin 1 0 retry".format(dest_c),
+        listing_d = (Path(tmp) / "plain_list.txt").read_text(encoding="utf-8")
+        listing_o = (Path(tmp) / "only_list.txt").read_text(encoding="utf-8")
+        text_d, text_o = cap_d.getvalue(), cap_o.getvalue()
+        want_d = sorted(["{} basin 1 0 retry".format(dest_c),
                          "{} displaced 0 0 -".format(dest_c),
                          "{} displaced 2 0 -".format(dest_c)])
-        want_p = sorted(["{} displaced 0 0 -".format(dest_c), "{} displaced 2 0 -".format(dest_c)])
-        check("seam C, --list: the task list's 5th column is `retry` exactly for the selected failure and `-` otherwise; the plain round still lists only never-run frames; "
-              "the summary states the one-shot rule",
-              rc_r == 0 and rc_p == 0
-              and sorted(listing_r.splitlines()) == want_r and sorted(listing_p.splitlines()) == want_p
-              and "1 of them the one retry of a failed frame without an archive" in text_c
-              and "never selected again" in text_c and "(retry)" in text_c,
-              (rc_r, rc_p, listing_r, listing_p))
+        check("seam C, --list: a flagless round's task list carries the failed frame without an archive with `retry` in the 5th column and the never-run frames with `-`; "
+              "--retry-only's list holds exactly the failure and nothing else; the summary states the retry rule and the retry count",
+              rc_d == 0 and rc_o == 0
+              and sorted(listing_d.splitlines()) == want_d
+              and listing_o.splitlines() == ["{} basin 1 0 retry".format(dest_c)]
+              and "1 of them the one retry of a failed frame without an archive" in text_d
+              and "the failed .out is archived as <stem>.failed.out before ORCA starts" in text_d
+              and "(retry)" in text_d
+              and "ONLY the failed frames without an archive; nothing else is queued" in text_o
+              and "nothing else is queued" not in text_d,
+              (rc_d, rc_o, listing_d, listing_o))
 
         drv_t = (ROOT / "workflows" / "hessian_learning" / "03_labels.py").read_text(encoding="utf-8")
+        fl_t = (ROOT / "openqha" / "data" / "frame_labels.py").read_text(encoding="utf-8")
         wk_t = (ROOT / "hpc" / "slurm" / "hl_label_worker.sh").read_text(encoding="utf-8")
         sl_t = (ROOT / "hpc" / "slurm" / "hl_labels.slurm").read_text(encoding="utf-8")
         dbg_t = (ROOT / "hpc" / "slurm" / "hl_pipeline_debug.slurm").read_text(encoding="utf-8")
         check("--force lives only on the frame CLI (the deliberate full relabel): the round driver and the worker never pass it; the worker maps the 5th column to --retry; "
-              "both arrays carry the column through their awk and dispatch 6 fields",
-              "--force" not in drv_t and "--force" not in wk_t
-              and "--force" in (ROOT / "openqha" / "data" / "frame_labels.py").read_text(encoding="utf-8")
+              "hl_labels.slurm takes RETRY_ONLY (any non-empty value) into `--retry-only`, used exactly once, on the LIST call only; RETRY_FAILED / --retry-failed are gone from the driver, the script, the worker and the frame CLI; "
+              "the old ordinary-round claims ('not rerun') are gone from the driver and the round script; both arrays carry the column through their awk and dispatch 6 fields",
+              "--force" not in drv_t and "--force" not in wk_t and "--force" in fl_t
               and '[ "$retry" = "retry" ] && cmd+=(--retry)' in wk_t
-              and '-n 6' in sl_t and "$5, s, e" in sl_t and "--retry-failed" in sl_t and "RETRY_FAILED" in sl_t
+              and "-n 6" in sl_t and "$5, s, e" in sl_t
+              and "RETRY_ONLY" in sl_t and "RETRY_FAILED" not in sl_t and "--retry-failed" not in sl_t
+              and sl_t.count("--retry-only") == 1 and sl_t.count("$RETRY_FLAG") == 1
+              and "RETRY_FAILED" not in wk_t and "--retry-failed" not in wk_t
+              and "RETRY_FAILED" not in fl_t and "--retry-failed" not in fl_t
+              and "RETRY_FAILED" not in drv_t and "--retry-failed" not in drv_t and "retry_failed" not in drv_t
+              and "--retry-only" in drv_t and "retry_only=args.retry_only" in drv_t
+              and "not rerun" not in drv_t and "not rerun" not in sl_t
               and '-n 6' in dbg_t and "$4, $5, s, s + np - 1" in dbg_t,
               ("--force" in drv_t, "--force" in wk_t, "-n 6" in sl_t, "$5, s, e" in sl_t, "$4, $5, s, s + np - 1" in dbg_t))
         check("the scope ruling rides the round: hl_labels.slurm takes GENERATORS into BOTH the task list and the assemble, so task 0's exit 0 means every IN-SCOPE frame is labelled",
               'GENERATORS="${GENERATORS:-}"' in sl_t and 'GENERATORS_FLAG="--generators $GENERATORS"' in sl_t
               and sl_t.count("$GENERATORS_FLAG") == 2 and "$GENERATORS_FLAG --assemble" in sl_t
-              and "GENERATORS=basin" in sl_t and "GENERATORS=basin RETRY_FAILED=1" in sl_t and "--generators" in drv_t,
+              and "GENERATORS=basin" in sl_t and "GENERATORS=basin RETRY_ONLY=1" in sl_t and "--generators" in drv_t,
               (sl_t.count("$GENERATORS_FLAG"), "$GENERATORS_FLAG --assemble" in sl_t, "GENERATORS=basin" in sl_t))
 
     # --- ticket 09 A: one campaign, one tag, one Dataset -------------------------------

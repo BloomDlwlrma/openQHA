@@ -21,23 +21,25 @@ WHAT IS WRITTEN
         without one -- and the KEEP kinds are copied back under the stem, the run
         directory removed. Three states on a rerun (ticket 24, round 11): a FINISHED
         frame (terminal line in the `.out` and its product file) is skipped; a FAILED one
-        (a `.out` without the terminal line: ORCA crashed or hit `timeout_s`) is NOT rerun
-        by a Batch -- one attempt per frame, the reader judges from the `.out` and the
-        worker's line; a frame with no `.out` was never run, or was CUT (walltime,
-        SIGKILL, node death) before anything came back, and is rerun whole. No unit
-        resumes: ORCA's `.gbw` stays in the run directory.
+        (a `.out` without the terminal line: ORCA crashed or hit `timeout_s`) is carried
+        by the next round's one-shot retry -- once per frame, ever -- the reader judges
+        from the `.out` and the worker's line; a frame with no `.out` was never run, or
+        was CUT (walltime, SIGKILL, node death) before anything came back, and is rerun
+        whole. No unit resumes: ORCA's `.gbw` stays in the run directory.
 
         THE ONE RETRY (ticket 02 of the ORCA-Slurm set): a failed frame may be
-        re-attempted exactly once, deliberately -- `python -m openqha.data.frame_labels
-        ... --retry` for one frame, `03_labels.py --retry-failed` for a round. Before ORCA
-        starts the failed `.out` is renamed to `<stem>.failed.out` (ONE archive slot,
-        replaced each time it is written), so the failure's evidence survives; the
-        archive is also the durable once-only marker (`retryable`): a failed frame with
-        an archive is never selected again, a retry that fails keeps the archive and
-        stays failed, and a retry CUT before anything came back leaves no `.out`, the
-        archive untouched, and the ordinary policy reruns the frame whole. `--force` on
-        the frame CLI bypasses the finished/failed skip for the deliberate "re-run all
-        ORCA labels" operation ONLY -- it is never wired into a round or the driver.
+        re-attempted exactly once -- every labels round carries the failed frames that
+        have no archive (ticket 04, ruling 2026-09-26), `03_labels.py --retry-only`
+        sweeps just those, and `python -m openqha.data.frame_labels ... --retry` is the
+        human's lever for one frame. Before ORCA starts the failed `.out` is renamed to
+        `<stem>.failed.out` (ONE archive slot, replaced each time it is written), so the
+        failure's evidence survives; the archive is also the durable once-only marker
+        (`retryable`): a failed frame with an archive is never selected again, a retry
+        that fails keeps the archive and stays failed, and a retry CUT before anything
+        came back leaves no `.out`, the archive untouched, and the ordinary policy
+        reruns the frame whole. `--force` on the frame CLI bypasses the finished/failed
+        skip for the deliberate "re-run all ORCA labels" operation ONLY -- it is never
+        wired into a round or the driver.
     <molecule>/frames/<generator>.<level>.extxyz
         the labelled frames: positions VERBATIM from the MACE file, `energy` (eV),
         `forces` (eV/A), `hessian` (3N x 3N flattened, eV/A^2) from ORCA. A frame whose
@@ -249,7 +251,8 @@ def finished(folder, stem, hessian=True):
 def failed(folder, stem):
     """True when ORCA ran for the frame and did not terminate normally: a `<stem>.out` without
     the terminal line (a crash, or the `timeout_s` kill with its TIMEOUT_TRAILER). Such a
-    frame is not rerun by a Batch (one attempt, round 11 Q3); `label_one(retry=True)` is."""
+    frame is no mass work: the round's one-shot retry carries it once (tickets 02/04) and
+    `label_one(retry=True)` fires that attempt (refused when it is spent)."""
     out = Path(folder) / (stem + ".out")
     return out.is_file() and TERMINAL not in out.read_text(encoding="utf-8", errors="replace")
 
@@ -262,9 +265,10 @@ def failed_archive(folder, stem):
 
 def retryable(folder, stem):
     """True when the frame may be re-attempted once: a FAILED `.out` on disk (ticket 24)
-    -- not merely "no archive" -- and no archive yet. `--retry-failed` selects exactly
-    these; `label_one(retry=True)` archives the `.out` before it runs, so an existing
-    archive means the frame's one retry is spent and the frame is final."""
+    -- not merely "no archive" -- and no archive yet. The round selects exactly these
+    (every round, ticket 04; `--retry-only` for just them); `label_one(retry=True)`
+    archives the `.out` before it runs, so an existing archive means the frame's one
+    retry is spent and the frame is final."""
     return failed(folder, stem) and not failed_archive(folder, stem).is_file()
 
 def engrad_positions(path, natoms):
@@ -819,7 +823,7 @@ def main(argv=None):
     ap.add_argument("--retry", action="store_true",
                     help="re-attempt a failed frame once: the failed .out is archived as <stem>.failed.out before ORCA starts; refused when that archive already exists (the retry is spent)")
     ap.add_argument("--force", action="store_true",
-                    help="run ORCA even when the frame is finished or failed -- the deliberate 're-run all ORCA labels' operation ONLY, never a round (--retry-failed is the retry lever)")
+                    help="run ORCA even when the frame is finished or failed -- the deliberate 're-run all ORCA labels' operation ONLY, never a round (a round carries the one-shot retries by default; `--retry-only` sweeps them)")
     a = ap.parse_args(argv)
     tag = "{} {}".format(Path(a.molecule).name, frame_tag(a.generator, a.basin, a.k))
     try:

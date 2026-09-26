@@ -7,8 +7,8 @@
 #     cd $HOME/openQHA-main
 #     sbatch hpc/slurm/hl_labels.slurm                                        # tag smoke, deimos, 1 node, 4 h
 #     sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm      # the same on the short queue
-#     GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # the draw300 campaign: 12 nodes, one node each; BASIN frames only (scope ruling 2026-09-25, docs/hessian_learning_campaign.md §3); ~3.5 days in two rounds
-#     GENERATORS=basin RETRY_FAILED=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # THE ONE-SHOT RETRY ROUND (ticket 02): the failed basin frames without an archive, re-attempted ONCE, the failed .out archived first
+#     GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # the draw300 campaign: 12 nodes, one node each; BASIN frames only (scope ruling 2026-09-25, docs/hessian_learning_campaign.md §3); ~3.5 days in two rounds; the failed frames without an archive ride the round ONCE (ticket 04)
+#     GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # THE FAILURES-ONLY SWEEP (ticket 04, ruling 2026-09-26): ONLY the failed basin frames without an archive -- nothing else is queued
 #
 # LAYOUT: the job ASKS for the node (`--exclusive --ntasks=1 --cpus-per-task=64 --mem=0`)
 # and DERIVES the layout from what Slurm granted: CONCURRENCY = CORES / NPROCS, so 16 x 4
@@ -41,11 +41,12 @@ MEM_MB="${SLURM_MEM_PER_NODE:-0}"
 
 TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
-# RETRY_FAILED=1 turns this round into the ONE-SHOT RETRY ROUND (ticket 02): the task list
-# additionally carries the FAILED frames whose failure has no archive, re-attempted once
-# (the failed .out is archived as <stem>.failed.out before ORCA runs). 0 (the default) is
-# an ordinary round -- exactly 1 arms it, so `RETRY_FAILED=0` cannot burn a frame's shot.
-RETRY_FAILED="${RETRY_FAILED:-0}"
+# RETRY_ONLY (any non-empty value) turns this round into the FAILURES-ONLY SWEEP
+# (ticket 04, ruling 2026-09-26): the task list holds ONLY the FAILED frames whose
+# failure has no archive -- nothing else is queued, and the round is over when they are.
+# A plain round already carries those failures once (the one-shot retry rides every
+# round by default).
+RETRY_ONLY="${RETRY_ONLY:-}"
 # GENERATORS restricts the round to a subset of the frame generators (`--generators`): the
 # 2026-09-25 scope ruling runs draw300 BASIN-ONLY -- training and the msRRHO chain need
 # the basin Hessians; the other generators stay unlabelled in the Dataset's `pool` (docs/
@@ -59,10 +60,10 @@ export NPROCS="${NPROCS:-4}"
 # so CONCURRENCY x NPROCS ranks together stay below what the allocation holds.
 export MAXCORE="${MAXCORE:-6000}"
 # One attempt per frame, bounded (round 11, S0-G-96): ORCA is killed after TIMEOUT_S and
-# the frame is FAILED (its .out ends with the openQHA trailer); no round reruns it -- read
-# it, then `python -m openqha.data.frame_labels <mol> <gen> <b> <k> --retry`. 8 h = 3x the
-# 19-atom analytic Hessian's estimated upper end. A frame CUT by the walltime has no .out
-# and is rerun whole by the next round.
+# the frame is FAILED (its .out ends with the openQHA trailer). The next round re-attempts
+# it once (the retry rides every round, ticket 04); once its archive exists the frame is
+# final. 8 h = 3x the 19-atom analytic Hessian's estimated upper end. A frame CUT by the
+# walltime has no .out and is rerun whole by the next round.
 export TIMEOUT_S="${TIMEOUT_S:-28800}"
 CONCURRENCY="${CONCURRENCY:-$(( CORES / NPROCS ))}"
 [ "$CONCURRENCY" -ge 1 ] || CONCURRENCY=1
@@ -95,11 +96,11 @@ if [ $((CONCURRENCY * NPROCS)) -gt "$CORES" ]; then
 fi
 
 # ---- 2. the task list: pending frames of the selection, this array task's share --------
-# `RETRY_FAILED=1` makes the list additionally include the FAILED frames without an
-# archive (the one-shot retry, ticket 02); its 5th column (`retry`/`-`) is what tells the
-# worker to pass the frame CLI's `--retry`.
+# RETRY_ONLY (any non-empty value) makes the list the FAILURES-ONLY SWEEP (ticket 04):
+# ONLY the failed frames without an archive -- a plain round already carries them once.
+# The 5th column (`retry`/`-`) is what tells the worker to pass the frame CLI's `--retry`.
 RETRY_FLAG=""
-[ "$RETRY_FAILED" = 1 ] && RETRY_FLAG="--retry-failed"
+[ -n "$RETRY_ONLY" ] && RETRY_FLAG="--retry-only"
 GENERATORS_FLAG=""
 [ -n "$GENERATORS" ] && GENERATORS_FLAG="--generators $GENERATORS"
 LIST="$S0_SCRATCH/hl_frames_${SLURM_JOB_ID:-$$}.txt"
@@ -110,9 +111,10 @@ TOTAL=$(wc -l < "$LIST")
 MINE="$LIST.task$ARRAY_ID"
 awk -v id="$ARRAY_ID" -v n="$ARRAY_N" '(NR - 1) % n == id' "$LIST" > "$MINE"
 echo "frames     $TOTAL pending, $(wc -l < "$MINE") for this task"
-echo "timeout    ORCA per frame TIMEOUT_S=$TIMEOUT_S s; a failed frame is not rerun by an ordinary round"
-if [ "$RETRY_FAILED" = 1 ]; then
-    echo "retry      RETRY_FAILED=1: this round re-attempts the failed frames without an archive ONCE; the failed .out is archived as <stem>.failed.out before ORCA starts and a failed retry stays final"
+echo "timeout    ORCA per frame TIMEOUT_S=$TIMEOUT_S s; a failed frame is re-attempted once by a later round unless its archive exists"
+echo "retry      the failed frames without an archive are re-attempted ONCE in this round; the failed .out is archived as <stem>.failed.out before ORCA starts; a failed retry stays final"
+if [ -n "$RETRY_ONLY" ]; then
+    echo "retry-only the list holds ONLY those failed frames; nothing else is queued"
 fi
 if [ -n "$GENERATORS" ]; then
     echo "generators $GENERATORS only (scope ruling 2026-09-25): the other frame generators stay unlabelled"
@@ -134,6 +136,6 @@ if [ "$ARRAY_ID" = 0 ]; then
     rc=${PIPESTATUS[0]}
     echo; echo "== 04 Dataset"
     python -u workflows/hessian_learning/04_dataset.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --export openreact 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
-    echo; echo "== assemble exit $rc (1 = frames with no ORCA job yet: resubmit; failed frames are not rerun); Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
+    echo; echo "== assemble exit $rc (1 = frames with no ORCA job yet: resubmit; a failed frame without an archive is re-attempted once by the next round); Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
     exit "$rc"
 fi
