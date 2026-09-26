@@ -23,7 +23,8 @@ round's selection (ticket 04, seam C, `03_labels.py`): the default round carries
 failed frames without an archive alongside the never-run frames, marking them `retry` in
 the task list's 5th column; `--retry-only` takes exactly those and nothing else;
 the counts are the disk's either way, and neither the round driver nor the worker ever
-passes `--force`;
+passes `--force`; the printed round carries no full frame list and no per-molecule walk
+lines, and each task's log prints its own retry slice (ticket 05, seam C);
 the lock (ticket 24): held only while Slurm does not call its job dead AND its heartbeat
 is fresh (a fake `squeue` on PATH answers RUNNING / COMPLETING / exit 1; without `squeue`
 the heartbeat alone), the holder touches it every HEARTBEAT_S, a SIGTERM during ORCA
@@ -582,6 +583,20 @@ def main():
         put_c("basin", 2, 0, "ORCA started\ncrashed\n")                         # failed, archived
         frame_labels.failed_archive(folder_c, layout.orca_frame_stem(LEVEL, "basin", 2, 0)).write_text("older failure\n", encoding="utf-8")
 
+        # ticket 05: a second molecule, every frame finished -- its walk line ("all N frames
+        # finished") used to be the only thing a round's log said about it
+        mol_e, basins_e = make_molecule(Path(tmp) / "retry_src2", with_merged=False)
+        dest_e = layout.molecule_dir(root_c, "fake", "dsgdb9nsd_000043")
+        shutil.move(str(mol_e), str(dest_e))
+        rec_e = dest_e / "_records" / "branchA.toml"
+        rec_e.write_text(rec_e.read_text(encoding="utf-8").replace("dsgdb9nsd_000035", dest_e.name), encoding="utf-8")
+        frames.generate(dest_e, calc=Harmonic(basins_e), engine_name="MACE-OFF23_medium", n_displaced=1)
+        folder_e = layout.frames_dir(dest_e)
+        for g_e, b_e, k_e in frame_labels.frame_list(dest_e):
+            stem_e = layout.orca_frame_stem(LEVEL, g_e, b_e, k_e)
+            (folder_e / (stem_e + ".out")).write_text("x\n" + frame_labels.TERMINAL + "\n", encoding="utf-8")
+            (folder_e / (stem_e + (".hess" if frame_labels.wants_hessian(g_e) else ".engrad"))).write_text("", encoding="utf-8")
+
         ld = _load_driver()
         todo_default, counts_default = ld.pending([dest_c], LEVEL, None)
         todo_only, counts_only = ld.pending([dest_c], LEVEL, None, retry_only=True)
@@ -615,16 +630,24 @@ def main():
                          "{} displaced 0 0 -".format(dest_c),
                          "{} displaced 2 0 -".format(dest_c)])
         check("seam C, --list: a flagless round's task list carries the failed frame without an archive with `retry` in the 5th column and the never-run frames with `-`; "
-              "--retry-only's list holds exactly the failure and nothing else; the summary states the retry rule and the retry count",
+              "--retry-only's list holds exactly the failure and nothing else; the summary states the retry rule and the retry count; "
+              "ticket 05: the printed round holds NO full frame list and NO per-molecule walk lines -- no frame tag, no `(retry)` marker, "
+              "no `frames finished` line, and the all-finished molecule is never named",
               rc_d == 0 and rc_o == 0
               and sorted(listing_d.splitlines()) == want_d
               and listing_o.splitlines() == ["{} basin 1 0 retry".format(dest_c)]
               and "1 of them the one retry of a failed frame without an archive" in text_d
               and "the failed .out is archived as <stem>.failed.out before ORCA starts" in text_d
-              and "(retry)" in text_d
+              and "8 finished already" in text_d
               and "ONLY the failed frames without an archive; nothing else is queued" in text_o
-              and "nothing else is queued" not in text_d,
-              (rc_d, rc_o, listing_d, listing_o))
+              and "nothing else is queued" not in text_d
+              and "frame list:" not in text_d and "frame list:" not in text_o
+              and "basin_b01_k0" not in text_d and "basin_b01_k0" not in text_o
+              and "displaced_b00_k0" not in text_d and "displaced_b02_k0" not in text_d
+              and "(retry)" not in text_d and "(retry)" not in text_o
+              and "frames finished" not in text_d and "frames finished" not in text_o
+              and dest_e.name not in text_d and dest_e.name not in text_o,
+              (rc_d, rc_o, listing_d, listing_o, text_d[:200], text_o[:200]))
 
         drv_t = (ROOT / "workflows" / "hessian_learning" / "03_labels.py").read_text(encoding="utf-8")
         fl_t = (ROOT / "openqha" / "data" / "frame_labels.py").read_text(encoding="utf-8")
@@ -651,6 +674,10 @@ def main():
               and sl_t.count("$GENERATORS_FLAG") == 2 and "$GENERATORS_FLAG --assemble" in sl_t
               and "GENERATORS=basin" in sl_t and "GENERATORS=basin RETRY_ONLY=1" in sl_t and "--generators" in drv_t,
               (sl_t.count("$GENERATORS_FLAG"), "$GENERATORS_FLAG --assemble" in sl_t, "GENERATORS=basin" in sl_t))
+        check("ticket 05: each task's log prints its own retry slice after the echoes -- the count line `retries    R in this task` and one line per retry frame (molecule name + generator_bBB_kK, like the old list)",
+              'echo "retries    $N_RETRY_TASK in this task"' in sl_t
+              and '$5 == "retry"' in sl_t and 'n = split($1, p, "/")' in sl_t and '%s_b%02d_k%d' in sl_t,
+              ('echo "retries' in sl_t, '$5 == "retry"' in sl_t, 'n = split($1' in sl_t, "%s_b%02d_k%d" in sl_t))
 
     # --- ticket 09 A: one campaign, one tag, one Dataset -------------------------------
     heads = "".join((ROOT / "hpc" / "slurm" / f).read_text(encoding="utf-8") for f in

@@ -119,6 +119,11 @@ fi
 if [ -n "$GENERATORS" ]; then
     echo "generators $GENERATORS only (scope ruling 2026-09-25): the other frame generators stay unlabelled"
 fi
+# ticket 05: this task's retry slice only -- the frames it will re-attempt, count + one
+# line each (the driver's log carries the summary, not the whole campaign)
+N_RETRY_TASK=$(awk '$5 == "retry"' "$MINE" | wc -l)
+echo "retries    $N_RETRY_TASK in this task"
+awk '$5 == "retry" { n = split($1, p, "/"); printf "  %s  %s_b%02d_k%d\n", p[n], $2, $3, $4 }' "$MINE"
 
 # ---- 3. the work: one worker per line, a core range per slot (hkuhpc's awk + xargs) ------
 echo; echo "== 03 labels"

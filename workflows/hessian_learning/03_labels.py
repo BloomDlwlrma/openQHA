@@ -17,7 +17,9 @@ overwrites it. `--retry-only` turns the round into the FAILURES-ONLY SWEEP: the 
 holds ONLY those failed frames and nothing else, so the recovery is a few hours instead
 of a full pass. After that retry the frame is final whatever the outcome -- a failed
 retry keeps its archive and is never selected again, a cut retry leaves no `.out` and the
-ordinary policy reruns it whole.
+ordinary policy reruns it whole. The round's log carries the summary block only -- no
+frame list, no per-molecule walk (ticket 05); in the submitted-job route each task's own
+retry slice prints in its slurm log (`hpc/slurm/hl_labels.slurm`).
 
 TWO WAYS TO RUN IT (user ruling 2026-09-19):
   * a submitted job, plain bash + xargs, NO parsl: `hpc/slurm/hl_labels.slurm` calls this
@@ -26,7 +28,7 @@ TWO WAYS TO RUN IT (user ruling 2026-09-19):
   * the ALF mode: this driver on the login node, parsl submitting blocks with
     `--resource tianhe_cpu` (SlurmProvider, sbatch), for a campaign nobody wants to babysit.
 
-    # the frame list only
+    # the round's summary only
     python workflows/hessian_learning/03_labels.py --tag rings --all --dry-run
     # this machine, in-process, no Parsl (the same list, the same code path per frame)
     python workflows/hessian_learning/03_labels.py --tag rings --species dsgdb9nsd_000048 --local
@@ -198,7 +200,7 @@ def main(argv=None):
     ap.add_argument("--partition", default=None)
     ap.add_argument("--account", default=None)
     ap.add_argument("--debug", action="store_true", help="the site's short partition, one allocation")
-    ap.add_argument("--dry-run", action="store_true", help="print the frame list and submit nothing")
+    ap.add_argument("--dry-run", action="store_true", help="print the round's summary and submit nothing")
     ap.add_argument("--list", metavar="FILE", default=None,
                     help="write the pending frames as a task list (molecule_dir generator basin k retry, one per line; "
                          "retry is `retry` or `-`) for the xargs worker of hpc/slurm/hl_labels.slurm, and stop")
@@ -256,21 +258,8 @@ def main(argv=None):
     print("resume       finished frames are skipped; a failed frame without an archive is re-attempted once; a frame "
           "whose retry is spent (archive present) is final; a cut frame (no .out) is rerun whole; the Record per molecule is rewritten by assemble")
     print()
-    print("frame list:")
-    for mol, g, b, k, retry in todo:
-        print("  {}  {}{}".format(mol.name, frame_labels.frame_tag(g, b, k), "  (retry)" if retry else ""))
-    retried = {}
-    for mol, _g, _b, _k, retry in todo:
-        if retry:
-            retried[mol.name] = retried.get(mol.name, 0) + 1
-    for name, (n_all, n_done, n_failed) in counts.items():
-        if n_all == n_done:
-            print("  {}  all {} frames finished".format(name, n_all))
-        elif n_all == n_done + n_failed:
-            print("  {}  {} frames finished, {} failed{}".format(
-                name, n_done, n_failed,
-                " ({} retried in this round)".format(retried[name]) if name in retried else " -- nothing pending"))
-    print()
+    # ticket 05: the log carries the summary only -- no full frame list, no per-molecule
+    # walk; each task's own retry slice is printed by hpc/slurm/hl_labels.slurm
     if args.dry_run:
         print(json.dumps(dict(level=args.level, keywords=keywords, resource=described, n_molecules=len(mols),
                               n_frames=len(todo), retry_only=args.retry_only, n_retries=n_retry,
