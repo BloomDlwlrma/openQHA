@@ -6,9 +6,9 @@ seven plus a per-stratum draw of TEST_FRACTION (5 %) -- so conformers of one mol
 sit on both sides; valid = VALID_FRACTION (5 %) of the TRAINING molecules' labelled frames,
 drawn by frame; train = the rest. `--split-by frame` (the smoke / fit mode; production until
 S0-C-65): the pinned seven are whole test molecules, every other labelled frame goes to
-train / valid / test at 90 / 5 / 5 by its own seeded draw. Changing the mode of an existing
-Dataset needs `--resplit` (it discards the previous index's decisions and draws it all
-again; without it the build is refused, because one index cannot hold two split schemes). pool = frames without a label at the level yet. `--train-generators basin`
+train / valid / test at 90 / 5 / 5 by its own seeded draw. Changing the split mode of an
+existing Dataset is refused by the build -- one index cannot hold two split schemes (the
+library's `resplit=True` is the escape; this workflow does not expose it). pool = frames without a label at the level yet. `--train-generators basin`
 (the default; S0-C-54, ADR 0005): only basin frames may train; every labelled frame of
 another generator (displaced, merged, saddle) is a held-out frame in test, read by the
 judge and never trained on. Writes
@@ -53,10 +53,11 @@ def main():
     ap.add_argument("--tag", action="append", required=True, help="the tags of step 01, in the same order")
     ap.add_argument("--name", default=None, help="the Dataset name (default: the first tag)")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="the reference level of the labelled splits")
-    ap.add_argument("--split-by", choices=dataset.SPLIT_MODES, default="frame",
-                    help="frame: 90/5/5 of the non-pinned labelled frames (production); molecule: whole test molecules (the smoke set)")
-    ap.add_argument("--valid-fraction", type=float, default=None, help="default: the mode's (0.05 by frame, 0.1 by molecule)")
-    ap.add_argument("--test-fraction", type=float, default=None, help="default: the mode's (0.05 by frame, 0.1 by molecule)")
+    ap.add_argument("--split-by", choices=dataset.SPLIT_MODES, default=dataset.DEFAULT_SPLIT_MODE,
+                    help="molecule: whole test molecules, MACE-OFF's granularity (production since S0-C-65); "
+                         "frame: 90/5/5 of the non-pinned labelled frames (the smoke / fit set)")
+    ap.add_argument("--valid-fraction", type=float, default=None, help="default: 0.05 in both modes (S0-C-65)")
+    ap.add_argument("--test-fraction", type=float, default=None, help="default: 0.05 in both modes (S0-C-65)")
     ap.add_argument("--seed", type=int, default=dataset.SEED)
     ap.add_argument("--no-pinned", action="store_true",
                     help="drop the pinned rule: the seven split by frame like any other molecule. A FIT Dataset "
@@ -72,8 +73,7 @@ def main():
     out = dataset.build(root, args.tag, args.name, level=args.level, split_by=args.split_by,
                         valid_fraction=args.valid_fraction, test_fraction=args.test_fraction, seed=args.seed,
                         pinned=() if args.no_pinned else dataset.PINNED,
-                        purpose="fit" if args.no_pinned else "judge", train_generators=tuple(args.train_generators),
-                        resplit=args.resplit)
+                        purpose="fit" if args.no_pinned else "judge", train_generators=tuple(args.train_generators))
     i = out["info"]
     for m in out["molecules"]:
         print("{:18s} {:9s} {:5s} {} frames {:3d} labelled {:3d}  train {:3d} valid {:3d} test {:3d} pool {:3d}".format(
