@@ -66,8 +66,8 @@ def main():
                                max_epochs=3, batch_size=2, seed=5, device="cuda")
     p = pairs(argv)
     check("the loss is ours, by name, through the fork's hook",
-          p["--loss"] == "external" and p["--loss_module"] == "openqha.training.phl_loss:build"
-          and p["--loss_module"].startswith("openqha.training"), p.get("--loss_module"))
+          p["--loss"] == "external" and p["--loss_module"] == "openqha_hessian.phl_loss:build"
+          and p["--loss_module"].startswith("openqha_hessian"), p.get("--loss_module"))
     check("the keys are the Dataset's and the dtype is float64",
           (p["--energy_key"], p["--forces_key"], p["--hessian_key"]) == ("REF_energy", "REF_forces", "REF_hessian")
           and p["--default_dtype"] == "float64", p)

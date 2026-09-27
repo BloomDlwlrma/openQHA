@@ -27,7 +27,8 @@ import numpy as np
 
 from ..data import dataset as dataset_mod
 from ..store import property as prop
-from . import phl, run as train_run
+from openqha_hessian import phl
+from . import run as train_run
 
 PROGNAME = "openQHA hl_smoke_fit"
 

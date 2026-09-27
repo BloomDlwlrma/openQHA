@@ -73,7 +73,8 @@ from openqha import config                                       # noqa: E402
 from openqha.data import dataset as dataset_mod, frame_labels     # noqa: E402
 from openqha.potentials import engine                             # noqa: E402
 from openqha.store import layout, property as prop                # noqa: E402
-from openqha.training import judge, phl, phl_loss                 # noqa: E402
+from openqha.training import judge                                # noqa: E402
+from openqha_hessian import phl, phl_loss                         # noqa: E402
 
 PROGNAME = "openQHA probe_calibration"
 DEFAULT_K = (1, 2, 4, 8, 16)

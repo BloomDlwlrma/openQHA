@@ -45,7 +45,7 @@ def main():
     import torch
     from ase.io import read
     from openqha.data import dataset, frames
-    from openqha.training import phl, phl_loss
+    from openqha_hessian import phl, phl_loss
     try:
         from mace import data as mdata, tools as mtools
         from mace.tools import torch_geometric

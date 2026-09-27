@@ -64,7 +64,7 @@ from ..data import dataset as dataset_mod
 from ..store import dat, layout, property as prop, report
 from ..thermochem import hessian as hessian_mod
 from ..thermochem import hessian_compare as hc
-from . import phl
+from openqha_hessian import phl
 
 PROGNAME = "openQHA hl_judge"
 STEP = "judge"

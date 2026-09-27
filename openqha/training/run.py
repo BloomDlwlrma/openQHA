@@ -7,10 +7,10 @@ The shape is mace-md's: an entry point of OUR OWN builds mace's argument namespa
 calls `mace.cli.run_train.run(args)`. Nothing here reimplements a training loop; what
 mace could not do -- read a Hessian label (commit A), take a loss from outside (commit
 B), keep that loss in multihead mode and give it the force graph at evaluation (commit
-C) -- lives in the fork, and the loss itself is `openqha.training.phl_loss`, reached by
+C) -- lives in the fork, and the loss itself is `openqha_hessian.phl_loss`, reached by
 name:
 
-    --loss external --loss_module openqha.training.phl_loss:build
+    --loss external --loss_module openqha_hessian.phl_loss:build
 
 One run is a directory of the Dataset:
 
@@ -65,13 +65,13 @@ from pathlib import Path
 
 from ..potentials import engine
 from ..store import dat, property as prop, report
-from . import phl_loss
+from openqha_hessian import phl_loss
 
 PROGNAME = "openQHA hl_train"
 STEP = "train"
 
 #: the loss module the fork's `--loss external` imports
-LOSS_MODULE = "openqha.training.phl_loss:build"
+LOSS_MODULE = "openqha_hessian.phl_loss:build"
 
 #: MACE-torch's keys in the Dataset's merged file (`dataset.REF_*_KEY`)
 ENERGY_KEY, FORCES_KEY, HESSIAN_KEY = "REF_energy", "REF_forces", "REF_hessian"

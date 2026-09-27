@@ -94,7 +94,8 @@ def main():
     import torch
     from ase.io import read, write as ase_write
     from mace.calculators import MACECalculator
-    from openqha.training import phl, phl_loss, smoke_fit
+    from openqha.training import smoke_fit
+    from openqha_hessian import phl, phl_loss
 
     with tempfile.TemporaryDirectory() as tmp:
         d = build_dataset(tmp, "smoke_fit", LEVEL)

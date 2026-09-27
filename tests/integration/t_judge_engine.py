@@ -60,7 +60,8 @@ def main():
     from openqha.data import dataset, frames
     from openqha.potentials import engine
     from openqha.store import property as prop
-    from openqha.training import judge, phl
+    from openqha.training import judge
+    from openqha_hessian import phl
     try:
         calc, name, prov = engine.calculator(device="cpu")
     except Exception as exc:                                     # noqa: BLE001

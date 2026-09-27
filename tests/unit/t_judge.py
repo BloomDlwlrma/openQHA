@@ -39,7 +39,8 @@ from openqha.qm_interfaces import orca                           # noqa: E402
 from openqha.store import layout, property as prop               # noqa: E402
 from openqha.thermochem import hessian as hessian_mod            # noqa: E402
 from openqha.thermochem import hessian_compare as hc             # noqa: E402
-from openqha.training import judge, phl                          # noqa: E402
+from openqha.training import judge                               # noqa: E402
+from openqha_hessian import phl                                  # noqa: E402
 
 FIX = ROOT / "tests" / "data" / "propanal_molecule"
 LEVEL = "wb97m-d3bj_def2-tzvppd"

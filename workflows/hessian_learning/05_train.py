@@ -54,7 +54,8 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels               # noqa: E402
-from openqha.training import phl, phl_loss, run as train_run  # noqa: E402
+from openqha.training import run as train_run                # noqa: E402
+from openqha_hessian import phl, phl_loss                    # noqa: E402
 
 
 def _weight(text):

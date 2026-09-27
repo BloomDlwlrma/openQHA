@@ -28,7 +28,8 @@ sys.path.insert(0, str(ROOT))
 from openqha.data import dataset                                 # noqa: E402
 from openqha.qm_interfaces import orca                           # noqa: E402
 from openqha.store import layout, property as prop               # noqa: E402
-from openqha.training import phl, smoke_fit                      # noqa: E402
+from openqha.training import smoke_fit                           # noqa: E402
+from openqha_hessian import phl                                  # noqa: E402
 
 FIX = ROOT / "tests" / "data" / "propanal_molecule"
 LEVEL = "wb97m-d3bj_def2-tzvppd"

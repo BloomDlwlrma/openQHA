@@ -38,7 +38,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts" / "tooling"))
 from openqha.qm_interfaces import orca                            # noqa: E402
 from openqha.store import property as prop                        # noqa: E402
-from openqha.training import phl, phl_loss                        # noqa: E402
+from openqha_hessian import phl, phl_loss                         # noqa: E402
 import s0_probe_calibration as tool                               # noqa: E402
 
 LEVEL = "wb97m-d3bj_def2-tzvppd"
