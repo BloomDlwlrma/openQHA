@@ -61,8 +61,8 @@ landed first and failed on the missing package; `hvp.py` then made them green.
   unit by default) plus the provenance header: python, `openqha.__file__`,
   `openqha_hessian.__file__`, the `mace-torch` distribution version.
   `tests/_testlib.py` holds `openqha_src()` = `Path(openqha.__file__).resolve().parents[1]`
-  (`OPENQHA_SRC` overrides); both moved tests keep reading `tests/data/propanal_molecule`
-  in place.
+  (`OPENQHA_SRC` overrides); the engine test keeps reading `tests/data/propanal_molecule`
+  in place (reused, not copied) and `t_hvp` is fixture-free.
 - **openQHA's side.** `openqha/training/hvp.py` and the two tests are gone from the
   checkout; `phl_loss`'s sibling import became `from openqha_hessian import hvp as
   hvp_mod` -- its only outside-facing consumer (grep-verified). Nothing else changed.
@@ -92,5 +92,14 @@ landed first and failed on the missing package; `hvp.py` then made them green.
   dry-run harness. `t_frames_engine` rewrites the `SECONDS` field of
   `tests/data/propanal_molecule/frames/frames.{out,toml}` on any `--all` run; the two
   files were reverted before this commit.
-- **Unverified:** nothing outstanding for this slice's acceptance. Outside this slice
-  (01a/05/11/12): README, `install.sh`, the push/force-swap, the doc/notebook sweep.
+- **Unverified:** nothing outstanding for this slice's acceptance. Outside this slice,
+  pointed at their owners: README and `install.sh` (01a/05), the push/force-swap (11),
+  the doc/notebook sweep (12) -- and two inherited docstrings that still say `hvp`
+  lives in `openqha/training/` (`openqha/__init__.py`'s layout map and
+  `openqha/training/__init__.py`), which 01d's removal of the directory and 12's sweep
+  take with them.
+- **Review (two axes, `81a262c..260b0f2`):** the moved bodies are byte-identical to
+  their sources (the diffs are the tests' headers and `phl_loss`'s import line only);
+  one hard finding -- stale vocabulary in the new package docstring (CONTEXT.md bans
+  "projected ... loss") -- plus two precision fixes, all applied as the follow-up
+  commit.
