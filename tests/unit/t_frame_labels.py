@@ -721,6 +721,63 @@ def main():
           env["PATH"].startswith("/x/bin" + os.pathsep) and env["LD_LIBRARY_PATH"].startswith("/x/lib")
           and not os.environ.get("PATH", "").startswith("/x/bin"))
 
+    # --- ticket 07: the assemble walk goes quiet ---------------------------------------
+    with tempfile.TemporaryDirectory(prefix="quiet_") as tmp:
+        root_q = Path(tmp) / "root"
+        mol_u, basins_u = make_molecule(Path(tmp) / "quiet_src_u", with_merged=False)
+        dest_u = layout.molecule_dir(root_q, "fake", "dsgdb9nsd_000041")
+        dest_u.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(mol_u), str(dest_u))
+        frames.generate(dest_u, calc=Harmonic(basins_u), engine_name="MACE-OFF23_medium", n_displaced=1)
+        folder_u = layout.frames_dir(dest_u)
+        before_u = sorted(p.name for p in folder_u.iterdir())
+        rec_u = folder_u / "labels.{}.toml".format(LEVEL)
+
+        mol_l, basins_l = make_molecule(Path(tmp) / "quiet_src_l", with_merged=False)
+        parsed_l = place_basin_at_hess(mol_l)
+        basins_l[0] = (np.asarray(parsed_l["positions_bohr"]) / orca.BOHR_PER_ANGSTROM, basins_l[0][1], basins_l[0][2])
+        frames.generate(mol_l, calc=Harmonic(basins_l), engine_name="MACE-OFF23_medium", n_displaced=1)
+        dest_l = layout.molecule_dir(root_q, "fake", "dsgdb9nsd_000042")
+        dest_l.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(mol_l), str(dest_l))
+        frame_labels.label_one(dest_l, LEVEL, "basin", 0, 0, nprocs=4, maxcore=6000, runner=FakeOrca(),
+                               mace_level_name=frame_labels.mace_level(dest_l))
+        rec_l = layout.frames_dir(dest_l) / "labels.{}.toml".format(LEVEL)
+
+        out_u = frame_labels.assemble(dest_u, LEVEL, generators=("basin",))
+        after_u = sorted(p.name for p in folder_u.iterdir())
+        check("ticket 07: assemble leaves an untouched molecule alone -- nothing written, no Record, no report; the counts still say every frame is unlabelled",
+              after_u == before_u and not rec_u.exists()
+              and out_u["info"]["N_FRAMES"] == 3 and out_u["info"]["N_LABELLED"] == 0 and out_u["info"]["N_UNLABELLED"] == 3,
+              (before_u, after_u, out_u["info"]["N_UNLABELLED"]))
+
+        ld = _load_driver()
+        check("ticket 07: the assemble line renders NaN statistics as '-'",
+              ld._dash(float("nan"), ".0f") == "-" and ld._dash(float("nan"), ".2f") == "-" and ld._dash(12.3, ".0f") == "12",
+              (ld._dash(float("nan"), ".0f"), ld._dash(12.3, ".0f")))
+
+        old_root = os.environ.get("S0_RUNS_ROOT")
+        os.environ["S0_RUNS_ROOT"] = str(root_q)
+        try:
+            cap_q = io.StringIO()
+            with contextlib.redirect_stdout(cap_q):
+                rc_q = ld.main(["--tag", "fake", "--all", "--level", LEVEL, "--assemble", "--generators", "basin"])
+        finally:
+            if old_root is None:
+                os.environ.pop("S0_RUNS_ROOT", None)
+            else:
+                os.environ["S0_RUNS_ROOT"] = old_root
+        text_q = cap_q.getvalue()
+        check("ticket 07: the driver's assemble lists only molecules with labels or failures, tallies the rest, reports its own wall, and the empty-Batch block is gone; the exit-code gate is unchanged",
+              rc_q == 1
+              and "labelled 1/3" in text_q and str(rec_l) in text_q
+              and str(rec_u) not in text_q and not rec_u.exists()
+              and "over 2 molecules: 1 with labels, 0 with failures or refusals, 1 untouched" in text_q
+              and "wall_seconds_for_the_whole_batch" not in text_q
+              and "frames labelled in this Batch" not in text_q and "not under Slurm" not in text_q
+              and rec_l.is_file() and (layout.frames_dir(dest_l) / "basin.{}.extxyz".format(LEVEL)).is_file(),
+              (rc_q, text_q[-600:]))
+
     print("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL))
     return 0 if not FAIL else 1
 

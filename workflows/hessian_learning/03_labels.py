@@ -136,6 +136,13 @@ def choose(mols, limit, stratify):
     return [r["molecule_dir"] for r in dataset.apply_limit(rows, limit, stratify)]
 
 
+def _dash(v, spec):
+    """A statistic for the assemble line: NaN (nothing to average) reads as '-', not 'nan'."""
+    if v is None or v != v:
+        return "-"
+    return format(v, spec)
+
+
 def pending(mols, level, generators, retry_only=False):
     """(molecule, generator, basin, k, retry) for every frame this round should attempt:
     every kept frame with NO ORCA job on disk, PLUS (ticket 04, ruling 2026-09-26) every
@@ -256,7 +263,7 @@ def main(argv=None):
     print("timeout      {} s per ORCA job".format(args.timeout if args.timeout is not None else
                                                  os.environ.get("TIMEOUT_S", "none")))
     print("resume       finished frames are skipped; a failed frame without an archive is re-attempted once; a frame "
-          "whose retry is spent (archive present) is final; a cut frame (no .out) is rerun whole; the Record per molecule is rewritten by assemble")
+          "whose retry is spent (archive present) is final; a cut frame (no .out) is rerun whole; assemble refreshes the Record of every molecule with anything on disk (untouched molecules are left alone)")
     print()
     # ticket 05: the log carries the summary only -- no full frame list, no per-molecule
     # walk; each task's own retry slice is printed by hpc/slurm/hl_labels.slurm
@@ -332,6 +339,8 @@ def main(argv=None):
         if r.get("status") == "labelled":
             computed.setdefault(r["species"], []).append(r["frame"])
     summaries = []
+    quiet = 0
+    t_assemble = time.time()
     for mol in mols:
         try:
             out = frame_labels.assemble(mol, args.level, args.generators, args.nprocs, maxcore,
@@ -341,24 +350,37 @@ def main(argv=None):
             continue
         i = out["info"]
         summaries.append(i)
-        print("  {}  labelled {}/{} (computed {}, reused {}, refused {}, failed {}, unlabelled {})  {:.0f} s/frame  {:.0f} MB  floor max {:.2f} cm^-1  {}".format(
-            i["QM9_INDEX"], i["N_LABELLED"], i["N_FRAMES"], i["N_COMPUTED"], i["N_REUSED"], i["N_REFUSED"], i["N_FAILED"], i["N_UNLABELLED"],
-            i["SECONDS_PER_FRAME"], i["MAX_MEMORY_MB"], i["NOISE_FLOOR_MAX_CM"], out["record"]), flush=True)
+        if i["N_LABELLED"] or i["N_FAILED"] or i["N_REFUSED"]:
+            print("  {}  labelled {}/{} (computed {}, reused {}, refused {}, failed {}, unlabelled {})  {} s/frame  {} MB  floor max {} cm^-1  {}".format(
+                i["QM9_INDEX"], i["N_LABELLED"], i["N_FRAMES"], i["N_COMPUTED"], i["N_REUSED"], i["N_REFUSED"], i["N_FAILED"], i["N_UNLABELLED"],
+                _dash(i["SECONDS_PER_FRAME"], ".0f"), _dash(i["MAX_MEMORY_MB"], ".0f"), _dash(i["NOISE_FLOOR_MAX_CM"], ".2f"), out["record"]), flush=True)
+        else:
+            quiet += 1
+    assemble_wall = time.time() - t_assemble
 
     from openqha.store import batch_table as _bt
-    print()
-    for r in results:
-        r["record"] = r.get("record")
-        r["STATUS"] = r.get("status")
-    _bt.print_table(results, extra=(("frame", 18, "<"), ("route", 9, "<"), ("memory_mb", 9, ">"), ("floor_cm", 8, ">")))
-    ok = [r for r in results if r.get("status") in ("labelled", "reused", "running", "failed")]
-    single = sorted(r["seconds"] for r in ok if r.get("seconds") is not None)
-    print()
-    print("wall_seconds_for_the_whole_batch  {:.1f}".format(wall))
-    print("single_task_seconds_median        {:.1f}".format(single[len(single) // 2] if single else float("nan")))
-    for l in _bt.footer(wall, len(ok), len(results), what="frames labelled in this Batch"):
-        print(l)
     n_fail, n_ref = sum(i["N_FAILED"] for i in summaries), sum(i["N_REFUSED"] for i in summaries)
+    if results:
+        print()
+        for r in results:
+            r["record"] = r.get("record")
+            r["STATUS"] = r.get("status")
+        _bt.print_table(results, extra=(("frame", 18, "<"), ("route", 9, "<"), ("memory_mb", 9, ">"), ("floor_cm", 8, ">")))
+        ok = [r for r in results if r.get("status") in ("labelled", "reused", "running", "failed")]
+        single = sorted(r["seconds"] for r in ok if r.get("seconds") is not None)
+        print()
+        print("wall_seconds_for_the_whole_batch  {:.1f}".format(wall))
+        print("single_task_seconds_median        {:.1f}".format(single[len(single) // 2] if single else float("nan")))
+        for l in _bt.footer(wall, len(ok), len(results), what="frames labelled in this Batch"):
+            print(l)
+    else:
+        ok = []
+        print()
+        print("no Batch ran ({})".format("--assemble reads the disk" if args.assemble else "nothing was pending"))
+    print()
+    print("assemble  {:.1f} s over {} molecules: {} with labels, {} with failures or refusals, {} untouched (nothing on disk yet)".format(
+        assemble_wall, len(mols), sum(1 for i in summaries if i["N_LABELLED"]),
+        sum(1 for i in summaries if i["N_FAILED"] or i["N_REFUSED"]), quiet))
     if args.assemble:
         # 0 = no frame without an ORCA job. A failed frame does not set the exit code: the
         # next round re-attempts it once unless its archive exists (tickets 02/04); a

@@ -615,21 +615,49 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
 
 
 # ====================================================================== the molecule
+def _untouched(folder, molecule, level, generators):
+    """True when nothing for this level exists on disk: no ORCA file group of the level, no
+    label file, no Record. An `assemble` call could only repeat what is not there, so it is
+    skipped (ticket 07: a full-tree `--assemble` used to parse every molecule's engine file
+    and rewrite two Records per molecule that had never been labelled)."""
+    try:
+        names = {p.name for p in Path(folder).iterdir()}
+    except FileNotFoundError:
+        return False
+    if any(n.startswith("orca." + level + ".") for n in names):
+        return False
+    if any(layout.frames_file(molecule, g, level).name in names for g in generators):
+        return False
+    rec = record_path(molecule, level)
+    return rec.name not in names and (rec.name[:-5] + ".out") not in names
+
+
 def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxcore=MAXCORE_MB, computed=()):
     """Write `<generator>.<level>.extxyz` from every finished frame job of the molecule and
     the Record `frames/labels.<level>.{out,toml}`. `computed`: the frame tags ORCA ran in
     this call (for the N_COMPUTED / N_REUSED split; everything finished on disk counts
-    as reused otherwise)."""
+    as reused otherwise). A molecule with nothing on disk at this level -- no ORCA file
+    group, no label file, no Record -- returns as untouched: no engine file is read and
+    nothing is written (ticket 07)."""
     molecule = Path(molecule)
     folder = layout.frames_dir(molecule)
     t0 = time.time()
+    gens = tuple(generators) if generators else frames_mod.GENERATORS
+    if _untouched(folder, molecule, level, gens):
+        rec_u = frames_record(molecule)
+        n_u = len(frame_list(molecule, generators))
+        return dict(info=dict(MOLECULE_DIR=str(molecule), QM9_INDEX=str(rec_u["Calculation_Info"]["QM9_INDEX"]),
+                              LEVEL=level, N_FRAMES=n_u, N_LABELLED=0, N_HESSIAN_FRAMES=0, N_GRADIENT_FRAMES=0,
+                              N_COMPUTED=0, N_REUSED=0, N_REFUSED=0, N_FAILED=0, N_UNLABELLED=n_u,
+                              SECONDS_PER_FRAME=float("nan"), MAX_MEMORY_MB=float("nan"),
+                              NOISE_FLOOR_MAX_CM=float("nan"), SECONDS=time.time() - t0),
+                    generators=[], frames=[], record=record_path(molecule, level))
     rec = frames_record(molecule)
     info0 = rec["Calculation_Info"]
     mlevel = info0["LEVEL"]
     keywords, _blocks, route = keyword_line(level)
     computed = set(computed)
     rows, kept, e_basin = [], {}, {}
-    gens = tuple(generators) if generators else frames_mod.GENERATORS
     by_gen = {g: load_frames(molecule, g, mlevel) for g in gens}
 
     # the basin frames first, so ENERGY_ABOVE_BASIN of the others can be stated
