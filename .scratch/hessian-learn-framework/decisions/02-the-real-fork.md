@@ -23,8 +23,8 @@ Work:
 
 ## Answer
 
-**Decisions settled** (grilling 2026-09-26/27; execution + hashes landed 2026-09-27,
-appended below). Slice:
+**Decisions settled** (grilling 2026-09-26/27). **Amended 2026-09-27: execution + hashes
+landed — appended below.** Slice:
 [`implementation/02a-the-mace-fork.md`](../implementation/02a-the-mace-fork.md); durable
 record: ADR `0011` (`openQHA/docs/adr/0011-mace-fork-rebuild.md`).
 
@@ -60,7 +60,8 @@ true fork means the push is an object diff against the shared upstream pool.
 
 **Execution (2026-09-27).** Done across the three slices — [02b](../implementation/02b-the-rebuild.md)
 (rebuild), [02c](../implementation/02c-fork-and-push.md) (push), [02d](../implementation/02d-clone-verify-rehome.md)
-(clone, verify, re-home). The fork `BloomDlwlrma/mace` carries `openqha-hessian` @
+(clone, verify, re-home). The fork `BloomDlwlrma/mace`
+(https://github.com/BloomDlwlrma/mace) carries `openqha-hessian` @
 `1110ffbafd651a74d1d4678deb4748056d1dff0a` and `base-v0.3.16` @
 `5c2d7612eed88dc1463b5588a79c2d5f5718d322` (D); the default branch was switched to
 `openqha-hessian` (decision 3, revised). A fresh blobless clone at the sibling `mace/`

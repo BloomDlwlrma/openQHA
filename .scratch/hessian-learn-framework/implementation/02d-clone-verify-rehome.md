@@ -43,7 +43,7 @@ Resolved 2026-09-27, agent-run in the WSL `openqha` env.
   upstream mass fetch).
 - **Install evidence.** `python -m pip install -e .` in the WSL `openqha` env replaced
   the old editable install (`mace-torch 0.3.16` → `0.3.16+openqha`); `mace.__version__`
-  = `0.3.16+openqha` from `.../mace/mace/__init__.py`;
+  = `0.3.16+openqha` from the checkout's `mace` package (literal in `mace/__version__.py`);
   `openqha.potentials.engine.mace_fork_info()` = commit `1110ffb...`, `mace_fork_dirty`
   false, `mace_fork_path` = the `mace/` checkout — re-checked after the archive move,
   import also verified from a neutral cwd. The checkout is tracked-clean (pip's
