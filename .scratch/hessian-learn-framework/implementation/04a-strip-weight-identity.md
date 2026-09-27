@@ -1,0 +1,201 @@
+# 04a: The weight-identity strip — engine, records, tooling
+
+Type: task
+Status: open
+Serves: 04
+Blocked by: 04
+Part of: [hessian-learn-framework](../map.md)
+
+> Execution slice for [SHA256 retirement](../decisions/04-sha256-retirement.md) — the
+> openQHA-side half of the 2026-09-27 grilling (minimal strip; no `mace_off` delegation;
+> fingerprint and pin fully retired; `check_weights_are_physical` kept). The training-side
+> half (run/judge callers, registration output, the training slurm) is carried by
+> [The move](../decisions/07-the-move.md); the reference sweep by
+> [References sweep](../decisions/12-references-sweep.md). Wayfinder conventions apply:
+> the `Status` protocol, no triage labels (`docs/agents/issue-tracker.md`).
+
+## Problem Statement
+
+Loading a potential currently carries a bespoke identity layer that does nothing for the
+load: every calculator construction computes a state-dict SHA-256 fingerprint (a second
+full read of the model file), every Record that names a potential writes one or more
+`*_PARAMS_SHA256` fields plus a pin-status line, and the registry pin — when it exists —
+only prints a warning when the numbers differ. mace's own load path hashes nothing; the
+effort's destination is "weights load the native mace way". Meanwhile the operator still
+needs Records to say *which* weights produced a number, and old Records must stay exactly
+as they are.
+
+## Solution
+
+Remove the identity layer from the load path and from the Records it touched, and put the
+identity back where the grilling put it: the registered engine name plus the resolved
+weight file. No fingerprint, no pin, no pin status, no per-frame weight hash. `ENGINE`
+and a new resolved-path field identify the weights in a frames Record; each frame carries
+the engine name instead of a hash; the dataset Record lists the engines seen; the weights
+tool shrinks to "which mace is imported + what weight files are present". Old Records are
+untouched; new writers tolerate their absence. `check_weights_are_physical` and the two
+path overrides stay exactly as they are.
+
+## User Stories
+
+1. As a campaign operator, I want loading a weight file to be exactly the native mace
+   call with nothing of ours inspecting or comparing its bytes, so that no file mace
+   would load can be refused by this repository.
+2. As a campaign operator, I want the fingerprint's second full model read gone from
+   calculator construction, so that every batch process starts without paying it.
+3. As a campaign operator, I want a corrupted weight file (the 2026-09-10 class: right
+   size, right tensor count, all-finite, one 2.084e+306 tensor) still refused, so the
+   NaN class cannot silently recur.
+4. As a campaign operator, I want a missing weight file to keep the guidance error
+   (expected path, what the directory holds, both overrides), so a mis-copied file on a
+   cluster is diagnosed in one look.
+5. As a campaign operator, I want `S0_MACE_ROOT` and `S0_MACE_MODEL` to behave exactly
+   as before, so no cluster script changes.
+6. As a campaign operator, I want the registry to keep `source` and `note`, so every
+   Record still says what to cite and why the engine exists.
+7. As a reader of a frames Record, I want the resolved weight file path in the Record,
+   so a name that lies (an `S0_MACE_MODEL` override) is visible in the Record itself.
+8. As a reader of frames, I want each frame to carry the registered engine name, so a
+   merged dataset can still show whether one or several weights produced it.
+9. As a reader of a dataset Record, I want the set of engines seen, so the merge states
+   its sources without a hash.
+10. As a reader of an MD Record, I want its provenance section to keep the path, size
+    and versions, so an old trajectory stays traceable without the hash lines.
+11. As a reader of old Records, I want them byte-identical and still readable, so earlier
+    campaign numbers stay citable and nothing needs migrating.
+12. As the person registering a fine-tuned potential, I want a registry filename to be
+    allowed a relative sub-path, so campaign revisions can live grouped
+    (`mace_off23_<campaign>/`) while the base models stay flat.
+13. As the person diagnosing a failed load, I want the missing-file message to show
+    sub-directory names too, so "wrong directory", "wrong sub-directory" and "wrong
+    filename" are distinguishable.
+14. As a maintainer, I want the reduced weights tool to print only which mace is imported
+    and what files are present, so the tooling reports facts and nothing else.
+15. As a maintainer, I want tests to lock the new contract (retired keys absent; engine
+    name and weights-file path present), so the machinery cannot creep back silently.
+16. As the future publisher of fine-tuned models, I want the load path free of hashing,
+    so publication-time checksums (a later ticket) are a publisher-side concern only.
+
+## Implementation Decisions
+
+- **The engine registry module** (`openqha.potentials.engine`): delete
+  `fingerprint_state_dict`, `parameter_fingerprint`, their cache, the optional
+  `params_sha256` registry field, the pin comparison and its stderr WARN, and the four
+  provenance keys `params_sha256` / `n_tensors` / `params_bytes` / `params_pin_status`
+  (the file-size `bytes` stays). `provenance()` keeps engine / source / note /
+  weights_path / bytes / interface / mace & fork identity / dtype / patch state. Its
+  docstring states the identity: engine name + resolved path (+ fork commit, dtype).
+- **`check_weights_are_physical` and `S0_SKIP_WEIGHT_CHECK` are unchanged**, still called
+  at calculator construction.
+- **`model_path()`** keeps its resolution (root/filename, both overrides). Because a
+  registry `filename` may now be a relative sub-path, the missing-file diagnostics list
+  the root's top-level `*.model` files **and** its sub-directory names, keeping the
+  "expected path first, then what is actually there" split. No auto-latest, no pattern
+  resolution: an entry resolves to exactly one concrete file (a glob handed to
+  `MACECalculator` would silently make a committee).
+- **Storage convention documented in the module comments** (not a search rule): base
+  models stay flat in the root; self-trained revisions live under
+  `mace_off23_<campaign>/` as `<run>+<YYYYMMDD-HHMMSS>.model`. The registration-side
+  grammar (registry key, `--register-copy` creating the sub-directory) lands in ticket 07.
+- **Frames Record** (`openqha.data.frames`): drop `ENGINE_PARAMS_SHA256` and
+  `ENGINE_PIN_STATUS` from the schema and the writes; add `WEIGHTS_FILE` = the resolved
+  weight file path (from the provenance the build already holds), `-` when the calculator
+  was injected. *(The grilling approved this field as `ENGINE_FILE`; renamed here because
+  CONTEXT's **Engine file** vocabulary and the dataset index's existing `engine_file`
+  (the molecule's engine-level xyz) make that name ambiguous — say the word to keep the
+  old name.)*
+- **Frames per-frame info key**: `engine` = registered engine name replaces
+  `engine_params_sha256`. Old frame files keep their old attribute (they are data); all
+  readers use `.get` with `-`.
+- **Dataset builder** (`openqha.data.dataset`): the index column `engine` replaces
+  `engine_params_sha256`; the dataset Record carries `ENGINES` (sorted unique engine
+  names) in place of `ENGINE_PARAMS_SHA256`. The existing `engine_file` index field (the
+  molecule's engine-level file) is untouched.
+- **Branch-A property mapper** (`openqha.store.branch_a_property`): drop both fields
+  from schema and mapping.
+- **MD Record provenance print** (`openqha.quasi_harmonic.md_record`): drop
+  `params_sha256` / `n_tensors` / `params_pin_status`; keep `weights_path` / `bytes` /
+  `interface` / versions.
+- **Tooling scripts** (`s0_hl_smoke_fit`, `s0_probe_calibration`): drop the field writes
+  and prints; their schema and key lists follow.
+- **`s0_check_weights.py` reduced form**: keep `print_mace()` exactly (mace version,
+  module path, fork commit and dirty flag); the default output lists every registered
+  engine whose file resolves (name, path, bytes). Delete `--pin`, `--json`, `--compare`,
+  `file_sha256`, and every fingerprint call; the docstring states what the tool is now.
+- **Schema policy**: retired keys are removed from the schemas (not kept with `None`);
+  no migration, no backfill; readers stay tolerant. Old Records are byte-identical.
+- **Deliberately absent**: any replacement hash on the load path, in Records, or in
+  tests; no transplant of upstream's golden-hash practice; publication checksums are a
+  publisher-side concern (ticket 13, blocked by 09).
+
+## Testing Decisions
+
+- A good test here asserts **external behaviour**: a Record's content, a resolver's
+  output, a CLI's stdout — never the shape of the removal. "The retired key is absent" is
+  a contract test worth keeping once (the machinery must not creep back); everything else
+  is presence and value.
+- Seams — reuse existing ones; no new seam layer is introduced:
+  1. **Engine public API** (successor to the deleted fingerprint unit test, same seam):
+     resolve a registered name against a temporary root; a relative sub-path filename
+     resolves; `provenance()` carries exactly the kept keys; the missing-file error names
+     the expected path and lists top-level files plus sub-directories.
+  2. **Frames Record seam** (existing frames unit test): the new Record carries `ENGINE`
+     and the resolved-path field and none of the retired keys; each frame carries
+     `engine=`; injected-calculator builds write `-`.
+  3. **Dataset seam** (existing dataset unit test): index rows carry `engine`; the Record
+     carries `ENGINES`; old fixtures (with the old attribute) still build.
+  4. **Integration seam** (the existing frames→engine integration test): with the real
+     engine, the frame attribute equals the registered engine name.
+  5. **Tooling seam** (`t_probe_calibration` and the reduced CLI): the stub provenance is
+     updated; the reduced tool runs, prints the mace identity lines, exits 0.
+- **Deleted**: the engine-fingerprint unit test as a whole, including its registration in
+  the test-group list.
+- **Prior art**: the existing frames / dataset / branch-A unit tests for Record-content
+  assertions; the frames→engine integration test; the probe-calibration tooling test.
+- **Fixtures** under `tests/data/` stay byte-identical (old Records are immutable); only
+  assertions change.
+
+## Out of Scope
+
+- Training-side fields and callers — `FOUNDATION_PARAMS_SHA256` / `MODEL_PARAMS_SHA256` /
+  `MODEL_N_TENSORS`, the `ENGINE_PARAMS_SHA256` alias, `FOUNDATION_FILE`, the registration
+  output, `06_judge`'s arguments, `hl_train.slurm`: ticket 07.
+- Documentation, slurm and reference sweep, including the three stale slurm readers that
+  raise `KeyError` today: ticket 12.
+- The publication repository, releases and checksums: the publication ticket (13,
+  blocked by 09).
+- `CONFIG_SHA256` (the training recipe's identity, kept) and the other non-weight hashes
+  (`edge_list_sha256`, the qm9 list hash, curated content hashes, the mace-patch source
+  hash).
+- Any change to `check_weights_are_physical`'s behaviour or its skip variable.
+- Migrating or re-reading old Records; the mace-side fork work.
+
+## Acceptance
+
+- [ ] No fingerprint/pin symbol and no retired Record key remains in the sliced modules;
+      a grep for them over those modules is clean.
+- [ ] A frames Record built with a real engine carries `ENGINE` and the resolved
+      weights-file path; each frame carries `engine=<name>`.
+- [ ] A dataset built across old fixtures and new frames works; the index rows carry
+      `engine`; the Record carries `ENGINES`.
+- [ ] `provenance()` returns without the four retired keys; the missing-file error still
+      names the expected path and the directory contents (files and sub-directories).
+- [ ] `s0_check_weights.py` prints the mace identity and the presence listing; none of
+      the deleted flags exists.
+- [ ] openQHA's unit and integration groups pass; the deleted test is deregistered.
+- [ ] Reported per the operating rule: files changed, checks run, anything not verified.
+
+## Further Notes
+
+- The grilling is recorded in ticket 04; this slice exists because its openQHA-side edits
+  do not travel with [The move](../decisions/07-the-move.md) (the moved files are
+  run/judge and their callers).
+- The map's "Not yet specified" fog line about `s0_check_weights.py`'s reduced form is
+  answered here; the 04 resolution removes that line.
+- The two tooling scripts this slice edits are also touched by 01c/01d for their import
+  addresses; whichever side lands second rebases trivially.
+- Flagged for the registration/publication side, not decided here: `level_name()` derives
+  a Level string from a self-trained registered name (e.g. `draw300-r4+…`); whether a
+  fine-tuned revision is a new Level is decided when the first model is registered.
+- Environment reminder for the implementer: run the openQHA test groups from the repo
+  root in the WSL `openqha` env (see `openQHA/AGENTS.md`).

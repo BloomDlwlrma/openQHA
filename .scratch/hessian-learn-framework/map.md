@@ -31,6 +31,8 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 - [Native model loading: what mace/mace-off offer without SHA256](decisions/03-native-model-loading.md): mace's runtime load path hashes nothing (upstream's sha256 lives in its test goldens); `mace_off()` downloads/caches when bundles are absent; `engine.calculator()` is already native — ticket 04 must pick minimal-strip vs delegate-to-`mace_off`. Findings: [`research/native-model-loading.md`](research/native-model-loading.md).
 
+- [SHA256 retirement: replacements, record fields, and the load-time checks](decisions/04-sha256-retirement.md): minimal strip — weights load the native way; fingerprint/pin fully retired (registry keeps name/filename/source/note; identity = name + resolved path); new-Record fields: `WEIGHTS_FILE`/`FOUNDATION_FILE` in, per-frame `engine`, dataset `ENGINES`; `check_weights_are_physical` + both overrides kept; `CONFIG_SHA256` kept; fine-tunes stored as `mace_off23_<campaign>/<run>+<stamp>.model`, one fixed entry per revision; publication via tagged releases ([13](decisions/13-publication.md), blocked by 09). Slice: [04a](implementation/04a-strip-weight-identity.md); 07/12 carry their parts.
+
 ## Implementation
 
 <!-- one line per landed execution slice (implementation/): [<ticket title>](implementation/NNx-slug.md): gist -->
@@ -46,7 +48,6 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 - What to do with old artifacts whose recorded paths point at the old checkout (`mace_fork_path` in Records, run configs under `~/runs/openQHA`): migrate, note, or leave as history. Sharpens once *Identity after the split* and *The repo swap* settle the new paths.
 - Whether the package needs release artifacts of its own (wheels on GitHub Releases?) for offline Tianhe installs. Sharpens once *Install and transport* picks a mechanism.
-- What `s0_check_weights.py` becomes in reduced form (`--json`/`--compare` semantics) after the fingerprint machinery retires. Sharpens once *SHA256 retirement* lands.
 
 ## Out of scope
 
