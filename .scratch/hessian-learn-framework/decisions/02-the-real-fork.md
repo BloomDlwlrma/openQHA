@@ -1,7 +1,7 @@
 # The real fork: `BloomDlwlrma/mace`, rebuilt on upstream history
 
 Type: task
-Status: open
+Status: resolved
 Part of: [hessian-learn-framework](../map.md)
 
 ## Question / work
@@ -23,8 +23,8 @@ Work:
 
 ## Answer
 
-**Decisions settled** (grilling 2026-09-26/27; execution + hashes still to land — the
-resolver appends them below when the work completes). Slice:
+**Decisions settled** (grilling 2026-09-26/27; execution + hashes landed 2026-09-27,
+appended below). Slice:
 [`implementation/02a-the-mace-fork.md`](../implementation/02a-the-mace-fork.md); durable
 record: ADR `0011` (`openQHA/docs/adr/0011-mace-fork-rebuild.md`).
 
@@ -58,4 +58,15 @@ the orphan base are still the local tip (`f14a56f`); the required objects (v0.3.
 at depth 1) are already local, so the rebuild downloads nothing large; the fork being a
 true fork means the push is an object diff against the shared upstream pool.
 
-<!-- resolver: append what was done (fork URL, pushed SHAs, clone/import evidence) after the execution; add a line to the map's Decisions so far -->
+**Execution (2026-09-27).** Done across the three slices — [02b](../implementation/02b-the-rebuild.md)
+(rebuild), [02c](../implementation/02c-fork-and-push.md) (push), [02d](../implementation/02d-clone-verify-rehome.md)
+(clone, verify, re-home). The fork `BloomDlwlrma/mace` carries `openqha-hessian` @
+`1110ffbafd651a74d1d4678deb4748056d1dff0a` and `base-v0.3.16` @
+`5c2d7612eed88dc1463b5588a79c2d5f5718d322` (D); the default branch was switched to
+`openqha-hessian` (decision 3, revised). A fresh blobless clone at the sibling `mace/`
+installs editable in the WSL `openqha` env — `mace.__version__ == 0.3.16+openqha` and a
+clean `mace_fork_info()` (commit `1110ffb`, not dirty) read from that clone. The old
+checkout is archived at `_to_delete/openQHA-Hessian-old-fork-2026-09-26/`; the old
+history stays bundled at `_backup/openQHA-Hessian-old-history-2026-09-26.bundle`; the
+old → new SHA mapping feeds ticket 06 (table in the
+[02d](../implementation/02d-clone-verify-rehome.md) Answer).

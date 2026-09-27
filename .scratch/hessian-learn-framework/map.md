@@ -27,6 +27,8 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 - [The package line: what moves, what stays, and what the package is called](decisions/01-the-package-line.md): the whole `openqha/training/` (7 modules, 2,662 lines) and its 9 tests move into the `openqha-hessian` package (`openqha_hessian`, version 0.1.0); direction package → openqha — the library never imports it — and consumers keep their files, changing addresses only; no shim for `openqha.training`; `--loss_module` becomes `openqha_hessian.phl_loss:build`. Slice: [01a](implementation/01a-the-package-line.md); durable record: ADR 0010.
 
+- [The real fork: `BloomDlwlrma/mace`, rebuilt on upstream history](decisions/02-the-real-fork.md): the true fork carries `openqha-hessian` @ `1110ffb` + `base-v0.3.16` @ D `5c2d761` (default branch switched to `openqha-hessian`, decision 3 revised); a fresh blobless clone at the sibling `mace/` installs editable in the WSL env (`0.3.16+openqha`, clean `mace_fork_info`); the old checkout retired to `_to_delete/openQHA-Hessian-old-fork-2026-09-26/`. Slices: [02b](implementation/02b-the-rebuild.md), [02c](implementation/02c-fork-and-push.md), [02d](implementation/02d-clone-verify-rehome.md).
+
 - [Native model loading: what mace/mace-off offer without SHA256](decisions/03-native-model-loading.md): mace's runtime load path hashes nothing (upstream's sha256 lives in its test goldens); `mace_off()` downloads/caches when bundles are absent; `engine.calculator()` is already native — ticket 04 must pick minimal-strip vs delegate-to-`mace_off`. Findings: [`research/native-model-loading.md`](research/native-model-loading.md).
 
 ## Implementation
@@ -35,6 +37,7 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 - [02b: The rebuild](implementation/02b-the-rebuild.md): the branch rebuilt on upstream history — `base-v0.3.16` @ D `5c2d761` (v0.3.16 minus the three bundled binaries); six commits replayed to tip `1110ffb` (old-tip content identical); old history bundled in `_backup/openQHA-Hessian-old-history-2026-09-26.bundle`; push is 02c.
 - [02c: Fork and push](implementation/02c-fork-and-push.md): the true fork `BloomDlwlrma/mace` carries the rebuilt refs — `openqha-hessian` @ `1110ffb`, `base-v0.3.16` @ `5c2d761` (push ≈63 KiB; upstream's refs inherited unchanged, nothing force-pushed); the checkout's `origin` points at it; old fork untouched; default branch switched `develop` → `openqha-hessian` (see 02c Postscript).
+- [02d: Clone, verify, re-home](implementation/02d-clone-verify-rehome.md): fresh blobless clone of the fork at `mace/` (`1110ffb`; branch tracks `origin`; `upstream` pinned to the v0.3.16 tag refspec only); editable install in the WSL env (`0.3.16+openqha`, clean `mace_fork_info`); old checkout archived under `_to_delete/`; the install obligations for ticket 05 are in the Answer.
 
 ## Not yet specified
 
