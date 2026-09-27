@@ -1,6 +1,6 @@
 # The ORCA child environment is Slurm-blind, and a failed frame is retried at most once
 
-Status: implemented through ticket 06 (amendment 2026-09-26); the live-round verification is the user's
+Status: implemented through ticket 07 (amendments 2026-09-26/27); the live-round verification is the user's
 Date: 2026-09-25
 Vocabulary: CONTEXT.md (Frame set, Batch, Calculation; the reference levels of `orca.LEVELS`).
 Decisions: ADR 0007 (to be written with ticket A: ORCA children are Slurm-blind; the worker owns placement).
@@ -19,6 +19,15 @@ round** (every round burns the retries it carries). Statements below that name
 ordinary round", are superseded by this amendment. The quiet listing is ticket 05 (commit
 3263349); the page/README/record wording and the dated amendments are ticket 06. The
 live-round verification is the user's.
+
+**Amendment 2026-09-27 (ticket 07; commit e1f675b).** The assemble walk goes quiet: a
+molecule with nothing on disk at the level is left untouched -- `frame_labels.assemble`
+returns the all-unlabelled counts without reading its engine files or rewriting the
+Record and report; `03_labels.py --assemble` lists only molecules with labels or failures
+and closes with the tally (`assemble  W s over N molecules: ... untouched ...`), renders
+NaN statistics as `-`, measures its own wall around the assemble phase, and drops the
+empty Batch's `0.0 s / nan / 0/0 frames / slurm (none)` block. Exit-code semantics are
+unchanged.
 
 ## Problem Statement
 
