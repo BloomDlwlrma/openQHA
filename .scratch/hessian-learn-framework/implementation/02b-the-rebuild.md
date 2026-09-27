@@ -27,7 +27,7 @@ bundle. The rebuild performs no network transfer: every object it needs is alrea
 - [x] D's parent is `4d2da09`; its only change is dropping the three bundled `.model` paths; its message marks it fork-only and never-upstream; no new objects were fetched to build it.
 - [x] The six commits are replayed onto D, with the one expected `.gitignore` hunk resolved by keeping upstream's file and the version bump.
 - [x] Content invariance: a diff between the old tip `f14a56f` and the new tip is empty.
-- [x] The tag `base-v0.3.16` points at D; base→branch log is exactly six commits; base→branch diff is the same whole-change as the old world (12 files, +869/−18).
+- [x] The tag `base-v0.3.16` points at D; base→branch log is exactly six commits; base→branch diff is the same whole-change as the old world (11 files, +869/−17 — see Answer).
 - [x] Reported: D and new-tip SHAs (the material ticket 06's mapping consumes), anything unexpected.
 
 ## Answer

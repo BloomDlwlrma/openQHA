@@ -34,6 +34,7 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 <!-- one line per landed execution slice (implementation/): [<ticket title>](implementation/NNx-slug.md): gist -->
 
 - [02b: The rebuild](implementation/02b-the-rebuild.md): the branch rebuilt on upstream history — `base-v0.3.16` @ D `5c2d761` (v0.3.16 minus the three bundled binaries); six commits replayed to tip `1110ffb` (old-tip content identical); old history bundled in `_backup/openQHA-Hessian-old-history-2026-09-26.bundle`; push is 02c.
+- [02c: Fork and push](implementation/02c-fork-and-push.md): the true fork `BloomDlwlrma/mace` carries the rebuilt refs — `openqha-hessian` @ `1110ffb`, `base-v0.3.16` @ `5c2d761` (push ≈63 KiB; upstream's refs inherited unchanged, nothing force-pushed); the checkout's `origin` points at it; old fork untouched; default branch switched `develop` → `openqha-hessian` (see 02c Postscript).
 
 ## Not yet specified
 
