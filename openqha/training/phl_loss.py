@@ -49,7 +49,7 @@ import logging
 import numpy as np
 import torch
 
-from . import hvp as hvp_mod
+from openqha_hessian import hvp as hvp_mod
 from . import phl
 
 #: the validation estimator (S0-C-55, S0-C-67, S0-C-68): k fixed standard-normal probes per
