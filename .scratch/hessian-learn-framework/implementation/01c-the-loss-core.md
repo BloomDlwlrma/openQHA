@@ -98,3 +98,14 @@ the two modules then made them green.
   commit (the shared files' hunks were staged mine-only).
 - **Unverified:** nothing 01c governs. The doc/notebook sweep (12) and the code-side
   comments that still name the old path (01d) stay their tickets'.
+- **Review (two axes, `3040542..383985d` openQHA / `54d101a..3f286e8` package):** no
+  hard findings. Spec: every requirement and all six acceptance boxes borne out by the
+  diffs; the two scripts the ticket names but the diff does not touch reconciled by
+  recon (`s0_spice_pt_draw`, `s0_hl_smoke_fit` import neither module); no scope creep.
+  Standards: conventions held — module names kept, no shim, fixtures reused, the tests'
+  shape kept, the vocabulary guards clear; judgement calls left to their owners (the
+  `cartesian_loss_full` alias, for the sweep tickets; the interim `openqha.training`
+  → package imports, which 01d closes; the pre-existing weighting duplication in
+  `phl_loss`, moved wholesale). One carried defect fixed as the package follow-up
+  commit (`6d54c01`): the moved `t_phl_loss` docstring still described the retired
+  frame-seed / Label-bytes cache.
