@@ -179,7 +179,7 @@ def main():
             "from openqha.training import judge\n"
             "judge.hessian_at = stub._hessian_at\n"
             "t.judge.hessian_at = stub._hessian_at\n"
-            "t.engine.calculator = lambda **kw: (None, 'stub', {{'params_sha256': 'deadbeef'}})\n"
+            "t.engine.calculator = lambda **kw: (None, 'stub', None)\n"
             "raise SystemExit(t.main({argv!r}))\n".format(
                 root=str(ROOT), tooling=str(ROOT / "scripts" / "tooling"), td=str(td),
                 argv=["--frames", str(FIXM / "basin.{}.extxyz".format(LEVEL)), "--k", "1", "4",

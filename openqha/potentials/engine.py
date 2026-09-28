@@ -12,23 +12,21 @@ two reasons that arrived together:
 
 HOW A POTENTIAL IS LOADED
 -------------------------
-**The registry gives a filename; that filename is looked for in one flat directory; that
+**The registry gives a filename; that filename is looked for in one directory; that
 file is used.** Three steps, no fourth. Nothing reads the file's bytes, computes a
 digest, compares it against anything, or can refuse it.
 
 A MISSING weight file raises and never falls back to another potential -- that is the one
 rule, and it is about the file being absent, not about what is inside it.
 
-The identity of a run's potential is **the engine name, the path, and the parameter
-fingerprint** (`parameter_fingerprint`: a SHA-256 over the sorted state_dict -- tensor
-name, dtype, shape, raw bytes -- so it is blind to how the file was serialised and
-sensitive to any changed number; S0-G-73). All three go into every product's provenance
-record. A registry entry MAY carry `params_sha256`; when it does, a mismatch is
-CLASSIFIED and REPORTED in the record, never refused (a fine-tuned model has the same
-architecture and nearly the same byte count as its base, so the filename alone would no
-longer tell them apart -- ticket 01 of the Hessian-learning set, 2026-09-18). Keeping a
-level consistent across products (D0-4) is the operator's job: point the runs at the
-same engine and the same directory; the fingerprint is how a product proves it.
+What identifies a potential in every Record is **the engine name and the resolved path**
+(plus, in a provenance record, which mace checkout and dtype were in the loop). The
+parameter fingerprint and the registry pin were retired on 2026-09-27 (decision 04 of the
+Hessian-learning effort): mace's own load path hashes nothing, and the machinery only
+added a second full read of every model file to every calculator construction. Keeping a
+level consistent across Records (D0-4) is the operator's job: point each step at the same
+engine and the same directory; the name and the resolved path are how a Record says which
+weights it used.
 
 WHAT CHANGING THE DEFAULT COSTS -- read before relying on any older number
 --------------------------------------------------------------------------
@@ -50,7 +48,6 @@ change, and that was a load-bearing part of stage 0's rationale. It has to be ei
 accepted explicitly or restored by pointing stage 2 at the same new engine.
 """
 import os
-import sys
 from pathlib import Path
 
 from .. import S0_ROOT
@@ -93,16 +90,22 @@ from .. import S0_ROOT
 #: -------------------------------------------------------------------------------------
 #:     <repo>/data/potentials/MACE-OFF23_medium.model
 #:     <repo>/data/potentials/MACE-OFF23-SC_swa.model
-#:     ...
-#: No subdirectories. `S0_MACE_ROOT` points the whole directory somewhere else;
-#: `S0_MACE_MODEL` overrides one individual file. To change potentials, use `S0_ENGINE`.
+#:     <repo>/data/potentials/mace_off23_<campaign>/<run>+<YYYYMMDD-HHMMSS>.model
+#: Base models stay FLAT in the root, keeping their own filename. A self-trained
+#: revision lives under `mace_off23_<campaign>/` as `<run>+<stamp>.model` (the stamp in
+#: UTC, so the basename is globally unique; the 2026-09-27 storage convention of
+#: decision 04), and its registry entry names that relative sub-path. This is a NAMING
+#: convention, not a search rule: an entry resolves to exactly one concrete file.
+#: `S0_MACE_ROOT` points the whole directory somewhere else; `S0_MACE_MODEL` overrides
+#: one individual file. To change potentials, use `S0_ENGINE`.
 #: **The filename is the whole identity check.** Nothing reads, hashes or verifies the
 #: contents; the file under that name is the model. See `provenance`.
 #:
 #: -------------------------------------------------------------------------------------
 #: ADDING A NEW POTENTIAL (any MLIP, not just MACE)
 #: -------------------------------------------------------------------------------------
-#:   1. Drop the file in the directory above -- flat, keeping its own filename.
+#:   1. Drop the file in the directory above (flat for a base model; under its campaign
+#:      sub-directory for a self-trained revision), keeping its own filename.
 #:   2. Add an entry to ENGINES: `filename`, `source`, `note`. Three fields, no more.
 #:   3. Select it with `S0_ENGINE=<name>`; make it the default by changing
 #:      DEFAULT_ENGINE, and then also `configs/openqha.yaml` -> `engine:` -- see the
@@ -126,20 +129,22 @@ def model_root():
 
 #: Registry of selectable potentials.
 #:
-#: **A name and a filename; optionally a parameter fingerprint.**
+#: **A name and a filename. Three fields, no more.**
 #: `source` is the paper to cite (for a fine-tuned potential: the Dataset index it was
-#: trained on and the training config's hash); `note` is why the entry exists;
-#: `params_sha256`, when present, is what `s0_check_weights.py --pin` printed for the
-#: file that was meant. Nothing here gates the file -- put the file in the directory
-#: under the right name and it is used -- but `provenance()` reports whether the numbers
-#: in it are the pinned ones.
+#: trained on and the training config's hash); `note` is why the entry exists. Nothing
+#: here gates the file -- put the file in the directory under the right name and it is
+#: used -- and nothing compares its bytes (2026-09-27, decision 04: the fingerprint and
+#: the pin are retired; the name and the path are the identity).
 #:
 #: REGISTERING A FINE-TUNED POTENTIAL (Hessian-learning workflow, step 05):
-#:   1. copy `<name>.model` into `data/potentials/` (flat, keep the name);
-#:   2. `python scripts/tooling/s0_check_weights.py --pin data/potentials/<name>.model`
-#:      prints the entry: filename, params_sha256, n_tensors, bytes;
-#:   3. add it here with `source` = the Dataset index path + training config SHA;
-#:   4. select it with `S0_ENGINE=<name>`; every Record then carries its fingerprint.
+#:   1. copy `<name>.model` into `data/potentials/mace_off23_<campaign>/`, named
+#:      `<run>+<YYYYMMDD-HHMMSS>.model` (UTC, a globally unique basename);
+#:   2. add it here with `filename` = the relative sub-path, `source` = the Dataset index
+#:      path + training config SHA;
+#:   3. `python scripts/tooling/s0_check_weights.py <name>` resolves the entry and
+#:      reports the file it finds;
+#:   4. select it with `S0_ENGINE=<name>`; every Record then names the engine and the
+#:      resolved weight file.
 ENGINES = {
     "MACE-OFF24_medium": dict(
         filename="MACE-OFF24_medium.model",
@@ -150,7 +155,6 @@ ENGINES = {
         filename="MACE-OFF23_medium.model",
         source="https://arxiv.org/abs/2312.15211",
         note="PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family; closest lineage to stage 2 surface.",
-        params_sha256="e986a6cffd75c3a54b8f5d1f6511c6af00523872a173c5d2e0e8083751a5d7df",   # 79 tensors, 18 350 596 bytes; s0_check_weights.py 2026-09-18
     ),
     "MACE-OFF23_small": dict(
         filename="MACE-OFF23_small.model",
@@ -203,7 +207,10 @@ def model_path(name=None):
     for changing potentials.
 
     Resolved HERE, not at import: `model_root()/<filename>`, read fresh each call, so a
-    job that exports S0_MACE_ROOT late still gets the directory it asked for.
+    job that exports S0_MACE_ROOT late still gets the directory it asked for. A
+    registered `filename` may be a relative sub-path
+    (`mace_off23_<campaign>/<run>+<stamp>.model`); it is looked for as written, and an
+    entry resolves to exactly one concrete file.
     """
     name = name or engine_name()
 
@@ -226,21 +233,26 @@ def model_path(name=None):
     # ONE expected path in the message, because there is now only one. The previous
     # version listed eight directories it had searched, which sounds more helpful and is
     # not: it left the reader to guess which of the eight was the intended one. Say where
-    # the file goes, then say what is actually in that directory -- that one line
-    # distinguishes "wrong directory" from "right directory, wrong filename", which were
-    # indistinguishable before and are the two things that actually go wrong.
+    # the file goes, then say what is actually in that directory -- the top-level file
+    # names AND the sub-directory names, so "wrong directory", "wrong sub-directory" and
+    # "wrong filename" are told apart, which were indistinguishable before and are the
+    # three things that actually go wrong.
     if root.is_dir():
         present = sorted(q.name for q in root.glob("*.model"))
         found = ("directory exists and holds: " + (", ".join(present) if present
                                                    else "no .model files at all"))
+        subs = sorted(q.name for q in root.iterdir() if q.is_dir())
+        if subs:
+            found += "\n  sub-directories: " + ", ".join(subs)
     else:
         found = "that directory does not exist"
     raise FileNotFoundError(
         "weights for {} not found.\n"
         "  expected: {}\n"
         "  {}\n"
-        "The weight files are not kept in this repository. Copy the file into that "
-        "directory, keeping its name, with no subdirectory.\n"
+        "The weight files are not kept in this repository. Copy the file to that path, "
+        "keeping the name the registry gives (a base model flat; a self-trained revision "
+        "under its mace_off23_<campaign>/ sub-directory).\n"
         "  {}=<dir>   move the whole directory\n"
         "  S0_MACE_MODEL=<file>   override this one file\n"
         "  S0_ENGINE=<name>       use a different registered potential: {}".format(
@@ -251,16 +263,19 @@ def provenance(name=None):
     """Provenance record for the potential. Every product must carry it.
 
     **Loading a potential is: the registry gives a filename, `model_path` finds that
-    filename in the one flat directory, and that file is used.** Nothing inspects it,
-    nothing verifies it, nothing can refuse it.
+    filename in the one directory, and that file is used.** Nothing inspects it, nothing
+    verifies it, nothing can refuse it, and nothing reads its bytes -- the parameter
+    fingerprint and the registry pin retired on 2026-09-27 (decision 04).
 
     What this record therefore is: the engine name, where the model came from so it can be
     cited, the path actually loaded, and the parts of the software stack that decide the
-    numbers -- the MACE version and module path, the dtype, and the neighbour-list patch
-    state. That is what makes a product reproducible by someone holding the same weights.
+    numbers -- the MACE version and module path, the fork commit, the dtype, and the
+    neighbour-list patch state. That is what makes a Record reproducible by someone
+    holding the same weights.
 
-    The engine name and the file path are the identity. If two runs name the same engine
-    and the same path, they are the same potential as far as this repository is concerned.
+    The engine name and the resolved file path are the identity. If two runs name the same
+    engine and the same path, they are the same potential as far as this repository is
+    concerned.
     """
     name = name or engine_name()
     entry = ENGINES[name]
@@ -268,31 +283,12 @@ def provenance(name=None):
 
     import mace
     import torch
-    fp = parameter_fingerprint(path=p)
-    pin = entry.get("params_sha256")
-    if pin is None:
-        pin_status = "unpinned"
-    elif pin == fp["params_sha256"]:
-        pin_status = "matches"
-    else:
-        # The numbers are not the ones the registry meant. Said out loud, in the record
-        # and on stderr, and NOT refused: the operator may be running the file they
-        # intend (a fine-tuned copy under the base name); what they may not do is not
-        # know it (S0-G-73).
-        pin_status = "differs from the registry pin {}...".format(pin[:12])
-        print("WARNING: engine {} at {} has params_sha256 {}... but the registry pins {}...; "
-              "the numbers in this file are not the ones registered under that name."
-              .format(name, p, fp["params_sha256"][:12], pin[:12]), file=sys.stderr)
     return dict(
         engine=name,
         source=entry["source"],
         note=entry["note"],
         weights_path=str(p),
         bytes=p.stat().st_size,
-        params_sha256=fp["params_sha256"],
-        n_tensors=fp["n_tensors"],
-        params_bytes=fp["params_bytes"],
-        params_pin_status=pin_status,
         interface="mace.calculators.MACECalculator",
         mace_torch_version=mace.__version__,
         # A version string is not an implementation. Two MACE trees in this workspace both
@@ -320,7 +316,7 @@ def provenance(name=None):
 #: The mace this repository trains with is a FORK (mace-md's pattern: what must touch
 #: mace's internals is two generic commits on a branch, everything else uses the public
 #: API from `openqha/training/`). The fork's commit is part of a fine-tuned potential's
-#: identity, next to the parameter fingerprint.
+#: identity, next to the resolved weights path.
 MACE_FORK = "BloomDlwlrma/openQHA-Hessian@openqha-hessian"
 MACE_FORK_BASE = "base-v0.3.16"      # = upstream ACEsuit/mace v0.3.16 (4d2da09) minus three bundled model binaries
 
@@ -363,48 +359,6 @@ def mace_fork_info(module_file=None, run=None):
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         return unknown
     return dict(mace_fork_commit=commit, mace_fork_dirty=dirty, mace_fork_path=str(root))
-
-
-def fingerprint_state_dict(state_dict):
-    """SHA-256 over a mapping of name -> tensor, sorted by name: for each tensor the
-    name, dtype, shape and raw little-endian bytes. Blind to the container (pickle
-    protocol, zip layout, file order, `torch.save` version), sensitive to any changed
-    number, dtype or shape. Returns params_sha256, n_tensors, params_bytes."""
-    import hashlib
-    import numpy as np
-    h = hashlib.sha256()
-    n, nbytes = 0, 0
-    for key in sorted(state_dict):
-        v = state_dict[key]
-        arr = v.detach().cpu().contiguous().numpy() if hasattr(v, "detach") else np.asarray(v)
-        arr = np.ascontiguousarray(arr)
-        h.update(key.encode("utf-8")); h.update(b"\0")
-        h.update(str(arr.dtype).encode("ascii")); h.update(b"\0")
-        h.update(",".join(str(s) for s in arr.shape).encode("ascii")); h.update(b"\0")
-        h.update(arr.astype(arr.dtype.newbyteorder("<"), copy=False).tobytes())
-        n += 1
-        nbytes += arr.nbytes
-    return dict(params_sha256=h.hexdigest(), n_tensors=n, params_bytes=nbytes)
-
-
-_FINGERPRINTS = {}
-
-
-def parameter_fingerprint(name=None, path=None):
-    """The parameter fingerprint of a registered potential (by name) or of one weight
-    file (by path): `fingerprint_state_dict` of the module's `state_dict()` (a MACE
-    `.model` is a pickled module) or of the mapping itself when the file holds a plain
-    state_dict. Cached per path within a process; the file is read once."""
-    import torch
-    p = Path(path) if path is not None else model_path(name)
-    key = str(p.resolve())
-    if key not in _FINGERPRINTS:
-        obj = torch.load(str(p), map_location="cpu", weights_only=False)
-        sd = obj.state_dict() if hasattr(obj, "state_dict") else obj
-        if not hasattr(sd, "keys"):
-            raise TypeError("{} holds a {}, not a module or a state_dict".format(p, type(obj).__name__))
-        _FINGERPRINTS[key] = fingerprint_state_dict(sd)
-    return dict(_FINGERPRINTS[key])
 
 
 def _patch_state():

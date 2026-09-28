@@ -107,10 +107,11 @@ def main():
         level = out["info"]["LEVEL"]
         fb = frames.read_frames(layout.frames_file(mol, "basin", level))
         h0 = np.load(mol / "mace" / "basin00" / "hessian.npy")
-        check("the basin frame carries the stored hessian.npy to 0 and forces ~0, keys qm9_index/basin/generator/k/seed/level/smiles",
+        check("the basin frame carries the stored hessian.npy to 0 and forces ~0, keys qm9_index/basin/generator/k/seed/level/smiles/engine",
               np.abs(fb[0].info["hessian"] - h0).max() == 0.0 and np.abs(fb[0].get_forces()).max() < 1e-6
               and fb[0].info["generator"] == "basin" and fb[0].info["qm9_index"] == "dsgdb9nsd_000035"
-              and all(k in fb[0].info for k in ("basin", "k", "seed", "level", "smiles", "engine_params_sha256")),
+              and all(k in fb[0].info for k in ("basin", "k", "seed", "level", "smiles", "engine"))
+              and fb[0].info["engine"] == "MACE-OFF23_medium",
               sorted(fb[0].info))
         fd = frames.read_frames(layout.frames_file(mol, "displaced", level))
         x0 = basins[0][0]
@@ -229,9 +230,13 @@ def main():
               and fs[0].info["generator"] == "saddle", (fm[0].info, fs[0].info))
         doc = prop.load(out["record"])
         gen = {r["GENERATOR"]: r for r in doc["Generator"]}
-        check("the Record: [[Generator]] counts equal the files, [[Frame]] has one row per candidate, ENGINE_PIN_STATUS present",
+        check("the Record: [[Generator]] counts equal the files, [[Frame]] has one row per candidate; the weight identity is "
+              "ENGINE + the resolved WEIGHTS_FILE ('-' for an injected calculator) and the retired keys are gone",
               all(gen[g]["N_FRAMES"] == n[g] for g in n) and len(doc["Frame"]) == 17
-              and "ENGINE_PIN_STATUS" in doc["Calculation_Info"], gen)
+              and doc["Calculation_Info"]["ENGINE"] == "MACE-OFF23_medium"
+              and doc["Calculation_Info"]["WEIGHTS_FILE"] == "-"
+              and not {"ENGINE_PARAMS_SHA256", "ENGINE_PIN_STATUS"} & set(doc["Calculation_Info"]),
+              {k: v for k, v in doc["Calculation_Info"].items() if "ENGINE" in k or "WEIGHT" in k})
         check("the Report ends with the terminal line",
               (layout.frames_dir(mol) / "frames.out").read_text().rstrip().endswith("openQHA frames terminated normally"))
 

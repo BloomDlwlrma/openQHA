@@ -108,7 +108,6 @@ FRAME_ROW = {
 SCHEMA = {
     "ProbeCalibration": {
         "ENGINE": ("String", None, "the engine whose Hessians were taken (the base model by default)"),
-        "ENGINE_PARAMS_SHA256": ("String", None, "the engine's parameter fingerprint"),
         "LEVEL": ("String", None, "the reference level of the labels"),
         "TAG": ("String", None, "the molecule tree's tag, or - for --frames"),
         "GENERATOR": ("String", None, "the generator whose frames were read"),
@@ -344,9 +343,9 @@ def main(argv=None):
                   "\n     check the level spelling, or that 03_labels has finished a basin job"
                   "\n     (ls {}/frames/ | head)".format(funnel["example_molecule"]), file=sys.stderr)
         return 2
-    calc, ename, prov = engine.calculator(device=args.device, name=args.engine)
+    calc, ename, _prov = engine.calculator(device=args.device, name=args.engine)
     ks = sorted(set(int(k) for k in args.k))
-    print("engine     {} ({})".format(ename, prov.get("params_sha256", "-")[:12]))
+    print("engine     {}".format(ename))
     print("frames     {} labelled frames of {} molecules at {}".format(
         len(frames), len({_frame_key(a)[0] for a, _s in frames}), args.level))
     if args.tag:
@@ -375,7 +374,7 @@ def main(argv=None):
             print("   {:5d} / {} frames".format(i, len(frames)))
 
     exact_mean, k_rows = summarise(stats, ks)
-    info = dict(ENGINE=ename, ENGINE_PARAMS_SHA256=str(prov.get("params_sha256", "-")), LEVEL=args.level,
+    info = dict(ENGINE=ename, LEVEL=args.level,
                 TAG=str(args.tag or "-"), GENERATOR=args.generator,
                 N_MOLECULES=len({r["qm9_index"] for r in rows}), N_FRAMES=len(rows),
                 N_ATOMS_MEDIAN=int(np.median([r["n_atoms"] for r in rows])), EXACT_MEAN=exact_mean,

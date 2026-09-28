@@ -172,18 +172,22 @@ path overrides stay exactly as they are.
 
 ## Acceptance
 
-- [ ] No fingerprint/pin symbol and no retired Record key remains in the sliced modules;
+- [x] No fingerprint/pin symbol and no retired Record key remains in the sliced modules;
       a grep for them over those modules is clean.
-- [ ] A frames Record built with a real engine carries `ENGINE` and the resolved
+- [x] A frames Record built with a real engine carries `ENGINE` and the resolved
       weights-file path; each frame carries `engine=<name>`.
-- [ ] A dataset built across old fixtures and new frames works; the index rows carry
+- [x] A dataset built across old fixtures and new frames works; the index rows carry
       `engine`; the Record carries `ENGINES`.
-- [ ] `provenance()` returns without the four retired keys; the missing-file error still
+- [x] `provenance()` returns without the four retired keys; the missing-file error still
       names the expected path and the directory contents (files and sub-directories).
-- [ ] `s0_check_weights.py` prints the mace identity and the presence listing; none of
+- [x] `s0_check_weights.py` prints the mace identity and the presence listing; none of
       the deleted flags exists.
 - [ ] openQHA's unit and integration groups pass; the deleted test is deregistered.
-- [ ] Reported per the operating rule: files changed, checks run, anything not verified.
+      -> unit: 63/63 (the new `t_engine_identity.py` included, `t_engine_fingerprint.py`
+      gone from the group). integration: 12/13 -- see the Answer; the one failure is
+      ticket 07's half of decision 04, not this slice.
+- [x] Reported per the operating rule: files changed, checks run, anything not verified
+      (see the Answer).
 
 ## Further Notes
 
@@ -199,3 +203,55 @@ path overrides stay exactly as they are.
   fine-tuned revision is a new Level is decided when the first model is registered.
 - Environment reminder for the implementer: run the openQHA test groups from the repo
   root in the WSL `openqha` env (see `openQHA/AGENTS.md`).
+
+## Answer (2026-09-27, implemented in this commit)
+
+The strip landed as specified. What changed:
+
+- **Engine** (`openqha/potentials/engine.py`): `fingerprint_state_dict`,
+  `parameter_fingerprint`, `_FINGERPRINTS`, the registry pin and the pin WARN are gone;
+  `provenance()` keeps engine / source / note / weights_path / bytes / interface / mace and
+  fork identity / dtype / patch state (exactly those keys; the test pins the set);
+  `model_path()` resolves a relative sub-path and its missing-file error now adds the
+  root's sub-directory names after the top-level `*.model` listing; the
+  `mace_off23_<campaign>/<run>+<stamp>.model` storage convention is in the module
+  comments; `check_weights_are_physical` and both overrides untouched.
+- **Records**: frames Record carries `ENGINE` + `WEIGHTS_FILE` (`-` for an injected
+  calculator), each frame `engine=<name>`; the dataset index column is `engine` and the
+  Record carries `ENGINES` (sorted unique); branch-A's Property drops both fields; the MD
+  Record's provenance print keeps `weights_path` / `bytes` / `interface` / versions. Old
+  Records and the fixtures under `tests/data/` are untouched (the frames unit test
+  rewrites a copy, not the fixture).
+- **Tooling**: `s0_check_weights.py` is `print_mace()` + a name/path/bytes listing (the
+  deleted flags are refused by argparse); `s0_probe_calibration.py` and
+  `s0_hl_smoke_fit.py` drop the field writes and prints with their schema entries.
+- **Tests**: `t_engine_fingerprint.py` deleted; `t_engine_identity.py` added at the same
+  seam with the opposite contract (name→path resolution, the relative sub-path,
+  `S0_MACE_MODEL`, the missing-file message, `provenance()`'s exact key set, the reduced
+  CLI and its deleted flags); `t_frames.py`, `t_dataset.py` (one engine frame kept with
+  the pre-2026-09-27 attribute, read as `-`), `t_branch_a_property.py`,
+  `t_probe_calibration.py`, `t_frames_engine.py` and `t_judge_engine.py` adjusted.
+
+Checks run (WSL, `openqha` env, repo root):
+
+- `python tests/run_tests.py` -> **all 63 tests passed** (includes
+  `t_engine_identity.py`; the deleted test is not discovered).
+- `python tests/run_tests.py --group integration` -> **12 of 13 passed**; the failure is
+  `t_train_engine`, which dies at `openqha/training/run.py:600` calling the deleted
+  `engine.parameter_fingerprint`. That call site is the training-side half decision 04
+  assigns to [The move](../decisions/07-the-move.md) -- this ticket declares it out of
+  scope -- so the integration group cannot be fully green until 07 lands.
+- `t_frames_engine.py` runs the frame-set step against `tests/data/propanal_molecule`
+  **in place**: a run rewrites that fixture's `frames/` and leaves it dirty. It was
+  restored to HEAD before this commit; the fixture is byte-identical.
+
+Not done here, assigned elsewhere: the training-side fields and callers and
+`hl_train.slurm` (07); the doc/slurm/reference sweep, including the three stale
+`prov["sha256"]` readers, `README.md`, `environment-cuda.yml:160` and
+`check_dependency.py` (12).
+
+Flagged to 12 (not in its list yet): `hpc/slurm/hl_branchA.slurm:63`,
+`hl_pipeline_debug.slurm:67` and `q5-rerun-parked.sh:420` grep the reduced tool's stdout
+for `registry pin` / `params sha`; those strings are gone, so the `|| echo "... weights
+check failed"` fallback now fires on every branch-A job. The reduced tool prints
+`path` / `bytes` lines instead.

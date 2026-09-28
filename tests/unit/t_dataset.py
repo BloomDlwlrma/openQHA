@@ -106,6 +106,14 @@ def main():
         root, mol_a = place(tmp, "dsgdb9nsd_000035")           # pinned: propanal
         _root, mol_b = place(tmp, "dsgdb9nsd_000036")          # the fixture again, under another index (N-methylformamide's)
         mace_level = prop.load(layout.frames_dir(mol_a) / "frames.toml")["Calculation_Info"]["LEVEL"]
+        # mol_b keeps ONE engine frame as the pre-2026-09-27 fixtures have it (the attribute
+        # `engine_params_sha256`, no `engine`): old frames are data and are never rewritten, so
+        # the build must still work and read that frame's engine as '-' (decision 04, ticket 04a)
+        p_old = layout.frames_file(mol_b, "basin", mace_level)
+        old_text = p_old.read_text(encoding="utf-8")
+        check("the old-attribute fixture rewrite applies (the engine frame carries engine=<name>)",
+              "engine=MACE-OFF23_medium" in old_text)
+        p_old.write_text(old_text.replace("engine=MACE-OFF23_medium", "engine_params_sha256=e986a6cf"), encoding="utf-8")
         fake_labels(mol_a, frames.GENERATORS, mace_level, only_basin_frames=True)     # 3 of 15 labelled
         fake_labels(mol_b, frames.GENERATORS, mace_level)                             # 15 of 15 labelled
         pinned = ("dsgdb9nsd_000035",)
@@ -137,14 +145,19 @@ def main():
               and all(r["molecule_split"] == "train" for r in b_rows)
               and not any(r["split"] == "valid" for r in a_rows), (n_valid, sorted(r["split"] for r in b_rows)))
         i = out["info"]
-        check("the Record: 2 molecules (1 test), 30 frames, 18 labelled, train 12 valid 3 test 3 pool 12, one fingerprint, ORCA 6.0.1",
+        check("the Record: 2 molecules (1 test), 30 frames, 18 labelled, train 12 valid 3 test 3 pool 12, the engines seen "
+              "(the old-attribute frame reads '-'), ORCA 6.0.1",
               (i["N_MOLECULES"], i["N_TEST_MOLECULES"], i["N_FRAMES"], i["N_LABELLED"], i["N_TRAIN"], i["N_VALID"], i["N_TEST"], i["N_POOL"])
-              == (2, 1, 30, 18, 12, 3, 3, 12) and len(i["ENGINE_PARAMS_SHA256"]) == 1 and i["ORCA_VERSIONS"] == ["6.0.1"]
+              == (2, 1, 30, 18, 12, 3, 3, 12) and i["ENGINES"] == ["-", "MACE-OFF23_medium"] and i["ORCA_VERSIONS"] == ["6.0.1"]
               and prop.status_of(d / "dataset.toml") == prop.NORMAL_TERMINATION,
-              {k: i[k] for k in ("N_MOLECULES", "N_TEST_MOLECULES", "N_FRAMES", "N_LABELLED", "N_TRAIN", "N_VALID", "N_TEST", "N_POOL")})
+              {k: i[k] for k in ("N_MOLECULES", "N_TEST_MOLECULES", "N_FRAMES", "N_LABELLED", "N_TRAIN", "N_VALID", "N_TEST", "N_POOL", "ENGINES")})
         check("levels column: labelled frames list both levels, pool frames the engine's only",
               all(r["levels"] == mace_level + ";" + LEVEL for r in idx if r["split"] != "pool")
               and all(r["levels"] == mace_level for r in idx if r["split"] == "pool"))
+        check("index.dat carries the engine per frame: the rewritten old-attribute basin frame reads '-', the others the name",
+              all(r["engine"] == "MACE-OFF23_medium" for r in idx if r["qm9_index"] == "dsgdb9nsd_000035")
+              and {r["engine"] for r in idx if r["qm9_index"] == "dsgdb9nsd_000036"} == {"-", "MACE-OFF23_medium"}
+              and "engine_params_sha256" not in idx[0], idx[0])
 
         # --- reproducibility --------------------------------------------------------------
         key = lambda rows_: [(r["qm9_index"], r["generator"], r["basin"], r["k"], r["split"]) for r in rows_]   # noqa: E731

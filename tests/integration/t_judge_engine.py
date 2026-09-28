@@ -67,7 +67,7 @@ def main():
     except Exception as exc:                                     # noqa: BLE001
         print("SKIP: {}".format(exc))
         return 0
-    print("  engine {}  params {}...".format(name, prov["params_sha256"][:12]))
+    print("  engine {}  weights {}".format(name, prov["weights_path"]))
 
     ref = frames.read_frames(FIX / "basin.{}.extxyz".format(LEVEL))
     mace_basin = frames.read_frames(FIX / "basin.{}.extxyz".format(MACE_LEVEL))[0]
@@ -128,8 +128,7 @@ def main():
               and {l["LINE"]: l["RESULT"] for l in closed["verdict"]}["held_out_low_mode_mae_cm"] == "FAIL"
               and "CLOSED" in (closed["run_dir"] / "judge.out").read_text(encoding="utf-8"), closed["info"]["VERDICT"])
         out = judge.run(Path(tmp), "smoke", "smoke", LEVEL, calc, name, base_calc=calc, base_engine=name,
-                        run_name="base", splits=("test",), engine_params_sha256=prov["params_sha256"],
-                        base_params_sha256=prov["params_sha256"], write=True, ramp=ramp, gate=True)
+                        run_name="base", splits=("test",), write=True, ramp=ramp, gate=True)
         lines = {l["LINE"]: l for l in out["verdict"]}
         # The must-pass of the ticket is the NO-DEGRADATION line (base against base) and
         # the self-label zero above -- NOT the low-mode line. On this molecule the base

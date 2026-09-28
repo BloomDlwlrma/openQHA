@@ -118,9 +118,9 @@ FILES
 -----
 `<molecule>/frames/<generator>.<engine level>.extxyz`   one file per generator (ASE
 extxyz: `energy`, `forces`; info keys `qm9_index`, `basin`, `generator`, `k`, `seed`,
-`level`, `source_conformer`, `rms_displacement_A`, `smiles`, `hessian` = the 3N x 3N
-matrix flattened row-major in eV/A^2, `engine_params_sha256`), and the Record
-`<molecule>/frames/frames.{out,toml}`.
+`level`, `source_conformer`, `rms_displacement_A`, `smiles`, `engine` = the registered
+engine's name, `hessian` = the 3N x 3N matrix flattened row-major in eV/A^2), and the
+Record `<molecule>/frames/frames.{out,toml}`.
 """
 import hashlib
 import time
@@ -175,8 +175,7 @@ SCHEMA = {
         "SMILES": ("String", None, "as declared in the branch-A record"),
         "ENGINE": ("String", None, "the potential that labelled the frames"),
         "LEVEL": ("String", None, "the engine's level name (the file suffix)"),
-        "ENGINE_PARAMS_SHA256": ("String", None, "parameter fingerprint of the weights (engine.parameter_fingerprint)"),
-        "ENGINE_PIN_STATUS": ("String", None, "matches / differs / unpinned against the registry"),
+        "WEIGHTS_FILE": ("String", None, "the resolved weight file the engine loaded, or - when the calculator was injected (2026-09-27: engine name + resolved path are the identity; no fingerprint, no pin)"),
         "TEMPERATURE": ("Double", "K", "temperature of the displaced draw"),
         "DISTRIBUTION": ("String", None, "the draw of the displaced frames: nms = normal-mode sampling, a random partition of at most (3/2) N_a k_B T over the modes (this workflow's only draw since 2026-09-23); classical = equipartition and quantum = zero-point amplitude, kept for Frame sets drawn before that"),
         "N_DISPLACED_PER_BASIN": ("Integer", None, "displaced frames drawn per basin"),
@@ -331,12 +330,10 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
     smiles = info_a.get("SMILES")
     if calc is None:
         calc, ename, prov = engine.calculator(name=engine_name)
+        weights_file = str(prov["weights_path"])
     else:
         ename = engine_name or engine.engine_name()
-        try:
-            prov = engine.provenance(ename)
-        except FileNotFoundError:                      # a test calculator, no weights on this machine
-            prov = dict(params_sha256=None, params_pin_status="weights absent (calculator injected)")
+        weights_file = "-"                             # an injected calculator: this machine's weights have nothing to do with it
     level = engine.level_name(ename)
     files = {int(p.parent.name[len("basin"):]): p for p in basins_mod.basin_files(molecule)}
     basin_cids = [int(x) for x in (census.get("BASIN_CONFORMER_IDS") or [])]
@@ -366,7 +363,7 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
                 atoms=atoms, energy=float(e), forces=f, hessian=hessian,
                 info=dict(qm9_index=str(qid), basin=int(basin), generator=generator, k=int(k), seed=int(seed),
                           level=level, source_conformer=int(source), rms_displacement_A=float(rms),
-                          smiles=str(smiles), engine_params_sha256=prov.get("params_sha256") or "")))
+                          smiles=str(smiles), engine=ename)))
 
     # ---- basin and displaced -------------------------------------------------------
     for b in sorted(files):
@@ -423,7 +420,7 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
             _write_frames(path, kept[g])
         gen_rows.append(dict(GENERATOR=g, N_FRAMES=n_k, N_DROPPED=n_d, FILE=str(path) if n_k else None))
     info = dict(MOLECULE_DIR=str(molecule), QM9_INDEX=str(qid), SMILES=smiles, ENGINE=ename, LEVEL=level,
-                ENGINE_PARAMS_SHA256=prov.get("params_sha256"), ENGINE_PIN_STATUS=prov.get("params_pin_status"),
+                WEIGHTS_FILE=weights_file,
                 TEMPERATURE=float(temperature_K), DISTRIBUTION=str(distribution),
                 N_DISPLACED_PER_BASIN=int(n_displaced),
                 MAX_RMS_A=float(max_rms_A) if max_rms_A is not None else float("nan"),
@@ -447,7 +444,7 @@ def generate(molecule, n_displaced=N_DISPLACED, temperature_K=TEMPERATURE_K, max
 def _write_report(path, info, gen_rows, rows):
     rep = report.Report("openQHA frames", "the Frame set of {} at {}".format(info["QM9_INDEX"], info["LEVEL"]))
     rep.section("conventions")
-    for k in ("ENGINE", "LEVEL", "ENGINE_PARAMS_SHA256", "ENGINE_PIN_STATUS", "TEMPERATURE", "DISTRIBUTION",
+    for k in ("ENGINE", "LEVEL", "WEIGHTS_FILE", "TEMPERATURE", "DISTRIBUTION",
               "N_DISPLACED_PER_BASIN", "DISPLACED_HESSIAN", "N_ENGINE_HESSIAN",
               "MAX_RMS_A", "ENERGY_WINDOW_KCAL", "BOND_CUTOFF_MULT", "BOND_BREAK_MULT", "BOND_FORM_MULT",
               "N_BOND_CHANGED", "N_BASINS", "N_FRAMES", "N_DROPPED"):

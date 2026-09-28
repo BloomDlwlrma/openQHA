@@ -61,7 +61,6 @@ SCHEMA = {
         "N_VALID": ("Integer", None, "frames in valid"),
         "N_MOLECULES": ("Integer", None, "molecules"),
         "ENGINE": ("String", None, "the base potential"),
-        "ENGINE_PARAMS_SHA256": ("String", None, "its parameter fingerprint"),
         "DEVICE": ("String", None, "cpu / cuda"),
         "EPOCHS": ("Integer", None, "epochs per scan run"),
         "SECONDS": ("Double", "s", "wall time of the whole fit"),
@@ -144,11 +143,11 @@ def main():
 
     fit_dir, dinfo = smoke_fit.build_fit_dataset(src, args.level, fit_dir, fit_name,
                                                  seed=args.seed, valid_fraction=args.valid_fraction)
-    calc, engine_name, prov = engine.calculator(device=args.device)
+    calc, engine_name, _prov = engine.calculator(device=args.device)
     print("fit set    {} frames ({} with a Hessian) from {} molecules; train {} valid {}".format(
         dinfo["N_FRAMES"], dinfo["N_HESSIAN_FRAMES"], dinfo["N_MOLECULES"], dinfo["N_TRAIN"], dinfo["N_VALID"]))
     print("           PURPOSE = fit: every number below is interpolation within these molecules")
-    print("engine     {}  {}...".format(engine_name, prov["params_sha256"][:12]))
+    print("engine     {}".format(engine_name))
 
     stages = ("balance", "cost", "scan") if args.stage == "all" else (args.stage,)
     train_file = fit_dir / "train.{}.extxyz".format(args.level)
@@ -238,7 +237,7 @@ def main():
     info = dict(TAG=args.tag, SOURCE_NAME=name, NAME=fit_name, PURPOSE="fit", LEVEL=args.level,
                 STAGES=list(stages), N_FRAMES=dinfo["N_FRAMES"], N_HESSIAN_FRAMES=dinfo["N_HESSIAN_FRAMES"],
                 N_TRAIN=dinfo["N_TRAIN"], N_VALID=dinfo["N_VALID"], N_MOLECULES=dinfo["N_MOLECULES"],
-                ENGINE=engine_name, ENGINE_PARAMS_SHA256=prov["params_sha256"], DEVICE=args.device,
+                ENGINE=engine_name, DEVICE=args.device,
                 EPOCHS=int(args.epochs), SECONDS=float(time.time() - t0))
     blocks = {"Calculation_Info": info, "Balance": balance_rows, "Cost": cost_rows,
               "Scan": scan_rows, "Replay": replay_rows}
@@ -248,7 +247,7 @@ def main():
     rep = report.Report(PROGNAME, "Smoke fit on {} ({})".format(fit_name, info["PURPOSE"]))
     rep.section("the fit set (PURPOSE = fit: interpolation within these molecules)")
     for k in ("TAG", "SOURCE_NAME", "NAME", "LEVEL", "N_FRAMES", "N_HESSIAN_FRAMES", "N_TRAIN", "N_VALID",
-              "N_MOLECULES", "ENGINE", "ENGINE_PARAMS_SHA256", "DEVICE", "EPOCHS", "SECONDS"):
+              "N_MOLECULES", "ENGINE", "DEVICE", "EPOCHS", "SECONDS"):
         rep.kv(k, info[k])
     if balance_rows:
         rep.section("the epoch-0 balance")

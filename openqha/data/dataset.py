@@ -80,9 +80,9 @@ FILES
     <root>/<tag>/_datasets/<name>/pool.<level>.extxyz
         the unlabelled frames with the ENGINE's E-F-H (their `level` key says so).
     index.dat        one row per frame: molecule, tag, basin, generator, k, split,
-                     molecule_split, levels present, seed, engine fingerprint, ORCA
-                     version, SPICE membership, stratum, classes, the file and row it
-                     sits in.
+                     molecule_split, levels present, seed, engine (the registered name;
+                     '-' on a frame written before 2026-09-27), ORCA version, SPICE
+                     membership, stratum, classes, the file and row it sits in.
     dataset.{out,toml}   the Record.
     molecules-<name>.h5  (`--export openreact`) OpenREACT's layout: one group per molecule
                      with `coordinates` (A), `energies` (Eh), `forces` (Eh/A), `hessian`
@@ -205,7 +205,7 @@ INDEX_SCHEMA = {
     "held_out_generator": ("String", None, "yes: the frame's generator is not in TRAIN_GENERATORS, so it is in test whatever the draw (S0-C-54); no otherwise"),
     "levels": ("String", None, "levels present at this frame, ';'-joined"),
     "seed": ("Integer", None, "the frame's own draw seed (displaced), 0 otherwise"),
-    "engine_params_sha256": ("String", None, "parameter fingerprint of the engine that made the frame"),
+    "engine": ("String", None, "the registered engine that made the frame; a frame written before 2026-09-27 carries no engine name and reads as -"),
     "orca_version": ("String", None, "ORCA version of the reference label, or - when unlabelled"),
     "in_training": ("String", None, "the molecule's MACE-OFF23 membership (true / false / unknown)"),
     "stratum": ("String", None, "the molecule's stratification key"),
@@ -251,7 +251,7 @@ SCHEMA = {
         "N_STALE": ("Integer", None, "label frames ignored because their geometry differs from the engine file's (a rerun of branch A / 02 after 03)"),
         "MERGED_FILE": ("String", None, "the single xyz of the three labelled splits (mace_<name>.<level>.extxyz), or - when nothing is labelled"),
         "KEPT_PREVIOUS": ("Boolean", None, "a previous index.dat existed and its splits were kept"),
-        "ENGINE_PARAMS_SHA256": ("ArrayOfStrings", None, "engine fingerprints seen (one, unless Frame sets were built by different weights)"),
+        "ENGINES": ("ArrayOfStrings", None, "the registered engines seen, sorted (one, unless Frame sets were built by different engines; frames written before 2026-09-27 carry no engine name and read as -)"),
         "ORCA_VERSIONS": ("ArrayOfStrings", None, "ORCA versions of the labels seen"),
         "SECONDS": ("Double", "s", "wall time"),
     },
@@ -659,7 +659,7 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
 
     # ---- frames ------------------------------------------------------------------------
     index, per_mol, split_frames = [], [], {s: [] for s in SPLITS}
-    fingerprints, versions = set(), set()
+    engines_seen, versions = set(), set()
     n_valid_probe_frames = 0
     for r in mols:
         qid, mol = r["qm9_index"], Path(r["molecule_dir"])
@@ -703,15 +703,15 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
                     atoms.info["valid_probes"] = valid_probes(seed, qid, key, len(atoms)).reshape(-1)
                     atoms.info["has_valid_probes"] = True
                     n_valid_probe_frames += 1
-            fp = str(a.info.get("engine_params_sha256", "-"))
-            fingerprints.add(fp)
+            eng = str(a.info.get("engine", "-"))
+            engines_seen.add(eng)
             counts[split] += 1
             counts["held_out"] += int(held_out)
             split_frames[split].append((atoms, split))
             index.append(dict(qm9_index=qid, tag=r["tag"], basin=key[1], generator=key[0], k=key[2], split=split,
                               molecule_split=msplit, held_out_generator="yes" if held_out else "no",
                               levels=";".join(levels), seed=int(a.info.get("seed", 0)),
-                              engine_params_sha256=fp, orca_version=ver, in_training=r["in_training"],
+                              engine=eng, orca_version=ver, in_training=r["in_training"],
                               stratum=r["stratum"], classes=classes, file="{}.{}.extxyz".format(split, level),
                               row=len(split_frames[split]) - 1, engine_file=str(ef)))
         per_mol.append(dict(QM9_INDEX=qid, TAG=r["tag"], STRATUM=r["stratum"], MOLECULE_SPLIT=msplit,
@@ -762,7 +762,7 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
                 REPLAY_R4_FRAMES=REPLAY_PER_HESSIAN_FRAME_R4 * sum(1 for a, _s in split_frames["train"] if a.info.get("hessian") is not None),
                 N_STALE=sum(m["N_STALE"] for m in per_mol), KEPT_PREVIOUS=bool(prev_frames or prev_mols),
                 MERGED_FILE=str(merged) if labelled_all else "-",
-                ENGINE_PARAMS_SHA256=sorted(fingerprints), ORCA_VERSIONS=sorted(versions), SECONDS=time.time() - t0)
+                ENGINES=sorted(engines_seen), ORCA_VERSIONS=sorted(versions), SECONDS=time.time() - t0)
     missing = prop.write(d / (STEP + ".toml"), {"Calculation_Info": info, "Split": split_rows, "Molecule": per_mol,
                                                  "Class": cls_rows},
                          SCHEMA, prop.NORMAL_TERMINATION, PROGNAME)
@@ -821,7 +821,7 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
     for k in ("TAGS", "LEVEL", "MACE_LEVEL", "SEED", "SPLIT_BY", "VALID_FRACTION", "TEST_FRACTION", "TRAIN_GENERATORS",
               "HELD_OUT_GENERATORS", "N_MOLECULES", "N_TEST_MOLECULES", "N_TRAIN_MOLECULES", "N_FRAMES", "N_LABELLED",
               "N_HESSIAN_FRAMES", "N_TRAIN_HESSIAN", "REPLAY_R4_FRAMES", "N_TRAIN_BASIN", "N_TEST_HELD_OUT", "N_STALE",
-              "KEPT_PREVIOUS", "MERGED_FILE", "ENGINE_PARAMS_SHA256", "ORCA_VERSIONS",
+              "KEPT_PREVIOUS", "MERGED_FILE", "ENGINES", "ORCA_VERSIONS",
               "VALID_PROBE_SOURCE", "VALID_PROBE_KMAX", "VALID_PROBE_MODE", "N_VALID_PROBE_FRAMES"):
         rep.kv(k, info[k])
     rep.section("per split")

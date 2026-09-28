@@ -133,10 +133,12 @@ def main():
                      "input.toml records", "crest_conformers.xyz", "loadavg", "basin.extxyz",
                      "protocol_source", "composite_notation"):
             check("not in branchA.toml: {}".format(word), word not in text)
-        # 79 keys for 3 basins after the engine fingerprint (2) and the dedup map + saddle ids
-        # (2) of the Hessian-learning tickets 01/02 (2026-09-18) joined; the bound guards
-        # against the provenance sprawl of the old basins.toml, not against a named key
+        # the dedup map + saddle ids (2) of the Hessian-learning ticket 02 joined what was
+        # here; the engine fingerprint and its pin status left on 2026-09-27 (decision 04),
+        # so the bound guards against the provenance sprawl of the old basins.toml, not a key
         check("key count is small (about 80 for 3 basins)", 45 <= text.count(" = ") <= 95, text.count(" = "))
+        check("the engine identity is the name alone: no fingerprint, no pin (2026-09-27)",
+              "ENGINE_PARAMS_SHA256" not in text and "ENGINE_PIN_STATUS" not in text)
 
         print("D. no silent zero:")
         bad = {"Basin": [{"INDEX": 0, "SIGMA": 1}]}
