@@ -255,3 +255,50 @@ Flagged to 12 (not in its list yet): `hpc/slurm/hl_branchA.slurm:63`,
 for `registry pin` / `params sha`; those strings are gone, so the `|| echo "... weights
 check failed"` fallback now fires on every branch-A job. The reduced tool prints
 `path` / `bytes` lines instead.
+
+## Review record (2026-09-28, annotations)
+
+Two-axis review of the slice's diff (against its parent `3eb4b74`), per the
+`code-review` skill, with the dispositions below; re-baselined after 01c landed:
+
+- unit group: **all 63 tests passed** (`python tests/run_tests.py`);
+- integration group: **12 of 13 passed** -- the one failure is `t_train_engine`, unchanged.
+
+**Standards (repo standards + the smell baseline).**
+
+- Two rewritten docstring lines kept CONTEXT.md's `_Avoid_` words ("a run's potential",
+  "makes a product reproducible") -> fixed before the commit ("What identifies a
+  potential in every Record...", "makes a Record reproducible").
+- The decision-04 rationale is retold in several module docstrings -> kept: the ticket
+  asks each module to state the identity it now carries.
+- `s0_check_weights.py` recomposes `model_root()/<filename>` instead of the resolver ->
+  kept: the listing exists to test resolution WITHOUT the resolver's raise on a missing
+  file.
+- `t_frames_engine.py` hard-indexes the new keys -> kept: the test regenerates the Frame
+  set first, so the new contract is always what it reads.
+- Sanctioned deferrals (training-side callers, the slurm/doc sweep) -> made visible in
+  this Answer; the flagged slurm `registry pin` greps are now in ticket 12's list
+  (`e6f6a7a`).
+
+**Spec (this ticket).**
+
+- The `tests/data/propanal_molecule` fixtures were rewritten in place by the integration
+  run -> restored to HEAD before the commit; a later `--all` rewrites them again, so
+  restore (`git checkout -- tests/data/propanal_molecule`) and never commit that dirt.
+- `t_judge_engine.py`: dropping `engine_params_sha256=` / `base_params_sha256=` from the
+  `judge.run(...)` call is strictly the training-side field work -- but the call could
+  not stand as written (the keys it read are gone), so the minimal fix keeps the caller
+  working; the final shape stays with 01d.
+- The `openqha.training` -> `openqha_hessian` import switches in the three shared files
+  are 01c's and were excluded from 04a's commit (filtered staging); 01d closes the rest.
+- The registration recipe in `engine.py` ran the tool before the entry existed -> fixed
+  to copy, add the entry, then `s0_check_weights.py <name>` verifies.
+- "The retired key is absent" is asserted per Record (frames / dataset / branch-A) rather
+  than once -> kept: each is the contract of its own Record.
+
+**Shared-worktree postscript.** 04a's commit was staged mine-only (the 01c session's
+import hunks excluded, verified no revert). The ticket's `Status` line did not survive
+that commit (a concurrent write race); `e6f6a7a` set it to `resolved`, committed the
+`map.md` 04a line and moved the flagged slurm greps into ticket 12. The training-side
+callers this Answer places with [The move](../decisions/07-the-move.md) are executed by
+[01d](01d-the-switchover.md).
