@@ -17,6 +17,7 @@ The mechanical sweep of everything that still names the old arrangement; the con
   - `workflows/hessian_learning/README.md` step-04 section: "frame, the default (production)" / "molecule (the smoke set)" are backwards since S0-C-65 (and the "(0.1)" fraction claims).
   - `hpc/slurm/hl_labels.slurm` tail (task 0): the `04_dataset.py` call's exit code is never captured (`exit "$rc"` is the assemble's), so a failed Dataset build exits 0 silently; the call also leans on the CLI's `--split-by` default (correct now, but implicit).
   - `openqha/data/dataset.py:640`: the refusal message says "Pass resplit=True (04_dataset.py --resplit)" — the workflow deliberately exposes no such flag (ruling 2026-09-26); keep the substring "resplit" (`tests/unit/t_dataset.py:395` pins it) while re-wording.
+- Flagged by [04a](../implementation/04a-strip-weight-identity.md)'s Answer (2026-09-27): `hpc/slurm/hl_branchA.slurm:63`, `hl_pipeline_debug.slurm:67` and `q5-rerun-parked.sh:420` grep the reduced `s0_check_weights.py` stdout for `registry pin` / `params sha`; those strings are gone, so the `|| echo "... weights check failed"` fallback now fires on every branch-A job — the tool prints `path` / `bytes` lines instead.
 
 ## Answer
 

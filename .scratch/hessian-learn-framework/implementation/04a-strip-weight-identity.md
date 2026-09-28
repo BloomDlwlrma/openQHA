@@ -1,7 +1,7 @@
 # 04a: The weight-identity strip — engine, records, tooling
 
 Type: task
-Status: open
+Status: resolved
 Serves: 04
 Blocked by: 04
 Part of: [hessian-learn-framework](../map.md)

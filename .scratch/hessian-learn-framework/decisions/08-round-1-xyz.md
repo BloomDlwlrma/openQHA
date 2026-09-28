@@ -1,8 +1,10 @@
 # Round-1 xyz: assemble the labeled frames
 
 Type: task
-Status: open
+Status: claimed
 Part of: [hessian-learn-framework](../map.md)
+
+> In flight: the runbook [08a](../implementation/08a-tianhe-merge-runbook.md). Steps 0–4 landed on Tianhe (2026-09-28): the labels were refreshed and assembled, and `draw300_r1` was merged at `wb97m-d3bj_def2-tzvppd` — 6,048 molecules, 324,978 frames, 16,824 with a Hessian. Steps 5–7 (reconcile, fetch back, paste back) are pending; this ticket's Answer lands with the paste-back.
 
 ## Question / work
 

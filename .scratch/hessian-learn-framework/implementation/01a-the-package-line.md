@@ -3,6 +3,7 @@
 Type: task
 Status: open
 Serves: 01
+Blocked by: 01d
 Part of: [hessian-learn-framework](../map.md)
 
 > The `/to-spec` output for decision [The package line](../decisions/01-the-package-line.md)

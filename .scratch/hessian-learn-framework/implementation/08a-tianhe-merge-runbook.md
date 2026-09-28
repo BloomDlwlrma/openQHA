@@ -1,5 +1,7 @@
 # 08a: The Tianhe merge runbook -- draw300 -> draw300_r1
 
+Type: task
+Status: claimed
 Serves: 08
 Part of: [hessian-learn-framework](../map.md)
 
@@ -10,17 +12,27 @@ Part of: [hessian-learn-framework](../map.md)
 > merge -- the tree is already assembled; copy it over before any future assemble
 > refresh (then the flood of per-molecule `nan` lines and the empty-Batch block are gone).
 
-## State (2026-09-27)
+## State (updated 2026-09-28)
 
 - Steps 0-1: done on Tianhe (the fixed `04_dataset.py`, commit `7536e72`, is what step 4
   runs; the signature/`_datasets` prechecks passed before step 2).
 - Step 2: done. Measured: `select: 6443 molecules (0 drawn, 6443 with basins, 6017 with
   a Frame set, 7 pinned) -> .../draw300/_datasets/draw300_r1/select.dat`.
-- Step 3: done. Measured: `molecules 6017 (selection 'draw300_r1')`, `frames 37788 to
-  label ... 9335 finished already, 0 failed frames on disk`. This assemble run is the
-  flood ticket 07 fixes; the merge itself is unaffected.
-- Steps 4-7: next. Step 4 needs the fixed `04_dataset.py` on Tianhe (step 0) -- without
-  it the build dies with `AttributeError: 'Namespace' object has no attribute 'resplit'`.
+- Step 3: done. First pass (2026-09-27; the flood ticket 07 fixes): `molecules 6017`,
+  `frames 37788 to label ... 9335 finished already, 0 failed frames on disk`.
+  Refresh (2026-09-28; corrected spelling, quiet ticket-07 output -- see Amendment (2)):
+  `molecules 6048 (selection 'draw300_r1')`, `frames 32339 to label ... 16490 finished
+  already, 0 failed frames on disk`, `assemble 4437.4 s over 6048 molecules: 2876 with
+  labels, 0 with failures or refusals, 3172 untouched (nothing on disk yet)` -- the trees
+  now carry every label finished so far. (`6048` vs step 2's `6017`: the driver filters
+  the selection against the Frame sets actually on disk, and 31 more landed since.)
+- Step 4: merge done (2026-09-28). Measured: `dataset 'draw300_r1' at wb97m-d3bj_def2-tzvppd
+  (split by molecule): 6048 molecules (304 test), 324978 frames: train 15751 valid 486 test
+  587 pool 308154; 16824 with a Hessian`; `merged  .../mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz
+  (16824 labelled frames, keys REF_energy / REF_forces / REF_hessian / split)`; R4 (S0-C-60)
+  line: `Replay = 63004 frames at config_weight 10`. The `exported molecules-draw300_r1.h5`
+  line and `rc` not yet confirmed from the log tail.
+- Steps 5-7: next (step 4 already ran with the fixed `04_dataset.py`, commit `7536e72`).
 
 ---
 

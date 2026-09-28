@@ -1,7 +1,7 @@
 # The mace fork: rebuild on upstream history, push, verify, re-home
 
 Type: task
-Status: open
+Status: resolved
 Serves: 02
 Part of: [hessian-learn-framework](../map.md)
 
@@ -124,3 +124,15 @@ checkout re-homes as the sibling `mace/` and the old folder is retired to `_to_d
   the mace checkout until the re-home), so nothing needs a second clone to rebuild.
 - The `ready-for-agent` label is deliberately not applied: per the tracker doc and
   ADR 0009, wayfinder tickets use the `Status` protocol, not triage labels.
+
+## Answer (2026-09-28, bookkeeping -- the slices carry the evidence)
+
+The fork line landed complete: [02b](02b-the-rebuild.md) rebuilt the branch on upstream
+history (tree-identity diff empty; old history bundled), [02c](02c-fork-and-push.md)
+pushed both refs to the true fork `BloomDlwlrma/mace` (branch `openqha-hessian` @
+`1110ffb`, tag `base-v0.3.16` @ `5c2d761`; default branch switched to the branch, per
+02c's Postscript), and [02d](02d-clone-verify-rehome.md) demonstrated the acceptance --
+a fresh blobless clone at `mace/` installs editable, reports `0.3.16+openqha` and a
+clean `mace_fork_info()`; the old checkout is archived under `_to_delete/`. Every
+acceptance item of this brief is evidenced in those three Answers; nothing remains open
+under it (install/transport, identity and the PR are their own tickets).
