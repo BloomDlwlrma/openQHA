@@ -200,20 +200,25 @@ three lines (bytes, file hash, fingerprint) for every registered file present;
 `--json` + `--compare` settle in one command whether two machines hold the same numbers.
 
 **The mace fork.** Fine-tuning needs two small changes inside mace-torch (a Hessian field on
-the batch, an external-loss hook), so since 2026-09-20 the mace this repository imports is
-the fork `BloomDlwlrma/openQHA-Hessian`, branch `openqha-hessian`, whose base tag
-`base-v0.3.16` is upstream v0.3.16 minus three bundled foundation-model binaries -- mace-md's
-pattern (`jharrymoore/mace@softcore`): what must touch mace's internals is a fork branch,
-everything else (`openqha/training/`: the Hessian-vector product, the probes, the loss, the
-judge) uses the public API. Install it editable in place of the wheel:
+the batch, an external-loss hook), so the mace this repository imports is the fork
+`BloomDlwlrma/mace`, branch `openqha-hessian`, whose base tag `base-v0.3.16` is upstream
+v0.3.16 minus three bundled foundation-model binaries -- mace-md's pattern
+(`jharrymoore/mace@softcore`): what must touch mace's internals is a fork branch, everything
+else (the Hessian-vector product, the probes, the loss, the judge -- the `openqha-hessian`
+package) uses the public API. One script installs both the fork and the `openqha-hessian`
+package, editable, in the active environment:
 
 ```bash
-pip uninstall -y mace-torch && pip install -e ../openQHA-Hessian     # the checkout beside this repository
-python scripts/tooling/s0_check_weights.py                            # first two lines: version 0.3.16+openqha, fork commit
+bash ../openQHA-Hessian/install.sh          # the fork + the package, editable (offline: pass a checkout path)
+python scripts/tooling/s0_check_weights.py  # which mace answers: version 0.3.16+openqha, fork commit
 ```
 
-`engine.provenance()` records `mace_fork_commit` (and `mace_fork_dirty`); a pip wheel gives
-`unknown`, and `05_train` refuses to train on it. Ticket 10 of `.scratch/hessian-learning-set/`.
+Run it last -- or again after any re-run of `install_dependency.sh`: that installer
+reinstalls the fork from its requirement line (non-editable).
+
+`engine.provenance()` records `mace_fork_commit` (and `mace_fork_dirty`); `05_train` refuses
+to train on a fork it cannot name. Machines that only evaluate tolerate a mace wheel, with
+that commit recorded as `unknown`. Effort: `.scratch/hessian-learn-framework/`.
 
 Verify what you have:
 
