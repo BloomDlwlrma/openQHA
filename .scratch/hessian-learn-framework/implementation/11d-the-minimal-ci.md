@@ -75,3 +75,27 @@ spec's closing execution note (openQHA tracker). Checks run: the dry-run (instal
 both tests), the CI first run (green), the package suite `--all` 9/9 on the pushed
 tip, the tree diff, `git status` + retired-path re-checks. Not verified: nothing
 remaining in this slice's list.
+
+## Review record (2026-09-29, two-axis review of `3145591` + `ccc5a38`)
+
+Two-axis review per the `code-review` skill (fixed point `e83b310`; the package side from
+`a5f8103`), the axes as parallel sub-agents. No hard violations on either axis. One
+cosmetic item fixed in this annotation; the rest kept or reported (gist of both reports):
+
+**Standards.** Resolve protocol conformant on both tickets — Answer + `Status: resolved` +
+one map line each, no triage labels, the resolver placeholders consumed, the
+operating-rule report present. Kept: ticket 11's Answer heading was updated in place (an
+in-progress status falsified by resolution; the stricter 11c alternative — a dated note —
+flagged). Fixed here: the map's 11d Implementation line was blank-flanked in a
+consecutive list. Kept as house style: the SHA/URL clump repeats across the doc sites
+(11b/11c precedent), and the workflow's two test steps repeat one shape (separate named
+steps are the point; a matrix decided against).
+
+**Spec.** Conforms; nothing missing or wrong. Checked: the recorded run's steps match the
+workflow 1:1 (`ccc5a38`, attempt 1, success); decision 11's evidence list is complete on
+ticket 11; `ff92141..ccc5a38` = README + workflow only; both map lines conformant.
+Reported, kept: the spec closing note is outside "What to build"'s letter (append-only
+Execution-notes convention, self-reported); the workflow's header comment cites
+`spec-repo-swap.md` — a tracker path dangling in the public repo — kept (tracker-reference
+precedent; a rewrite would cascade a second run and stale the recorded tip; optional
+future cleanup).
