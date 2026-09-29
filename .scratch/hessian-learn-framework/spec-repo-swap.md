@@ -236,3 +236,5 @@ openQHA-free tests. Record the swap's evidence on the ticket.
   `ssh.github.com:443`, per the existing WSL `~/.ssh/config`).
 - **Status:** the swap is executed and verified (11c resolved, 2026-09-29); the CI and the
   ticket-11 record + resolution ride [11d](../implementation/11d-the-minimal-ci.md).
+
+- **11d green (2026-09-29):** the minimal CI landed (`.github/workflows/ci.yml` on `main`, `ccc5a38`) and its first run is green — https://github.com/BloomDlwlrma/openQHA-Hessian/actions/runs/36564158729; ticket 11's record completed and resolved with it. Nothing in this spec remains open.

@@ -1,7 +1,7 @@
 # 11d: The minimal CI — the install path on a clean machine, then the record
 
 Type: task
-Status: open
+Status: resolved
 Serves: 11
 Blocked by: 11c
 Part of: [hessian-learn-framework](../map.md)
@@ -37,12 +37,41 @@ Part of: [hessian-learn-framework](../map.md)
 
 ## Acceptance
 
-- [ ] The workflow is committed and pushed; its first run on GitHub is green; the run URL is recorded
-- [ ] The workflow installs through `install.sh` and runs exactly the two openQHA-free tests — no full-suite or openQHA-dependent step
-- [ ] Ticket 11's Answer carries every item of decision 11's evidence list; `Status: resolved`; one line in the map's Decisions so far
-- [ ] The package tree changed only by the README (11a) and this workflow (decision 13); old Records and the ADR 0011 mapping untouched
-- [ ] Reported per the operating rule: files changed, checks run, anything not verified
+- [x] The workflow is committed and pushed; its first run on GitHub is green; the run URL is recorded
+- [x] The workflow installs through `install.sh` and runs exactly the two openQHA-free tests — no full-suite or openQHA-dependent step
+- [x] Ticket 11's Answer carries every item of decision 11's evidence list; `Status: resolved`; one line in the map's Decisions so far
+- [x] The package tree changed only by the README (11a) and this workflow (decision 13); old Records and the ADR 0011 mapping untouched
+- [x] Reported per the operating rule: files changed, checks run, anything not verified
 
-## Answer
+## Answer (2026-09-29, agent-run)
 
-<!-- resolver: append the CI run URL + the green conclusion + the ticket-11 record; set Status: resolved; add a line to the map's Implementation -->
+The minimal CI landed on the package repo's `main` and its first run is green.
+
+- **The workflow**: `.github/workflows/ci.yml` (`ccc5a38`) — on push/PR to `main`:
+  ubuntu-latest, Python 3.11; `bash install.sh` (URL mode — the fork from its branch
+  URL, the package editable), then `python tests/unit/t_hvp.py` and
+  `python tests/unit/t_phl_loss.py` — exactly the two tests that need nothing from the
+  private openQHA checkout; no full-suite or openQHA-dependent step (decision 9; the
+  install step ends with `install.sh`'s own verification block green, its openQHA line
+  skipped by design).
+- **First run**: https://github.com/BloomDlwlrma/openQHA-Hessian/actions/runs/36564158729 — conclusion `success` (workflow `ci`, head `ccc5a38`). This is
+  the acceptance; the same URL is recorded on ticket 11.
+- **Local pre-flight** (before the push): a fresh Python 3.11 venv against a clean
+  clone ran the same three steps green — URL-mode install resolving the fork at
+  `1110ffb`, then both tests; log `C:\Users\10704\AppData\Local\Temp\11d\dryrun.log`.
+- **Ticket 11's record** (decision 12): its Answer now carries the CI item — with that,
+  every item of decision 11's evidence list is on the ticket (before/after `ls-remote
+  --symref`, the bundle verify/list-heads, the served description and default branch,
+  the CI run, `git status` clean, the retired path gone, the push/delete/prune
+  transcripts) — `Status: resolved`, and one line in the map's Decisions so far.
+- **Tree check** (decision 13): `git diff --stat ff92141..ccc5a38` shows exactly
+  `README.md` + `.github/workflows/ci.yml`; old Records and the ADR 0011 mapping
+  untouched. The push reused the 11c session `ssh-agent` socket, then killed it
+  (`pkill -f 11c-agent.sock`).
+
+Reported per the operating rule — files changed: `.github/workflows/ci.yml` (package
+repo, pushed); [ticket 11](../decisions/11-repo-swap.md), this ticket, `map.md`, the
+spec's closing execution note (openQHA tracker). Checks run: the dry-run (install +
+both tests), the CI first run (green), the package suite `--all` 9/9 on the pushed
+tip, the tree diff, `git status` + retired-path re-checks. Not verified: nothing
+remaining in this slice's list.

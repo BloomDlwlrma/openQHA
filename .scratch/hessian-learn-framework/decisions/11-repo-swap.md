@@ -1,7 +1,7 @@
 # The repo swap: replace openQHA-Hessian's content and clean the local tree
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 05, 07
 Part of: [hessian-learn-framework](../map.md)
 
@@ -16,7 +16,7 @@ Work:
 3. Clean the working tree: untracked `logs/`, `results/`, `mace_torch.egg-info/`, `.pytest_cache/`, `mp_finetuning*.xyz` — removed or explicitly kept; the point is that the local tree stops looking like a second mace checkout.
 4. Decide: a minimal CI workflow for the repo (install the fork + run the package's tests), since mace-md has one — if yes, it lands here.
 
-## Answer (swap executed 2026-09-29 via 11c; resolution rides 11d)
+## Answer (2026-09-29: swap executed via 11c; CI + resolution via 11d)
 
 Decision 2's sequence ran as approved; swap-side evidence (transcripts under
 `C:\Users\10704\AppData\Local\Temp\11c\`):
@@ -52,4 +52,9 @@ Decision 2's sequence ran as approved; swap-side evidence (transcripts under
   local `ssh-add` prompt — no server-side window). Socket may still be alive at
   `/tmp/11c-agent.sock` for 11d's push.
 
-<!-- 11d: append the CI run URL + its green conclusion; set Status: resolved; add the map's Decisions-so-far line. -->
+- **CI** ([11d](../implementation/11d-the-minimal-ci.md)): `.github/workflows/ci.yml` committed
+  on the package `main` (`ccc5a38`) and pushed; its first run is green — https://github.com/BloomDlwlrma/openQHA-Hessian/actions/runs/36564158729
+  (conclusion `success`; ubuntu-latest, Python 3.11; `bash install.sh` URL mode, then
+  `t_hvp` + `t_phl_loss`). With it the evidence list of decision 11 is complete;
+  closing re-checks 2026-09-29: the package checkout's `git status` clean, the
+  retired path gone, the package suite 9/9 on the pushed tip.
