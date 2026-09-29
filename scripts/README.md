@@ -16,7 +16,7 @@ Counts refreshed 2026-09-09 from the directories themselves; the earlier ones ha
 stale as branch B and branch E scripts landed.
 
 **Why the category is declared as well as implied by the directory.** Classification is a
-judgement, not a fact (plan_D section 2.1), and a judgement recorded in only one place
+judgement, not a fact, and a judgement recorded in only one place
 cannot be checked. A script that says `CALIBRATION` while sitting in `production/` is a
 disagreement — between two people, or between the same person three weeks apart — and the
 taxonomy test is what makes it visible instead of letting the directory quietly win.
@@ -25,8 +25,8 @@ taxonomy test is what makes it visible instead of letting the directory quietly 
 
 The defect probes it was meant to hold went to `scripts/_superseded/closed-defects/`
 instead. That leaves a tension with the definition above,
-which says a probe should stay runnable after its defect closes — and plan_D section 2.3
-is how it resolves: each probe becomes a named regression test under `tests/regression/`,
+which says a probe should stay runnable after its defect closes — and the resolution
+is: each probe becomes a named regression test under `tests/regression/`,
 carrying its defect number in the file name. Once the test exists, the probe can be
 deleted safely, because the reproduction is no longer the script's job.
 

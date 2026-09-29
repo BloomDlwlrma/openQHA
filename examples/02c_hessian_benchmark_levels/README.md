@@ -45,7 +45,7 @@ passes on it, so a truncated file fails rather than being trusted for existing. 
 |---|---|
 | `MACE-OFF23_medium` | the production potential — every branch B trajectory and every branch A refinement runs on it |
 | `GFN2-xTB` | branch A's CREST workhorse — **the level that picks the geometries** |
-| `RI-MP2/RIJK/cc-pVTZ` | the reference (`plan_C` §5.3, user-specified) |
+| `RI-MP2/RIJK/cc-pVTZ` | the reference (user-specified) |
 
 ---
 
@@ -108,7 +108,7 @@ kcal/mol** across the three basins. The error is systematic, so in a *relative*
 conformational free energy — which is what branch A and branch B actually deliver — MACE
 costs about **0.04** kcal/mol, not 0.4. An absolute `G_total` pays the full 0.4.
 
-The signs are internally consistent with `plan_C` §8.5 end to end: **ν low → ZPE low, S
+The signs are internally consistent end to end: **ν low → ZPE low, S
 high, G low**. `dZPE` negative, `dT·S` positive, `d(G−E_el)` negative, on every basin.
 
 ```
@@ -139,7 +139,7 @@ signed deviation against RI-MP2, by band (cm^-1)
 
 ### MACE is softer than the reference in every band
 
-That is the sign `plan_C` §8.5 predicts for the systematic softening of universal MLIPs
+That is the predicted sign for the systematic softening of universal MLIPs
 (Deng et al., *npj Comput. Mater.* 2025): **curvature soft → ν low → S high → G low**.
 Acceptance criterion 15 holds in sign, on this molecule.
 

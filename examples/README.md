@@ -1,7 +1,7 @@
 # `examples/`
 
-What openQHA publishes is **the method**, not this project's eleven edges (plan_D
-section 6.2). Someone who installs openQHA wants "give me a molecule, compute its
+What openQHA publishes is **the method**, not this project's eleven edges. Someone who
+installs openQHA wants "give me a molecule, compute its
 conformational entropy", not "rerun some group's eleven edges". But the worked example
 still has to be here and has to run, because a method library with no runnable example is
 the repository-scale version of a criterion nobody has built a failing case for.
@@ -179,7 +179,7 @@ contradicted a fifth.
 
 ## What does not exist yet, stated plainly
 
-plan_D section 6.3 names two examples. Neither is complete:
+Two examples are planned. Neither is complete:
 
 - **`01_single_molecule/`** — one molecule from SMILES all the way to `S_QH`. The acetone
   example above covers the conformer-search end of that chain and stops before the
@@ -190,7 +190,7 @@ plan_D section 6.3 names two examples. Neither is complete:
 - **`02_qm9_isomerisation/`** — the eleven-edge worked example of this project.
 
 They are listed here rather than left out so that the gap is visible. `git init` is
-gated on both of these running end to end (plan_D section 7.3), so this list is the
+gated on both of these running end to end, so this list is the
 remaining distance to that gate.
 
 ## Data

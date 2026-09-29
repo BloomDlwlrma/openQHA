@@ -427,7 +427,7 @@ cluster that bans it.
 
 **Not a dry run**. A short real job tests five things a plan
 cannot: that the module loads, that conda activates on a *compute* node, that the weights
-are there and hash correctly, that the scheduler accepts the directives, and that Parsl can
+are there and resolve by name, that the scheduler accepts the directives, and that Parsl can
 read its own status query.
 
 ```bash

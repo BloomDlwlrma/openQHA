@@ -10,7 +10,7 @@ Each test is a standalone program returning an exit code, and the runner launche
 its own process. That is deliberate: a real defect once made a script behave
 differently when **executed** than when imported, and importing tests into one process
 would erase the distinction part of this suite is about. (`regression/t_defect46_shebang.py`
-is the test for it. **It is planned, not written** -- plan_D section 2.3 lists it among the
+is the test for it. **It is planned, not written** -- it is listed among the
 one-off probes worth recovering as permanent tests. This README and `run_tests.py` both
 used to speak of it as if it existed; corrected 2026-09-09.)
 
@@ -85,9 +85,9 @@ the incident.
 
 `tests/` held 228 lines (1.6% coverage) while `scripts/` held 10 026. That was never
 because checks had not been written — **a great many had been written, and were sitting in
-`scripts/` as one-off probes that ran once and were never run again.** plan_D section 2.3
-is the list of those worth recovering as permanent regression tests; each has a specific
-input and a definite expected output already recorded in a checkpoint.
+`scripts/` as one-off probes that ran once and were never run again.** The list of those
+worth recovering as permanent regression tests is recorded; each has a specific
+input and a definite expected output.
 
 ## The checks that guard the restructure itself
 

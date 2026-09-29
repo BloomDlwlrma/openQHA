@@ -47,13 +47,14 @@ hpc/slurm/README.md                                           0      0     0   1
 scripts/README.md                                             0      1     0   0     0       0       1      0     0       0       0
 tests/README.md                                               0      0     0   0     0       0       1      0     0       1       0
 workflows/hessian_learning/README.md                         18      4     0   2     3       0       6      8     7       0       0
-environment*.yml (5 files, D0/ruling tokens)                  0      5     0   0     0       0       2      0     0       6       0
+environment*.yml (4 files, D0/ruling tokens)                  0      5     0   0     0       0       2      0     0       6       0
 ```
-(Pure-date files — `docs/cite/README.md`, `docs/branchB_production.md`'s remaining hits,
-the remaining `examples/*/README.md` — carry measurement dates only and were verified, not
-edited.) `D0-code` and `set-ref` were added to the tally after the first pass found the
-second code family; the totals for the files edited above were confirmed zero after the
-pass.
+(`set-ref` = study-set names, e.g. `hessian-learning-set`, `msrrho-gtotal`; `D0-code` =
+the second study-code family, added to the tally after the first pass found it. Pure-date
+files — `docs/cite/README.md`, `docs/branchB_production.md`'s remaining hits, the
+remaining `examples/*/README.md` — carry measurement dates only and were verified, not
+edited; the annotations commit below adds `T02` and the last `plan_*`/hash-claim cleanups
+the two-axis review found, after which the same scan reads 0 including `plan_[A-D]`.)
 
 **What landed.** The named content fixes, merged with the citation strip in one pass per
 file:
@@ -101,20 +102,60 @@ file:
 - Tutorials — **T04/T05 source cells** move to `openqha_hessian` imports, the mace fork
   checkout, the printed engine name, and lose every S0/ticket/grilling/`.scratch`/ADR token;
   **T01** loses the ruling token and its retired `engine.sha256` print (now the resolved
-  weights filename); **T01b**'s token + `.mem` pointer out. Stored outputs untouched (cell
-  counts and output cells identical; diffs are source-line only).
+  weights filename); **T01b**'s token + `.mem` pointer out; **T02** — public but outside
+  the first set — swept in the annotations commit (engine import, provenance prints, the
+  prose's retired hash check). Stored outputs untouched: cell counts and output arrays
+  byte-identical; the editor reset the edited cells' execution counters to null (8 cells)
+  and T01b gains a trailing newline — no output object changed.
 
 **Evidence.** Residual scan over every public `.md`/`.yml`/notebook-source after the pass:
-**0** hits for `ticket|ruling|grilling|ADR N|CONTEXT.md|.scratch|S0-X-N|D0-*|checkpoint N|plan_B`.
-Compile/parse: `py_compile` on both touched scripts, `bash -n` on `install_dependency.sh`,
-`yaml.safe_load` on the four env files, `json.load` on the four notebooks — all green.
-Tests: `t_hl_campaign` PASS (all pinned page/README strings intact), `t_engine_identity`
-PASS, `t_engine_fork` 18/18. Not run here: the full suite — this pass touches documents,
-comments and one tutorial print (no behaviour), and the sweep's suite evidence is 12a/12b's
-73/73 + 9/9 on the same code tree.
+**0** hits for `ticket|ruling|grilling|ADR N|CONTEXT.md|.scratch|S0-X-N|D0-*|checkpoint N|plan_[A-D]`
+(the annotations commit below re-runs the scan with `plan_[A-D]` added). Compile/parse:
+`py_compile` on both touched scripts, `bash -n` on `install_dependency.sh`, `yaml.safe_load`
+on the four env files, `json.load` on the five notebooks — all green. Tests: `t_hl_campaign`
+PASS (all pinned page/README strings intact; re-run after the annotations' split-wording
+fix), `t_engine_identity` PASS, `t_engine_fork` 18/18. Stored outputs: output arrays
+byte-identical in every notebook; the editor did reset the edited cells' `execution_count`
+to null (8 cells) and T01b gains a trailing newline — no output object changed. Not run
+here: the full suite — this pass touches documents, comments and one tutorial print (no
+behaviour), and the sweep's suite evidence is 12a/12b's 73/73 + 9/9 on the same code tree.
 
 **Reported, not acted on** (for the later passes): the remaining `user ruling` / `D0-*` /
 `.mem` tokens in `install_dependency.sh`, `configs/*.yaml` and the production scripts
 belong to [12f](../implementation/12f-the-scripts-and-root-pass.md)/[12g](../implementation/12g-the-hpc-and-workflows-pass.md);
 `docs/branchA_production.md:533`'s "records redesign 2026-09-15" keeps its date (a document
 version mark, not a ruling).
+
+## Review record (2026-09-30, annotations commit)
+
+Two-axis review of `dbbead3` (range `4eda3fa..dbbead3`), per the `code-review` skill, run
+as two read-only sub-agents. Hard findings, all fixed in this commit:
+
+- **Standards.** Five stale "hash correctly"/"SHA-256 on load"/"recomputes … SHA-256"
+  claims surviving in files the pass had already touched
+  (`docs/branchA_production.md`, `docs/tianhe_runbook.md`, `hpc/README.md`,
+  `environment.yml`, `environment-tianhe.yml`, and `install_dependency.sh`'s weights-block
+  comment) — replaced by resolve-by-name wording. **T01**'s licence line still advertised
+  "only a path and a SHA-256"; **T02**, public but outside the named set, was broken by
+  the identity strip (its cell printed `prov["sha256"]` and `prov["licence"]`, both
+  retired; the prose promised a raising hash check) — swept here too. `examples/02d…/README`
+  linked `.mem/plan/plan_AB…`; `examples/02a…/README` said "weights, hash-checked";
+  `tests/README.md` still cited "plan_D section … checkpoint"; `scripts/README.md`,
+  `examples/README.md` and `examples/02c…/README.md` still cited `plan_C`/`plan_D` — all
+  removed (the first scan's pattern missed `plan_[A-C]`). `branchA_production.md`'s
+  directory table + paragraph now allow the registry's `mace_off23_<campaign>/` sub-path
+  (FLAT applies to the base weights), matching `engine.py` and this ticket's own recipe.
+- **Spec.** The split story re-verified against `openqha/data/dataset.py`: `molecule` is
+  the default, fractions are 0.05 in both modes — but the molecule mode's `valid` draw is
+  **per molecule**, not "by frame" (that is the frame mode's generator); the workflow
+  README's drawn-by sentence was corrected. Count-table corrections: `environment*.yml`
+  is 4 files, not 5; the `set-ref`/`D0-code` columns are defined in the footnote; the
+  "diffs are source-line only" claim now states the execution-counter reset explicitly.
+
+Judgement calls (kept as written, flagged for the human): the three layout-history
+blockquotes keep their aligned wording; the eight reset execution counters are recorded,
+not restored (the output objects are byte-identical; a scripted restore would risk
+reformatting whole files for a cosmetic field); the T01/T01b touches and the metadata
+churn that come with any notebook-tool edit are accepted. Not verified locally: that the
+round-1 build invoked `--split-by molecule` in the flesh — taken from the map's record and
+the campaign page, both of which now agree with `dataset.py`.

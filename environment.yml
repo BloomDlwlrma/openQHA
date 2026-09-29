@@ -147,4 +147,4 @@ dependencies:
 #             openqha/openmm_mace.py for the measurement that made them unnecessary.
 #   orca      registration required, installed by hand; branch C only.
 #   MACE-OFF weights   fetched by install_dependency.sh, not shipped and not a package.
-#                      openqha/engine.py recomputes their SHA-256 on every load.
+#                      openqha/engine.py resolves the file by name at load.

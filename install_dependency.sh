@@ -792,18 +792,16 @@ CREST_BIN="$(command -v crest || true)"
 # 4. MACE-OFF weights
 # -------------------------------------------------------------------------------------
 # The weights are NOT in this repository -- they are fetched here, from upstream, by you.
-# Every file is checked against the SHA-256 pinned in openqha/engine.py before it counts
-# as installed. That check is what makes the level of theory reproducible: a truncated
-# download, a proxy that served an HTML error page, and a silently swapped potential all
-# look identical until you hash them.
+# A download that does not look like a model (an HTML error page under a 200, a truncated
+# file) is caught by the size check below; nothing hashes the file, at fetch or at load.
 MACE_ROOT="${S0_MACE_ROOT:-$HERE/data/potentials}"
 MACE_URL_BASE="https://github.com/ACEsuit/mace-off/raw/main"
 
 fetch_model () {          # fetch_model <registry-name> <upstream-subdir> <file>
     # <upstream-subdir> is where the file lives ON THE SERVER. The LOCAL destination is
-    # flat: openqha/potentials/engine.py resolves <root>/<filename> and nothing else
-    # (user ruling 2026-09-09). Downloading into a mace_off23/ subdirectory here is what
-    # made the installer put weights somewhere the loader never looked.
+    # flat: base weights live at <root>/<filename>, the loader's one directory.
+    # Downloading into a mace_off23/ subdirectory here is what made the installer put
+    # weights somewhere the loader never looked.
     local name="$1" fam="$2" file="$3"
     local dest="$MACE_ROOT/$file"
 

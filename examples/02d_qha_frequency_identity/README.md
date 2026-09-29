@@ -305,7 +305,7 @@ value is a result, not a convention.
 
 | term | can `ν(QHA)` replace `ω(Hessian)`? |
 |---|---|
-| entropy, **as a total** | **yes, and it is arguably the better quantity** — it carries hindered internal rotation the harmonic spectrum omits. It is a different number, not a worse one, and must be entered with the internal symmetry number (see [`plan_AB`](../../.mem/plan/plan_AB_total-free-energy.md)) |
+| entropy, **as a total** | **yes, and it is arguably the better quantity** — it carries hindered internal rotation the harmonic spectrum omits. It is a different number, not a worse one, and must be entered with the internal symmetry number |
 | entropy, **mode by mode** | **no.** On the real surface the pairing does not exist: block overlap 0.18–0.31, 2–5 duplicate pairings, largest paired discrepancy about 3000 cm⁻¹ |
 | **ZPE** | **no, and not for a fixable reason.** A classical trajectory has no zero-point motion |
 | **enthalpy** | **no**, same reason; it tracks the ZPE column row for row |

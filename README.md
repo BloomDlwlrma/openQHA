@@ -360,8 +360,8 @@ python scripts/production/s0_E_branchA_parsl.py --edges --resource deimos --acco
 
 ### Where the results are
 
-One directory per molecule under a tag -- the tag directory is flat since 2026-09-20
-(the two shard layers of 2026-09-14 are gone) -- with one folder per engine inside it and
+One directory per molecule under a tag -- the tag directory is flat (the earlier shard
+layers are gone) -- with one folder per engine inside it and
 the engines' own files in those folders (`docs/output_inventory.md` sections 6 and 8); a
 frame's reference label is a file group of the molecule directory:
 

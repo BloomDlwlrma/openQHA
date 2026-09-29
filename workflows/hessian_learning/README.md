@@ -21,8 +21,8 @@ first tag's `_datasets/<name>/`.
 
 **One campaign = one tag = one Dataset**: every step's
 `--name` and every stage script's `NAME` default to the tag, so `TAG=draw300` alone is the
-whole address — `<root>/draw300/<qid>/` for the molecules (the tag directory is flat: the
-two shard layers of 2026‑09‑14 are gone),
+whole address — `<root>/draw300/<qid>/` for the molecules (the tag directory is flat; the
+earlier shard layers are gone),
 `<root>/draw300/_datasets/draw300/` for the Dataset. `--name` is only for a second subset
 on the same tree. A frame's ORCA files are a FILE GROUP of the molecule directory,
 `orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}` (`layout.orca_frame_stem`), not a
@@ -304,11 +304,12 @@ molecules: the pinned seven (acetone 000018, acetamide 000019, propanal 000035,
 N‑methylformamide 000036, 2‑methyloxirane 000044, cyclopropanol 000046, oxetane 000048)
 plus `TEST_FRACTION` (5 %) of the others drawn per stratum (ring count × heteroatom
 pattern); `valid` = `VALID_FRACTION` (5 %) of the training molecules' labelled frames,
-drawn by frame (a generator seeded from `--seed` and the frame's name, so a frame's split
-never depends on what else is labelled); `train` = the rest — conformers of one molecule
+drawn per molecule; `train` = the rest — conformers of one molecule
 never sit on both sides. **`frame` (the smoke / fit mode):** the pinned seven are whole
 test molecules; every other labelled frame goes to train / valid / test at **90 / 5 / 5**
-by its own draw (the fractions are expectations, ±0.1 % over 100,000 frames). In both,
+by its own draw (a generator seeded from `--seed` and the frame's name, so a frame's split
+never depends on what else is labelled; the fractions are expectations, ±0.1 % over 100,000
+frames). In both,
 `pool` = frames without a label at the level yet, whatever their molecule's side
 (`molecule_split` in the index). The split is set at
 write time and never recomputed: a rebuild keeps every decision of the previous

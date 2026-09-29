@@ -68,7 +68,7 @@ to a cluster changes one argument: `--resource tianhe_cpu`.
 **On a cluster the gate is `--debug`, not `--dry-run`**: the same
 command, on the site's short partition, at a 30-minute walltime, capped at one
 allocation. A real short job tests what a rendered plan cannot — that the module loads,
-that conda activates on a *compute* node, that the weights hash correctly there, and that
+that conda activates on a *compute* node, that the weights resolve by name there, and that
 Parsl can read its own status query. `--debug` is **refused** on a resource config that
 has no short partition, rather than quietly running production settings.
 

@@ -175,5 +175,5 @@ dependencies:
 #   orca               registration required; branch C only.
 #   MACE-OFF weights   NOT downloaded on a login node -- outbound traffic goes through a
 #                      proxy and a 100 MB pull from a login node is antisocial. Fetch them
-#                      where you have bandwidth and rsync them in; the SHA-256 is
-#                      recomputed on load, so a truncated transfer fails loudly.
+#                      where you have bandwidth and rsync them in; a truncated file fails
+#                      at load, loudly.

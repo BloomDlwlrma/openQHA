@@ -283,15 +283,16 @@ run will use, and they are what every product records.
 |---|---|---|
 | the registry | `openqha/potentials/engine.py` → `ENGINES` | name → **filename**, source, note — no paths, nothing verified |
 | the directory | `openqha/potentials/engine.py` → `model_root()` | `<repo>/data/potentials`, or `S0_MACE_ROOT` |
-| add a potential | an `ENGINES` entry: `filename=`, `source=`, `note=` | any MLIP. Drop the file in that directory, flat |
+| add a potential | an `ENGINES` entry: `filename=`, `source=`, `note=` | any MLIP. Drop the file in that directory (a self-trained revision under its `mace_off23_<campaign>/` sub-path) |
 | production default | `openqha/potentials/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` |
 | select another | `S0_ENGINE=MACE-OFF23_large` | must be a registered name; unknown names raise |
-| move the directory | `S0_MACE_ROOT=/path/to/potentials` | the one flat directory of weights |
+| move the directory | `S0_MACE_ROOT=/path/to/potentials` | the one weights directory |
 | one file | `S0_MACE_MODEL=/path/to/x.model` | overrides that engine only |
 | what the run used | `configs/openqha.yaml` → `engine:` | records *which* weights, **not authoritative for the path** |
 
-**ONE directory, FLAT**. `model_root()/<filename>` and nothing
-else — no subdirectories, no search:
+**ONE directory**, and `model_root()/<filename>` is the whole resolution — no search.
+Base weights stay flat; a self-trained revision may live under its own
+`mace_off23_<campaign>/` sub-path:
 
 ```
 <repo>/data/potentials/                     <- model_root(); S0_MACE_ROOT moves it
@@ -352,7 +353,7 @@ trade.
 
 **There is no `--dry-run` gate any more**. A 30-minute real job on
 the short partition tests five things a rendered plan cannot: that the module loads, that
-conda activates on a *compute* node, that the weights are there and hash correctly, that the
+conda activates on a *compute* node, that the weights are there and resolve by name, that the
 scheduler accepts the directives, and that Parsl can read its own status query.
 
 `--dry-run` still exists and still prints the plan. It is for reading, not for gating.

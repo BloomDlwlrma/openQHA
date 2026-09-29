@@ -175,7 +175,7 @@ driver and the three trajectories together, `--gpus=1 --cpus-per-task=12`, after
 ## Before the first run
 
 ```bash
-bash install_dependency.sh                      # weights, hash-checked
+bash install_dependency.sh                      # weights fetched
 python -m openqha.potentials.mace_server --socket /tmp/s0_mace.sock &   # if running by hand
 ```
 
