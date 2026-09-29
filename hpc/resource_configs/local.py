@@ -65,10 +65,9 @@ QHA_MAX_WORKERS = max(1, N_CORES // QHA_THREADS_PER_JOB)
 #: (scripts/calibration/s0_B_stack_fingerprint.py).
 #:
 #: So `S0_OPENMM_ENV` is now EMPTY by default and the worker inherits the interpreter that
-#: started it. Set it only when the OpenMM route should run somewhere else -- the lean
-#: `openqha-openmm` environment from environment-openmm.yml, say, on a site with a small
-#: quota. A Parsl worker inherits its parent's interpreter, so that is the only way to
-#: send this executor elsewhere.
+#: started it. Set it only when the OpenMM route should run somewhere else -- a site that
+#: keeps its OpenMM stack in a separate environment. A Parsl worker inherits its parent's
+#: interpreter, so that is the only way to send this executor elsewhere.
 #:
 #: The executor is kept as a separate label even when it points at the same environment.
 #: It carries its own worker count and its own cost record, and hpc/configs/qha_md_openmm.json

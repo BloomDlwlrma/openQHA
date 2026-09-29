@@ -12,7 +12,6 @@
 #     bash install_dependency.sh --tianhe-cuda# TianheXY-AI (GPU) -- CUDA 12.3 env
 #     bash install_dependency.sh --tianhe-a   # TianheXY-A  (GPU) -- the same env
 #     bash install_dependency.sh --tianhe-cuda --both   # BOTH envs on one cluster
-#     bash install_dependency.sh --lean       # branch B production only, `openqha-openmm`
 #
 # THERE ARE THREE TIANHE CLUSTERS. The two GPU ones share an environment file; the CPU
 # one does not:
@@ -104,10 +103,8 @@
 # bit-identical fingerprint that justified it is still in
 # scripts/calibration/s0_B_stack_fingerprint.py.
 #
-# `--lean` builds `openqha-openmm` from environment-openmm.yml: the same branch B
-# capability without CREST, xtb, rdkit or the notebook stack. Choose it for size, not for
-# capability. `--cuda` builds environment-cuda.yml into `openqha-cuda` -- a workstation
-# CUDA build, without the Tianhe proxy/channel handling below.
+# `--cuda` builds environment-cuda.yml into `openqha-cuda` -- a workstation CUDA build,
+# without the Tianhe proxy/channel handling below.
 #
 # ---- THE WORKSTATION IS STILL ONE ENVIRONMENT, AND THAT IS NOT THE SAME QUESTION -----
 # `openqha` on a workstation holds the Python stack, CREST, xtb and MACE together. It
@@ -183,8 +180,6 @@ for arg in "$@"; do
         --both)          BOTH=1 ;;
         --local)         MODE="local" ;;
         --minimal)       REQ="requirements-minimal.txt" ;;
-        --lean)          ENV_FILE="environment-openmm.yml"; PY_ENV="openqha-openmm";
-                         LEAN=1 ;;
         --check)         DO_INSTALL=0 ;;
         --no-weights)    WEIGHTS="none" ;;
         --all-weights)   WEIGHTS="all" ;;
@@ -257,7 +252,7 @@ if [ "$BOTH" -eq 1 ]; then
     PASS=""
     for a in "$@"; do
         case "$a" in
-            --both|--tianhe|--hpc|--tianhe-cuda|--tianhe-a|--cuda|--local|--lean|--minimal) ;;
+            --both|--tianhe|--hpc|--tianhe-cuda|--tianhe-a|--cuda|--local|--minimal) ;;
             *) PASS="$PASS $a" ;;
         esac
     done

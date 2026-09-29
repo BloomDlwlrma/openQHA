@@ -159,9 +159,9 @@ def main():
         checks.append((
             "a missing CORE capability names the environment file that provides it, "
             "rather than only the package",
-            "mentions environment-openmm.yml = {}".format(
-                "environment-openmm.yml" in message),
-            "environment-openmm.yml" in message))
+            "mentions environment.yml = {}".format(
+                "environment.yml" in message),
+            "environment.yml" in message))
     else:
         checks.append((
             "every CORE capability is present here, so require_core passes",

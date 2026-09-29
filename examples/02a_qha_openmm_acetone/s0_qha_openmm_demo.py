@@ -22,7 +22,7 @@ energy, forces, every Hessian frequency and T*S on fixed frames all bit-identica
 (scripts/calibration/s0_B_stack_fingerprint.py).
 
 The OpenMM half therefore runs in whatever interpreter you start this with. `S0_OPENMM_PYTHON`
-still overrides it, for the lean `openqha-openmm` environment from environment-openmm.yml;
+still overrides it, for a machine that keeps its OpenMM stack in a separate environment;
 and if no interpreter has the stack, that half is SKIPPED with a message saying what is
 missing and what it costs, rather than quietly omitted.
 """
@@ -69,8 +69,8 @@ def openmm_python():
     """The interpreter that has OpenMM, or None.
 
     THIS interpreter first: one environment runs everything now. The others are kept as
-    fallbacks for a machine that split them -- the lean `openqha-openmm` environment, or
-    an older layout -- because a demo that dies on a working installation is worse than
+    fallbacks for a machine that split them -- a separate OpenMM environment, or an
+    older layout -- because a demo that dies on a working installation is worse than
     one that looks one directory further.
 
     Checked by IMPORT and never by `Path.exists`: a present-but-broken build must read as
@@ -78,8 +78,6 @@ def openmm_python():
     """
     candidates = [os.environ.get("S0_OPENMM_PYTHON"),
                   sys.executable,
-                  str(Path.home() / "anaconda3" / "envs" / "openqha-openmm" / "bin"
-                      / "python"),
                   shutil.which("python")]
     probe = ("import openmm, openmmtools, openmmtorch, mace; "
              "print(openmm.version.version)")
@@ -119,7 +117,6 @@ def step_2_force_agreement(atoms, exe):
         print("SKIPPED: no interpreter with openmm + openmm-torch + openmmtools.")
         print("         They are CORE for branch B; environment.yml declares them.")
         print("         conda env update -f environment.yml --prune")
-        print("         or, for the lean variant: conda env create -f environment-openmm.yml")
         try:
             from openqha import capabilities
             print()

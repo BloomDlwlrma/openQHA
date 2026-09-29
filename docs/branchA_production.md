@@ -152,10 +152,10 @@ reproducible; the count is one draw.
 | `environment-tianhe.yml` | `openqha` | **TianheXY-C** | OpenBLAS/OpenMP | branch A + collection. CPU torch, CREST, xtb |
 | `environment-tianhe-gpu.yml` | `openqha-gpu` | **TianheXY-A and TianheXY-AI** | MKL | branch B trajectories + branch C training. CUDA 12.3 |
 | `environment-cuda.yml` | `openqha-cuda` | any GPU box | OpenBLAS/OpenMP | CUDA without the Tianhe specifics |
-| `environment-openmm.yml` | `openqha-openmm` | anywhere | OpenBLAS/OpenMP | branch B only, ~2 GB smaller |
-
 The BLAS column is there because it is the axis the two Tianhe environments are split
-along and the one you cannot read off the name. `openqha-gpu` takes MKL because a CUDA
+along and the one you cannot read off the name. (The branch-B-only lean variant,
+`environment-openmm.yml` / `openqha-openmm`, retired 2026-09-29 -- a strict subset of
+`environment.yml`; the file is in `_superseded/`.) `openqha-gpu` takes MKL because a CUDA
 build of pytorch depends on it, which makes `nomkl` unsatisfiable there; everything that
 could be *moved* by that choice — the quasi-harmonic diagonalisation above all — runs in
 the collection pass, in `openqha`, against OpenBLAS. [`tianhe_install.md`](tianhe_install.md) §1.5 has the

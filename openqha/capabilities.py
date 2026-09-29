@@ -167,22 +167,18 @@ def require_core(names=CORE, refresh=False):
         raise RuntimeError(
             "branch B's OpenMM production route needs {} and {} not available.\n"
             "\n"
-            "This is EXPECTED in the `openqha` environment -- openmm is deliberately not\n"
-            "in it. Which environment you want depends on where you are:\n"
+            "A current environment carries them: `environment.yml` on a workstation\n"
+            "(the OpenMM stack moved into it on 2026-09-05) and `environment-tianhe-gpu.yml`\n"
+            "on both Tianhe GPU clusters -- an environment missing them was not built\n"
+            "from those files:\n"
             "\n"
+            "  on a workstation conda env update -f environment.yml --prune\n"
             "  on Tianhe        the GPU environment already carries all three:\n"
             "                     bash install_dependency.sh --tianhe-cuda   # or --tianhe-a\n"
             "                     OPENQHA_ROLE=gpu source hpc/env/tianhe.sh\n"
             "                   (environment-tianhe-gpu.yml lists openmm, openmm-torch\n"
             "                   =*cuda* and openmmtools. If they are missing THERE, the\n"
-            "                   environment was not built from that file.)\n"
-            "  on a workstation a separate, smaller environment:\n"
-            "                     conda env create -f environment-openmm.yml\n"
-            "                     conda activate openqha-openmm\n"
-            "\n"
-            "Why not simply add them to `openqha`: the solver downgrades pytorch\n"
-            "2.13.0 -> 2.12.1 and numpy 2.4.6 -> 1.26.4 to make room, which would\n"
-            "silently change the potential under branches A and C too."
+            "                   environment was not built from that file.)"
             .format(", ".join(missing), "it is" if len(missing) == 1 else "they are"))
     return True
 
