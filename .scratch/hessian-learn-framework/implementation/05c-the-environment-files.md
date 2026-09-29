@@ -38,9 +38,9 @@ Resolved 2026-09-29, agent-run. Building an environment now installs the fork, n
 
 **What changed** (the 8 dependency files, +50/-36):
 
-- The five environment files (`environment.yml`, `environment-cuda.yml`, `environment-openmm.yml`,
-  `environment-tianhe.yml`, `environment-tianhe-gpu.yml`) and the two requirements files
-  (`requirements.txt`, `requirements-minimal.txt`) carry
+- The five environment files (`environment.yml`, `environment-cuda.yml`, `environment-tianhe.yml`,
+  `environment-tianhe-gpu.yml`, and a branch-B-only fifth, since retired to `_superseded/`) and the
+  two requirements files (`requirements.txt`, `requirements-minimal.txt`) carry
   `git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian` in place of `mace-torch>=0.3.6`
   -- bare and non-editable, mace-md style. Each site's comment now tells the fork story (fork by
   git URL, non-editable by design, training runs `openQHA-Hessian/install.sh` regardless).
