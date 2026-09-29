@@ -8,6 +8,8 @@ Part of: [hessian-learn-framework](../map.md)
 
 Create the true fork and land the mace-side changes on it, so the repo shows exactly what is ours (Q1) and the commits can go upstream (Q4a).
 
+> 2026-09-29 — the upstream PR was decided against ([ticket 10](10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
+
 Work:
 
 1. **Create the fork** (user action, HITL): a GitHub-side fork of `ACEsuit/mace` as `BloomDlwlrma/mace`.
@@ -19,7 +21,7 @@ Work:
 
 - Old fork: 7 commits; whole change = 12 files, +869/−18; the base dropped `mace/calculators/foundations_models/*.model` (153 MB) and upstream's `*.model` gitignore line already covers them.
 - Remotes on the local checkout: `origin BloomDlwlrma/openQHA-Hessian`, `upstream ACEsuit/mace` (upstream kept locally only).
-- This ticket owns the fork. Installing it everywhere is [Install and transport](05-install-and-transport.md); recording its identity is [Identity after the split](06-identity-after-the-split.md); the upstream PR is [Upstream: submit the mace-side changes](10-upstream-pr.md).
+- This ticket owns the fork. Installing it everywhere is [Install and transport](05-install-and-transport.md); recording its identity is [Identity after the split](06-identity-after-the-split.md); the upstream PR is [Upstream: submit the mace-side changes](10-upstream-pr.md). 2026-09-29 — the upstream PR was decided against ([ticket 10](10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
 
 ## Answer
 
@@ -33,7 +35,7 @@ record: ADR `0011` (`openQHA/docs/adr/0011-mace-fork-rebuild.md`).
    the local build needs none of the three files (mace downloads/caches; openQHA weights
    live in `data/potentials/`; mace's tests passed without them on the old fork). The old
    drop was for push feasibility; on a true fork the reason is lean checkouts / blobless
-   workflows, and 10 already anticipates excluding it from the PR.
+   workflows, and 10 already anticipates excluding it from the PR. 2026-09-29 — the upstream PR was decided against ([ticket 10](10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
 3. **Default branch: no settings change** — the fork keeps whatever GitHub creates (= the
    parent's default, `develop`; `main` is a *differing* line — the "2 commits ahead of /
    1 behind develop" banner is a non-default-branch banner, not evidence main is the

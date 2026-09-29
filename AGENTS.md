@@ -31,6 +31,7 @@ done only when its acceptance criteria are paid and its Status line carries the 
 - The repository runs under WSL (Ubuntu 24.04); anaconda is at `/home/ubuntu/anaconda3`.
 - The full environment is conda env `openqha` (procrustes, the `0.3.16+openqha` mace fork,
   nbconvert).
+- The mace fork's refs (`openqha-hessian` @ `1110ffb`, `base-v0.3.16` @ `5c2d761`) are frozen — no rebase, no force-push, no rewrite (ADR 0013).
 - From the repository root, inside WSL with the `openqha` env active:
   - `python tests/run_tests.py` — the unit group (fast; the default);
   - `python tests/run_tests.py --all` — adds the integration group;

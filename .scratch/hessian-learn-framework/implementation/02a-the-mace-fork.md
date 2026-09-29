@@ -23,6 +23,8 @@ to claim. The side needs its own true fork — real upstream history, a real dif
 PR-able branch — without re-introducing the 153 MB the old base deliberately left out,
 and without losing the old history when the old fork's content is later replaced.
 
+> 2026-09-29 — the upstream PR was decided against ([ticket 10](../decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
+
 ## Solution
 
 `BloomDlwlrma/mace` becomes a true GitHub-side fork of `ACEsuit/mace`. On it, branch
@@ -36,7 +38,7 @@ checkout re-homes as the sibling `mace/` and the old folder is retired to `_to_d
 ## User Stories
 
 1. As the researcher, I want the mace changes on a true fork of upstream, so that the fork's diff against upstream is exactly what is ours
-2. As the upstream reviewer (ticket 10), I want the feature commits rebased onto real upstream history, so that a PR is a rebase away rather than a re-creation
+2. As the upstream reviewer (ticket 10), I want the feature commits rebased onto real upstream history, so that a PR is a rebase away rather than a re-creation. 2026-09-29 — the upstream PR was decided against ([ticket 10](../decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
 3. As the fork's consumer (WSL env, Tianhe), I want no bundled binaries in the branch's tree, so that checkouts, tarballs and blob-filtered clones stay source-sized
 4. As the old Records' auditor (ticket 06), I want the old commit ids and base tag archived in a bundle, so that cited hashes stay resolvable after the old fork's content is replaced
 5. As the diff reader, I want `base-v0.3.16` to mean "upstream v0.3.16 minus the three bundled binaries" on the new fork too, so that "base..branch = our whole change" survives the rebuild
@@ -80,7 +82,7 @@ checkout re-homes as the sibling `mace/` and the old folder is retired to `_to_d
 - **Consequences handed to other tickets**: install/transport (05) consumes the URL;
   identity constants + old→new mapping (06) must be updated against the new ids; the
   upstream PR (10) excludes D and the version bump, or marks them clearly; the repo
-  swap (11) points its README at the bundle.
+  swap (11) points its README at the bundle. 2026-09-29 — the upstream PR was decided against ([ticket 10](../decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
 - **Durable record**: ADR `0011`.
 
 ## Testing Decisions
@@ -110,7 +112,7 @@ checkout re-homes as the sibling `mace/` and the old folder is retired to `_to_d
   (05; the Tianhe landing guide is theirs).
 - Identity/sweeping changes that cite the fork — constants, refusal rules, old-hash
   mapping note, notebooks (06, 12).
-- The upstream PR's preparation and its commit-set pruning (10).
+- The upstream PR's preparation and its commit-set pruning (10). 2026-09-29 — the upstream PR was decided against ([ticket 10](../decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
 - The `openQHA-Hessian` content replacement and force-push (11).
 - Any change of the mace base to a newer upstream release (map, out of scope).
 
@@ -119,7 +121,7 @@ checkout re-homes as the sibling `mace/` and the old folder is retired to `_to_d
 - The old fork on GitHub stays as-is until ticket 11 replaces its content; the bundle is
   its archive, made while the old refs still point at the old commits.
 - Vocabulary: "the fork" is `BloomDlwlrma/mace`; `BloomDlwlrma/openQHA-Hessian` is always
-  "the old fork". D never goes upstream; the six do (ticket 10 decides their final set).
+  "the old fork". D never goes upstream; the six do (ticket 10 decides their final set). 2026-09-29 — the upstream PR was decided against ([ticket 10](../decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).
 - Local workbench today: the refresh and bundle run in `openQHA-Hessian/` (it is still
   the mace checkout until the re-home), so nothing needs a second clone to rebuild.
 - The `ready-for-agent` label is deliberately not applied: per the tracker doc and
@@ -135,4 +137,4 @@ pushed both refs to the true fork `BloomDlwlrma/mace` (branch `openqha-hessian` 
 a fresh blobless clone at `mace/` installs editable, reports `0.3.16+openqha` and a
 clean `mace_fork_info()`; the old checkout is archived under `_to_delete/`. Every
 acceptance item of this brief is evidenced in those three Answers; nothing remains open
-under it (install/transport, identity and the PR are their own tickets).
+under it (install/transport, identity and the PR are their own tickets). 2026-09-29 — the upstream PR was decided against ([ticket 10](../decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../../docs/adr/0013-permanent-private-mace-fork.md)).

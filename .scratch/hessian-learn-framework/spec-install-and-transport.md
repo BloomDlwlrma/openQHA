@@ -149,7 +149,7 @@ built, transported, or kept as a fallback; the documentation tells exactly this 
 
 ## Out of Scope
 
-- Publication artifacts (wheels, GitHub Releases) and the upstream PR cycle.
+- Publication artifacts (wheels, GitHub Releases) and the upstream PR cycle. 2026-09-29 — the upstream PR was decided against ([ticket 10](decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../docs/adr/0013-permanent-private-mace-fork.md)).
 - Fixing the stale loss-module address mentions and retired sha256 keys spotted in scripts and docs
   (reported to the map; their owners differ).
 - Executing an install on the Tianhe AI side.

@@ -185,7 +185,7 @@ openQHA-free tests. Record the swap's evidence on the ticket.
   as the mace fork — sweep territory, not fixed here.
 - Squashing, force-pushing, or rewriting any history; re-doing install/transport (05); the
   upstream PR cycle and the mace fork's content; license selection for the package; the map's
-  fog item about old recorded paths (it sharpens here but stays its own future ticket).
+  fog item about old recorded paths (it sharpens here but stays its own future ticket). 2026-09-29 — the upstream PR was decided against ([ticket 10](decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../docs/adr/0013-permanent-private-mace-fork.md)).
 - Any change to old Records, fixtures, or the Tianhe path.
 
 ## Further Notes

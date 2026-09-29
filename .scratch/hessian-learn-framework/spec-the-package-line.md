@@ -87,7 +87,7 @@ The package ships its own test runner, running the tests that moved with their c
 
 - SHA256 retirement and native model loading changes to the moved files (04).
 - Record identity fields, fork constants, the old-to-new commit mapping (06).
-- Install and transport mechanics, the fork itself, the upstream PR (05, 02, 10).
+- Install and transport mechanics, the fork itself, the upstream PR (05, 02, 10). 2026-09-29 — the upstream PR was decided against ([ticket 10](decisions/10-upstream-pr.md)): the fork is permanent-private ([ADR 0013](../../docs/adr/0013-permanent-private-mace-fork.md)).
 - The repo content swap and force-push (11); the documentation/notebook sweep (12).
 - New training features, and any change to the campaign's science.
 
