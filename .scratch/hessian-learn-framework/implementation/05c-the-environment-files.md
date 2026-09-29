@@ -103,3 +103,32 @@ eval Records carry `unknown` by design (05a decisions 8/10). Spec: every require
 acceptance boxes borne out by the diff and the recorded evidence; no scope creep. Carried, not
 touched: `hpc/slurm/install_env_tianhe.slurm:285`/`:302` still call the environment files' mace
 "the wheel" -- false now, and already [05d](05d-the-tianhe-path.md)'s file (§9, decisions 11-13).
+
+## Review record (2026-09-29, annotations)
+
+Two-axis review of the retirement commit (`c2d4c2c`, against its parent `3315dd7`), per the
+`code-review` skill, with the dispositions below. No ticket was open for the retirement; the record
+lands here because `c2d4c2c` carries this story's fifth environment file.
+
+**Standards.** No documented-standard breach. Verified against the repo: the house `_superseded/`
+pattern is followed (`environment-openmm.yml` plus a README structured as `environment-crest.*`;
+the directory is gitignored by design -- the crest precedent); no current-state reference to the
+retired environment, `--lean` or the `LEAN` variable survives outside gitignored history and the
+deliberate note in `docs/branchA_production.md`; the rewritten `require_core()` text matched what
+the environment files carry. Three judgement calls: the message read as exhaustive while skipping
+`environment-cuda.yml`, which carries the same stack as well -- fixed in this round (below); the
+rationale re-typed across three user-facing surfaces -- kept, each surface stands alone; one rule
+stated twice in the same message -- kept, minor.
+
+**Spec.** No scope creep; the commit's four bullets and its checks hold. Findings: the
+`_superseded/` move is working-tree-only (the directory is gitignored -- the crest precedent,
+noted, not a defect); this file's Answer still named the retired file -- fixed by the postscript
+(`bf8bd10`) before this record; the retirement's unit-test pin runs only on the missing-CORE path
+and checks `environment.yml` only -- flagged, kept (extending it is a separate call; the pin still
+holds).
+
+**Fixed in this round.** `require_core()`'s message now names `environment-cuda.yml` beside the
+other two environment files, and its fix-it block gains the CUDA line (`on a CUDA box conda env
+update -f environment-cuda.yml --prune` -- the advice the omission denied a CUDA workstation). The
+unit-test pin needed no change. Exercised with CORE faked missing; `tests/unit/t_capabilities.py`
+9/9; unit suite 60/60.
