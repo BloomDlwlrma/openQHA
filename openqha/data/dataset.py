@@ -1,15 +1,14 @@
-"""The Dataset of the Hessian-learning set: selection, split, files, index (CONTEXT.md
-"Dataset"; ticket 04).
+"""The Dataset of the Hessian-learning set: selection, split, files, index.
 
 SELECTION (`select`, driver `01_select.py`)
 ------------------------------------------
 Every molecule under the given tags whose branch A finished (`basins.done`), with what
 the split needs to know about it: the SMILES (branch A's Record), heavy atoms, ring
 count and heteroatom pattern (the stratification keys, RDKit on the SMILES), its
-structure classes (`structure_classes.classify`; ticket 07), its membership in
+structure classes (`structure_classes.classify`), its membership in
 MACE-OFF23's training set (`data/training_sets/qm9_targets_membership.dat`,
 `training_set.qm9_targets_membership`), whether it is one of the PINNED molecules, and
-whether a Frame set exists. When a DRAW (`draw.dat` of `00_draw`, ticket 05) exists
+whether a Frame set exists. When a DRAW (`draw.dat` of `00_draw`) exists
 under the Dataset folder, EVERY drawn molecule is a row -- with `has_basins` /
 `has_frames` false until branch A / 02 have run for it -- so the campaign's progress is
 one table and a Batch over `--name` always sees the whole draw. Written as
@@ -17,18 +16,18 @@ one table and a Batch over `--name` always sees the whole draw. Written as
 
 SPLIT (`build`, driver `04_dataset.py`)
 ---------------------------------------
-Two modes (`split_by`). BY MOLECULE is the PRODUCTION split since S0-C-65 (2026-09-23), the
+Two modes (`split_by`). BY MOLECULE is the PRODUCTION split since 2026-09-23, the
 granularity MACE-OFF was trained with (Kovacs et al., JACS 147, 17598 (2025), Sec. 2.2: 95 % of
 SPICE for training and validation, 5 % for testing, "splitting was performed at the molecule
 level, ensuring that conformers of the same molecule do not appear in both train/validation and
 test sets"; the validation set is then drawn by configuration inside the 95 %, as mace's
-`--valid_fraction` does it). It supersedes the by-frame production split of round 5 Q4
-(S0-C-49) so that a test frame is always a molecule the fine-tune never saw: the judge's
+`--valid_fraction` does it). It supersedes the by-frame production split so that a test frame
+is always a molecule the fine-tune never saw: the judge's
 `interpolation` distribution is empty by construction and its gate row is a generalisation
 reading. BY FRAME stays for the smoke and fit Datasets, where whole-molecule test frames would
 eat a large share of a small label budget.
 
-BY FRAME (the smoke / fit split; the production split until S0-C-65):
+BY FRAME (the smoke / fit split):
     test    the pinned 7 (the msRRHO study's molecules: acetone, acetamide, propanal,
             N-methylformamide, 2-methyloxirane, cyclopropanol, oxetane) as WHOLE
             molecules, plus FRAME_TEST_FRACTION of every other molecule's labelled frames
@@ -37,7 +36,7 @@ BY FRAME (the smoke / fit split; the production split until S0-C-65):
 Every frame is drawn on its own: one number from a generator seeded from (seed, "frame",
 molecule, generator, basin, k), so a frame's split never depends on what else is
 labelled, and the fractions are EXPECTATIONS (exact to +-0.1 % over 100,000 frames, +-1
-frame over 15). BY MOLECULE (the production split, S0-C-65; the smoke split of rounds 3-4, Q3/Q6 (b)):
+frame over 15). BY MOLECULE (the production split):
     test    whole molecules: the pinned 7 plus TEST_FRACTION of the others, drawn per
             stratum (ring count x heteroatom pattern) with `seed`, so every stratum has
             test molecules
@@ -51,7 +50,7 @@ at `level` yet, whatever its molecule's side (`molecule_split` in the index says
 it will go once labelled). The split is set here, written into `index.dat`, and never
 recomputed: a rebuild keeps every earlier decision and draws only what is new.
 
-THE HELD-OUT GENERATORS (`train_generators`, S0-C-54, ADR 0005; ticket 20). Only the
+THE HELD-OUT GENERATORS (`train_generators`). Only the
 frames of the generators in `train_generators` -- default `("basin",)` -- can enter
 train or valid. EVERY labelled frame of any other generator (displaced, merged, saddle)
 goes to test, whatever the frame draw or the previous index said, with
@@ -69,7 +68,7 @@ FILES
         `energy`, `forces` (through the ASE calculator) and `hessian` (info) -- AND under
         MACE-torch's default training keys `REF_energy` (info), `REF_forces` (arrays),
         `REF_hessian` (info, flattened; only where the frame has one, `has_hessian`
-        says so; round 5 Q7 (b)) so `--energy_key` / `--forces_key` need no override --
+        says so) so `--energy_key` / `--forces_key` need no override --
         plus `split` and the frame's identity (`qm9_index`, `basin`, `generator`, `k`,
         `seed`, `level`). The engine's E-F-H at the same frame stays in the molecule's
         own `<generator>.<engine level>.extxyz`; `index.dat` names both files.
@@ -105,16 +104,16 @@ STEP = "dataset"
 PROGNAME_SELECT = "openQHA dataset select"
 PROGNAME = "openQHA dataset"
 SPLITS = ("train", "valid", "test", "pool")
-#: the 7 known molecules of the msRRHO study, always `test` (rounds 3-4, Q6/Q3 rulings)
+#: the 7 known molecules of the msRRHO study, always `test`
 PINNED = ("dsgdb9nsd_000018", "dsgdb9nsd_000019", "dsgdb9nsd_000035", "dsgdb9nsd_000036",
           "dsgdb9nsd_000044", "dsgdb9nsd_000046", "dsgdb9nsd_000048")
-#: by-molecule split (production since S0-C-65, MACE-OFF's granularity): 5 % of the molecules
+#: by-molecule split (the production split, MACE-OFF's granularity): 5 % of the molecules
 #: are test (whole), 5 % of the training molecules' labelled frames are valid
 VALID_FRACTION = 0.05
 TEST_FRACTION = 0.05
-#: The fixed validation probes (S0-C-67, PHL's fixed-vector protocol): every labelled frame
+#: The fixed validation probes (PHL's fixed-vector protocol): every labelled frame
 #: carrying a Hessian gets its own [VALID_PROBE_KMAX, 3N] standard-normal set (PHL's own
-#: draw, S0-C-68), drawn here from
+#: draw), drawn here from
 #: the frame's IDENTITY and written into the file. The loss takes the first k rows of it, so
 #: the sets are nested: a K scan is a flag, not a rebuild, and the K = 4 and K = 8 readings
 #: are comparable by construction. Nothing is derived from the Label's bytes.
@@ -122,20 +121,20 @@ TEST_FRACTION = 0.05
 #: (its final error table), and in eval mode the loss reads stored probes and draws none.
 #: What is particular to valid is the USE -- the reading that drives the schedule.
 VALID_PROBE_KMAX = 16
-#: PHL's own draw (Algorithm 1), S0-C-68: standard normal. `rademacher` has the smaller
+#: PHL's own draw (Algorithm 1): standard normal. `rademacher` has the smaller
 #: variance and is still a supported probe, but it is no longer anyone's default.
 VALID_PROBE_MODE = "gaussian"
-#: by-frame split (the smoke / fit mode; production until S0-C-65): 90 / 5 / 5 of the frames
+#: by-frame split (the smoke / fit mode): 90 / 5 / 5 of the frames
 FRAME_VALID_FRACTION = 0.05
 FRAME_TEST_FRACTION = 0.05
 SPLIT_MODES = ("frame", "molecule")
-#: what `04_dataset.py` uses unless told otherwise (S0-C-65)
+#: what `04_dataset.py` uses unless told otherwise
 DEFAULT_SPLIT_MODE = "molecule"
 SEED = 0
-#: the generators whose frames may train (S0-C-54: basin Hessians only); every other
+#: the generators whose frames may train (basin Hessians only); every other
 #: generator is held out -- its labelled frames go to test for the judge
 TRAIN_GENERATORS = ("basin",)
-#: the production row R4 (S0-C-60): Replay frames = this x the train frames with a Hessian
+#: the production replay row: Replay frames = this x the train frames with a Hessian
 REPLAY_PER_HESSIAN_FRAME_R4 = 4
 REPLAY_CONFIG_WEIGHT_R4 = 10.0
 #: a label file whose positions differ from the engine file's by more than this is stale
@@ -202,7 +201,7 @@ INDEX_SCHEMA = {
     "k": ("Integer", None, "index within (generator, basin)"),
     "split": ("String", None, "train / valid / test / pool -- set at write time, never recomputed"),
     "molecule_split": ("String", None, "test: a whole-molecule test molecule (pinned, or drawn by molecule); train: its labelled frames go to train / valid (by molecule) or train / valid / test (by frame)"),
-    "held_out_generator": ("String", None, "yes: the frame's generator is not in TRAIN_GENERATORS, so it is in test whatever the draw (S0-C-54); no otherwise"),
+    "held_out_generator": ("String", None, "yes: the frame's generator is not in TRAIN_GENERATORS, so it is in test whatever the draw; no otherwise"),
     "levels": ("String", None, "levels present at this frame, ';'-joined"),
     "seed": ("Integer", None, "the frame's own draw seed (displaced), 0 otherwise"),
     "engine": ("String", None, "the registered engine that made the frame; a frame written before 2026-09-27 carries no engine name and reads as -"),
@@ -222,13 +221,13 @@ SCHEMA = {
         "LEVEL": ("String", None, "the reference level of the labelled splits"),
         "MACE_LEVEL": ("String", None, "the engine level of the frames (and of the pool's values)"),
         "SEED": ("Integer", None, "the split's random seed"),
-        "SPLIT_BY": ("String", None, "molecule (production since S0-C-65, MACE-OFF's granularity: whole test molecules, valid drawn by frame from the training molecules) or frame (the smoke / fit mode: 90/5/5 of the non-pinned labelled frames, each drawn on its own)"),
+        "SPLIT_BY": ("String", None, "molecule (the production split, MACE-OFF's granularity: whole test molecules, valid drawn by frame from the training molecules) or frame (the smoke / fit mode: 90/5/5 of the non-pinned labelled frames, each drawn on its own)"),
         "RESPLIT": ("Boolean", None, "this build discarded the previous index's decisions and drew the whole Dataset again (a split-mode change)"),
         "VALID_FRACTION": ("Double", None, "fraction of the labelled frames drawn as valid (by frame: of every non-pinned molecule's; by molecule: of the training molecules')"),
         "TEST_FRACTION": ("Double", None, "by frame: fraction of the non-pinned labelled frames drawn as test; by molecule: fraction of the non-pinned molecules drawn as test, per stratum"),
         "PINNED": ("ArrayOfStrings", None, "the molecules always in test"),
-        "PURPOSE": ("String", None, "judge (the production Dataset: its test split is a claim about generalisation) or fit (a Dataset built with the pinned rule OFF, for measuring cost and weights only -- every number from it is interpolation within the same molecules and must be reported as such; ticket 15)"),
-        "TRAIN_GENERATORS": ("ArrayOfStrings", None, "the Frame generators whose frames may enter train and valid (S0-C-54: basin)"),
+        "PURPOSE": ("String", None, "judge (the production Dataset: its test split is a claim about generalisation) or fit (a Dataset built with the pinned rule OFF, for measuring cost and weights only -- every number from it is interpolation within the same molecules and must be reported as such)"),
+        "TRAIN_GENERATORS": ("ArrayOfStrings", None, "the Frame generators whose frames may enter train and valid (basin)"),
         "HELD_OUT_GENERATORS": ("ArrayOfStrings", None, "the generators whose labelled frames all go to test (the judge's reference rows), never train or valid"),
         "N_TRAIN_BASIN": ("Integer", None, "train frames of the training generators (every train frame, by construction)"),
         "N_TEST_HELD_OUT": ("Integer", None, "test frames that are there because their generator is held out"),
@@ -241,13 +240,13 @@ SCHEMA = {
         "N_VALID": ("Integer", None, "frames in valid"),
         "N_TEST": ("Integer", None, "frames in test"),
         "N_POOL": ("Integer", None, "frames in pool (unlabelled)"),
-        "N_VALID_PROBE_FRAMES": ("Integer", None, "labelled frames carrying their fixed probe set: every frame with a Hessian, because mace evaluates the loss on the training split too (S0-C-67)"),
+        "N_VALID_PROBE_FRAMES": ("Integer", None, "labelled frames carrying their fixed probe set: every frame with a Hessian, because mace evaluates the loss on the training split too"),
         "VALID_PROBE_SOURCE": ("String", None, "where the validation probes come from: file (drawn here, stored in the valid split) -- the loss draws none"),
         "VALID_PROBE_KMAX": ("Integer", None, "rows stored per valid frame; the loss takes the first k of them (nested, so a K scan needs no rebuild)"),
-        "VALID_PROBE_MODE": ("String", None, "the stored probes' distribution (gaussian: PHL's own draw, Algorithm 1; S0-C-68)"),
+        "VALID_PROBE_MODE": ("String", None, "the stored probes' distribution (gaussian: PHL's own draw, Algorithm 1)"),
         "N_HESSIAN_FRAMES": ("Integer", None, "labelled frames carrying a reference Hessian (basin / merged / saddle)"),
-        "N_TRAIN_HESSIAN": ("Integer", None, "train frames carrying a reference Hessian: the number the production Replay is 4x of (S0-C-60)"),
-        "REPLAY_R4_FRAMES": ("Integer", None, "4 x N_TRAIN_HESSIAN: the Replay size of the production row R4 (s0_spice_pt_draw.py --n)"),
+        "N_TRAIN_HESSIAN": ("Integer", None, "train frames carrying a reference Hessian: the number the production Replay is 4x of"),
+        "REPLAY_R4_FRAMES": ("Integer", None, "4 x N_TRAIN_HESSIAN: the Replay size of the production replay row (s0_spice_pt_draw.py --n)"),
         "N_STALE": ("Integer", None, "label frames ignored because their geometry differs from the engine file's (a rerun of branch A / 02 after 03)"),
         "MERGED_FILE": ("String", None, "the single xyz of the three labelled splits (mace_<name>.<level>.extxyz), or - when nothing is labelled"),
         "KEPT_PREVIOUS": ("Boolean", None, "a previous index.dat existed and its splits were kept"),
@@ -557,7 +556,7 @@ def _rng(seed, *parts):
 
 
 def valid_probes(seed, qid, key, n_atoms, k_max=VALID_PROBE_KMAX, digits=8):
-    """The frame's own fixed probe set, [k_max, 3N] ~ N(0, I) (S0-C-67, S0-C-68).
+    """The frame's own fixed probe set, [k_max, 3N] ~ N(0, I).
 
     The generator is seeded by the frame's IDENTITY -- the same rule the split itself uses
     (`_rng(seed, "frame", ...)`) -- so the set is reproducible from the Record's SEED alone,
@@ -587,12 +586,12 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
           test_fraction=None, seed=SEED, mace_level=None, selection=None, pinned=PINNED,
           keep_previous=True, purpose=None, train_generators=TRAIN_GENERATORS, resplit=False):
     """The Dataset: split every Frame set of the selected molecules (`split_by`: "molecule",
-    the production split since S0-C-65 -- whole test molecules, MACE-OFF's granularity -- or
+    the production split -- whole test molecules, MACE-OFF's granularity -- or
     "frame", the smoke / fit split; module docstring), write the four split files, the merged `mace_<name>.<level>.extxyz`,
     `index.dat` and the Record. `selection`: rows as `select` returns them (default: read
     `select.dat` under the first tag; run `select` first). The fractions default to the
     mode's (FRAME_* or the by-molecule ones). `train_generators`: the generators whose
-    frames may train (default basin only, S0-C-54); every labelled frame of another
+    frames may train (default basin only); every labelled frame of another
     generator is routed to test as a held-out frame, before and above the draw.
 
     A rebuild KEEPS the previous `index.dat`'s decisions (`keep_previous`): a molecule's
@@ -695,7 +694,7 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
                 split, atoms, levels, ver = "pool", a, [mace_level], "-"
             else:
                 split = frame_split[key]
-                # the held-out generators (S0-C-54): to test, above the draw and the previous index
+                # the held-out generators: to test, above the draw and the previous index
                 if key[0] not in train_generators:
                     split, held_out = "test", True
                 atoms, levels, ver = lab, [mace_level, level], str(lab.info.get("orca_version", "-"))
@@ -784,7 +783,7 @@ REF_PROBES_KEY = "REF_valid_probes"                        # the fork's --valid_
 def _write_split(path, atoms_list, reference=True):
     """Write frames `(atoms, split)`: energy / forces on the calculator, `hessian` flat in
     info with `has_hessian`, the `split` key, the valid split's fixed probes (`valid_probes`
-    flat with `has_valid_probes`, S0-C-67) and -- for the labelled splits (`reference`) --
+    flat with `has_valid_probes`) and -- for the labelled splits (`reference`) --
     the same values again under REF_energy / REF_forces / REF_hessian / REF_valid_probes."""
     from ase.calculators.singlepoint import SinglePointCalculator
     from ase.io import write
@@ -838,18 +837,18 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
               [[m["QM9_INDEX"], m["TAG"], m["STRATUM"], m["MOLECULE_SPLIT"], "yes" if m["PINNED"] else "-", m["N_FRAMES"],
                 m["N_LABELLED"], m["N_STALE"], m["N_TRAIN"], m["N_VALID"], m["N_TEST"], m["N_TEST_HELD_OUT"], m["N_POOL"]]
                for m in per_mol])
-    rep.note("TRAIN_GENERATORS (S0-C-54, ADR 0005): only frames of these generators may enter train or valid; every "
+    rep.note("TRAIN_GENERATORS (basin only): only frames of these generators may enter train or valid; every "
              "labelled frame of a held-out generator ({}) is in test, whatever the draw or the previous index said "
              "(`held_out_generator = yes` in index.dat). The judge reads them as reference rows; training never "
              "sees them.".format(", ".join(info["HELD_OUT_GENERATORS"]) or "none"))
     if info["SPLIT_BY"] == "frame":
-        rep.note("SPLIT_BY frame (the smoke / fit mode; production until S0-C-65): test = the pinned seven as whole molecules + TEST_FRACTION of "
+        rep.note("SPLIT_BY frame (the smoke / fit mode): test = the pinned seven as whole molecules + TEST_FRACTION of "
                  "every other molecule's labelled frames; valid = VALID_FRACTION of those frames; train = the rest. Every "
                  "frame is drawn on its own (a generator seeded from the seed and the frame's name), so its split never "
                  "depends on what else is labelled and the fractions are expectations. pool = frames without a label at "
                  "LEVEL yet.")
     else:
-        rep.note("SPLIT_BY molecule (production, S0-C-65 -- MACE-OFF's granularity): test = whole molecules (the "
+        rep.note("SPLIT_BY molecule (production -- MACE-OFF's granularity): test = whole molecules (the "
                  "pinned seven + a per-stratum draw of TEST_FRACTION), so conformers of one molecule never sit on both "
                  "sides; valid = VALID_FRACTION of the TRAINING molecules' labelled frames, drawn by frame (MACE-OFF "
                  "splits its 95 % pool by configuration too); train = the rest; pool = frames without a label at LEVEL "
@@ -863,8 +862,8 @@ def _write_report(path, info, split_rows, per_mol, cls_rows=()):
              "whose geometry differs from the engine file's (stale) is ignored. train/valid/test files carry the "
              "REFERENCE E-F-H (also as REF_energy / REF_forces / REF_hessian, MACE-torch's keys; has_hessian says which "
              "frames carry one) and are repeated in MERGED_FILE, the single xyz for training; pool carries the engine's.")
-    rep.note("VALID_PROBE_* (S0-C-67, PHL's fixed-vector protocol): every labelled frame with a Hessian carries its "
-             "own [VALID_PROBE_KMAX, 3N] set of PHL's standard normal (S0-C-68), drawn HERE from the frame's "
+    rep.note("VALID_PROBE_* (PHL's fixed-vector protocol): every labelled frame with a Hessian carries its "
+             "own [VALID_PROBE_KMAX, 3N] set of PHL's standard normal, drawn HERE from the frame's "
              "identity (qm9_index | generator "
              "| basin | k) and this Record's SEED, and written as valid_probes / REF_valid_probes -- every labelled "
              "split, because mace evaluates the loss on the training split too and the loss draws nothing in eval "

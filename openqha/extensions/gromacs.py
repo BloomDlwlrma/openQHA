@@ -36,14 +36,13 @@ The `.tpr` is therefore only a carrier of atom names and MASSES -- `-mwa` needs 
 and `-fit` needs a reference structure. Bonded and non-bonded parameters in the topology
 written here are never evaluated. This has to be said in the product as well, or a reader
 will assume the thermodynamics sits on some classical force field, which is exactly the
-reading (plan_B supplement 1.3, reading B) that would dismantle the level consistency of
-D0-4.
+reading that would dismantle the level consistency of the protocol.
 
 Which of the two is the reference -- and the measurement that changed the answer
 -------------------------------------------------------------------------------
-Revision C of plan_B (section 2.6.4) made GROMACS the reference and `openqha/qha.py` the
-cross-check, on the sound argument that a widely used implementation should not be
-checked against one written this week.
+An earlier design made GROMACS the reference and `openqha/qha.py` the cross-check, on the
+sound argument that a widely used implementation should not be checked against one
+written this week.
 
 **That arrangement does not survive contact with the tool.** `gmx anaeig -entropy`,
 measured on the installed binary on 2026-09-03, refuses mass-weighted eigenvalues, uses
@@ -111,7 +110,7 @@ NEVSKIP_ROT_TRANS = 6
 def _sibling_env_binaries():
     """`gmx` in a SIBLING conda environment, if this one has none.
 
-    `S0-B-10` installed GROMACS into `qm9fe` while branch B runs in `openqha`, so acceptance
+    GROMACS was installed into `qm9fe` while branch B runs in `openqha`, so acceptance
     criterion 2 came back "no comparison produced" -- a FAIL that says nothing about the
     science and everything about which shell was active. A criterion that fails for a
     reason it does not measure teaches people to ignore it.
@@ -147,9 +146,9 @@ def gmx_binary():
         raise RuntimeError(
             "no GROMACS binary. Set S0_GMX_BIN or put gmx on PATH.\n"
             "This repo installs it with `conda install -c conda-forge gromacs` into the "
-            "same environment as the rest of the chain (plan_B section 7).\n"
+            "same environment as the rest of the chain.\n"
             "NOTE: sourcing GMXRC under `set -u` breaks the conda activation hook "
-            "(plan_E section 10.3) -- never add `set -u` to hpc/env/common.sh.")
+            "-- never add `set -u` to hpc/env/common.sh.")
     return exe
 
 
@@ -368,7 +367,7 @@ def parse_xvg(path):
 
 
 # ======================================================================================
-# The three GROMACS steps of plan_B section 2.6.2
+# The three GROMACS steps: grompp -> covar -> anaeig
 # ======================================================================================
 def grompp(workdir, gro="conf.gro", top="topol.top", mdp="analysis.mdp",
            tpr="topol.tpr"):
@@ -415,17 +414,17 @@ def anaeig(workdir, eigenvectors="eigenvectors_nomwa.trr",
            nevskip=NEVSKIP_ROT_TRANS, linear=False, check=False):
     """`gmx anaeig -entropy`. **MEASURED DEFECTIVE for this use. Not a reference.**
 
-    Plan_B revision C made `gmx anaeig -entropy` the reference implementation of branch B
-    and made agreement with it acceptance criterion 2. That is not possible, for three
+    `gmx anaeig -entropy` was originally meant to be the reference implementation of
+    branch B, with agreement as acceptance criterion 2. That is not possible, for three
     reasons measured on the installed binary (GROMACS 2026.3-conda_forge) on
     2026-09-03 and confirmed against upstream source:
 
       1. **It refuses mass-weighted eigenvalues.** `gmx covar -mwa` followed by
          `gmx anaeig -entropy` aborts with "Can not calculate entropies from
          mass-weighted eigenvalues, redo the analysis without mass-weighting". So the
-         `-mwa` correction of plan_B section 2.6.2 -- which is correct, and without which
-         the eigenvalues are not quasi-harmonic eigenvalues at all -- is incompatible
-         with this tool by construction.
+         `-mwa` mass weighting -- which is correct, and without which the eigenvalues are
+         not quasi-harmonic eigenvalues at all -- is incompatible with this tool by
+         construction.
 
       2. **Its formula nevertheless expects mass-weighted eigenvalues.** Upstream
          `calcSchlitterEntropy` computes `1 + kteh * eigval[i] * evcorr` with
@@ -504,7 +503,7 @@ def cross_check(frames_A, symbols, masses, workdir, temperature_K=thermo.T_REF,
     What is being cross-checked, and what cannot be
     -----------------------------------------------
     `gmx anaeig -entropy` was supposed to be the independent implementation of the whole
-    chain (plan_B revision C). It is not usable: it refuses mass-weighted eigenvalues, its
+    chain. It is not usable: it refuses mass-weighted eigenvalues, its
     formula nevertheless expects them, and it drops the six softest modes instead of the
     six rigid ones. All three are measured and reproduced in `anaeig`'s docstring. Its
     output is still collected here, as evidence, and marked `is_reference=False`.
@@ -680,9 +679,9 @@ def version():
 
     Precision is part of the answer, not trivia: the conda-forge package is MIXED
     precision and ships no `gmx_d`, and the smallest covariance eigenvalues are exactly
-    where that shows up first (plan_B section 7.2). Reporting it next to every comparison
-    is ruling E1: turn "is mixed precision good enough" from a guess into a measurement
-    that was going to be made anyway.
+    where that shows up first. Reporting it next to every comparison turns "is mixed
+    precision good enough" from a guess into a measurement that was going to be made
+    anyway.
     """
     rec = run_gmx(["--version"], ".", check=False)
     out = dict(raw=rec["output"][:2000], version=None, precision=None)

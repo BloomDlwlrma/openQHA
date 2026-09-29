@@ -1,4 +1,4 @@
-"""Write a record as TOML (step 2 of the layout change; user ruling 2026-09-15).
+"""Write a record as TOML.
 
 The five records this repository writes about a run take the format CREST uses for its
 own settings: TOML, readable by a person and by the standard library (`tomllib`, Python

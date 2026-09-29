@@ -1,6 +1,6 @@
 """Package 2 -- finite-difference Hessian, Eckart projection, normal frequencies.
 
-**The projection must come before the diagonalisation** (plan section 4, package 2).
+**The projection must come before the diagonalisation**.
 The reason: if one diagonalises first and then "picks the 6 smallest and discards
 them", those 6 modes are not the rigid-body modes -- where the residual forces are
 non-zero, or where a low-frequency mode is close in energy to the rigid-body ones (the
@@ -72,7 +72,7 @@ def analytic_hessian(atoms, calc, progress=None):
     THIS IS THE PRODUCTION PATH. `finite_difference_hessian` is kept for the
     comparison and for calculators that cannot differentiate twice.
 
-    Defect 64 / D0-P1-47 -- why the default changed (measured 2026-08-31,
+    Defect 64 -- why the default changed (measured 2026-08-31,
     scripts/_superseded/closed-defects/s0_hessian_autodiff_probe.py, mace 0.3.17):
 
         quantity                       finite difference    analytic
@@ -230,7 +230,7 @@ def rigid_block_floor_cm(hessian_eV_A2, masses, positions):
     put this block at zero for an exact Hessian; an analytic ORCA Hessian leaves a few
     cm^-1 there, a numerical one (NumFreq of numerical gradients) the size of its
     finite-difference noise. It must be read BEFORE projection: after P H P the block is
-    in the kernel by construction and says nothing (ticket 32 review)."""
+    in the kernel by construction and says nothing (the review)."""
     m = np.repeat(np.asarray(masses, dtype=float), 3)
     hm = np.asarray(hessian_eV_A2, dtype=float) / np.sqrt(np.outer(m, m))
     v, _sing, _rank = rigid_body_vectors(masses, positions)
@@ -398,7 +398,7 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     B) samples. Below 300 cm^-1 the two agree to 1-6 % in amplitude at 298 K; above
     1000 cm^-1 the quantum draw is 1.6-2.8x wider (zero-point motion) and carries 88 % of
     a quantum frame's ~27 kcal/mol (propanal), against ~7 kcal/mol classical -- measured
-    2026-09-18, Hessian-learning note 4.
+    2026-09-18, the Hessian-learning note.
 
     `max_rms_displacement_A=` rejects and redraws a displacement whose RMS over the 3N
     coordinates exceeds it, `max_draws_per_sample` times, then raises. **A basin with a
@@ -410,7 +410,7 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     such a draw shows up as hundreds of kcal/mol above the basin (data/frames.py FILTER).
 
     `hessian=` (3N x 3N, eV/A^2, raw Cartesian) skips that computation and samples on
-    the modes of the given matrix -- the Frame set (ticket 02) hands in the basin's
+    the modes of the given matrix -- the Frame set hands in the basin's
     stored `hessian.npy` so the frames are drawn along exactly the modes the basin
     record holds. `seeds=` gives one integer per sample (then `seed` is unused): each
     sample has its own generator, so a frame is reproducible from its own seed alone.

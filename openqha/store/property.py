@@ -1,4 +1,4 @@
-"""A Calculation's Property file: ORCA `.property.txt` carried into TOML (user ruling 2026-09-15).
+"""A Calculation's Property file: ORCA `.property.txt` carried into TOML.
 
 ORCA leaves `base.out` for a person and `base.property.txt` for a program: `$Block`s of
 `&KEY [&Type "Double", &Units "u"] value "doc"`, `$Calculation_Status` with
@@ -17,7 +17,7 @@ standard library reads:
     INDEX    = 0
     ENERGY   = -5259.18                 # Double, eV: electronic energy after tightening
 
-The content rule (CONTEXT.md, "Property file"): the status block, the inputs, and the
+The content rule: the status block, the inputs, and the
 result blocks a later step reads; nothing else. Prose, provenance and diagnostics belong
 in the Report (`openqha.store.report`). The comments come from a SCHEMA the writer is
 given, `{block: {KEY: (type, unit or None, doc)}}`, so every file of a step carries the

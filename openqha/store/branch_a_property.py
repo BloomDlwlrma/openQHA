@@ -1,6 +1,6 @@
-"""Branch A's Property file, `_records/branchA.toml` (records redesign ticket 17, 2026-09-15).
+"""Branch A's Property file, `_records/branchA.toml` (records redesign, 2026-09-15).
 
-What a later step reads about branch A, and nothing else (CONTEXT.md, "Property file"):
+What a later step reads about branch A, and nothing else:
 
     [Calculation_Status]   PROGNAME VERSION STATUS
     [Calculation_Info]     the molecule and every setting the run was given
@@ -32,7 +32,7 @@ SCHEMA = {
         "SMILES": ("String", None, "declared in config"),
         "TAG": ("String", None, "the tag this run was made under"),
         "ENGINE": ("String", None, "the potential"),
-        "MOLECULE_DIR": ("String", None, "the molecule directory (ADR 0001)"),
+        "MOLECULE_DIR": ("String", None, "the molecule directory"),
         "WORKHORSE": ("String", None, "CREST sampling level"),
         "REFINE": ("String", None, "CREST refinement of the survivors"),
         "RUNTYPE": ("String", None, "CREST run type"),
@@ -70,7 +70,7 @@ SCHEMA = {
         "N_SADDLES_REJECTED": ("Integer", None, "frames rejected below the frequency floor ithr"),
         "N_BASINS": ("Integer", None, "after tightening and deduplication"),
         "BASIN_CONFORMER_IDS": ("ArrayOfIntegers", None, "the input frame each basin came from"),
-        "DUPLICATE_MAP": ("ArrayOfIntegers", None, "per input frame j (index = j): the input frame it was merged into by the deduplication, or j itself when it survived (ticket 02 of the Hessian-learning set)"),
+        "DUPLICATE_MAP": ("ArrayOfIntegers", None, "per input frame j (index = j): the input frame it was merged into by the deduplication, or j itself when it survived"),
         "SADDLE_CONFORMER_IDS": ("ArrayOfIntegers", None, "input frames that survived the deduplication and were then rejected below the frequency floor ithr"),
         "MAX_RESIDUAL_FORCE": ("Double", "eV/A", "largest residual force after tightening"),
     },
@@ -83,7 +83,7 @@ SCHEMA = {
         "G0_SOURCE": ("String", None, "declared_in_config, or assumed_singlet"),
         "N_IMAGINARY": ("Integer", None, "imaginary modes of the Hessian"),
         "LOWEST_FREQ": ("Double", "cm^-1", "lowest harmonic frequency"),
-        "N_INVERSION_WINDOW": ("Integer", None, "modes in the inversion window [ithr, 0) at admission -- the thermochemistry inverts them (ticket 37)"),
+        "N_INVERSION_WINDOW": ("Integer", None, "modes in the inversion window [ithr, 0) at admission -- the thermochemistry inverts them"),
         "G_MINUS_EEL": ("Double", "kcal/mol", "harmonic G - E_el at TEMPERATURE"),
         "A_MINUS_EEL": ("Double", "kcal/mol", "harmonic A - E_el at TEMPERATURE"),
     },

@@ -1,6 +1,6 @@
 """Package 1 -- conformer generation and deduplication.
 
-The chain (plan section 4, package 1):
+The chain (package 1):
 
     SMILES --ETKDGv3--> N embeddings --MMFF94, for deduplication ONLY, never for
     ordering--> survivors --MACE-OFF23-SC optimisation--> ordered by **the potential's
@@ -49,7 +49,7 @@ PRUNE_RMS_EMBED = 0.125         # A, **all-atom** geometric deduplication after 
 #
 # 2026-09-04: DEDUP_RMSD_A was 0.30 A, with **no source anywhere in the repository** --
 # the config claimed "this package carries its own threshold sweep" and the sweep had
-# never been run. It has now been run, on two molecules (branch A checkpoint 5):
+# never been run. It has now been run, on two molecules:
 #
 #     threshold / A     OCCC(=O)CO basins     OCCO basins
 #     0.05 - 0.25             23                  10       <- flat plateau
@@ -178,15 +178,15 @@ def mol_from_smiles(smiles):
     is always None and is kept only so that callers need not change.
 
     > **There used to be a block of code here that "assigned formal charges uniquely from
-    > valence"** (`D0-38`): a group of zwitterionic SMILES in QM9 carry no charges (e.g.
+    > valence"**: a group of zwitterionic SMILES in QM9 carry no charges (e.g.
     > `[NH3]CCC(=O)[O]`), RDKit refuses to parse them, and I repaired them to
     > `[NH3+]CCC(=O)[O-]` and thereby rescued them.
     > **That was wrong.** What the repair produced was exactly a **zwitterion**, and this
-    > project's species scope (the user's ruling of 2026-08-28, with the same meaning as
-    > stage 1's gate F5) **explicitly excludes zwitterions**. The repair let in a group of
-    > molecules that should have been rejected.
+    > project's species scope **explicitly excludes zwitterions** (the same rule as
+    > stage 1's gate F5). The repair let in a group of molecules that should have been
+    > rejected.
     > Such molecules are now removed by F0/F5 in `openqha/filters.py` **before entering any
-    > calculation**, with an attribution recorded for each. See `D0-41`.
+    > calculation**, with an attribution recorded for each.
     """
     from rdkit import Chem
     mol = Chem.MolFromSmiles(smiles)
@@ -263,7 +263,7 @@ def optimise(atoms, calc, fmax=FMAX_CENSUS_EV_A, steps=MAX_OPT_STEPS, logfile=No
     (energy in eV, maximum force in eV/A, converged, number of steps).
 
     `logfile` and `trajectory` are handed to the optimiser as they are: ASE's own
-    `opt.log` and `opt.traj`, the engine files of a MACE relaxation (ADR 0001).
+    `opt.log` and `opt.traj`, the engine files of a MACE relaxation.
     """
     from ase.optimize import LBFGS
     atoms.calc = calc
@@ -301,8 +301,8 @@ def heavy_atom_best_rms(mol, cid_a, cid_b):
 def all_atom_best_rms(mol, cid_a, cid_b):
     """**All-atom** best root-mean-square deviation (A), hydrogens included.
 
-    This is the measure by which this package decides "the same basin". Plan section 4,
-    package 1 says "heavy-atom root-mean-square deviation" in its own words; switching to
+    This is the measure by which this package decides "the same basin". Package 1's
+    design says "heavy-atom root-mean-square deviation" in its own words; switching to
     all atoms is **a deviation with measured grounds**: the heavy-atom measure is blind to
     rotors that move only hydrogens (cis/trans hydroxyl, amino inversion) and merges two
     minima of clearly different energy into one. Automorphism enumeration still cancels the
@@ -459,8 +459,8 @@ def census(smiles, calc, name="", n_embed=N_EMBED_DEFAULT, seed=20260827,
 
     * **an extra starting point** (`include_reference_as_seed`) -- once relaxed it joins
       the embedded conformers in the deduplication;
-    * **a report** -- which basin it lands in (the number acceptance 3 of plan section 4,
-      package 1 asks for).
+    * **a report** -- which basin it lands in (the number acceptance criterion 3
+      asks for).
 
     The first role was forced by measurement: N-methylformamide asked for 50 embeddings and
     missed no basin -- but the native QM9 geometry relaxed into **a different real minimum**

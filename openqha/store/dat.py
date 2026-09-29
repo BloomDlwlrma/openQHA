@@ -1,6 +1,6 @@
-"""The Table: whitespace `.dat`, the way CREST writes `crest.energies` (ADR 0003).
+"""The Table: whitespace `.dat`, the way CREST writes `crest.energies`.
 
-One file holds one or more named sections (user ruling 2026-09-16, ADR 0003 amendment):
+One file holds one or more named sections (since 2026-09-16):
 
     [trajectories]
     #   species       String: the molecule (QM9 index)

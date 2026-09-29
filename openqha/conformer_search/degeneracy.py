@@ -1,7 +1,7 @@
 """Enantiomer degeneracy g' of every basin: a port of CREST's `intraconfRMSD`.
 
-WHAT g' IS (CONTEXT.md, "Enantiomer degeneracy")
-------------------------------------------------
+WHAT g' IS
+----------
 The Gibbs-Shannon conformational entropy counts *states*. Two geometries are two states
 only if they are distinguishable and not related by a permutation of identical nuclei.
 CREST's conformer sort has already put every structure of equal energy and equal
@@ -350,8 +350,8 @@ def conformer_degeneracies(crest_dir, rthr=RTHR_A, mirror_factor=MIRROR_FACTOR,
         if len(idx) != n_rot or hi > len(frames):
             raise ValueError("cre_members row ({}, {}, {}) does not match {} structures in "
                              "crest_rotamers.xyz".format(n_rot, lo, hi, len(frames)))
-        # the continuous chirality of the conformer: its core against its own reflection
-        # (ticket 29); the point-group label is kept beside it as a diagnostic
+        # the continuous chirality of the conformer: its core against its own reflection;
+        # the point-group label is kept beside it as a diagnostic
         self_rmsd = (self_mirror_rmsd(xyz[idx[0]][core], core_classes, cap, perms=core_perms)
                      if core_ok and core_perms is not None else None)
         if self_rmsd is None:
@@ -452,7 +452,7 @@ def basin_mirror_pairs(molecule, excluded, rthr=RTHR_A, mirror_factor=MIRROR_FAC
     deduplication superimposes by proper rotation only, so it keeps both enantiomers when
     both were among its input frames). Returns ({basin: partner}, {basin: duplicate}).
 
-    This is the "count once" rule (plan_AB section 4.1) applied at the basin level: a
+    This is the "count once" rule applied at the basin level: a
     basin whose mirror image is itself a basin contributes with g' = 1, whatever CREST's
     rotamer group said, because the partner already stands in the sum.
     """

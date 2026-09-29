@@ -1,12 +1,13 @@
-"""Ticket 26: the reference level, and the comparison of every level a molecule has.
+"""The reference level, and the comparison of every level a molecule has.
 
-REFERENCE LEVEL (ADR 0004)
---------------------------
+REFERENCE LEVEL
+---------------
 `wb97m-d3bj_def2-tzvppd`, the level MACE-OFF23 was trained to. Every branch A basin is
 re-optimised at that level and its Hessian computed (ORCA `TightOpt Freq`; the analytic
 Hessian works in ORCA 6.0.1 for this functional, `NumFreq` is the declared fallback),
-the basins are re-deduplicated with branch A's own rule, the same assembly as ticket 24
-is run on the survivors, and a merge map says where every MACE basin landed:
+the basins are re-deduplicated with branch A's own rule, the same assembly as in the
+standard Records is run on the survivors, and a merge map says where every MACE basin
+landed:
 
     merge_map.dat   mace_basin  reference_basin (or -1)  status  rmsd_displacement_A
                     rmsd_to_representative_A  energy_eh  n_imaginary  hessian_route
@@ -19,7 +20,7 @@ worth a label later). The RMSD before is MACE geometry -> its own relaxed geomet
 (the geometry shift of the level); the RMSD after is relaxed geometry -> the kept
 representative it merged into (0 for a kept basin).
 
-Ticket 39, the same-method rule: a relaxation that ends with its lowest mode inside the
+The same-method rule: a relaxation that ends with its lowest mode inside the
 inversion window [ithr, 0) is re-optimised once from the ORCA-relaxed geometry before
 any verdict -- a frequency is interpreted only at a stationary point of the method that
 produced it. The retry replaces the basin's file group (same stem, no new convention). A
@@ -28,8 +29,8 @@ marked `soft_saddle = true`, with the lowest frequency it ended on. A saddle bel
 floor is excluded as before. `lowest_frequency_cm` is ORCA's own lowest vibrational mode
 -- the number the classification used; `roundtrip_cm` says how far it is from ours.
 
-Engine files: `msrrho/orca.<level>.basinNN.{inp,out,hess,xyz}` (a file group, ticket 09b).
-Records: `msrrho/thermo/<level>.thermo_msrrho.{out,toml}` (ticket-24 shape) and
+Engine files: `msrrho/orca.<level>.basinNN.{inp,out,hess,xyz}` (a file group).
+Records: `msrrho/thermo/<level>.thermo_msrrho.{out,toml}` (the standard Records shape) and
 `<level>.merge_map.dat`.
 
 LEVEL COMPARE
@@ -120,7 +121,7 @@ COMPARE_SCHEMA = {
 # ====================================================================== the retry
 def relaxation_verdict(lowest_cm, ithr_cm):
     """The reference level's reading of one relaxed basin, from its lowest vibrational
-    mode and the shared floor classifier (ticket 39; `thermo.floor_verdict`, the rule
+    mode and the shared floor classifier (`thermo.floor_verdict`, the rule
     the census screen applies).
 
     `minimum`      every mode is positive: the basin enters normally.
@@ -140,7 +141,7 @@ def relaxation_verdict(lowest_cm, ithr_cm):
 
 
 def relax_with_retry(run, start, ithr_cm):
-    """One basin's reference-level ORCA step, with ticket 39's retry: a soft saddle is
+    """One basin's reference-level ORCA step, with the same-method retry: a soft saddle is
     re-optimised once from the ORCA-relaxed geometry before any verdict (the same-method
     rule -- frequencies are read only at a stationary point of that method).
 
@@ -166,7 +167,7 @@ def relax_with_retry(run, start, ithr_cm):
                 soft_saddle=verdict == "soft_saddle")
 
 
-#: The merge map's columns, in the column-comment form of ADR 0003 (amendment 2026-09-16).
+#: The merge map's columns, in the column-comment form.
 MERGE_MAP_SCHEMA = {
     "mace_basin": ("Integer", None, "the branch A basin (the key of the row)"),
     "reference_basin": ("Integer", None, "the reference basin it landed on, or -1 for a saddle"),
@@ -182,7 +183,7 @@ MERGE_MAP_SCHEMA = {
     "n_single_points": ("Integer", None, "energy evaluations the ORCA job spent"),
     "seconds": ("Double", "s", "wall time of the job (NA when a finished job was reused)"),
     "lowest_frequency_cm": ("Double", "cm^-1", "ORCA's lowest vibrational mode: the number the minimum/saddle verdict used"),
-    "soft_saddle": ("Boolean", None, "excluded as a soft saddle: that lowest mode lies in the inversion window [ithr, 0) (ticket 39)"),
+    "soft_saddle": ("Boolean", None, "excluded as a soft saddle: that lowest mode lies in the inversion window [ithr, 0)"),
 }
 
 
@@ -215,7 +216,7 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     ORCA is skipped for a basin whose engine folder already holds a finished job.
 
     A basin the optimisation leaves with its lowest mode inside the inversion window is
-    re-optimised once from the relaxed geometry (ticket 39) before the minimum/saddle
+    re-optimised once from the relaxed geometry before the minimum/saddle
     verdict; a retry that stays a saddle is recorded `soft_saddle = true`.
 
     `keywords` / `blocks` default to `orca.LEVELS[level]`; `start_from` names another
@@ -236,7 +237,7 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
         # every MACE basin the start level optimised has a job.hess there -- kept, merged and
         # saddle alike (merge_map.dat lists them all); a merged basin's relaxed geometry is
         # as good a start as a kept one's, and starting it from the MACE geometry instead
-        # was a full numerical optimisation for nothing (review 2026-09-18)
+        # was a full numerical optimisation for nothing (checked 2026-09-18)
         for r in dat.read_table(layout.level_file(molecule, start_from, "merge_map.dat")):
             hess = layout.orca_level_file(molecule, start_from, int(r["mace_basin"]), ".hess")
             if hess.is_file():
@@ -246,7 +247,7 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
     info_a = doc.get("Calculation_Info") or {}
     T = float(temperature_K if temperature_K is not None else info_a.get("TEMPERATURE", thermo.T_REF))
     qid = qm9_index if qm9_index is not None else info_a.get("QM9_INDEX")
-    # the floor the classification and the thermochemistry share (tickets 35/39): the
+    # the floor the classification and the thermochemistry share: the
     # preset's ithr, CREST's -50 cm^-1 for `crest`
     ithr_cm = thermo.MSRRHO_PRESETS[preset]["ithr_cm"]
     rows = {int(r["INDEX"]): r for r in branch_a_property.basin_rows(doc)}
@@ -263,7 +264,7 @@ def run_calculation(molecule, level=REFERENCE_LEVEL, keywords=None,
         g_prime = {int(r["INDEX"]): (int(r["G_PRIME"]), str(r["G_PRIME_SOURCE"]))
                    for r in prop.load(deg_path).get("Basin", [])}
 
-    # ---- ORCA per basin (ticket 39: a soft saddle is retried once) --------------------
+    # ---- ORCA per basin (a soft saddle is retried once) -------------------------------
     relaxed = []
     for b in wanted:
         atoms = read(str(files[b]), format="extxyz")
@@ -454,7 +455,7 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
     info = {"MOLECULE_DIR": str(molecule), "QM9_INDEX": qid, "REFERENCE_LEVEL": reference_level,
             "ENGINE_LEVEL": engine_level, "TEMPERATURE": float(info_a.get("TEMPERATURE", thermo.T_REF))}
     blocks = {"Calculation_Info": info, "Level": rows, "Tiers": tiers}
-    # ticket 30: is the molecule in the potential's training set? Written when the index
+    # is the molecule in the potential's training set? Written when the index
     # (or the files to build it) is available; otherwise absent and said so, never false.
     membership = _training_set_membership(info_a.get("SMILES"), qid, cfg)
     if membership is not None:
@@ -496,7 +497,7 @@ def level_compare(molecule, qm9_index=None, cfg=None, reference_level=REFERENCE_
 
 
 def _training_set_membership(smiles, qid, cfg):
-    """The ticket-30 answer, or None when it cannot be given here (no SMILES, or neither
+    """The membership answer, or None when it cannot be given here (no SMILES, or neither
     the index nor the files to build it)."""
     if not smiles and qid:
         try:

@@ -5,9 +5,9 @@ WHY A REGISTRY AND NOT ONE HARD-CODED PATH
 Until 2026-09-03 this module hard-coded MACE-OFF23-SC. It now holds a registry, for
 two reasons that arrived together:
 
-  * S0-A-15 (user ruling 2026-09-03): production moves to the standard MACE-OFF
+  * production moves to the standard MACE-OFF
     family (23 / 24) rather than the SC variant.
-  * S0-C-10: branch C needs a COMMITTEE -- several models evaluated on one structure --
+  * committee evaluation: several models evaluated on one structure --
     so "the engine" can no longer be a single global path.
 
 HOW A POTENTIAL IS LOADED
@@ -21,27 +21,27 @@ rule, and it is about the file being absent, not about what is inside it.
 
 What identifies a potential in every Record is **the engine name and the resolved path**
 (plus, in a provenance record, which mace checkout and dtype were in the loop). The
-parameter fingerprint and the registry pin were retired on 2026-09-27 (decision 04 of the
-Hessian-learning effort): mace's own load path hashes nothing, and the machinery only
-added a second full read of every model file to every calculator construction. Keeping a
-level consistent across Records (D0-4) is the operator's job: point each step at the same
-engine and the same directory; the name and the resolved path are how a Record says which
-weights it used.
+registry carries no parameter fingerprint and no pin (retired 2026-09-27): identity is
+the engine name and the resolved weights path, mace's own load path hashes nothing, and
+the machinery only added a second full read of every model file to every calculator
+construction. Keeping level consistency across Records is the operator's job: point each
+step at the same engine and the same directory; the name and the resolved path are how a
+Record says which weights it used.
 
 WHAT CHANGING THE DEFAULT COSTS -- read before relying on any older number
 --------------------------------------------------------------------------
 Every measurement below was made on MACE-OFF23-SC and is NOT transferable to another
 surface. Re-measure before citing any of them against the new default:
 
-  * force RMSD 0.1435 eV/A against composite QZ* (D0-P2-11)
-  * isomerisation dE_el MAD 1.87, max 3.89 kcal/mol (D0-P2-12)
-  * edge-level error bar 0.50 / 0.66 kcal/mol (D0-P2-14)
+  * force RMSD 0.1435 eV/A against composite QZ*
+  * isomerisation dE_el MAD 1.87, max 3.89 kcal/mol
+  * edge-level error bar 0.50 / 0.66 kcal/mol
   * every basin in package 1 -- those are MACE-OFF23-SC minima, and on a different
     surface they are not stationary points; they need re-tightening (not necessarily
     re-searching, since CREST's workhorse is GFN2-xTB and only `refine=opt` touched MACE)
   * the composite notation itself, which becomes `RI-MP2/cc-pVTZ // <new engine>`
 
-D0-23 chose MACE-OFF23-SC for two reasons. The first (cost: 25.8 ms per force call
+MACE-OFF23-SC was chosen for two reasons. The first (cost: 25.8 ms per force call
 against Egret-1's 104.4) still holds for the whole family. The second -- that it is the
 SAME surface as stage 2, so the two routes differ only in method -- is LOST by this
 change, and that was a load-bearing part of stage 0's rationale. It has to be either
@@ -59,7 +59,7 @@ from .. import S0_ROOT
 #: registry holds their FILENAMES and nothing else.
 #:
 #: -------------------------------------------------------------------------------------
-#: WHY ONE FLAT DIRECTORY (user ruling 2026-09-09)
+#: WHY ONE FLAT DIRECTORY (since 2026-09-09)
 #: -------------------------------------------------------------------------------------
 #: This used to be a SEARCH over four candidate roots x seven relative layouts, with a
 #: per-family subdirectory (`mace_off23/`, `mace_off24/`) on top. It was written that way
@@ -93,8 +93,8 @@ from .. import S0_ROOT
 #:     <repo>/data/potentials/mace_off23_<campaign>/<run>+<YYYYMMDD-HHMMSS>.model
 #: Base models stay FLAT in the root, keeping their own filename. A self-trained
 #: revision lives under `mace_off23_<campaign>/` as `<run>+<stamp>.model` (the stamp in
-#: UTC, so the basename is globally unique; the 2026-09-27 storage convention of
-#: decision 04), and its registry entry names that relative sub-path. This is a NAMING
+#: UTC, so the basename is globally unique; the 2026-09-27 storage convention), and its
+#: registry entry names that relative sub-path. This is a NAMING
 #: convention, not a search rule: an entry resolves to exactly one concrete file.
 #: `S0_MACE_ROOT` points the whole directory somewhere else; `S0_MACE_MODEL` overrides
 #: one individual file. To change potentials, use `S0_ENGINE`.
@@ -133,8 +133,8 @@ def model_root():
 #: `source` is the paper to cite (for a fine-tuned potential: the Dataset index it was
 #: trained on and the training config's hash); `note` is why the entry exists. Nothing
 #: here gates the file -- put the file in the directory under the right name and it is
-#: used -- and nothing compares its bytes (2026-09-27, decision 04: the fingerprint and
-#: the pin are retired; the name and the path are the identity).
+#: used -- and nothing compares its bytes (the fingerprint layer was retired 2026-09-27:
+#: the name and the path are the identity).
 #:
 #: REGISTERING A FINE-TUNED POTENTIAL (Hessian-learning workflow, step 05):
 #:   1. copy `<name>.model` into `data/potentials/mace_off23_<campaign>/`, named
@@ -149,17 +149,17 @@ ENGINES = {
     "MACE-OFF24_medium": dict(
         filename="MACE-OFF24_medium.model",
         source="https://github.com/ACEsuit/mace-off",
-        note="Committee member. Was briefly the default on 2026-09-03; superseded the same day by S0-A-16.",
+        note="Committee member. Was briefly the default on 2026-09-03; superseded the same day.",
     ),
     "MACE-OFF23_medium": dict(
         filename="MACE-OFF23_medium.model",
         source="https://arxiv.org/abs/2312.15211",
-        note="PRODUCTION DEFAULT since 2026-09-03 (S0-A-16). Most widely used member of the family; closest lineage to stage 2 surface.",
+        note="PRODUCTION DEFAULT since 2026-09-03. Most widely used member of the family; closest lineage to stage 2 surface.",
     ),
     "MACE-OFF23_small": dict(
         filename="MACE-OFF23_small.model",
         source="https://arxiv.org/abs/2312.15211",
-        note="Committee member (S0-C-10). Too small to be a production engine.",
+        note="Committee member. Too small to be a production engine.",
     ),
     "MACE-OFF23_large": dict(
         filename="MACE-OFF23_large.model",
@@ -174,8 +174,8 @@ ENGINES = {
     "MACE-OFF23-SC": dict(
         filename="MACE-OFF23-SC_swa.model",
         source="https://arxiv.org/abs/2405.18171",
-        note=("The engine from D0-23, superseded as the default on 2026-09-03 but KEPT "
-              "SELECTABLE: every package-1 basin and every number in D0-P2-11/12/14 "
+        note=("The earlier MACE-OFF23-SC engine, superseded as the default on 2026-09-03 but KEPT "
+              "SELECTABLE: every package-1 basin and every calibration number "
               "lives on this surface and cannot be reproduced without it."),
     ),
 }
@@ -264,8 +264,8 @@ def provenance(name=None):
 
     **Loading a potential is: the registry gives a filename, `model_path` finds that
     filename in the one directory, and that file is used.** Nothing inspects it, nothing
-    verifies it, nothing can refuse it, and nothing reads its bytes -- the parameter
-    fingerprint and the registry pin retired on 2026-09-27 (decision 04).
+    verifies it, nothing can refuse it, and nothing reads its bytes -- the registry
+    carries no parameter fingerprint and no pin (retired 2026-09-27).
 
     What this record therefore is: the engine name, where the model came from so it can be
     cited, the path actually loaded, and the parts of the software stack that decide the
@@ -575,13 +575,13 @@ def committee(names=None, device="cpu"):
     return out
 
 
-#: The level (CONTEXT.md) every MACE number is compared to for model error: the level
-#: MACE-OFF23 was trained to (SPICE, PSI4). ADR 0004.
+#: The level every MACE number is compared to for model error: the level
+#: MACE-OFF23 was trained to (SPICE, PSI4).
 REFERENCE_LEVEL = "wb97m-d3bj_def2-tzvppd"
 
 
 def level_name(name=None):
-    """The level (CONTEXT.md spelling) an engine runs: lower-case, `-` and `_` kept as
+    """The level an engine runs: lower-case, `-` and `_` kept as
     in the registry name. `MACE-OFF23_medium` -> `mace-off23_medium`."""
     n = name or engine_name()
     if n not in ENGINES:
@@ -591,7 +591,7 @@ def level_name(name=None):
 
 
 def composite_notation(reference=None, name=None):
-    """The `high // low` string that must appear in every product (D0-4), spelled with
+    """The `high // low` string that must appear in every product, spelled with
     level names so that records and the level folders agree: the reference level first
     (REFERENCE_LEVEL unless another level is given), then the engine's level."""
     return "{} // {}".format(reference or REFERENCE_LEVEL, level_name(name))

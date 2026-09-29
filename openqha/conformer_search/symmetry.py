@@ -1,14 +1,14 @@
 """External rotational symmetry number sigma, derived from the 3D GEOMETRY.
 
-Branch A, plan_A section 2.5. This module unblocks every free-energy label in
-branches A and C: sigma enters G_rot as +RT ln(sigma), and D0-9 refuses to run
-without it, so the 69 package-1 molecules that never had a declared sigma could
-not be labelled at all.
+Branch A. This module unblocks every free-energy label in
+branches A and C: sigma enters G_rot as +RT ln(sigma), and a geometry whose sigma
+is not declared refuses to run, so the 69 package-1 molecules that never had a
+declared sigma could not be labelled at all.
 
 --------------------------------------------------------------------------------
-What D0-9 forbids, and why this module does not do it
+What the rule forbids, and why this module does not do it
 --------------------------------------------------------------------------------
-D0-9 forbids taking sigma from the MOLECULAR GRAPH:
+Sigma must not be taken from the MOLECULAR GRAPH:
 
     sigma = len(mol.GetSubstructMatches(mol, uniquify=False))    # FORBIDDEN
 
@@ -41,14 +41,14 @@ Why not just call pymsym
 --------------------------------------------------------------------------------
 pymsym (libmsym binding, MIT) detects the point group from coordinates and passed
 our seven-species back-test 7/7 on 2026-09-03, including acetone, which ORCA gets
-wrong (D0-P2-15). But it only works on IDEAL geometries: measured the same day,
+wrong. But it only works on IDEAL geometries: measured the same day,
 a random displacement of **0.005 A** drops acetone and oxetane from C2v to C1.
 Our basins are numerically optimised structures whose deviation from ideal
 symmetry is exactly that size, so a bare pymsym call would report sigma = 1 for
 all of them -- low by a factor 2, i.e. G low by RT ln 2 = 0.411 kcal/mol, the
 same error and the same sign as ORCA's.
 
-2026-09-03, this session, correcting plan_A section 2.5.6: the claim "pymsym 0.3.5
+2026-09-03: the claim "pymsym 0.3.5
 exposes no tolerance parameter" is true of the high-level `get_symmetry_number`
 but NOT of the library. `pymsym.Context.set_thresholds()` exposes all seven
 libmsym thresholds (zero, geometry, angle, equivalence, eigfact, permutation,
@@ -131,7 +131,7 @@ def graph_automorphisms(numbers, adjacency, limit=MAX_CANDIDATES):
 
     **This list is NOT sigma.** It is the candidate pool that the geometric test
     in `symmetry_operations` then filters. Reporting its length as a symmetry
-    number is precisely what D0-9 forbids; `analyse` reports it under the name
+    number is precisely what the rule forbids; `analyse` reports it under the name
     `n_graph_automorphisms` next to sigma so the gap between the two is visible
     in every product.
     """
@@ -200,7 +200,7 @@ def _best_fits(a, b, masses):
     of 2, benzene 2 instead of 12, methane 4 instead of 12 -- every planar or
     highly symmetric case, and only those. The seven production species passed
     anyway, so the seven species alone would NOT have caught this. That is the
-    whole reason plan_A section 2.5.3 demands cases the criterion should fail on.
+    whole reason the acceptance set demands cases the criterion should fail on.
 
     The physical statement is also cleaner this way. A permutation of a planar
     molecule is realised BOTH by an in-plane C2 and by the perpendicular mirror;
@@ -359,7 +359,7 @@ def analyse(numbers, positions, masses=None, tolerance_A=TOLERANCE_A,
     """Full sigma record for ONE geometry. This is what goes into a product row.
 
     `declared` is the value from configs/openqha.yaml, if the species
-    has one. The declaration WINS (plan_A section 2.5.4) -- but the detected value
+    has one. The declaration WINS -- but the detected value
     is recorded next to it either way, so a disagreement is visible instead of
     being silently overridden.
     """
@@ -385,7 +385,7 @@ def analyse(numbers, positions, masses=None, tolerance_A=TOLERANCE_A,
     # the whole sweep. The loose end of the sweep is there to show WHERE the method
     # breaks, and it does break there: measured on acetone 2026-09-03, sigma goes
     # 2 -> 14 at 0.40 A, because at that tolerance the methyl-rotation permutations
-    # start being accepted. That is the D0-9 failure mode appearing exactly where it
+    # start being accepted. That is the forbidden failure mode appearing exactly where it
     # should, and it is evidence the method works -- demanding a flat sweep would
     # have thrown that evidence away as a failure.
     #
@@ -408,7 +408,7 @@ def analyse(numbers, positions, masses=None, tolerance_A=TOLERANCE_A,
         n_improper=ops["n_improper"],
         n_graph_automorphisms=ops["n_graph_automorphisms"],
         graph_automorphism_note=(
-            "Candidate pool only. Reporting this as sigma is what D0-9 forbids: "
+            "Candidate pool only. Reporting this as sigma is forbidden: "
             "for ethane it is 18 against a true sigma of 6."),
         max_accepted_rmsd_A=ops["max_accepted_rmsd_A"],
         min_rejected_rmsd_A=ops["min_rejected_rmsd_A"],

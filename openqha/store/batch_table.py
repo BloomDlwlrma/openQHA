@@ -1,6 +1,6 @@
 """The Batch table: what a driver over many Calculations prints, and all it leaves.
 
-A Batch (CONTEXT.md) is one driver invocation inside one Slurm job; it owns no Record.
+A Batch is one driver invocation inside one Slurm job; it owns no Record.
 The Slurm log is its report, and this module makes the three parsl drivers print the
 same thing: one header, one aligned line per Calculation with the common columns first,
 
@@ -12,8 +12,8 @@ subprocess returned (`status_after`): NORMAL TERMINATION, RUNNING for a trajecto
 during production, FAILED when the file is absent and rc is not zero, NO RECORD when it
 is absent and rc is zero (a driver that exited 0 without writing is a defect to look
 at); `record` is the Property file's absolute path, because the Slurm log sits in the
-repository checkout and the root differs per cluster. User ruling 2026-09-15 (records
-redesign, Q4 (b) and Q7).
+repository checkout and the root differs per cluster. The records redesign of
+2026-09-15 decided this table's shape.
 """
 import os
 from pathlib import Path

@@ -1,9 +1,9 @@
 """Read an OpenMM engine folder back: positions, symbols, masses, the per-frame table.
 
-The one reader every analysis goes through (ticket 04 of the 2026-09-14 layout change,
-ADR 0001): collect (`s0_B_qha_analyse.py`), the ensemble report and the 02d identity
-check ask here and never open `frames.npy`. The trajectory IS `traj.dcd`; `start.pdb` is
-its topology; `state.csv` is the per-frame energy and temperature at the same instants.
+The one reader every analysis goes through (the layout of 2026-09-14): collect
+(`s0_B_qha_analyse.py`), the ensemble report and the 02d identity check ask here and
+never open `frames.npy`. The trajectory IS `traj.dcd`; `start.pdb` is its topology;
+`state.csv` is the per-frame energy and temperature at the same instants.
 
     read_trajectory(engine_dir, records_dir=None) -> dict
         positions_A       (n_frames, N, 3) float64, angstrom, straight from the DCD

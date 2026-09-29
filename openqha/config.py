@@ -103,8 +103,7 @@ def edge_species(edge):
 def species(qm9_index, cfg=None):
     """The full declaration of one species.
 
-    **A missing symmetry number or electronic degeneracy raises; there is no default**
-    (D0-9).
+    **A missing symmetry number or electronic degeneracy raises; there is no default.**
     """
     cfg = cfg or load()
     s = cfg["species"].get(qm9_index)
@@ -134,7 +133,7 @@ def experimental_entropy(qm9_index, cfg=None):
 
     A value without a source, or a source key absent from `docs/cite/cite_openQHA.bib`,
     is refused: the SI table is generated from these keys, so a value that cannot be
-    cited cannot be entered (ticket 24).
+    cited cannot be entered.
     """
     cfg = cfg or load()
     s = (cfg.get("species") or {}).get(qm9_index) or {}
@@ -201,7 +200,7 @@ def qm9_xyz(qm9_index, cfg=None):
         "  looked in: {}\n"
         "             {}\n"
         "             curatedQM9 at {}\n"
-        "The repository ships only the 7 stage-0 species (D0-41). For anything else "
+        "The repository ships only the 7 stage-0 species. For anything else "
         "place QM9 with scripts/tooling/s0_prepare_data.py, or unpack curatedQM9 "
         "under data/qm9/{}.".format(
             qm9_index, vend, p, curated_qm9.root(cfg),
@@ -349,7 +348,7 @@ def pressure(cfg=None):
 def runs_root(cfg=None):
     """The **single root** under which this repository writes on a machine.
 
-    User ruling 2026-08-31: do not write straight into the home directory. The
+    Nothing is written straight into the home directory. The
     environment variable `S0_RUNS_ROOT` overrides the configuration. The directory is
     created if it does not exist, so a caller always receives a writable directory and
     none of them has to mkdir for itself.

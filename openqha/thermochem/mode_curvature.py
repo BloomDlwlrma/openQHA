@@ -1,11 +1,11 @@
-"""Ticket 32, the dry run: the curvature of a higher level along the reference normal
+"""The dry run: the curvature of a higher level along the reference normal
 modes, from energies alone.
 
 WHY ENERGIES
 ------------
 ORCA has no analytic gradient for (DLPNO-)CCSD(T). The full Hessian at that level is
-`Opt NumGrad + NumFreq`: (6N)^2 single points, doubly numerical, run on hkuhpc (the Batch
-of ticket 32). Before 4,000 points are submitted, and as the number the returned NumFreq
+`Opt NumGrad + NumFreq`: (6N)^2 single points, doubly numerical, run on hkuhpc (the Batch).
+Before 4,000 points are submitted, and as the number the returned NumFreq
 must reproduce, the curvature ALONG A CHOSEN REFERENCE MODE needs only a line of energies:
 
     x(k) = x_r + k * delta_q * M^-1/2 L_r,i        k = -2, -1, 0, +1, +2

@@ -1,7 +1,7 @@
 """Species selection gates F0-F6 -- rewritten in meaning from stage 1, **the code is
 this repository's own**.
 
-User ruling 2026-08-28: **consider only neutral molecules with no unpaired electrons
+**Consider only neutral molecules with no unpaired electrons
 and 0 net charge**. Stage 1's `docs/02_data_ingestion-and-filtering.md` section 4.1
 broke this into gates that can be counted separately; each is rewritten here (stage 0
 is an independent repository and imports nothing from stage 1).
@@ -40,9 +40,8 @@ alone -- **enabling F7 without supplying an index raises, it does not skip silen
 > indices 1 to 4000, of which **175 carried unpaired electrons** (4.38%, e.g.
 > `CO[C](C)[NH]`), **5 had SMILES that would not parse because of unconventional
 > valence** (zwitterions), and **1 was an explicit zwitterion**. Those 5 were at the
-> time **rescued** by "assigning formal charges from valence" (`D0-38`) -- **which was
-> wrong**: what that produced was precisely the zwitterions F5 exists to remove. See
-> `D0-41`.
+> time **rescued** by "assigning formal charges from valence" -- **which was
+> wrong**: what that produced was precisely the zwitterions F5 exists to remove.
 """
 import pathlib as _pathlib
 
@@ -69,7 +68,7 @@ _CONFIG_KEY = {
 
 ALLOWED_ELEMENTS = {"H", "C", "N", "O"}
 
-#: Default scope of F7. `"all"` = remove all 3054 on the list (user request 2026-09-02).
+#: Default scope of F7. `"all"` = remove all 3054 on the list.
 F7_SCOPE_DEFAULT = "all"
 
 

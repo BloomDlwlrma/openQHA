@@ -4,7 +4,7 @@
     <molecule>/_records/md_<route>/basinNN/md_<setting>.toml   any other setting, same folder
     <molecule>/_records/md_<route>/basinNN/md.out         the Report; last line = terminal line
 
-Records redesign (user ruling 2026-09-15, tickets 16-18): no setting LEVEL under
+Records layout: no setting LEVEL under
 `_records` (the setting is in the stem, `layout.record_file_name`), and the Property
 file takes ORCA's `.property.txt` shape, only what a later step reads:
 

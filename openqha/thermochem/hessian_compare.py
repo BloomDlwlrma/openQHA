@@ -1,11 +1,11 @@
-"""Ticket 27: the engine's Hessian against the reference Hessian at the reference geometry.
+"""The engine's Hessian against the reference Hessian at the reference geometry.
 
 THE QUESTION
 ------------
 How wrong is MACE's curvature where the reference level says the minimum is? Both
 Hessians are taken at ONE point, the reference geometry x_r (`$atoms` of the ORCA
 `.hess`), so the comparison is between two matrices in one space and no mode assignment
-has to be invented. That number -- not S_abs -- is what Hessian learning (plan C) must
+has to be invented. That number -- not S_abs -- is what Hessian learning must
 reduce, and it is the quantity the loss of Projected Hessian Learning is built on.
 
 FOUR FAMILIES, AS THE MLIP-HESSIAN LITERATURE REPORTS THEM
@@ -56,7 +56,7 @@ that level `DIPOLE_DERIVATIVES_PRESENT = false` and no dipole block is written.
 
 FILES
 -----
-Engine files (ADR 0001): `mace/basinNN/hessian_at_<level>.npy` (eV/A^2) and
+Engine files: `mace/basinNN/hessian_at_<level>.npy` (eV/A^2) and
 `forces_at_<level>.npy` (eV/A), the engine evaluated at x_r; reused when present.
 Record: `msrrho/thermo/hessian_compare.{out,toml}`.
 """

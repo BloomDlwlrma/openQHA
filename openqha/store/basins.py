@@ -1,4 +1,4 @@
-"""Branch A's product, read from the molecule directory (ADR 0001, 2026-09-14).
+"""Branch A's product, read from the molecule directory (the layout since 2026-09-14).
 
     <molecule>/mace/basinNN/basin.extxyz     the basins, one file each, branch A's atom order
     <molecule>/mace/basinNN/hessian.npy      the raw analytic Hessian at that basin
@@ -93,10 +93,10 @@ def done(qid, tag, cfg=None, root=None):
     return status(qid, tag, cfg, root) == prop.NORMAL_TERMINATION and exists(qid, tag, cfg, root)
 
 
-#: branch A's failure marker (ticket 26): written beside where branchA.toml would be when
+#: branch A's failure marker: written beside where branchA.toml would be when
 #: CREST left no ensemble; the campaign lists (hl_list.py) leave the molecule alone until a
 #: human reruns it by hand, and a success removes the marker. One attempt per unit, as
-#: the frames' `.out` without the terminal line (ticket 24).
+#: the frames' `.out` without the terminal line.
 FAILED = "branchA.failed"
 
 
@@ -165,7 +165,7 @@ def completed(tag, cfg=None, root=None):
     base = Path(root if root is not None else config.runs_root(cfg)) / str(tag)
     if not base.is_dir():
         return set()
-    leaf = "*"                       # the tag directory is flat (ADR 0001, amendment 3)
+    leaf = "*"                       # the tag directory is flat
 
     def _numbers(pattern, up):
         out = set()

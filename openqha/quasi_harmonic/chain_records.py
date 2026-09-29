@@ -1,4 +1,4 @@
-"""The Records of collect, the ensemble report and 02d (records redesign ticket 19, 2026-09-15).
+"""The Records of collect, the ensemble report and 02d (records redesign, 2026-09-15).
 
 All three live in `_records/md_<route>/` with the setting in the stem
 (`collect.out`, `collect_s2.toml`, `collect_s2.dat`, `ensemble_s2.toml`):
@@ -13,9 +13,9 @@ All three live in `_records/md_<route>/` with the setting in the stem
 
 The Property files hold only what a later step reads (collect's STATUS and verdict count;
 the ensemble's F_conf, populations, per-basin T*S; 02d's per-basin numbers). Every
-detail is in the `.out`. The criteria are not a table (user ruling 2026-09-16, ADR 0003
-amendment): each verdict is a sentence with its measure in `collect.out`, and the counts
-a later step reads are `[Criteria]` in `collect.toml`.
+detail is in the `.out`. The criteria are not a table: each verdict is a sentence with
+its measure in `collect.out`, and the counts a later step reads are `[Criteria]` in
+`collect.toml`.
 """
 import re
 from pathlib import Path

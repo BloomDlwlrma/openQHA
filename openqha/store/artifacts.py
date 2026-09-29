@@ -1,14 +1,13 @@
 """Filing of analysis artifacts: identity is a REQUIRED argument at write time.
 
-Why this module exists (plan_D section 8.4)
--------------------------------------------
+Why this module exists
+----------------------
 The problem in `analysis/` was never "nobody tidied the folder". It was that
 **what a product IS was never forced to be written down, and nothing ever checked
 it.** A survey on 2026-09-03 found 78 top-level entries, 12 388 files, 188 MB, with
 retired routes lying flat beside live ones, two generations of on-disk format
-(4439 JSON against 783 parquet, while D0-C-21 already ruled JSON out for
-per-molecule products), and metadata present in about half the files and read by
-nothing:
+(4439 JSON against 783 parquet), and metadata present in about half the files and
+read by nothing:
 
     committee_calibration.json    generated_by yes, status no
     symmetry_backtest.json        generated_by yes, status no
@@ -22,9 +21,8 @@ and grew to 78 top-level entries. **Tidying a directory is a one-off; a write-ti
 rule applies on every run.** So identity becomes a mandatory keyword argument here,
 and the caller never chooses a path.
 
-The discipline is not new in this repository -- it is D0-9 (a missing symmetry
-number refuses to run) applied to filing, and D0-C-8 (no literal paths in code)
-applied to destinations.
+The discipline is not new in this repository -- it is the missing-symmetry-number
+refusal applied to filing, and the no-literal-paths rule applied to destinations.
 
 What is enforced, and how each rule can fail
 --------------------------------------------
@@ -36,14 +34,14 @@ What is enforced, and how each rule can fail
    whose producing script cannot be found is a product nobody can reproduce, so it
    is refused. This is the rule that keeps `analysis/` tied to `scripts/`.
 4. `decision`, when given, must look like `S0-*` or `D0-*`.
-5. A DataFrame is never written as JSON (D0-C-21).
+5. A DataFrame is never written as JSON.
 6. Writing over an existing artifact requires `exist_ok=True`. Silent overwrite is
    how measurements disappear.
 
 `status="unknown"` is deliberately allowed. It is for artifacts inherited from
 before this module existed, and the INDEX lists them separately with a count --
-per plan_D section 8.5 criterion 3, unknown is not the same as absent (the D0-11
-discipline: write down what you cannot source, do not invent it).
+per the design's criterion 3, unknown is not the same as absent (write down what
+you cannot source, do not invent it).
 """
 import json
 import re
@@ -52,8 +50,8 @@ from pathlib import Path
 
 from .. import S0_ROOT, __version__
 
-#: Mirrors the `scripts/` taxonomy exactly (plan_D section 2.1). A product is filed by
-#: the category of the script that produced it -- one taxonomy, not two.
+#: Mirrors the `scripts/` taxonomy exactly. A product is filed by the category of
+#: the script that produced it -- one taxonomy, not two.
 CATEGORIES = ("production", "calibration", "diagnostics", "raw")
 
 #: What the artifact IS, which is a different axis from where it lives.
@@ -138,7 +136,7 @@ def _check_name(name):
     if not name or Path(name).name != name:
         raise ArtifactError(
             "name={!r} must be a bare file name without directories -- this module "
-            "decides the directory, the caller does not (D0-C-8).".format(name))
+            "decides the directory, the caller does not.".format(name))
     return name
 
 
@@ -187,7 +185,7 @@ def _shown(path):
     sit outside the repository (a test redirects it to a temporary directory). A
     bare `relative_to` would then raise ValueError while BUILDING an error message,
     which replaces a clear refusal with a confusing traceback -- this is the
-    D0-79 lesson in miniature: an error path is only verified under the caller's
+    lesson in miniature: an error path is only verified under the caller's
     real conditions.
     """
     try:
@@ -207,9 +205,9 @@ def write_artifact(payload, name, *, category, status, produced_by,
         pandas.DataFrame      -> `<name>.parquet`, metadata in the parquet schema
         str                   -> `<name>.log`, metadata in a leading comment block
 
-    A DataFrame is refused as JSON: D0-C-21 ruled that per-molecule products are
-    written as `.log` (human) plus `.parquet` (machine), never JSON. Nesting the
-    content under "data" keeps the metadata keys from ever colliding with it.
+    A DataFrame is refused as JSON: per-molecule products are written as `.log`
+    (human) plus `.parquet` (machine), never JSON. Nesting the content under
+    "data" keeps the metadata keys from ever colliding with it.
     """
     _check_name(name)
     category = _check_category(category)

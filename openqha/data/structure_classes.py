@@ -1,5 +1,4 @@
-"""Structure classes of QM9 molecules and the draw of the Hessian-learning campaign
-(ticket 05; round 5, Q1 (a)+(c), Q2 (a), Q5 (a)).
+"""Structure classes of QM9 molecules and the draw of the Hessian-learning campaign.
 
 CLASSES
 -------
@@ -237,9 +236,9 @@ def draw(root, tag, name, per_class=PER_CLASS, seed=SEED, classes_file=CLASSES_F
                 cr["SHORTFALL"] or "-", cr["N_IN_UNION"], cr["DEFINITION"]] for cr in class_rows])
     rep.note("per class, PER_CLASS molecules drawn with a generator seeded from (seed, class) over the sorted "
              "candidates; the union over classes is the campaign's list, a molecule counting for every class it "
-             "belongs to; a short class takes all its candidates and its shortfall is stated (round 5, Q1 (a)+(c)). "
-             "Candidates are the gated QM9 targets outside MACE-OFF23's SPICE training file at any match level "
-             "(Q5 (a)). The pinned seven are always in.")
+             "belongs to; a short class takes all its candidates and its shortfall is stated. "
+             "Candidates are the gated QM9 targets outside MACE-OFF23's SPICE training file at any match level. "
+             "The pinned seven are always in.")
     rep.write(d / (STEP + ".out"), step=STEP)
     return out_rows
 

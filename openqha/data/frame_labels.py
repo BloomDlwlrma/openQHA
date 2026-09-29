@@ -1,5 +1,4 @@
-"""Reference E-F-H labels per frame: the Calculation of ticket 03 of the Hessian-learning set
-(CONTEXT.md "Frame", "Frame set", "Dataset").
+"""Reference E-F-H labels per frame: the Calculation of the Hessian-learning workflow.
 
 For every kept frame of a molecule's Frame set (`frames.py`, the MACE level) ORCA computes
 the energy, the gradient and the Cartesian Hessian AT THAT FIXED GEOMETRY at one reference
@@ -12,14 +11,14 @@ geometry and leave projection to the loss).
 WHAT IS WRITTEN
 ---------------
     <molecule>/frames/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}
-        ORCA's engine files as a FILE GROUP of `frames/` (tickets 09 / 09b, ruling
-        2026-09-20: no per-frame directory; `layout.orca_frame_stem`), the FULL `.out`
-        kept as ORCA wrote it (user ruling 2026-09-17). Basin / merged / saddle frames
+        ORCA's engine files as a FILE GROUP of `frames/` (no per-frame directory;
+        `layout.orca_frame_stem`), the FULL `.out`
+        kept as ORCA wrote it (since 2026-09-17). Basin / merged / saddle frames
         are HESSIAN jobs (`EnGrad Freq`, a `.hess`); displaced frames are GRADIENT jobs
-        (`EnGrad`, an `.engrad`, no Hessian -- round 5, Q7 (b)). ORCA itself runs as
+        (`EnGrad`, an `.engrad`, no Hessian). ORCA itself runs as
         `job.*` in a run directory -- the node-local `scratch`, or `frames/.<stem>/`
         without one -- and the KEEP kinds are copied back under the stem, the run
-        directory removed. Three states on a rerun (ticket 24, round 11): a FINISHED
+        directory removed. Three states on a rerun: a FINISHED
         frame (terminal line in the `.out` and its product file) is skipped; a FAILED one
         (a `.out` without the terminal line: ORCA crashed or hit `timeout_s`) is carried
         by the next round's one-shot retry -- once per frame, ever -- the reader judges
@@ -27,9 +26,8 @@ WHAT IS WRITTEN
         was CUT (walltime, SIGKILL, node death) before anything came back, and is rerun
         whole. No unit resumes: ORCA's `.gbw` stays in the run directory.
 
-        THE ONE RETRY (ticket 02 of the ORCA-Slurm set): a failed frame may be
-        re-attempted exactly once -- every labels round carries the failed frames that
-        have no archive (ticket 04, ruling 2026-09-26), `03_labels.py --retry-only`
+        THE ONE RETRY: a failed frame may be re-attempted exactly once -- every labels
+        round carries the failed frames that have no archive, `03_labels.py --retry-only`
         sweeps just those, and `python -m openqha.data.frame_labels ... --retry` is the
         human's lever for one frame. Before ORCA starts the failed `.out` is renamed to
         `<stem>.failed.out` (ONE archive slot, replaced each time it is written), so the
@@ -84,9 +82,9 @@ from . import frames as frames_mod
 
 STEP = "labels"
 PROGNAME = "openQHA frame labels"
-#: the reference level of the Hessian-learning set (spec, ruling 2026-09-18)
+#: the reference level of the Hessian-learning workflow (since 2026-09-18)
 DEFAULT_LEVEL = "wb97m-d3bj_def2-tzvppd"
-#: ORCA ranks per frame: 16 frames x 4 = one 64-core tianhe node (ticket 03)
+#: ORCA ranks per frame: 16 frames x 4 = one 64-core tianhe node
 NPROCS = 4
 #: %maxcore (MB per rank) on tianhe deimos: 512 GB x 0.75 / 64 cores
 MAXCORE_MB = 6000
@@ -97,12 +95,12 @@ MAXCORE_MB = 6000
 #: 1e-6 A distortion the unit test refuses.
 POSITION_TOL_A = 1e-7
 #: ORCA files published from scratch into the molecule tree (everything else is scratch).
-#: Round 5 (2026-09-19): no `.gbw`, no `.loc`, and no `property.txt` (it duplicates the
+#: No `.gbw`, no `.loc`, and no `property.txt` since 2026-09-19 (it duplicates the
 #: Hessian: 85 KB of 231 per 10-atom frame) -- the full `.out`, the `.hess`, the `.engrad`.
 KEEP = (".inp", ".out", ".hess", ".engrad")
 #: generators whose frames get a reference HESSIAN (single point + EnGrad + Freq): the
-#: stationary conformers. The displaced frames get energy + gradient only (round 5, Q7 (b):
-#: the literature trains Hessians at stationary points; an analytic Hessian of a 19-atom
+#: stationary conformers. The displaced frames get energy + gradient only (the
+#: literature trains Hessians at stationary points; an analytic Hessian of a 19-atom
 #: molecule is 40-80 min, its gradient 3-5 min).
 HESSIAN_GENERATORS = ("basin", "merged", "saddle")
 STEM = "job"
@@ -111,7 +109,7 @@ TERMINAL = "****ORCA TERMINATED NORMALLY****"
 #: Batches over one selection partition the frames instead of labelling the same ones (two
 #: debug jobs did, 2026-09-19). The lock names its job (`SLURM_JOB_ID`, or `pid<n>`) and the
 #: holder touches it every HEARTBEAT_S from a daemon thread. Another process treats the
-#: frame as held only when BOTH hold (round 11, S0-G-96): Slurm does not call the job dead
+#: frame as held only when BOTH hold: Slurm does not call the job dead
 #: (`squeue -j`, states in DEAD_STATES; no answer = no opinion) AND the lock was touched
 #: within LOCK_MAX_AGE_S. A walltime kill (SIGTERM) releases the lock at once through the
 #: handler in `label_one`; a SIGKILL or a dead node leaves it, and either rule frees it.
@@ -124,7 +122,7 @@ DEAD_STATES = frozenset(("COMPLETING", "COMPLETED", "FAILED", "TIMEOUT", "CANCEL
                          "OUT_OF_MEMORY", "PREEMPTED", "BOOT_FAIL", "DEADLINE", "REVOKED", "SPECIAL_EXIT"))
 #: appended to a `.out` whose ORCA was killed at `timeout_s`, so the frame reads as failed
 TIMEOUT_TRAILER = "openQHA: ORCA killed after TIMEOUT_S={:.0f} s"
-#: the archive of one frame's previous failed `.out` (`<stem>.failed.out`, ticket 02): a
+#: the archive of one frame's previous failed `.out` (`<stem>.failed.out`): a
 #: retry renames the failed `.out` here before ORCA overwrites it -- ONE slot per frame,
 #: replaced each time it is written -- so the failure's evidence survives; its existence
 #: is the durable once-only marker (`retryable`).
@@ -134,7 +132,7 @@ SCHEMA = {
     "Calculation_Info": {
         "MOLECULE_DIR": ("String", None, "the molecule directory"),
         "QM9_INDEX": ("String", None, "the molecule"),
-        "LEVEL": ("String", None, "the reference level (CONTEXT.md spelling; the file suffix)"),
+        "LEVEL": ("String", None, "the reference level (the file suffix)"),
         "KEYWORDS": ("String", None, "ORCA's ! line of a Hessian job: the level's single point + EnGrad + its Hessian route; a gradient job (displaced frames) drops the Freq"),
         "N_HESSIAN_FRAMES": ("Integer", None, "frames labelled with a Hessian (basin / merged / saddle)"),
         "N_GRADIENT_FRAMES": ("Integer", None, "frames labelled with energy + forces only (displaced)"),
@@ -149,7 +147,7 @@ SCHEMA = {
         "N_COMPUTED": ("Integer", None, "frames ORCA ran in this call"),
         "N_REUSED": ("Integer", None, "frames whose finished ORCA job was on disk before this call"),
         "N_REFUSED": ("Integer", None, "finished jobs whose geometry did not match the MACE file"),
-        "N_FAILED": ("Integer", None, "frames whose ORCA job ran and did not terminate normally (a .out without the terminal line); carried once by the next round unless its archive marks the retry spent (tickets 02/04)"),
+        "N_FAILED": ("Integer", None, "frames whose ORCA job ran and did not terminate normally (a .out without the terminal line); carried once by the next round unless its archive marks the retry spent"),
         "N_UNLABELLED": ("Integer", None, "frames with no ORCA job on disk: never run, or cut before anything came back; the next round runs them"),
         "SECONDS_PER_FRAME": ("Double", "s", "mean ORCA wall time of the labelled frames (TOTAL RUN TIME)"),
         "MAX_MEMORY_MB": ("Double", "MB", "largest 'Maximum memory used' ORCA reported over all frames, per rank"),
@@ -166,7 +164,7 @@ SCHEMA = {
         "GENERATOR": ("String", None, "the generator"),
         "BASIN": ("Integer", None, "the basin the frame was born from"),
         "K": ("Integer", None, "index within (generator, basin)"),
-        "HAS_HESSIAN": ("Boolean", None, "a Hessian job (basin / merged / saddle: EnGrad + Freq) rather than a gradient job (displaced: EnGrad only; round 5, Q7 (b))"),
+        "HAS_HESSIAN": ("Boolean", None, "a Hessian job (basin / merged / saddle: EnGrad + Freq) rather than a gradient job (displaced: EnGrad only)"),
         "ENERGY": ("Double", "eV", "reference energy (FINAL SINGLE POINT ENERGY, dispersion included)"),
         "ENERGY_ABOVE_BASIN": ("Double", "kcal/mol", "reference energy above the frame's basin frame (nan when the basin frame is unlabelled)"),
         "MAX_FORCE": ("Double", "eV/A", "reference |F|max"),
@@ -251,22 +249,22 @@ def finished(folder, stem, hessian=True):
 def failed(folder, stem):
     """True when ORCA ran for the frame and did not terminate normally: a `<stem>.out` without
     the terminal line (a crash, or the `timeout_s` kill with its TIMEOUT_TRAILER). Such a
-    frame is no mass work: the round's one-shot retry carries it once (tickets 02/04) and
+    frame is no mass work: the round's one-shot retry carries it once and
     `label_one(retry=True)` fires that attempt (refused when it is spent)."""
     out = Path(folder) / (stem + ".out")
     return out.is_file() and TERMINAL not in out.read_text(encoding="utf-8", errors="replace")
 
 def failed_archive(folder, stem):
     """`<folder>/<stem>.failed.out`: the one slot that holds the previous failed `.out`,
-    written by a retry before ORCA overwrites it (ticket 02). The slot is replaced each
+    written by a retry before ORCA overwrites it. The slot is replaced each
     time it is written; its existence is the durable once-only marker."""
     return Path(folder) / (stem + ARCHIVE_SUFFIX)
 
 
 def retryable(folder, stem):
-    """True when the frame may be re-attempted once: a FAILED `.out` on disk (ticket 24)
+    """True when the frame may be re-attempted once: a FAILED `.out` on disk
     -- not merely "no archive" -- and no archive yet. The round selects exactly these
-    (every round, ticket 04; `--retry-only` for just them); `label_one(retry=True)`
+    (every round; `--retry-only` for just them); `label_one(retry=True)`
     archives the `.out` before it runs, so an existing archive means the frame's one
     retry is spent and the frame is final."""
     return failed(folder, stem) and not failed_archive(folder, stem).is_file()
@@ -492,7 +490,7 @@ def parse_label(folder, atoms, stem):
     else:
         e_eh, grad = first_energy_from_out(text), gradient_from_out(text, n)
     # the FIRST single point is the frame's: a NumFreq level prints one more per displaced
-    # geometry, and the last of those is not the label (review 2026-09-18)
+    # geometry, and the last of those is not the label (checked 2026-09-18)
     e_out = first_energy_from_out(text)
     forces = -np.asarray(grad, dtype=float) * orca.EV_PER_HARTREE * orca.BOHR_PER_ANGSTROM
     masses = atoms.get_masses()
@@ -518,14 +516,14 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
     """ORCA on one frame. Returns the parsed label plus `status` ("labelled" when ORCA ran
     now, "reused" when its finished job was on disk, "refused" on a geometry mismatch,
     "failed" when a `.out` without the terminal line is on disk and the frame is not
-    being retried -- the frame ran once; the round carries its one retry unless spent
-    (tickets 02/04), nothing runs -- or
+    being retried -- the frame ran once; the round carries its one retry unless spent,
+    nothing runs -- or
     when `retry` is asked for a frame whose retry is spent (an archive exists); "running"
     when another process holds the frame -- nothing is parsed in the last two) and the
     wall seconds of this call. Raises when ORCA does not terminate normally -- the caller
     (a Batch task) records that; the `.out` comes back for reading and the frame is failed.
 
-    The one retry (ticket 02): with `retry=True` a FAILED frame is re-attempted ONCE.
+    The one retry: with `retry=True` a FAILED frame is re-attempted ONCE.
     Before ORCA starts, the failed `.out` is renamed to `<stem>.failed.out` (the one
     archive slot, replaced each time it is written), so the evidence survives; a retry
     whose job fails again keeps the archive and stays failed (never selected again), and
@@ -542,7 +540,7 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
     so a walltime kill releases it. `timeout_s` kills ORCA and marks the `.out` with
     TIMEOUT_TRAILER (a failure). A kill by signal (rc < 0, or the SIGTERM handler) is a CUT:
     nothing is copied back, anything half-copied is removed, `SystemExit(143)` propagates --
-    the frame has no `.out`, reads as never run, and is rerun whole (round 11 Q0).
+    the frame has no `.out`, reads as never run, and is rerun whole.
     `runner`: a callable (inp, out, cwd, timeout_s) -> rc replacing the ORCA binary (tests)."""
     molecule = Path(molecule)
     folder = layout.frames_dir(molecule)
@@ -563,7 +561,7 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
                 if not retry:
                     return skipped("failed")
                 if failed_archive(folder, stem).is_file():
-                    return skipped("failed")              # the one retry is spent (ticket 02)
+                    return skipped("failed")              # the one retry is spent
         if not _claim(folder, stem):
             return skipped("running")
         status = "labelled"
@@ -618,7 +616,7 @@ def label_one(molecule, level, generator, basin, k, nprocs=NPROCS, maxcore=MAXCO
 def _untouched(folder, molecule, level, generators):
     """True when nothing for this level exists on disk: no ORCA file group of the level, no
     label file, no Record. An `assemble` call could only repeat what is not there, so it is
-    skipped (ticket 07: a full-tree `--assemble` used to parse every molecule's engine file
+    skipped (a full-tree `--assemble` would otherwise parse every molecule's engine file
     and rewrite two Records per molecule that had never been labelled)."""
     try:
         names = {p.name for p in Path(folder).iterdir()}
@@ -638,7 +636,7 @@ def assemble(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxc
     this call (for the N_COMPUTED / N_REUSED split; everything finished on disk counts
     as reused otherwise). A molecule with nothing on disk at this level -- no ORCA file
     group, no label file, no Record -- returns as untouched: no engine file is read and
-    nothing is written (ticket 07)."""
+    nothing is written."""
     molecule = Path(molecule)
     folder = layout.frames_dir(molecule)
     t0 = time.time()
@@ -758,7 +756,7 @@ def run(molecule, level=DEFAULT_LEVEL, generators=None, nprocs=NPROCS, maxcore=M
     """Every frame of one molecule in sequence, then `assemble`. A frame whose ORCA fails
     is reported (`failed`), not fatal: the Record says which; a rerun skips it unless
     `label_one(retry=True)` is asked for that frame -- the round's worker does that for
-    the unarchived failures (tickets 02/04)."""
+    the unarchived failures."""
     molecule = Path(molecule)
     mlevel = mace_level(molecule)
     computed, failures = [], []
@@ -805,7 +803,7 @@ def _write_report(path, info, gen_rows, rows):
                 "%.0f" % r["MEMORY_MB"], r["STATUS"], r["REASON"]] for r in rows])
     rep.note("a label is ORCA's energy, gradient and -- at basin / merged / saddle frames ('H' = yes) -- raw "
              "Cartesian Hessian at the FRAME'S FIXED GEOMETRY (single point + EnGrad [+ Freq/NumFreq]; no "
-             "optimisation; displaced frames get energy + forces only, round 5 Q7 (b)), converted once to eV, eV/A, eV/A^2 "
+             "optimisation; displaced frames get energy + forces only), converted once to eV, eV/A, eV/A^2 "
              "and written beside the MACE file with the same positions. 'lowest' at a displaced frame is a "
              "curvature; 'rigid' is the rigid-body block of the unprojected Hessian -- the noise floor at a basin "
              "frame (a few cm^-1 to ~30 for an analytic Hessian), the gradient term at a displaced frame. 'com' is "
@@ -813,7 +811,7 @@ def _write_report(path, info, gen_rows, rows):
              "refused frame's .hess geometry differs in shape from the MACE file: the two levels "
              "of a frame must sit at one geometry or the Dataset compares different points. A failed frame's "
              "ORCA ran once and did not terminate normally (its .out says why; a timeout ends with the "
-             "TIMEOUT_S trailer); the next round carries its one retry (tickets 02/04) -- read the .out, or "
+             "TIMEOUT_S trailer); the next round carries its one retry -- read the .out, or "
              "`python -m openqha.data.frame_labels <molecule> <generator> <basin> <k> --retry` by hand. "
              "The retry archives the failed .out as <stem>.failed.out BEFORE ORCA starts (one slot, replaced "
              "each time it is written), so the failure's evidence survives; an existing archive marks the "

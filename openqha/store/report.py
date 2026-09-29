@@ -3,22 +3,22 @@
 --------------------------------------------------------------------------------------
 Why this changed, and what it changed to
 --------------------------------------------------------------------------------------
-The user, 2026-08-31: "`analysis/` is all JSON and unreadable; change it to `.log` text
-like ORCA and CREST produce, or to parquet".
+The analysis tree is `.log` text and not JSON: text like ORCA and CREST produce, or
+parquet.
 
 **The conclusion is "both, with a division of labour", not one or the other** -- because
 products contain two kinds of thing with entirely different natures:
 
 | Content | Example | The form that suits it |
 |---|---|---|
-| **Narrative and provenance**: settings, criteria, what happened, verdicts | the engine and its SHA-256, the CREST version, "a mode below the frequency floor ithr is thrown out" | **`.log`** -- banner, sections, aligned tables, units in the header |
+| **Narrative and provenance**: settings, criteria, what happened, verdicts | the engine name and its resolved weight file, the CREST version, "a mode below the frequency floor ithr is thrown out" | **`.log`** -- banner, sections, aligned tables, units in the header |
 | **Large amounts of homogeneous numbers** | 4000 molecules x several basins each x 3N-6 frequencies per basin | **parquet** -- one line to read into pandas, no scrolling in a text editor |
 
 **JSON is not deleted; it is demoted to an archive.** Three reasons:
 
 1. It is the **complete record**. A `.log` is for people to read and therefore
    necessarily selective; parquet is a flat table and cannot hold nested provenance. The
-   checkpoint standard requires the raw record to be kept -- that is the JSON.
+   raw record must be kept -- that is the JSON.
 2. Scripts already in the repository read JSON (`s0_package1_summarise.py` and others).
 3. **Both the `.log` and the parquet are GENERATED from the JSON**, so the three cannot
    drift: if the JSON changes, rerun the conversion.

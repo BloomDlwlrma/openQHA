@@ -1,6 +1,6 @@
 """The `thermo_msrrho` Calculation: a molecule's absolute entropy and free energy from
 its basins, assembled the way Pracht & Grimme (Chem. Sci. 2021, 12, 6551) define it,
-entirely at one level (ADR 0004; spec `.scratch/msrrho-gtotal/spec.md`).
+entirely at one level.
 
     per basin i (branchA.toml [[Basin]], mace/basinNN/hessian.npy, degeneracy.toml):
       omega_i       Eckart-projected, mass-weighted spectrum of the stored Hessian
@@ -20,7 +20,7 @@ The last line is an identity, not an approximation: at one level the reference
 subtraction cancels exactly (the paper says so of the same-level case), and S'_conf is
 the mixing entropy of the populations that G_total is built from. CREST's `--entropy`
 evaluates the paper's eq. 10 with the conformers' ELECTRONIC energies instead; that
-number is written too, as S_CONF_PRIME_E, for the GFN2 seam of ticket 25.
+number is written too, as S_CONF_PRIME_E, for the GFN2 seam.
 
 Conventions are declared, never defaulted silently: preset (tau, rotor cap, what is
 interpolated), the imaginary-mode policy (`invert_below`, the production default: a mode
@@ -93,7 +93,7 @@ SCHEMA = {
         "N_BELOW_FLOOR": ("Integer", None, "modes with |omega| < 1 cm^-1 dropped from every sum (ORCA CutOffFreq)"),
         "INVERTED_CM": ("ArrayOfDoubles", "cm^-1", "the inverted modes (ithr <= omega < 0); absent when none"),
         "DROPPED_CM": ("ArrayOfDoubles", "cm^-1", "the dropped modes (|omega| < 1 cm^-1); absent when none"),
-        "SOFT_SADDLE": ("Boolean", None, "excluded as a soft saddle: the relaxed lowest mode lies in the inversion window [ithr, 0) at the reference level (ticket 39)"),
+        "SOFT_SADDLE": ("Boolean", None, "excluded as a soft saddle: the relaxed lowest mode lies in the inversion window [ithr, 0) at the reference level"),
         "EXCLUDED": ("Boolean", None, "left out of the ensemble (lowest mode below ithr, unprojected signature, or a policy the preset cannot apply)"),
         "HESSIAN_ROUTE": ("String", None, "analytic or numerical (reference levels)"),
         "NOISE_FLOOR_CM": ("Double", "cm^-1", "largest |eigenvalue| of the rigid-body block of the unprojected Hessian: 5-30 cm^-1 analytic at a tight minimum (residual gradient in the rotational block), plus the finite-difference noise of a numerical one"),

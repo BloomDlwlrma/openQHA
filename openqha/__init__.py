@@ -67,7 +67,7 @@ WHAT THIS PACKAGE IS
 reads no file of, any other stage. The edge set, species table, symmetry numbers,
 parameters and data paths are all written out in `configs/openqha.yaml`, and anything
 copied from elsewhere records its source, the date it was copied, and a checksum, so that
-drift is discovered rather than inherited (`D0-41`).
+drift is discovered rather than inherited.
 """
 __version__ = "0.3.0"
 

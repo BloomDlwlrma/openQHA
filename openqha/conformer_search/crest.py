@@ -12,14 +12,14 @@ The orders of magnitude settle this: one conformer search on a small molecule ne
 10^5 energy-and-gradient calls (measured here on acetone: **130 937**). Measured here,
 MACE accounts for only **2514 of them, about 1.9 per cent**.
 
-**This agrees word for word with stage 0's own two-stage design (`D0-54`, `D0-64`).**
+**This agrees word for word with the repository's own two-stage design.**
 
 --------------------------------------------------------------------------------------
 Two routes: `generic` and `mlip`
 --------------------------------------------------------------------------------------
 Upstream CREST **3.1** offers `method = "mlip"` (`fmlip-relay`: a resident server plus a
 TCP socket, with native support for MACE-OFF and a custom `.model` via `mlip_modelpath`).
-**But 3.1 is not released** -- checked point by point (`D0-87`): releases go only to
+**But 3.1 is not released** -- checked point by point: releases go only to
 v3.0.2; the continuous-release binary contains 0 occurrences of the string `mlip`;
 upstream master's `src/calculator/` has no mlip source file; `subprojects/` has no
 `fmlip_relay`.
@@ -34,7 +34,7 @@ A known upstream defect, and why this module does not meet it
 --------------------------------------------------------------------------------------
 CREST 3.0.2 fails on exactly one combination, "**an external generic calculator plus
 molecular dynamics or metadynamics**" (measured here: all 14 metadynamics runs
-`terminated EARLY`, each in 0.019-0.021 seconds; `D0-88`).
+`terminated EARLY`, each in 0.019-0.021 seconds).
 **This module does not meet it**, because the dynamics is run by the built-in GFN-FF and
 the external calculator does only single points and optimisations -- measured, the same
 external calculator ran 2514 times in the parallel `_N` subdirectories with no failure.
@@ -169,10 +169,10 @@ def supports_mlip(binary=None):
 #: docs `page/documentation/inputfiles.html` and cross-checked against
 #: `src/parsing/parse_calcdata.f90`.
 #:
-#: 2026-09-03 (user ruling): the production workhorse is **"gfn2"**, which is the
+#: The production workhorse is **"gfn2"**, which is the
 #: published iMTD-GC configuration (Pracht, Bohle & Grimme, PCCP 2020, 22, 7169;
 #: upstream example 1 is literally `crest struc.xyz --gfn2`). "gfnff" was only ever
-#: a cost substitute chosen by D0-50 for a 16000-molecule campaign; that reason is
+#: a cost substitute chosen for a 16000-molecule campaign; that reason is
 #: gone now that stage 0 runs a few hundred molecules.
 WORKHORSES = ("gfn2", "gfn1", "gfnff", "gfn0", "tblite")
 
@@ -310,13 +310,12 @@ def write_input(workdir, input_xyz, runtype="imtd-gc", threads=4, optlev="tight"
     if tstep_fs is not None:
         # CREST's own metadynamics default is 5.0 fs (it prints it as `timestep dt`
         # in crest.out). That default is paired with SHAKE on ALL bonds -- CREST's
-        # own shake default is 2. We run shake = 1 (H bonds only, D0-P1-40), which
+        # own shake default is 2. We run shake = 1 (H bonds only), which
         # removes exactly the constraint that makes a 5 fs step safe on the
         # heavy-atom modes.
         #
         # Measured 2026-09-03, edge C2H5O1N1_19_36, workhorse gfn2, shake = 1,
         # CREST default step: 29 and 20 metadynamics runs `terminated EARLY`.
-        # See branch A checkpoint 1 for the attribution experiment.
         text += "\n[dynamics]\ntstep = {}\n".format(float(tstep_fs))
         if shake is not None:
             text += "shake = {}\n".format(int(shake))
@@ -348,7 +347,7 @@ def run(workdir, input_xyz, timeout_s=7200, env=None, **kwargs):
     """Hand one structure to CREST for a run. Returns a complete record dict.
 
     **Success or failure is judged only by CREST's own output**, never by the shell exit
-    code (skills section 2.4(c): the lecture-notes stage was caught by that three times).
+    code (this repository has been caught by that three times).
     """
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -401,7 +400,7 @@ def run_with_shake_fallback(workdir, input_xyz, shake=2, fallback_to=1,
 
     The production dynamics setting is the published package -- SHAKE on all bonds
     (`shake = 2`), 5 fs, hydrogen mass 2 amu (Grimme, JCTC 2019, 15, 2847). It has
-    one measured failure mode, D0-P1-34: on strained rings the SHAKE iteration does
+    one measured failure mode: on strained rings the SHAKE iteration does
     not converge (`shake_module.f90`, 250 iterations, tolerance 1e-7), `do_shake`
     returns non-zero, the MD is judged failed and CREST prints `terminated EARLY`
     -- and conformers are lost with it. Measured: dsgdb9nsd_000607 / 003163 /
@@ -417,7 +416,7 @@ def run_with_shake_fallback(workdir, input_xyz, shake=2, fallback_to=1,
     condition that cannot be read off the product has already cost this repo one
     dataset (defect 57).
 
-    **The retry can be worse than the published run** (ticket 26, 2026-09-22): on a
+    **The retry can be worse than the published run** (measured 2026-09-22): on a
     strained bicyclic (dsgdb9nsd_003375, ethynyl-housane) the SHAKE=2 run terminated
     normally with an ensemble and a few `terminated EARLY`, while the SHAKE=1 retry died
     in CREST's trial MTD (`Automatic MD restart failed 6 times! ERROR STOP`) -- fewer
@@ -455,7 +454,7 @@ def run_with_shake_fallback(workdir, input_xyz, shake=2, fallback_to=1,
         total_engrad_calls=rec.get("total_engrad_calls"))
     retry["fallback_reason"] = (
         "published protocol (shake={}) reported {} `terminated EARLY`; retried once "
-        "at shake={} per D0-P1-34. This molecule did NOT run under the published "
+        "at shake={}. This molecule did NOT run under the published "
         "protocol and must be reported separately.".format(
             shake, rec.get("n_terminated_early"), fallback_to))
     return retry

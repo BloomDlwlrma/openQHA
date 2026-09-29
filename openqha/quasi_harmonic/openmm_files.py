@@ -1,4 +1,4 @@
-"""OpenMM's own files for one trajectory: what an engine folder holds (ADR 0001).
+"""OpenMM's own files for one trajectory: what an engine folder holds.
 
     md_openmm/basinNN/         (one folder per basin; a non-default setting's files carry
                                 the setting in their names, e.g. traj_p1500_s5.dcd -- see
@@ -17,7 +17,7 @@ reporters use are driven here directly -- `app.DCDFile`, `app.PDBFile`,
 `XmlSerializer` -- and the CSV is written with `StateDataReporter`'s header and column
 names, so a reader that knows OpenMM's files knows these.
 
-Why both `state.xml` and `state.chk` (user, 2026-09-14): a checkpoint is bound to the
+Why both `state.xml` and `state.chk` (since 2026-09-14): a checkpoint is bound to the
 platform and hardware it was written on and may not load on another card; the XML state
 is portable and larger. Resume tries the checkpoint first and says which one loaded.
 

@@ -1,21 +1,20 @@
 """Call ORCA for **energies and forces**, and the composite scheme assembled from
 coefficients.
 
-**Scope (two rulings, the second revising the first)**:
+**Scope (the second bullet revises the first)**:
 
 * 2026-08-29 (morning): the composite scheme is used for **energies and forces only, not
   for frequencies** -- because validating a composite frequency would mean actually
   running the 61 gradients of `CCSD(T)/cc-pVTZ` on some species (about 5.1 days), and the
   0.073 eV/A quoted in the original paper is the error of a **force**; **accuracy in the
   forces does not automatically mean accuracy in the frequencies**.
-* 2026-08-29 (afternoon, on the user's instruction "change it so that it can produce
-  something"): **the capability is restored and off by default**. `composite_hessian()`
+* 2026-08-29 (afternoon): **the capability exists and is off by default**. `composite_hessian()`
   gives a composite Hessian by central differences of the composite forces. **It does not
   run by default**; a caller must ask for it explicitly, and the function first shows the
-  cost of the 6N x (number of terms) single points. **The ruling that the cost was too
-  high was about treating frequencies as a production reference quantity, not about
-  forbidding the capability to exist** -- the capability existing, being off by default,
-  and reporting its cost first are not in conflict.
+  cost of the 6N x (number of terms) single points. **The cost concern was about treating
+  frequencies as a production reference quantity, not about forbidding the capability to
+  exist** -- the capability existing, being off by default, and reporting its cost first
+  are not in conflict.
 
 The composite expression (Allen et al., equations 1 and 2) is a linear combination by
 coefficient:
@@ -23,7 +22,7 @@ coefficient:
 The recipes live in `package2.composite_recipes` in
 `configs/openqha.yaml`, where each term is `[coefficient, method, basis set]`.
 
-**Version and where it runs** (`D0-75`): production calculations use **ORCA 6.1.1 and run
+**Version and where it runs**: production calculations use **ORCA 6.1.1 and run
 only on deimos**; the local WSL 6.0.1 is **for testing only** and produces no production
 numbers. This module writes the ORCA version it used verbatim into every product, so the
 identity can be checked.
@@ -45,7 +44,7 @@ BOHR_PER_ANGSTROM = 1.0 / 0.529177210903
 DEFAULT_BIN = "/home/ubuntu/packages/orca_6_0_1/orca"   # local testing; production runs
                                                         # on deimos
 
-#: The `%freq` block pinned into EVERY reference-level input (ticket 36). ORCA's own
+#: The `%freq` block pinned into EVERY reference-level input. ORCA's own
 #: defaults are `ProjectTR true`, `TransInvar true` and `CutOffFreq 1.0` (ORCA 6 manual
 #: 6.5 for the first two, 7.27 for the third); pinning them puts the projection state of
 #: every reference Hessian into the job input instead of leaving it inherited from a
@@ -64,12 +63,12 @@ FREQ_BLOCK = "\n".join([
     "end",
 ])
 
-#: The reference levels ORCA runs, by level name (CONTEXT.md spelling). `keywords` is
+#: The reference levels ORCA runs, by level name (standard spelling). `keywords` is
 #: the `!` line of the Opt + Hessian job, `blocks` the extra `%` input (every level pins
-#: its projection state there -- `FREQ_BLOCK`, ticket 36), `route` what the Hessian is.
-#: wB97M: the analytic Hessian works in ORCA 6.0.1 (ticket 26). DLPNO-CCSD(T):
+#: its projection state there -- `FREQ_BLOCK`), `route` what the Hessian is.
+#: wB97M: the analytic Hessian works in ORCA 6.0.1. DLPNO-CCSD(T):
 #: ORCA has no analytic gradient for it, so geometry and Hessian are numerical end to end
-#: (Opt NumGrad + NumFreq, (6N)^2 single points for the Hessian; ticket 32); keywords are
+#: (Opt NumGrad + NumFreq, (6N)^2 single points for the Hessian); keywords are
 #: the hkuhpc convention (`core-bind/orca.md`) plus TightPNO, because the PNO truncation
 #: noise between displaced geometries is the error source of a numerical curvature.
 LEVELS = {
@@ -119,7 +118,7 @@ def input_text(symbols, positions, keywords, nprocs, maxcore, charge=0, mult=1, 
 
 
 #: The kinds of an ORCA job's files published from its run directory into the file group
-#: `<workdir>/<stem>.<ext>` (ticket 09b, 2026-09-20): the input, the FULL `.out`, the
+#: `<workdir>/<stem>.<ext>` (since 2026-09-20): the input, the FULL `.out`, the
 #: Hessian, the gradient, the optimised geometry. Everything else ORCA writes (`.gbw`,
 #: `.densities`, `.tmp*`, `property.txt`) is scratch and goes with the run directory.
 KEEP = (".inp", ".out", ".hess", ".engrad", ".xyz")
@@ -183,7 +182,7 @@ def orca_binary():
 
 def subprocess_env():
     """The environment an ORCA subprocess runs in -- Slurm-blind, and the ONE seam
-    every ORCA launch goes through (ADR 0008). `S0_ORCA_PATH` and `S0_ORCA_LIB`, when
+    every ORCA launch goes through. `S0_ORCA_PATH` and `S0_ORCA_LIB`, when
     set, are prepended to PATH and LD_LIBRARY_PATH FOR THE SUBPROCESS ONLY: on tianhe
     ORCA 6.1.1 and its OpenMPI live in the conda env `orca611` (`~/env_orca611.sh`),
     which a worker running in the `openqha` env must not activate -- its libraries
@@ -194,7 +193,7 @@ def subprocess_env():
     (not a pattern list) is deliberate: the draw300 failure of 2026-09-25 happened
     because a narrow pattern removed `SLURM_TASKS_PER_NODE` while keeping the
     `SLURM_JOBID` that arms OpenMPI 4.1's slurm components -- `ras/slurm` then
-    force-terminates when a required variable is absent (research note, 2026-09-25).
+    force-terminates when a required variable is absent (2026-09-25).
     With `SLURM_JOBID` gone no `ras`/`plm`/`ess` slurm component is even eligible, and
     ORTE falls back to the local host. The worker keeps its own Slurm view; only the
     ORCA child is blind.
@@ -291,7 +290,7 @@ def single_point(symbols, positions, method, basis, workdir=None, nprocs=8,
     return rec
 
 
-#: The reference level (ADR 0004): the level MACE-OFF23 was trained to. `Freq` asks
+#: The reference level: the level MACE-OFF23 was trained to. `Freq` asks
 #: for the analytic Hessian; ORCA 6.0.1 accepts it for this meta-GGA range-separated
 #: hybrid (propanal basin 0, 8 cores: 226 s, "SCF Response" module, 0 imaginary modes,
 #: measured 2026-09-16). `NumFreq` is the declared fallback if a build refuses.
@@ -340,7 +339,7 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
 
     Skips ORCA when `workdir/<stem>.hess` exists and the `.out` terminated normally, so a
     Batch can be resumed. `rerun=True` runs anyway and REPLACES the file group: the
-    ticket-39 soft-saddle retry re-runs the same job from the relaxed geometry, and the
+    soft-saddle retry re-runs the same job from the relaxed geometry, and the
     file group keeps its one meaning -- the basin's final job at this level. Returns the
     relaxed geometry (A), energy (Eh, the last FINAL SINGLE POINT ENERGY of the `.out`),
     the parsed Hessian record (`parse_hess`), whether the Hessian was analytic or
@@ -351,7 +350,7 @@ def optimise_and_hessian(symbols, positions, workdir, keywords=REFERENCE_KEYWORD
     so a negative mode inside (-1, 0) cm^-1 sits inside the floor and is not counted.
 
     The FULL `<stem>.out` is the engine record and is kept as ORCA wrote it -- in the file
-    group and in every fixture copied from one (user ruling 2026-09-17). Never trim it
+    group and in every fixture copied from one (since 2026-09-17). Never trim it
     to the lines a parser happens to read: the optimisation trajectory, SCF convergence,
     the Hessian route and the thermochemistry block are what a reader needs when a number
     looks wrong, and none of them can be recovered from a single-point line.
@@ -437,7 +436,7 @@ def combine(pool, terms):
 
     **Raises if the terms come from different ORCA versions** -- a composite is a
     combination of differences, and differences in default thresholds between versions do
-    not cancel in it, which would make the whole correction meaningless (`D0-72`).
+    not cancel in it, which would make the whole correction meaningless.
     """
     e_tot = 0.0
     f_tot = None
@@ -545,7 +544,7 @@ def force_metrics(f_ref, f_test):
 
 
 # =========================================================================================
-# ORCA .hess parsing -- added 2026-09-03 for branch C (S0-C-4, S0-C-13).
+# ORCA .hess parsing -- added 2026-09-03 for branch C.
 #
 # UNITS ARE MEASURED, NOT ASSUMED. On dsgdb9nsd_000108_b0 the `$hessian` block was
 # diagonalised under both candidate unit systems and compared against the
@@ -559,9 +558,9 @@ def force_metrics(f_ref, f_test):
 # units in a comment line: "The current gradient in Eh/bohr".
 #
 # `verify_hess_frequencies` turns that one-off check into an assertion that runs on
-# every sample. A one-off check is not a criterion (memory-discard section 6 rule 9).
+# every sample. A one-off check is not a criterion.
 #
-# THE STORED MATRIX IS THE PRE-ASR HESSIAN (checked once, 2026-09-25; ticket 36).
+# THE STORED MATRIX IS THE PRE-ASR HESSIAN (checked once, 2026-09-25).
 # `TransInvar true` -- ORCA's default, pinned in `FREQ_BLOCK` -- enforces translation
 # invariance (the acoustic sum rule, ASR) during ORCA's frequency step, but the
 # correction is not written back into the file. On the three ORCA 6.0.1 propanal

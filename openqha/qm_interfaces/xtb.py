@@ -226,7 +226,7 @@ def hessian_at(symbols, positions, gfn=2, charge=0, uhf=0, workdir=None, keep=Fa
     """`xtb --hess`: the Hessian AT THIS GEOMETRY, no re-optimisation.
 
     The counterpart of `optimise_and_hessian` for the case where the geometry is the
-    level's own minimum already (CREST's optimised conformers at GFN2, ticket 25) or
+    level's own minimum already (CREST's optimised conformers at GFN2) or
     where the point must not move (a label at a fixed geometry). An imaginary mode is
     reported, not repaired.
     """

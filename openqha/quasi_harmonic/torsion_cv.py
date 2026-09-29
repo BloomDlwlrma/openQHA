@@ -205,7 +205,7 @@ def dihedral_gradient(positions, atoms):
     """Analytic gradient of the dihedral with respect to the Cartesian coordinates of the
     four atoms, in 1/A. The biasing force of metadynamics needs it.
 
-    Self-checked against central differences: see `tests` and the checkpoints.
+    Self-checked against central differences: see `tests`.
     **This is not numerical differentiation, it is the analytic expression.**
     """
     p = np.asarray(positions, dtype=float)

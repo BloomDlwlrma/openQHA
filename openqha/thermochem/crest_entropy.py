@@ -1,4 +1,4 @@
-"""Ticket 25, the GFN2 seam: CREST `--entropy` on CREST's native engine beside our assembly.
+"""The GFN2 seam: CREST `--entropy` on CREST's native engine beside our assembly.
 
 WHY THIS CALCULATION EXISTS
 ---------------------------
@@ -29,9 +29,9 @@ WHAT CREST ACTUALLY DOES (read from crest-master/src/entropy on 2026-09-16)
   in one run and `cs` in the next, and S'_conf moved by R ln 2 (3.1495 vs 2.7199). Our
   own assembly classifies chirality from the geometry (`degeneracy.symmetry_class`).
 
-Records: `msrrho/thermo/gfn2.thermo_msrrho.{out,toml}` in the ticket-24 shape plus a `[Crest]`
+Records: `msrrho/thermo/gfn2.thermo_msrrho.{out,toml}` in the standard Records shape plus a `[Crest]`
 block (CREST's numbers per run and their spread) and a `[Seam]` block (ours minus theirs,
-term by term). GFN2 is never a reference for MACE (ADR 0004).
+term by term). GFN2 is never a reference for MACE.
 """
 import math
 import re
@@ -225,9 +225,9 @@ def crest_enantiofac(run_dir, confs):
 
 # ====================================================================== the Calculation
 #: The seam reproduces CREST, so it takes CREST's own imaginary-mode regime: modes in
-#: (ithr, 0) inverted, modes below ithr kept with zero entropy (ticket 28; measured on
+#: (ithr, 0) inverted, modes below ithr kept with zero entropy (measured on
 #: propanal's third conformer, -68.4 cm^-1 in CREST's numerical Hessian, kept by CREST).
-#: After ticket 35 (2026-09-25) this seam is the ONLY caller of `crest_native`; the
+#: Since 2026-09-25 this seam is the ONLY caller of `crest_native`; the
 #: record keeps its own counters (N_KEPT_NEGATIVE / N_INVERTED per basin and in [Seam]),
 #: and its old [Imaginary_Spread] block is gone with the other records'.
 SEAM_POLICY = "crest_native"
@@ -416,7 +416,7 @@ def run_calculation(molecule, reference_xyz=None, runs=(1, 2), run_crest=True, t
 
 def _write_report(path, info, evals):
     rep = report.Report("openQHA thermo_msrrho at gfn2", "CREST --entropy on its native engine "
-                        "beside our assembly (the GFN2 seam, ticket 25)")
+                        "beside our assembly (the GFN2 seam)")
     rep.section("conventions")
     for k in ("ENGINE", "PRESET", "TAU", "ITHR_POLICY", "FSCAL", "TEMPERATURE"):
         rep.kv(k, info[k])

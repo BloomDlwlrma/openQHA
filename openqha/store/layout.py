@@ -1,4 +1,4 @@
-"""The molecule tree: where every file of one molecule goes (ADR 0001, 2026-09-14).
+"""The molecule tree: where every file of one molecule goes.
 
 One molecule directory per (root, tag, qid), one folder per engine inside it, engine
 files only in those folders, and this repository's records in `_records/`:
@@ -14,24 +14,24 @@ files only in those folders, and this repository's records in `_records/`:
                                   (every other setting, same folder, its name in the file)
       md_ase/basinNN/             start.extxyz  md.traj  md.log  (the ASE route, the CPU
                                   cross-check; same setting-in-the-name rule)
-      frames/                     the Hessian-learning set (ticket 09, 2026-09-20):
+      frames/                     the Hessian-learning set:
         <gen>.<level>.extxyz  frames.{out,toml}  labels.<level>.{out,toml}
         orca.<level>.<gen>_bBB_kK.{inp,out,hess,engrad}   one frame's ORCA job, a file group
-      msrrho/                     the msRRHO study (tickets 24-26, closed):
+      msrrho/                     the msRRHO study:
         orca.<level>.basinNN.{inp,out,hess,xyz}           one basin's Opt+Freq job at a level
-        crest_entropy/runNN/  xtb/entropy_runNN/confKK/   ticket 25's engines, verbatim
+        crest_entropy/runNN/  xtb/entropy_runNN/confKK/   the study's engines, verbatim
         thermo/<level>.<step>.{out,toml,dat}  thermo/level_compare.*  hessian_compare.*
       _records/                   everything this repository writes about the run
 
-The MD folders are named by ROLE (user ruling 2026-09-15): `mace/` is the potential's
+The MD folders are named by ROLE (since 2026-09-15): `mace/` is the potential's
 relax + Hessian, `md_openmm/` and `md_ase/` are the two implementations of the same
 sampling step. The route identifiers a driver takes (`--route openmm|ase`) are unchanged;
 `md_folder(route)` maps them to the folder and nothing else spells the folder name.
 
-The tag directory is FLAT (user ruling 2026-09-20, ADR 0001 amendment 3): the molecule
-directory is `<root>/<tag>/<qid>/`, the two shard layers of 2026-09-14 (`1_16000/1001_2000/`)
-are gone -- a campaign's tag holds thousands of molecules, not 133 885, and the path was
-ruled too long. A molecule without a QM9 index (a SMILES run) goes under its label the
+The tag directory is FLAT (since 2026-09-20): the molecule directory is
+`<root>/<tag>/<qid>/`, the two shard layers of 2026-09-14 (`1_16000/1001_2000/`) are
+gone -- a campaign's tag holds thousands of molecules, not 133 885, and the path was
+too long. A molecule without a QM9 index (a SMILES run) goes under its label the
 same way. The Dataset files of a tag live beside the molecules in `_datasets/<name>/`,
 tag-wide records in `_records/`.
 
@@ -73,7 +73,7 @@ def qid_number(qid):
 def molecule_dir(root, tag, qid):
     """`<root>/<tag>/<qid>`. `root` may be any path-like. A molecule identified only by a
     label (a SMILES run, `s0_A_pipeline.py --smiles`) goes under that label the same way;
-    the tag directory is flat (ADR 0001, amendment 3)."""
+    the tag directory is flat."""
     return Path(root) / str(tag) / str(qid)
 
 
@@ -117,10 +117,10 @@ def route_of_folder(name):
 def openmm_dir(molecule, setting, basin):
     """The basin's one OpenMM folder, `md_openmm/basinNN/`, whatever the setting.
 
-    No seed level (ruling S0-B-59) and, since the user's ruling of 2026-09-14, no setting
-    level either: every setting's trajectory of a basin sits in the same folder and the
-    setting is in the file name (`openmm_file_name`). `setting` is accepted so a caller
-    states which run it means, and ignored here.
+    No seed level, and since 2026-09-14 no setting level either: every setting's
+    trajectory of a basin sits in the same folder and the setting is in the file name
+    (`openmm_file_name`). `setting` is accepted so a caller states which run it means,
+    and ignored here.
     """
     return Path(molecule) / md_folder("openmm") / "basin{:02d}".format(int(basin))
 
@@ -132,7 +132,7 @@ def ase_dir(molecule, setting, basin):
 
 def engine_file_name(name, setting=DEFAULT_SETTING):
     """`traj.dcd` / `md.traj` for the default setting; `traj_<setting>.dcd` for any other.
-    The one naming rule for every trajectory engine (ruling 2026-09-14)."""
+    The one naming rule for every trajectory engine."""
     if str(setting) == DEFAULT_SETTING:
         return name
     stem, dot, ext = name.partition(".")
@@ -141,9 +141,9 @@ def engine_file_name(name, setting=DEFAULT_SETTING):
 
 def md_records_dir(molecule, route):
     """`_records/<md folder>/` (`_records/md_openmm/`): where the trajectory, collect, ensemble
-    and 02d Records of one route live. No setting level (user ruling 2026-09-15, records
-    redesign Q7 of round 1): the setting is in the file stem, `record_file_name`, exactly
-    as for engine files. Named like the engine folder it describes."""
+    and 02d Records of one route live. No setting level (records redesign, 2026-09-15):
+    the setting is in the file stem, `record_file_name`, exactly as for engine files.
+    Named like the engine folder it describes."""
     return Path(molecule) / RECORDS / md_folder(route)
 
 
@@ -177,7 +177,7 @@ def openmm_file(molecule, setting, basin, name):
 def tag_records_dir(root, tag):
     """`<root>/<tag>/_records/`: the one per-tag folder, holding parsl's own run
     directories (`parsl/<job>.<pid>/`). Since 2026-09-15 no Batch record lives here: the
-    Slurm log is the Batch's report (CONTEXT.md, Batch)."""
+    Slurm log is the Batch's report."""
     return Path(root) / str(tag) / RECORDS
 
 
@@ -191,7 +191,7 @@ def records_dir(molecule):
 
 # ====================================================================== the two studies
 #: Two sub-folders of the molecule directory separate the two studies that share its
-#: branch A (user ruling 2026-09-20, ADR 0001 amendment 3): `msrrho/` for the msRRHO study
+#: branch A (since 2026-09-20): `msrrho/` for the msRRHO study
 #: (the basin-level ORCA jobs, CREST's entropy runs, the xtb Hessians of those, and the
 #: study's Records under `msrrho/thermo/`), `frames/` for the Hessian-learning set (the
 #: Frame sets, their labels and the per-frame ORCA jobs). ORCA jobs are FILE GROUPS,
@@ -205,7 +205,7 @@ _LEVEL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 def _check_level(level):
     if not _LEVEL_NAME.match(str(level)):
-        raise ValueError("level name {!r} is not in the CONTEXT.md spelling (lower-case, "
+        raise ValueError("level name {!r} is not in the standard spelling (lower-case, "
                          "method first, basis second, joined by '_')".format(level))
     return str(level)
 
@@ -216,7 +216,7 @@ def msrrho_dir(molecule):
 
 
 def crest_entropy_dir(molecule, run):
-    """`msrrho/crest_entropy/runNN/`: one CREST `--entropy` run (ticket 25), CREST's own tree
+    """`msrrho/crest_entropy/runNN/`: one CREST `--entropy` run, CREST's own tree
     verbatim, as `crest/` is for branch A."""
     return msrrho_dir(molecule) / "crest_entropy" / "run{:02d}".format(int(run))
 
@@ -227,8 +227,8 @@ def xtb_entropy_dir(molecule, run, conformer):
 
 
 def orca_level_stem(level, basin):
-    """`orca.<level>.basinNN`: the file group of one basin's job at one level (ticket 26:
-    optimisation to the level's own minimum + Hessian), files of `msrrho/`."""
+    """`orca.<level>.basinNN`: the file group of one basin's job at one level (optimisation
+    to the level's own minimum + Hessian), files of `msrrho/`."""
     return "orca.{}.basin{:02d}".format(_check_level(level), int(basin))
 
 
@@ -241,7 +241,7 @@ def thermo_dir(molecule):
     """`msrrho/thermo/`: the msRRHO study's Records, flat -- `<level>.<step>.<ext>` per level
     (`wb97m-d3bj_def2-tzvppd.thermo_msrrho.toml`, `mace-off23_medium.merge_map.dat`) and the
     cross-level ones bare (`level_compare.toml`, `hessian_compare.toml`). Replaces the
-    per-level folders of ADR 0004 (user ruling 2026-09-20)."""
+    earlier per-level folders."""
     return msrrho_dir(molecule) / THERMO
 
 
@@ -265,7 +265,7 @@ def levels_present(molecule, name="thermo_msrrho.toml"):
     return sorted(p.name[:-len(suffix)] for p in d.iterdir() if p.name.endswith(suffix) and p.is_file())
 
 
-#: The Frame set folder (CONTEXT.md "Frame set"): one molecule's frames, one extxyz per
+#: The Frame set folder: one molecule's frames, one extxyz per
 #: generator and per level, engine-independent; its Records and the per-frame ORCA file
 #: groups beside them.
 
@@ -276,13 +276,14 @@ def frames_dir(molecule):
 
 
 def frames_file(molecule, generator, level):
-    """`<molecule>/frames/<generator>.<level>.extxyz` (level in the CONTEXT.md spelling)."""
+    """`<molecule>/frames/<generator>.<level>.extxyz` (level in the standard
+    lower-case spelling)."""
     return frames_dir(molecule) / "{}.{}.extxyz".format(generator, _check_level(level))
 
 
 def orca_frame_stem(level, generator, basin, k):
     """`orca.<level>.<generator>_bBB_kK`: the file group of one frame's ORCA label -- FILES
-    of `frames/`, `<stem>.{inp,out,hess,engrad}` (ticket 09, ruling 2026-09-20: a frame's
+    of `frames/`, `<stem>.{inp,out,hess,engrad}` (a frame's
     job is not a directory two levels down). The fields are joined by `.`, the repository's
     `<thing>.<level>.<ext>` convention (`frames/<generator>.<level>.extxyz`), because the
     level and the frame tag both contain `_`; `name.split(".")` gives engine, level (the

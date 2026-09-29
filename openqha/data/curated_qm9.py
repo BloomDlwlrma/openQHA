@@ -45,12 +45,12 @@ Every file is in QM9's own extended-xyz format (line 2 carries the property row)
 this repository's QM9 parser needs no change.
 
 --------------------------------------------------------------------------------------
-The single-file form (ticket 17, 2026-09-21)
+The single-file form (2026-09-21)
 --------------------------------------------------------------------------------------
 A cluster does not want 133 661 small files on its shared filesystem, and `data/qm9/`
 is not in git. `scripts/tooling/s0_pack_curated_qm9.py` writes the whole archive into
 ONE HDF5, `data/qm9/curated_qm9.h5`, ONE GROUP PER MOLECULE named `dsgdb9nsd_%06d`
-whatever the file was called (user ruling 2026-09-21: the naming pattern is metadata,
+whatever the file was called (the naming pattern is metadata,
 not a key):
 
     /dsgdb9nsd_000058
@@ -60,7 +60,7 @@ not a key):
       charges      (N,)  float64   Mulliken e; NaN for a repaired file (they carry none)
       frequencies  (3N-6,) float64 cm^-1                            -- line 3+N
 
-Not stored (rulings 2026-09-21): the property row (line 2: A B C mu ... Cv -- nothing in
+Not stored: the property row (line 2: A B C mu ... Cv -- nothing in
 the repository reads it) and the file's text (it doubled the size; the parsed form holds
 everything a reader uses). The file's attributes carry the source, the census per naming
 pattern, a sha256 of all the source text and the date. `find()` prefers the directory and,
@@ -106,7 +106,7 @@ def root(cfg=None):
     """Where the archive is. `S0_CURATED_QM9` overrides everything.
 
     Searched rather than hard-coded, because this repository has broken four times on
-    a directory that moved while a literal path stayed behind (S0-G-30, S0-G-31).
+    a directory that moved while a literal path stayed behind.
     """
     env = os.environ.get("S0_CURATED_QM9")
     if env:
@@ -442,7 +442,7 @@ def is_repaired(qm9_index, cfg=None):
 def reconcile(cfg=None, uncharacterized=None):
     """Cross-check the archive against QM9's uncharacterized list. Three counts.
 
-    plan_A section 2.3.2 item 3 asks for exactly these, and for the third to be looked
+    The cross-check reports exactly these, and the third is to be looked
     at rather than summarised:
 
         rescuable   on the list AND present here      -> `curated` mode keeps them

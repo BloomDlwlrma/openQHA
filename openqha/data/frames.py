@@ -1,14 +1,13 @@
-"""The Frame set of one molecule at the engine level (ticket 02 of the Hessian-learning
-set; CONTEXT.md "Frame", "Frame set").
+"""The Frame set of one molecule at the engine level.
 
 WHAT A FRAME IS
 ---------------
 One geometry of one molecule, born from one Basin by a named generator, carrying the
 engine's energy, forces and raw Cartesian Hessian at that geometry. The Hessian at a
 displaced frame is a fixed-geometry matrix with its gradient term included -- it is the
-training target of Hessian learning, not a frequency (see the 2026-09-17 dry run).
+training target of Hessian learning, not a frequency (the 2026-09-17 dry run).
 
-GENERATORS (rounds 3-4, rulings 2026-09-18)
+GENERATORS
 -------------------------------------------
     basin      the MACE basin itself (branch A: CREST on GFN2 with `refine = "sp"`,
                then MACE tightening to fmax 1e-4 and the MACE analytic Hessian). Its
@@ -24,7 +23,7 @@ GENERATORS (rounds 3-4, rulings 2026-09-18)
     saddle     every input conformer that survived deduplication and was rejected for
                imaginary modes (`SADDLE_CONFORMER_IDS`), one frame each.
 SPICE's hot-MD / cooled frames and OpenREACT's hot normal-mode frames were read and
-are not built (rulings 2026-09-18): the three published Hessian-learning sets train
+are not built: the three published Hessian-learning sets train
 near minima, and that is where the entropy error was measured.
 
 SEEDS
@@ -33,7 +32,7 @@ Every displaced frame is drawn from its own generator seeded by
 `frame_seed(qm9_index, basin, generator, k)` (SHA-256 of that tuple, 8 bytes), so one
 frame is reproducible from its own row of the Record without the others.
 
-FILTER (user rulings 2026-09-18 and 2026-09-23: the energy window only, as ANI-1 and SPICE)
+FILTER (the energy window only, as ANI-1 and SPICE)
 --------------------------------------------------------------------------------------------
 A frame whose engine energy above its basin exceeds ENERGY_WINDOW_KCAL is dropped and
 counted. That is the whole filter. Until 2026-09-23 there was a second, undeclared one
@@ -59,11 +58,11 @@ whose C-H was stretched by 0.2 A at 0.12 A RMS: the zero-point stretch, not a re
 The bond graph is therefore NOT a filter; `bond_change` is still evaluated and written
 per frame (`BOND_CHANGE`, at the perception tolerances RDKit 1.3 / Open Babel ~1.4:
 broken > 1.35 x, formed < 0.95 x) so that a reader can see it, and the engine |F|max is
-recorded likewise. The MACE E-F-H of a kept frame is written at generation time (Q8):
+recorded likewise. The MACE E-F-H of a kept frame is written at generation time:
 it is the very quantity the loss compares to the label, and with it on disk the judge
 needs no engine.
 
-THE DISPLACED DRAW: NORMAL-MODE SAMPLING AT 450 K (rulings 2026-09-18 and 2026-09-23)
+THE DISPLACED DRAW: NORMAL-MODE SAMPLING AT 450 K
 --------------------------------------------------------------------------------------
 `DISTRIBUTION = "nms"`, `TEMPERATURE_K = 450`. Mode k of the basin is given the harmonic
 energy E_k = c_k (3/2) N_a k_B T from a random partition (c_k >= 0, sum_k c_k = s <= 1)
@@ -82,36 +81,35 @@ Roitberg, Sci. Data 4, 170193 (2017), section "Normal mode sampling", eq. 1), wh
 setting for 8-heavy-atom molecules is 450 K.
 
 The equipartition (`classical`) and zero-point (`quantum`) draws are NOT part of this
-workflow any more (ruling 2026-09-23): `hessian.thermal_displacements` keeps them for
-calibration and for branch B, `02_frames.py` has no `--distribution`, and Frame sets drawn
-that way before the ruling are told apart by their own Record (`DISTRIBUTION`,
-`TEMPERATURE`).
+workflow any more: `hessian.thermal_displacements` keeps them for calibration and for
+branch B, `02_frames.py` has no `--distribution`, and Frame sets drawn that way before
+2026-09-23 are told apart by their own Record (`DISTRIBUTION`, `TEMPERATURE`).
 
 WHAT THE DRAW DOES AND DOES NOT TOUCH. msRRHO thermochemistry is computed at BASINS
-(basin geometry, basin Hessian) and the training set is basin frames only (S0-C-54), so
-the draw changes neither. The displaced frames are DIAGNOSTICS: their reference label is
-EnGrad only (round 5, Q7 (b) -- no reference Hessian), and they serve the judge's held-out
-rows, the in-distribution and forgetting checks and rho_k (the curvature change from the
-basin). The draw is therefore the SCALE of those diagnostics, and one campaign must use one
-scale -- which is why the ruling of 2026-09-23 rebuilt every Frame set of draw300 with
-`--force` rather than mixing. No draw bounds the GEOMETRY: the amplitude is sqrt(2E_k)/omega_k,
-so a basin with a near-zero mode (4-6 cm^-1 surviving the Eckart projection) displaces by
-angstroms and its displaced frames are dropped by the energy window (ticket 27).
+(basin geometry, basin Hessian) and the training set is basin frames only, so the draw
+changes neither. The displaced frames are DIAGNOSTICS: their reference label is EnGrad
+only, and they serve the judge's held-out rows, the in-distribution and forgetting checks
+and rho_k (the curvature change from the basin). The draw is therefore the SCALE of those
+diagnostics, and one campaign must use one scale -- which is why, on 2026-09-23, every
+Frame set of draw300 was rebuilt with `--force` rather than mixing. No draw bounds the
+GEOMETRY: the amplitude is sqrt(2E_k)/omega_k, so a basin with a near-zero mode (4-6 cm^-1
+surviving the Eckart projection) displaces by angstroms and its displaced frames are
+dropped by the energy window.
 
-WHICH FRAMES CARRY AN ENGINE HESSIAN (ruling 2026-09-23, ticket 29)
+WHICH FRAMES CARRY AN ENGINE HESSIAN
 --------------------------------------------------------------------
 `basin` reuses branch A's stored `hessian.npy` (nothing is recomputed); `merged` and
 `saddle` get one from the engine; `displaced` gets NONE -- energy and forces only, and its
 `LOWEST_FREQ` is blank. The engine Hessian is 3N backward passes: 13.4 s of the 13.6 s a
 19-atom frame costs against 0.21 s for energy + forces, and ~22 of a molecule's ~30 frames
 are displaced, so this is 3.4x of the whole step. Nothing downstream read it: a labelled
-frame enters the Dataset as its REFERENCE label, a displaced frame has no reference Hessian
-(round 5, Q7 (b): `EnGrad` only) and so reaches the judge with `has_hessian = false`, where
-the Hessian rows filter it out; training predicts its own Hessian; `hessian_compare`,
-`mode_curvature` and the smoke fit all need a reference one; `frame_labels` reads the file
-for the GEOMETRY. What is lost: the `LOWEST_FREQ` column at displaced frames, the engine
-Hessian in the `pool` split, and the possibility of a basin -> displaced curvature ratio at
-the ENGINE level (at the reference level it has been impossible since Q7 (b)).
+frame enters the Dataset as its REFERENCE label, a displaced frame has no reference
+Hessian and so reaches the judge with `has_hessian = false`, where the Hessian rows
+filter it out; training predicts its own Hessian; `hessian_compare`, `mode_curvature` and
+the smoke fit all need a reference one; `frame_labels` reads the file for the GEOMETRY.
+What is lost: the `LOWEST_FREQ` column at displaced frames, the engine Hessian in the
+`pool` split, and the possibility of a basin -> displaced curvature ratio at the ENGINE
+level (at the reference level it is impossible).
 `02_frames.py --displaced-hessian` rebuilds a molecule with them when one is wanted.
 
 FILES
@@ -137,9 +135,9 @@ EV_TO_KCAL = 23.060547830619026
 STEP = "frames"
 PROGNAME = "openQHA frames"
 GENERATORS = ("basin", "displaced", "merged", "saddle")
-#: displaced frames per basin (round 4, Q2)
+#: displaced frames per basin
 N_DISPLACED = 4
-#: compute the ENGINE Hessian at a displaced frame too? Off since 2026-09-23 (ticket 29):
+#: compute the ENGINE Hessian at a displaced frame too? Off since 2026-09-23:
 #: it is 3N backward passes -- 13.4 s of the 13.6 s a 19-atom frame costs -- and nothing
 #: downstream reads it (see WHICH FRAMES CARRY AN ENGINE HESSIAN). `02_frames.py
 #: --displaced-hessian` turns it back on for a molecule that needs one.
@@ -179,7 +177,7 @@ SCHEMA = {
         "TEMPERATURE": ("Double", "K", "temperature of the displaced draw"),
         "DISTRIBUTION": ("String", None, "the draw of the displaced frames: nms = normal-mode sampling, a random partition of at most (3/2) N_a k_B T over the modes (this workflow's only draw since 2026-09-23); classical = equipartition and quantum = zero-point amplitude, kept for Frame sets drawn before that"),
         "N_DISPLACED_PER_BASIN": ("Integer", None, "displaced frames drawn per basin"),
-        "MAX_RMS_A": ("Double", "A", "RMS displacement ceiling of a displaced frame (over the 3N coordinates); nan = no ceiling, the energy window is the only filter (ruling 2026-09-23)"),
+        "MAX_RMS_A": ("Double", "A", "RMS displacement ceiling of a displaced frame (over the 3N coordinates); nan = no ceiling, the energy window is the only filter"),
         "ENERGY_WINDOW_KCAL": ("Double", "kcal/mol", "the only filter: a frame whose engine energy is further above its basin is dropped"),
         "BOND_CUTOFF_MULT": ("Double", None, "covalent-radius multiplier defining the basin's bond graph (reported, not filtered)"),
         "BOND_BREAK_MULT": ("Double", None, "a basin bond longer than this x (r_i + r_j) is reported as broken (RDKit perceives at 1.3, Open Babel ~1.4)"),
@@ -208,7 +206,7 @@ SCHEMA = {
         "ENERGY": ("Double", "eV", "engine energy"),
         "ENERGY_ABOVE_BASIN": ("Double", "kcal/mol", "engine energy above the frame's basin"),
         "MAX_FORCE": ("Double", "eV/A", "engine |F|max"),
-        "LOWEST_FREQ": ("Double", "cm^-1", "lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); nan at a displaced frame, which carries no engine Hessian (ticket 29)"),
+        "LOWEST_FREQ": ("Double", "cm^-1", "lowest projected eigenvalue of the engine Hessian at the frame, as a wavenumber (negative: imaginary); nan at a displaced frame, which carries no engine Hessian"),
         "BOND_CHANGE": ("String", None, "broken i-j / formed i-j at the perception tolerances, or - (reported, never a reason to drop)"),
         "STATUS": ("String", None, "kept / dropped"),
         "REASON": ("String", None, "why dropped (the energy window), or -"),
@@ -255,8 +253,8 @@ def engine_efh(atoms, calc, want_hessian=True):
 
     The Hessian is the whole cost: 3N backward passes, measured single-threaded at 13.4 s
     for 19 atoms and 3.7 s for 10, against 0.21 s for energy + forces. `want_hessian=False`
-    returns (e, f, None) -- what a displaced frame takes since 2026-09-23 (ticket 29:
-    nothing downstream reads the engine Hessian of a displaced frame)."""
+    returns (e, f, None) -- what a displaced frame takes since 2026-09-23 (nothing
+    downstream reads the engine Hessian of a displaced frame)."""
     a = atoms.copy()
     a.calc = calc
     e = float(a.get_potential_energy())
@@ -461,12 +459,11 @@ def _write_report(path, info, gen_rows, rows):
     rep.note("a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term "
              "included -- the Hessian-learning target, not a frequency. The basin frame reuses the basin's "
              "stored hessian.npy; merged and saddle frames get one from the engine; a DISPLACED frame gets "
-             "none (ticket 29: 3N backward passes nothing downstream reads) and its 'lowest' is blank. dE of a displaced frame is the "
+             "none (3N backward passes nothing downstream reads) and its 'lowest' is blank. dE of a displaced frame is the "
              "ENGINE's energy at the drawn geometry; what the draw put in is the harmonic part of it -- normal-mode "
              "sampling bounds that at (3/2) N_a k_B T with mean (3/4) N_a k_B T (9.4 kcal/mol mean, 18.7 max for "
              "14 atoms at 450 K). The only filter is the energy window (275 "
              "kcal/mol; SPICE cuts at 2390), as the published sets do; 'bonds' reports a broken or formed "
              "bond at perception tolerances (RDKit 1.3 / Open Babel ~1.4) and never drops a frame. Hot-MD, "
-             "cooled and hot normal-mode frames (SPICE, OpenREACT) were considered and not built (rulings "
-             "2026-09-18).")
+             "cooled and hot normal-mode frames (SPICE, OpenREACT) were considered and not built.")
     rep.write(path, step=STEP)

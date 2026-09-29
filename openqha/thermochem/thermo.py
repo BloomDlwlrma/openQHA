@@ -11,8 +11,7 @@ between the two sides, so whether they enter the final difference does not chang
 result -- but they must be COMPUTED and SHOWN to cancel, not quietly left out.
 
 **The symmetry number and the electronic degeneracy are always declared explicitly and
-never derived automatically** (plan section 7, risk 6: getting the value wrong is worth
-0.65-1.06 kcal/mol).
+never derived automatically** (getting the value wrong is worth 0.65-1.06 kcal/mol).
 """
 import math
 
@@ -81,7 +80,7 @@ def vibrational(frequencies_cm, temperature_K=T_REF, qrrho=False,
     is never "fixed" by taking an absolute value. The imaginary-mode policies live one
     level up (`msrrho`, `g_minus_eel`), which apply the inversion / sub-1 cm^-1 drop
     rule to the spectrum BEFORE calling this function -- thermochemistry is never
-    computed with projection off (ticket 35).
+    computed with projection off.
     """
     nu = np.asarray(frequencies_cm, dtype=float)
     bad = nu[nu <= 0.0]
@@ -153,7 +152,7 @@ MSRRHO_PRESETS = {
     "grimme2012": dict(tau_cm=100.0, ithr_cm=None, rotor_cap=1.0e-44,
                        interpolate=("S",)),
 }
-#: The sub-1 cm^-1 rule (ticket 35): CREST's `vibthr` and ORCA's `CutOffFreq 1.0` drop
+#: The sub-1 cm^-1 rule: CREST's `vibthr` and ORCA's `CutOffFreq 1.0` drop
 #: |omega| < 1 cm^-1 from every thermochemistry sum. One or two such modes in one
 #: spectrum are dropped ORCA-style and recorded (`N_BELOW_FLOOR` plus the values); three
 #: or more raise -- that count has no plausible physical explanation at a converged,
@@ -165,9 +164,9 @@ C_CM_PER_S = 2.99792458e10
 
 
 def floor_verdict(lowest_cm, ithr_cm):
-    """A spectrum's standing against the frequency floor `ithr` -- the one rule ticket
-    37's census and ticket 39's reference level will call, and the rule the
-    thermochemistry's own policy layer applies (ticket 35):
+    """A spectrum's standing against the frequency floor `ithr` -- the one rule the
+    census and the reference level call, and the rule the thermochemistry's own policy
+    layer applies:
 
     `below_floor`  the lowest mode is below ithr: not invertible. The census ejects the
                    candidate, the reference level lists it as a saddle, the ensemble
@@ -216,7 +215,7 @@ def _cp_ho_kcal_per_K(nu_cm, temperature_K):
     return KB_KCAL * x * x * ex / (1.0 - ex) ** 2
 
 
-#: The imaginary-mode policies (one production policy plus the GFN2 seam's; ticket 35):
+#: The imaginary-mode policies (one production policy plus the GFN2 seam's):
 #:
 #: `invert_below`  PRODUCTION, the default everywhere. A mode in [ithr, 0) takes |omega|
 #:                 (the floor line itself is inside the window); a mode below ithr is not
@@ -229,7 +228,7 @@ def _cp_ho_kcal_per_K(nu_cm, temperature_K):
 #:                 zero entropy, and still enters the zero-point energy (0.5 sum nu),
 #:                 H(T)-H(0) and Cp with its negative frequency.
 #:
-#: `refuse` (any imaginary mode excluded the basin) was deleted on 2026-09-25 (ticket 35):
+#: `refuse` (any imaginary mode excluded the basin) was deleted on 2026-09-25:
 #: the spread over the three policies on real data showed no molecule needed it. Records
 #: written before that date that name it stay readable as data.
 #: The one production policy: the default of every entry point in this package, taken

@@ -38,7 +38,7 @@ from ..conformer_search import filters
 #: as complete loses the geometries silently. `basin_store.write()` renames each into
 #: place after writing a `.part`, so a half-written file never has the final name -- but
 #: a job can still die between the two renames.
-COMPLETION = ("<molecule>/mace/basin00/basin.extxyz exists (ADR 0001) and _records/branchA.toml "
+COMPLETION = ("<molecule>/mace/basin00/basin.extxyz exists and _records/branchA.toml "
               "carries STATUS NORMAL TERMINATION (records redesign, 2026-09-15)")
 
 

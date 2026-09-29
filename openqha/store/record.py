@@ -1,7 +1,7 @@
 """Filing of per-molecule products -- **`.log` plus `.parquet`, JSON no longer written**.
 
 --------------------------------------------------------------------------------------
-The user's ruling of 2026-08-31 and what follows from it
+What follows from the 2026-08-31 file-format rule
 --------------------------------------------------------------------------------------
 "we do not want openQHA to save json format files, save them in the log and parquet file
 formats I asked for earlier".
@@ -70,7 +70,7 @@ def record_to_rows(rec):
         n_basins_both=rec.get("n_basins_both"),
         n_saddles_rejected=rec.get("n_saddles_rejected"),
         conformational_correction_kcal=rec.get("conformational_correction_kcal"),
-        # the floor the Hessian screen applied (ticket 41): the counters n_below_ithr /
+        # the floor the Hessian screen applied: the counters n_below_ithr /
         # n_inversion_window in the basin rows belong to this number, so it travels
         # with them into the machine-readable table
         ithr_cm=rec.get("ithr_cm"),
@@ -283,8 +283,8 @@ def write_molecule(rec, dirs, qid, basins=None, crest_out=None,
             Path(dirs["xyz"]) / (qid + "_basins.xyz"), basins,
             rec.get("basin_energies_eV") or [],
             rec.get("basin_provenance") or [], qid)
-    # **CREST's native output, kept verbatim, only renamed** -- the naming the user
-    # specified on 2026-08-31
+    # **CREST's native output, kept verbatim, only renamed** -- the naming specified
+    # on 2026-08-31
     if keep_crest_out and crest_out and Path(crest_out).exists():
         dst = Path(dirs["out"]) / "crest_{}.out{}".format(
             qid, ".gz" if gzip_crest_out else "")

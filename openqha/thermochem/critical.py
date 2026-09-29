@@ -2,7 +2,7 @@
 route still holds for a given molecule**.
 
 Package 3 takes the "near-critical gas phase plus thermodynamic extrapolation" route
-(option A, the user's ruling of 2026-08-31), so every species needs its own critical
+(option A, chosen 2026-08-31), so every species needs its own critical
 temperature before a state point can be fixed. This module keeps the three layers apart:
 
 | Layer | Function | Identity |
@@ -228,7 +228,7 @@ def assess(constants, state, smiles=None,
                                 collision_limit_ps=collision_limit_ps),
                 note=("the thresholds are **conventions that may be changed**, not "
                       "physical constants; **they are never adjusted to let a particular "
-                      "molecule through** (stage 1 governance, section 17)."))
+                      "molecule through** (stage 1 governance)."))
 
 
 def assess_smiles(smiles, reduced_temperature=0.886, n_molecules=8, cas=None):

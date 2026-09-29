@@ -60,7 +60,7 @@ import numpy as np
 from . import conformers
 from ..thermochem import hessian, thermo
 
-#: Default Hessian instrument. "analytic" since 2026-09-03 -- defect 64 / D0-P1-47:
+#: Default Hessian instrument. "analytic" since 2026-09-03 -- defect 64:
 #: finite differences at delta = 0.01 A resolve only to +-9 to 20 cm^-1, while the
 #: modes being condemned as imaginary had absolute values of 9 to 24 cm^-1. The
 #: criterion was being applied below the resolution of the instrument. The analytic
@@ -74,15 +74,15 @@ FMAX_KEY = ("package2", "fmax_hessian_eV_A")
 DEDUP_KEY = ("package1", "dedup_rmsd_A")
 ITHR_KEY = ("package2", "ithr_cm")
 #: The frequency floor the screen applies when the caller passes nothing -- the `crest`
-#: preset's own value (ticket 35), so there is no third copy of -50 cm^-1 to drift. A
+#: preset's own value, so there is no third copy of -50 cm^-1 to drift. A
 #: caller with the loaded configuration passes `cfg["package2"]["ithr_cm"]` (ITHR_KEY),
 #: and a unit test holds that value equal to this one, so the census and the
-#: thermochemistry cannot drift apart (ticket 37).
+#: thermochemistry cannot drift apart.
 ITHR_CM_DEFAULT = thermo.MSRRHO_PRESETS["crest"]["ithr_cm"]
 
-#: ORCA's default max-gradient, the second certification line of the census tighten
-#: (ticket 38): TolMaxG = 3e-4 Eh/bohr = 1.543e-2 eV/A (1 Eh/bohr = 51.4221 eV/A;
-#: 3e-4 x 51.4221 = 1.5427e-2, the ticket's fixed 1.543e-2). It is the line a geometry
+#: ORCA's default max-gradient, the second certification line of the census tighten:
+#: TolMaxG = 3e-4 Eh/bohr = 1.543e-2 eV/A (1 Eh/bohr = 51.4221 eV/A;
+#: 3e-4 x 51.4221 = 1.5427e-2, rounded here to 1.543e-2). It is the line a geometry
 #: handed over by CREST/ORCA has actually reached when its optimisation is only
 #: "normally" converged -- 150x looser than this repository's own target. A candidate
 #: whose residual stays above this line after its single second optimisation pass is
@@ -196,7 +196,7 @@ def _add_conformer(mol, positions):
 # ======================================================================================
 def census_verdict(frequencies_cm, ithr_cm):
     """The census screen's decision on one candidate -- pure, no engine (the prototype's
-    `censusVerdict`, lifted 2026-09-25; ticket 37).
+    `censusVerdict`, adopted 2026-09-25).
 
     `saddle`  the lowest mode is below the floor: not invertible, ejected and listed.
     `basin`   otherwise: the lowest mode is inside the **inversion window** [ithr, 0)
@@ -221,7 +221,7 @@ def census_verdict(frequencies_cm, ithr_cm):
 def convergence_class(residual_eV_A, second_pass=None, fmax_eV_A=1e-4,
                       orca_default_eV_A=ORCA_DEFAULT_TOLMAXG_EV_A):
     """The census's certification of one candidate's tighten -- pure, no engine (the
-    prototype's `convergenceClass`, lifted 2026-09-25; ticket 38, amended the same day:
+    prototype's `convergenceClass`, adopted 2026-09-25 and amended the same day:
     the class that stays above the line is REJECTED, where the prototype admitted it
     with a flag).
 
@@ -254,9 +254,9 @@ def convergence_class(residual_eV_A, second_pass=None, fmax_eV_A=1e-4,
 def _empty_basin_message(saddles, not_certified, converged, fmaxes, ithr_cm):
     """The refusal, with the evidence a reader needs to decide what to do next.
 
-    Two rejection classes, in separate sections since ticket 38:
+    Two rejection classes, in separate sections:
 
-    * **below the frequency floor** (ticket 37): "below ithr" is the whole verdict and
+    * **below the frequency floor**: "below ithr" is the whole verdict and
       the floor is named, so the number is printed. A condemned candidate's lowest
       frequency is the whole difference between "the engine says this molecule's
       minimum is a saddle" (a real finding, a human decides) and "a mode near zero
@@ -305,7 +305,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
     """From a pile of geometries, produce a basin list **measured with the same ruler as
     the ETKDG route**.
 
-    `molecule_dir` (ADR 0001, 2026-09-14): when given, MACE's engine files go under its
+    `molecule_dir`: when given, MACE's engine files go under its
     `mace/` folder and nothing else is written there --
 
         mace/confNN/   opt.traj  opt.log  conf.extxyz     every tightened conformer
@@ -322,7 +322,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
        `tight`); the number of optimisation steps is recorded at the same time -- **the
        step count is itself a measure of how far the geometry CREST handed over was from
        the minimum** (for a frame that needed the second optimisation pass, it is both
-       passes together) -- and **certify** the result (ticket 38): at or below `fmax`,
+       passes together) -- and **certify** the result: at or below `fmax`,
        `converged`; inside ORCA's default line (TolMaxG = 3e-4 Eh/bohr = 1.543e-2 eV/A),
        `converged_orca_default` -- admitted, and marked `tighten_converged = false`
        because it missed our own target; above the line, ONE bounded second optimisation
@@ -335,7 +335,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
        automorphisms), at package 1's threshold of 0.30 A. It calls **the very same
        function** `conformers.dedup`, so the two routes stay comparable.
     4. **Hessian**: one Hessian plus Eckart projection per surviving candidate, and the
-       **frequency floor** decides (ticket 37): a lowest mode inside the inversion window
+       **frequency floor** decides: a lowest mode inside the inversion window
        [ithr, 0) admits the candidate as a basin and is recorded as a window
        (`n_inversion_window` and the lowest frequency -- the thermochemistry inverts
        it); a mode below ithr is a saddle, **thrown out** of the basin list and recorded
@@ -367,7 +367,7 @@ def census_from_frames(smiles, frames, calc, name="", fmax=1e-4, threshold_A=0.3
         e, fm, ok, ns = conformers.optimise(atoms, calc, fmax=fmax, steps=max_opt_steps,
                                             logfile=log, trajectory=traj)
         steps_frame = int(ns)
-        # ---- certify the tighten (ticket 38) ----------------------------------------
+        # ---- certify the tighten ----------------------------------------------------
         # Against two lines: this repository's own target (`fmax`) and ORCA's default
         # max-gradient. Above the line, ONE bounded second optimisation pass runs --
         # `conformers.optimise` again, appending to the same engine files (`opt.log`
@@ -824,7 +824,7 @@ def tighten_frames(smiles, frames, calc, fmax=1e-4, max_opt_steps=2000, progress
 def hessian_screen(basins, calc, ithr_cm=ITHR_CM_DEFAULT, progress=None,
                    mode=HESSIAN_MODE_DEFAULT):
     """One Hessian plus Eckart projection per basin, and the **frequency floor** decides
-    (tickets 37 and 41) -- the same rule `census_from_frames` applies, the pure
+    -- the same rule `census_from_frames` applies, the pure
     `census_verdict` reached once and reused, not a second definition.
 
     A candidate whose lowest projected mode lies in the inversion window [ithr, 0) is
@@ -843,7 +843,7 @@ def hessian_screen(basins, calc, ithr_cm=ITHR_CM_DEFAULT, progress=None,
     Package 2 caught a -195.79 cm^-1 cyclopropanol saddle point sitting in a basin
     list because of this.
 
-    `mode` defaults to "analytic" (defect 64 / D0-P1-47). The finite-difference
+    `mode` defaults to "analytic" (defect 64). The finite-difference
     path is still reachable, and whichever was used is written into every record
     under `hessian_mode`.
 

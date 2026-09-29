@@ -30,14 +30,13 @@ The `.tpr` is therefore only a carrier of atom names and MASSES -- `-mwa` needs 
 and `-fit` needs a reference structure. Bonded and non-bonded parameters in the topology
 written here are never evaluated. This has to be said in the product as well, or a reader
 will assume the thermodynamics sits on some classical force field, which is exactly the
-reading (plan_B supplement 1.3, reading B) that would dismantle the level consistency of
-D0-4.
+reading that would dismantle the level consistency of the protocol.
 
 Which of the two is the reference -- and the measurement that changed the answer
 -------------------------------------------------------------------------------
-Revision C of plan_B (section 2.6.4) made GROMACS the reference and `openqha/qha.py` the
-cross-check, on the sound argument that a widely used implementation should not be
-checked against one written this week.
+An earlier design made GROMACS the reference and `openqha/qha.py` the cross-check, on the
+sound argument that a widely used implementation should not be checked against one
+written this week.
 
 **That arrangement does not survive contact with the tool.** `gmx anaeig -entropy`,
 measured on the installed binary on 2026-09-03, refuses mass-weighted eigenvalues, uses

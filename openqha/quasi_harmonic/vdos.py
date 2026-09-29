@@ -4,7 +4,7 @@ density of states -> quantum-harmonic weighted free energy.
 RETIRED 2026-09-03, superseded by `openqha/qha.py` (branch B, quasi-harmonic analysis).
 Kept rather than deleted, and NOT to be used for a thermodynamic number.
 
-    Why it was retired, in one measurement (D0-P2-13). With the potential held fixed and
+    Why it was retired, in one measurement. With the potential held fixed and
     only the molecular-dynamics seed changed, three blank-control trajectories gave A_vib
     spreads of 10.0370 kcal/mol (acetamide, 6 ps) and 16.7406 kcal/mol
     (N-methylformamide), while the perturbed SIGNAL was 8.69 and 6.27. The signal was
@@ -14,11 +14,11 @@ Kept rather than deleted, and NOT to be used for a thermodynamic number.
     Why quasi-harmonic analysis might do better: it is a VARIANCE estimator rather than a
     SPECTRAL one. A density of states has to resolve structure along the frequency axis
     and so needs a long time series; quasi-harmonic analysis only needs the second moment
-    of the position to converge. "Different" is not "better", which is why plan_B
+    of the position to converge. "Different" is not "better", which is why the design
     acceptance criterion 5 repeats this same blank control on the new route, where it can
     still fail.
 
-    `run_nve` here is dead code as well (AUDIT section 0 item 12).
+    `run_nve` here is dead code as well.
 
     The chain below is correct and still tested (tests/unit/t_vdos_chain.py). What changed
     is what it is for: a worked reference for the velocity-side machinery, not a route to
@@ -26,7 +26,7 @@ Kept rather than deleted, and NOT to be used for a thermodynamic number.
 
 **Identity**: this is a **pilot implementation in service of the error bar**, not the
 production implementation of package 3 or package 4. It **rewrites locally** the chain of
-chapters 3, 5 and 6 of the lecture notes `s0-1`, following this repository's principle of
+chapters 3, 5 and 6 of the lecture notes, following this repository's principle of
 independence (the lecture notebooks are reference material; they are neither modified nor
 imported). When the production implementation lands it should take over from this.
 

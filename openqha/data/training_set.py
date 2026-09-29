@@ -1,4 +1,4 @@
-"""Ticket 30: is this molecule in MACE-OFF23's training set?
+"""Is this molecule in MACE-OFF23's training set?
 
 THE QUESTION
 ------------
@@ -31,8 +31,9 @@ The two files are read once (5.2 GB; the 17k distinct SMILES strings are parsed 
 each) into a table `<cache>/mace-off23_spice_index.dat` keyed by canonical identity, with
 frame counts per file and per `config_type`, and a `[Source]` record of the files' sizes,
 mtimes and frame counts; a changed source invalidates the cache. A query is then a
-dictionary lookup. The table is the repository's `.dat` form (ADR 0003), not parquet:
-parquet is git-ignored here and needs an engine, and the index is what ticket 31 runs on.
+dictionary lookup. The table is the repository's `.dat` form, not parquet:
+parquet is git-ignored here and needs an engine, and the index is what the target
+membership table runs on.
 
 Configuration (`configs/openqha.yaml`, `data.training_sets.mace_off23`): the root that
 holds the two files (overridable by S0_TRAINING_SETS_ROOT), their names, the DOI, and
@@ -298,7 +299,7 @@ def sentence(rec):
             "model-error tiers are out-of-distribution numbers")
 
 
-# ====================================================================== ticket 31: every target
+# ====================================================================== every target
 TARGETS_STEM = "qm9_targets_membership"
 TARGETS_PROGNAME = "openQHA training_set_membership"
 
@@ -401,7 +402,7 @@ def qm9_targets(cfg=None, limit=None, progress=None):
 
 
 def qm9_targets_membership(cfg=None, limit=None, out_dir=None, progress=None):
-    """Ticket 31: the Dataset `qm9_targets_membership.{dat,toml}` -- one row per target
+    """The Dataset `qm9_targets_membership.{dat,toml}` -- one row per target
     (every curated QM9 molecule passing the gate), the summary for the SI, the SPICE
     provenance and the gate configuration. Returns the record dict."""
     from ..conformer_search import filters

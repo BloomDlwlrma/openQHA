@@ -1,7 +1,7 @@
 """Quasi-harmonic analysis: position covariance -> quasi-harmonic frequencies -> entropy.
 
 This is branch B. It replaces the velocity-autocorrelation / vibrational-density-of-
-states route, which was killed by a blank control (D0-P2-13): with the potential held
+states route, which was killed by a blank control: with the potential held
 fixed and only the seed changed, three trajectories gave A_vib spreads of 10.04 and
 16.74 kcal/mol, larger than the signal they were supposed to resolve. Quasi-harmonic
 analysis is a VARIANCE estimator rather than a SPECTRAL one, so it converges
@@ -76,9 +76,9 @@ CM_INV_PER_SQRT_EV_A2_AMU = (
 RANK_TOLERANCE = 1e-12
 
 #: A trajectory whose metadata does not satisfy every one of these is rejected. This is
-#: acceptance criterion 11: the prohibitions of plan_B section 2.5 written as code that
-#: can fail, because none of the three mistakes it guards against would ever raise on
-#: its own.
+#: acceptance criterion 11: the trajectory-admissibility prohibitions written as code
+#: that can fail, because none of the three mistakes it guards against would ever raise
+#: on its own.
 FORBIDDEN_SOURCES = ("crest", "metadynamics", "alf_sampling", "alf", "biased")
 #: The longest Nose-Hoover coupling time a branch B trajectory may be produced with.
 #:
@@ -120,7 +120,7 @@ def assert_trajectory_identity(meta, timestep_fs=REQUIRED_TIMESTEP_FS):
 
     `meta` is the metadata dict written next to the frames by
     `scripts/production/s0_B_qha_trajectory.py`. Every check below corresponds to one of the three
-    independent reasons a CREST metadynamics trajectory is inadmissible (S0-B-3):
+    independent reasons a CREST metadynamics trajectory is inadmissible:
 
       * a bias potential makes the sampled distribution not Boltzmann, so lambda_i comes
         out too large, nu_i too low and the entropy too HIGH -- a fixed direction, not
@@ -206,7 +206,7 @@ def assert_trajectory_identity(meta, timestep_fs=REQUIRED_TIMESTEP_FS):
                         .format(meta.get("source")))
     if problems:
         raise ValueError("trajectory rejected by the branch B identity assertion "
-                         "(plan_B acceptance criterion 11):\n  - "
+                         "(acceptance criterion 11):\n  - "
                          + "\n  - ".join(problems))
     return dict(bias_potential=None, constraints=None,
                 hydrogen_mass_amu=float(m_h), timestep_fs=float(dt),
@@ -467,8 +467,7 @@ def frequencies_cm_inv(eigenvalues_amu_A2, temperature_K=thermo.T_REF):
     """nu = (1/2 pi c) sqrt(k_B T / lambda).
 
     A non-positive eigenvalue returns NaN rather than a silently enormous frequency:
-    lambda -> 0 sends nu -> infinity, which is a divergence and not a small error
-    (plan_B section 1.1).
+    lambda -> 0 sends nu -> infinity, which is a divergence and not a small error.
     """
     lam = np.asarray(eigenvalues_amu_A2, dtype=float)
     out = np.full(lam.shape, np.nan)
@@ -491,7 +490,7 @@ def schlitter_entropy_kcal_per_K(eigenvalues_amu_A2, temperature_K=thermo.T_REF)
 def entropy(eigenvalues_amu_A2, temperature_K=thermo.T_REF):
     """Both estimators from one spectrum, plus the free check that one bounds the other.
 
-    Both are reported, following the D0-61 convention of reporting both members of a
+    Both are reported, following the convention of reporting both members of a
     low-frequency pair rather than choosing silently: their difference is the direct
     price of the estimator choice on the soft modes, which is where free energy is most
     sensitive (dG/dnu at 100 cm^-1 is 4.2x its value at 3000 cm^-1).
