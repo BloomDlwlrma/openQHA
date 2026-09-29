@@ -35,6 +35,8 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 - [Install and transport: the new install.sh, Tianhe, and the xfer gap](decisions/05-install-and-transport.md): one recipe — `openQHA-Hessian/install.sh` (the fork from its branch URL by default, an optional local checkout path for offline; both artifacts editable, verified, re-runnable) — the environment/requirements files carry the fork by git URL non-editable (eval rides it; `unknown`), Tianhe carries the two checkouts with `.git` and its job delegates to the script, no wheels; acceptance [05e](implementation/05e-fresh-env-acceptance.md) green (`1110ffb` clean, `check_fork(strict=True)` passes), recording the conda clone-location finding. Spec: [spec-install-and-transport.md](spec-install-and-transport.md). Slices: [05b](implementation/05b-the-install-script.md), [05c](implementation/05c-the-environment-files.md), [05d](implementation/05d-the-tianhe-path.md); durable record: ADR 0012.
 
+- [Identity after the split: provenance fields, refusal rules, and the old-hash mapping](decisions/06-identity-after-the-split.md): new Records carry the package's identity beside the fork's — `HL_PACKAGE_VERSION`/`HL_PACKAGE_COMMIT` through `package_identity()` (best-effort, `unknown` never refuses) — `MACE_FORK` reads `BloomDlwlrma/mace@openqha-hessian`, the refusal rules and `mace_fork_info()`'s contract unchanged, and ADR 0011 carries the old→new 40-hex mapping; sweep items ride [12](decisions/12-references-sweep.md). Spec: [spec-identity-after-the-split.md](spec-identity-after-the-split.md); slices: [06a](implementation/06a-fork-identity-and-mapping.md), [01d](implementation/01d-the-switchover.md); findings: [`research/mace-identity-practice.md`](research/mace-identity-practice.md).
+
 - [The move: training code from openQHA into openQHA-Hessian](decisions/07-the-move.md): `judge`, `run`, `smoke_fit` and their five tests live in `openqha_hessian` (package commit `ff92141`); openQHA deletes `openqha/training/` and re-addresses every consumer; the writers carry 04's fields (`FOUNDATION_FILE`; no fingerprints) and 06's package identity — `HL_PACKAGE_VERSION`/`HL_PACKAGE_COMMIT` through `package_identity()`, one reader (`engine.checkout_commit`) shared with the fork guard. Slice: [01d](implementation/01d-the-switchover.md).
 
 ## Implementation
@@ -58,7 +60,7 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 <!-- fog: in scope, not sharp enough to ticket yet; graduates as the frontier advances -->
 
-- What to do with old artifacts whose recorded paths point at the old checkout (`mace_fork_path` in Records, run configs under `~/runs/openQHA`): migrate, note, or leave as history. Sharpens once *Identity after the split* and *The repo swap* settle the new paths.
+- What to do with old artifacts whose recorded paths point at the old checkout (`mace_fork_path` in Records, run configs under `~/runs/openQHA`): migrate, note, or leave as history. Sharpens once *The repo swap* settles the new paths.
 
 ## Out of scope
 
