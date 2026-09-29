@@ -479,9 +479,10 @@ if [ "$MODE" = "tianhe" ]; then
     export CONDA_REMOTE_BACKOFF_FACTOR="${CONDA_REMOTE_BACKOFF_FACTOR:-1}"
 
     # ---- pip: the TUNA PyPI index, to match (user ruling 2026-09-08) -----------------
-    # conda covers everything except mace-torch, pymsym and parsl, which have no
-    # conda-forge package and come from PyPI. Left alone they cross the proxy one wheel
-    # at a time; mace-torch's dependency set makes that the slowest part of the install.
+    # conda covers everything except mace (the fork, by git URL), pymsym and parsl,
+    # which have no conda-forge package and come from pip. Left alone they cross the
+    # proxy one wheel at a time; mace's dependency set makes that the slowest part of
+    # the install.
     # Exported for this run only -- ~/.pip/pip.conf is not written, same principle as
     # ~/.condarc. Set OPENQHA_PIP_INDEX to override, or to "" to keep pypi.org.
     if [ -z "${PIP_INDEX_URL+x}" ]; then
@@ -709,7 +710,7 @@ conda activate "$PY_ENV"
 # -------------------------------------------------------------------------------------
 # 3. pip-only packages, MACE among them
 # -------------------------------------------------------------------------------------
-say "pip packages (mace-torch, pymsym, parsl)"
+say "pip packages (mace from the fork URL in $REQ; pymsym, parsl)"
 # `--no-user` on every pip call: without an activated environment pip falls back to
 # ~/.local, and a package there shadows the environment in every later job (PEP 370 puts
 # the user site first on sys.path). Measured 2026-09-12: a scipy in ~/.local, built
@@ -717,10 +718,11 @@ say "pip packages (mace-torch, pymsym, parsl)"
 python -m pip install --no-user --upgrade pip
 python -m pip install --no-user -r "$REQ"
 
-# Named explicitly rather than left to the requirements file, because these three are
-# the ones with no conda-forge package and the ones whose absence is least obvious:
-# without mace-torch there is no potential at all.
-python -m pip install --no-user "mace-torch>=0.3.6" "pymsym>=0.3.5"
+# Named explicitly rather than left to the requirements file, because these two are the
+# ones with no conda-forge package and the ones whose absence is least obvious. MACE is
+deliberately NOT on this line: $REQ carries the fork by git URL now, and re-installing
+the wheel here would overwrite it.
+python -m pip install --no-user "pymsym>=0.3.5"
 [ "$REQ" = "requirements-minimal.txt" ] || python -m pip install --no-user "parsl>=2024.01"
 
 python - <<'PY'
@@ -940,4 +942,5 @@ cat <<'MSG'
 Then:
   1. python scripts/production/s0_A_pipeline.py --species dsgdb9nsd_000018
   2. read docs/branchA_workflow.md before running anything at scale
+  3. to TRAIN (Hessian Labels): run ../openQHA-Hessian/install.sh in the active environment
 MSG

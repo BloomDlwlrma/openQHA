@@ -217,10 +217,7 @@ dependencies:
   #     llvm-openmp    23.1.0   h7148c6a_0          _openmp_mutex 4.5    8_kmp_llvm
   #
   # pip layer, versions checked on PyPI 2026-09-08:
-  #     mace-torch 0.3.16   pymsym 0.3.5   parsl 2026.9.7
-  # NOTE mace-torch 0.3.17 DOES NOT EXIST on PyPI (releases stop at 0.3.16), although
-  # requirements.txt says "measured on 0.3.17" in two places. That claim is not currently
-  # reproducible; pin 0.3.16.
+  #     pymsym 0.3.5   parsl 2026.9.7; mace is the fork by git URL (`openqha-hessian`).
   #
   # openmm-torch resolves to a **cuda120** build, matching torch. If that ever comes back
   # as a `cpu` build the environment is silently useless for the thing it exists for --
@@ -345,7 +342,10 @@ dependencies:
 
   - pip
   - pip:
-      - mace-torch>=0.3.6
+      # The potential: the mace FORK (branch `openqha-hessian`, version 0.3.16+openqha),
+      # by git URL. Non-editable by design: `import mace` is the fork for eval; machines
+      # that TRAIN run openQHA-Hessian/install.sh (editable) regardless.
+      - git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
       - pymsym>=0.3.5
       - parsl>=2024.01
 

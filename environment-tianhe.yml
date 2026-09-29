@@ -109,7 +109,8 @@ dependencies:
   #     ase            3.29.0   pyhd8ed1ab_1        rdkit        2026.03.6 py311hc027fe1_0
   #     pyyaml         6.0.3    py311h3778330_1     pip          26.2.1 pyh8b19718_0
   #
-  # pip layer (PyPI, 2026-09-08): mace-torch 0.3.16, pymsym 0.3.5, parsl 2026.9.7.
+  # pip layer (checked on PyPI 2026-09-08): pymsym 0.3.5, parsl 2026.9.7; mace is the
+  # fork by git URL (branch `openqha-hessian`) -- see the pip section below.
   #
   # THIS SET MATCHES, PACKAGE FOR PACKAGE, THE `openqha` ALREADY BUILT ON TianheXY-AI.
   # That is worth recording because it settled a live question: that environment also
@@ -160,7 +161,10 @@ dependencies:
 
   - pip
   - pip:
-      - mace-torch>=0.3.6
+      # The potential: the mace FORK (branch `openqha-hessian`, version 0.3.16+openqha),
+      # by git URL. Non-editable by design: `import mace` is the fork for eval; machines
+      # that TRAIN run openQHA-Hessian/install.sh (editable) regardless.
+      - git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
       - pymsym>=0.3.5
       - parsl>=2024.01
 

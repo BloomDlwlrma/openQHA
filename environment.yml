@@ -123,13 +123,10 @@ dependencies:
 
   - pip
   - pip:
-      # Measured on 0.3.17 AND 0.3.16; get_hessian returns (3N, N, 3) in both.
-      # A lower bound, not a pin: across torch 2.7.1/mace 0.3.17 and torch 2.13.0/mace
-      # 0.3.16 the same molecule came out identical in electronic energy and differed by
-      # 2.2e-4 kcal/mol in G - Eel -- 230x below the CREGEN energy condition. Pin both
-      # exactly only if you need two machines to agree to the last digit; see the note in
-      # requirements.txt for where that residual comes from (not the BLAS).
-      - mace-torch>=0.3.6
+      # The potential: the mace FORK (branch `openqha-hessian`, version 0.3.16+openqha),
+      # by git URL. Non-editable by design: `import mace` is the fork for eval; machines
+      # that TRAIN run openQHA-Hessian/install.sh (editable) regardless.
+      - git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
       # the chirality test of the enantiomer degeneracy (rotational vs orthogonal
       # Procrustes, Meng et al. CPC 2022); asserted equal to our Kabsch on every pair
       - qc-procrustes>=1.0

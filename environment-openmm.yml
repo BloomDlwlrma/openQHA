@@ -103,12 +103,16 @@ dependencies:
 
   - pip
   - pip:
-      # The potential. openqha/openmm_mace.py carries it into OpenMM as a traced
-      # TorchForce, building the interaction graph itself as the COMPLETE GRAPH -- exact
-      # for 10-19 atoms, and with no box to anchor it cannot have the origin-anchoring
-      # neighbour-list defect that openqha/mace_patch.py guards the ASE route against.
-      # NNPOps and openmm-ml are deliberately absent for the same reason.
-      - mace-torch>=0.3.6
+      # The potential: the mace FORK (branch `openqha-hessian`, version 0.3.16+openqha),
+      # by git URL. Non-editable by design: `import mace` is the fork for eval; machines
+      # that TRAIN run openQHA-Hessian/install.sh (editable) regardless.
+      #
+      # openqha/openmm_mace.py carries it into OpenMM as a traced TorchForce, building
+      # the interaction graph itself as the COMPLETE GRAPH -- exact for 10-19 atoms, and
+      # with no box to anchor it cannot have the origin-anchoring neighbour-list defect
+      # that openqha/mace_patch.py guards the ASE route against. NNPOps and openmm-ml
+      # are deliberately absent for the same reason.
+      - git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
       - pymsym>=0.3.5
 
 # NOT IN HERE, and each for its own reason:

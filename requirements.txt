@@ -20,8 +20,8 @@
 # last digit, and it is worth knowing exactly how much they do not.
 #
 # MEASURED 2026-09-04, same code, same reused CREST directory, minutes apart,
-# dsgdb9nsd_000018 -- old split environment (MKL, torch 2.7.1, mace 0.3.17) against the
-# new single environment (OpenBLAS, torch 2.13.0, mace 0.3.16):
+# dsgdb9nsd_000018 -- old split environment (MKL, torch 2.7.1) against the new single
+# environment (OpenBLAS, torch 2.13.0):
 #
 #     electronic energy      identical to 4.6e-10 eV
 #     lowest frequency       79.715281 vs 79.692059 cm-1   (2.3e-02)
@@ -40,9 +40,8 @@
 # mode -- a second derivative -- is where that shows up first.
 #
 # So: for ordinary use, the bounds are right. If you need bit-identical numbers across
-# machines, pin `torch==` and `mace-torch==` to the versions in your product records --
-# every record written by this repository carries both (`engine/torch_version`,
-# `engine/mace_torch_version`), which is why it carries them.
+# machines, pin `torch==` and keep to one mace fork commit -- every record written by
+# this repository carries both (`engine/torch_version`, `engine/mace_fork_commit`).
 
 # ---- core numerics -------------------------------------------------------------------
 numpy>=1.24,<3
@@ -57,7 +56,10 @@ qc-procrustes>=1.0        # chirality test of g' (rotational vs orthogonal Procr
 # float64 is required, not preferred: geometry optimisation converges to fmax = 1e-4
 # eV/A and a float32 force call cannot resolve that.
 torch>=2.0
-mace-torch>=0.3.6         # measured on 0.3.17; get_hessian returns (3N, N, 3)
+# The mace FORK (branch `openqha-hessian`, version 0.3.16+openqha), by git URL.
+# Non-editable by design: `import mace` is the fork for eval; machines that TRAIN run
+# openQHA-Hessian/install.sh (editable) regardless. get_hessian returns (3N, N, 3).
+git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
 
 # ---- symmetry -------------------------------------------------------------------------
 # Point-group LABEL and an independent cross-check on ideal geometries only. sigma
