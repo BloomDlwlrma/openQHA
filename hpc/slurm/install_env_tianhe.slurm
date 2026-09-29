@@ -17,8 +17,11 @@
 #     ROLE=cpu yhbatch -p debug -t 00:30:00 hpc/slurm/install_env_tianhe.slurm
 #
 # ROLE=gpu (default) | cpu | both      ENV_NAME= to override the environment name
-# MACE_FORK=<checkout>  replace the mace-torch wheel by the editable fork openQHA-Hessian
-#                       (default: ../openQHA-Hessian beside this repository; skipped if absent)
+# MACE_FORK=<checkout>    the mace fork checkout, installed EDITABLE into every managed
+#                         environment (default: ../mace beside this repository)
+# HESSIAN_PKG=<checkout>  the openqha-hessian package checkout beside it (default:
+#                         ../openQHA-Hessian). Training needs both; absent = skipped with a
+#                         message, never a failure -- eval environments are unaffected.
 #
 # =======================================================================================
 # 1. WHY THIS FILE EXISTS, AND WHAT IT DOES *NOT* FIX
@@ -106,7 +109,7 @@ export GLEX_USE_ZC_RNDV=0
 
 REPO="${OPENQHA_ROOT:-$SLURM_SUBMIT_DIR}"
 [ -n "$REPO" ] || REPO="$(pwd)"
-cd "$REPO"
+cd "$REPO" || { echo "!! cannot cd to $REPO" >&2; exit 1; }
 echo "repository  : $REPO"
 echo "host        : $(hostname)"
 echo "job         : ${SLURM_JOB_ID:-<none>}  partition ${SLURM_JOB_PARTITION:-<none>}"
@@ -281,23 +284,32 @@ fi
 echo
 echo "done: $(date -Is)"
 
-# ---- 9. the mace fork (Hessian learning, ticket 10) -----------------------------------
-# The environment files install the mace-torch WHEEL (0.3.16). Training and every product
-# that names its engine must import the fork BloomDlwlrma/openQHA-Hessian instead
-# (branch openqha-hessian; base-v0.3.16 = upstream v0.3.16 minus three bundled model
-# binaries), installed editable so that `engine.provenance()` can record its commit.
-# The checkout is transferred beside this repository; nothing is fetched from GitHub.
-_fork="${MACE_FORK:-$(cd "$REPO/.." && pwd)/openQHA-Hessian}"
-if [ -f "$_fork/mace/__version__.py" ] && [ -d "$_fork/.git" ]; then
+# ---- 9. the training stack: mace fork + openqha-hessian, editable (05b/05d) ------------
+# The environment files carry the mace fork by git URL, NON-editable -- that is what each
+# solve already installs, and it is enough for eval. TRAINING needs the EDITABLE pair (the
+# fork and the package): `engine.provenance()` records the fork's commit from the `.git`
+# beside the imported package, and 05_train refuses a fork it cannot name (a non-editable
+# install answers `unknown`). Both checkouts travel beside this repository --
+# hpc/tools/xfer_tianhe_ai.sh push-repo carries `mace/` and `openQHA-Hessian/`; nothing is
+# fetched from GitHub here. The install is `openQHA-Hessian/install.sh`, one call per
+# managed environment, run through THAT environment's own python (`conda run`), so nothing
+# is activated outside its own subshell.
+_mace="${MACE_FORK:-$(cd "$REPO/.." && pwd)/mace}"
+_pkg="${HESSIAN_PKG:-$(cd "$REPO/.." && pwd)/openQHA-Hessian}"
+if [ -f "$_mace/mace/__init__.py" ] && [ -d "$_mace/.git" ] && [ -f "$_pkg/install.sh" ]; then
     for _n in ${ENV_NAME:-} ${ENV_NAME_CPU:-} ${ENV_NAME_GPU:-} openqha openqha-gpu; do
         conda env list | awk '{print $1}' | grep -qx "$_n" || continue
         echo
-        echo "=== mace fork into $_n: $_fork ($(git -C "$_fork" rev-parse --short HEAD))"
-        conda run -n "$_n" pip uninstall -y mace-torch >/dev/null 2>&1 || true
-        conda run -n "$_n" pip install --no-deps -e "$_fork" || echo "  fork install FAILED in $_n" >&2
-        conda run -n "$_n" python -c "import mace; print('  mace', mace.__version__, mace.__file__)" || true
+        echo "=== training stack into $_n: $_mace ($(git -C "$_mace" rev-parse --short HEAD)) + $_pkg"
+        conda run -n "$_n" bash "$_pkg/install.sh" "$_mace" || echo "  install.sh FAILED in $_n (see above)" >&2
     done
 else
     echo
-    echo "=== mace fork NOT installed: no checkout at $_fork (set MACE_FORK=<path>); the wheel 0.3.16 stays"
+    echo "=== training stack NOT installed: no checkouts at"
+    echo "      mace             $_mace"
+    echo "      openqha-hessian  $_pkg"
+    echo "    Set MACE_FORK=<mace checkout> and HESSIAN_PKG=<package checkout> if they live"
+    echo "    elsewhere. Eval is unaffected: the environment files install the fork"
+    echo "    NON-editable by git URL. Training needs both checkouts transferred beside the"
+    echo "    repository (hpc/tools/xfer_tianhe_ai.sh push-repo)."
 fi

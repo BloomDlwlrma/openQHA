@@ -89,7 +89,8 @@ through `custom_channels` to `<TUNA>/anaconda/cloud/conda-forge` — the only ch
 solve here touches. **This is correct. Do not change it.**
 
 Measured 2026-09-08: that path returns HTTP 200 and its `linux-64/repodata.json` (443 MB)
-was last modified the same day. `pypi.tuna.tsinghua.edu.cn` serves `mace-torch` too.
+was last modified the same day. `pypi.tuna.tsinghua.edu.cn` serves the pip packages too
+(the mace fork itself arrives from GitHub, through the same proxy).
 
 If you build by hand, `--override-channels -c conda-forge` is the command-line equivalent
 of `nodefaults`. Without it your `channels: [defaults]` is merged in as well.
@@ -272,33 +273,47 @@ $M openmmtools=0.25.0
 $M mdanalysis=2.10.0
 $M pip=26.2.1
 
-pip install mace-torch==0.3.16 pymsym==0.3.5 parsl==2026.9.7
-# the mace this repository trains with is the FORK (ticket 10, 2026-09-20): replace the wheel
-pip uninstall -y mace-torch && pip install -e "$MACE_FORK"      # MACE_FORK = the openQHA-Hessian checkout, transferred beside openQHA
+pip install pymsym==0.3.5 parsl==2026.9.7
+# the mace FORK, non-editable -- the same line the environment files carry; enough for eval
+pip install "git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian"
+# machines that TRAIN install the EDITABLE pair from the two checkouts beside this
+# repository (no GitHub needed); this replaces the non-editable fork -- run it last
+bash ../openQHA-Hessian/install.sh ../mace
 python -c "import mace; print(mace.__version__)"                 # 0.3.16+openqha
 ```
 
 Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`,
 `cudnn 9.10.2.21`, `libblas 3.9.0=37_h5875eb1_mkl`, `mkl 2024.2.2`, `llvm-openmp 23.1.0`.
 
-> **The mace fork.** Since 2026-09-20 `import mace` must be `BloomDlwlrma/openQHA-Hessian`
-> (branch `openqha-hessian`, base tag `base-v0.3.16` = upstream v0.3.16 minus three bundled
-> model binaries) installed EDITABLE from a checkout that travels with the repository
-> (`hpc/tools/xfer_tianhe_ai.sh` copies `openQHA-Hessian/` beside `openQHA/`; no GitHub is
-> needed on the cluster). `openqha.potentials.engine.provenance()` records the checkout's
-> commit as `mace_fork_commit`; a pip wheel answers `unknown` and `05_train` refuses it.
-> `scripts/tooling/s0_check_weights.py` prints the two lines. `install_env_tianhe.slurm`
-> does the replacement in its section 9 when `MACE_FORK` points at the checkout.
+> **The mace fork.** Since the split (2026-09-26) the fork is `BloomDlwlrma/mace` (branch
+> `openqha-hessian`, base tag `base-v0.3.16` = upstream v0.3.16 minus three bundled model
+> binaries), and the training side is the `openQHA-Hessian` package. The environment files
+> install the fork from its git URL, **non-editable** -- enough for eval, and what a machine
+> that never trains should be. TRAINING needs the **editable** pair: the fork and the
+> package, from the two checkouts. Both travel with the repository --
+> `hpc/tools/xfer_tianhe_ai.sh push-repo` carries `mace/` and `openQHA-Hessian/` beside
+> `openQHA/`, `.git` included -- and `install_env_tianhe.slurm` section 9 runs
+> `openQHA-Hessian/install.sh` (local-path mode) inside every environment it manages.
+> `openqha.potentials.engine.provenance()` records the fork's commit as `mace_fork_commit`;
+> a non-editable install (or a wheel) answers `unknown` and `05_train` refuses it.
+> `scripts/tooling/s0_check_weights.py` prints the two lines.
 >
-> The branch carries four commits on top of the base tag: **A** the per-structure
-> Hessian label (`--hessian_key`), **B** the external-loss hook (`--loss external
-> --loss_module`), **C** multihead fine-tuning with that hook and the `evaluate`
+> **Offline, stated once.** The stack is installed where there is network -- a workstation,
+> or the Tianhe login side behind the site proxy (the git-URL line above needs GitHub).
+> Everything after that travels by the transfer tool: the AI side installs from the carried
+> checkouts and never fetches from GitHub. If GitHub is unreachable even at install time,
+> `install.sh`'s local-path mode does the same work from a checkout.
+>
+> The branch carries the fork's commits on top of the base tag: the version bump, **A** the
+> per-structure Hessian label (`--hessian_key`), **B** the external-loss hook (`--loss
+> external --loss_module`), **C** multihead fine-tuning with that hook and the `evaluate`
 > changes, **D** (2026-09-23) `--hessian_mode_weighting` and `--hessian_probe modes`
 > removed -- there is one target (S0-C-64) -- and `--valid_probes_key` added: the
 > per-structure fixed probe set the dataset draws and the loss reads at evaluation
-> (S0-C-67). There is no pinned sha to keep in step: `engine.provenance()` reads the
-> checkout's own commit and `05_train` refuses a dirty or unknown one, so the only
-> thing that must be true is that the checkout is committed.
+> (S0-C-67), and the probe default (tip `1110ffb`, 2026-09-26). There is no pinned sha to
+> keep in step: `engine.provenance()` reads the checkout's own commit and `05_train`
+> refuses a dirty or unknown one, so the only thing that must be true is that the checkout
+> is committed.
 
 ### 3.2 `openqha`
 
@@ -326,9 +341,12 @@ $M crest=3.0.2
 $M xtb=6.7.1
 $M pip=26.2.1
 
-pip install mace-torch==0.3.16 pymsym==0.3.5 parsl==2026.9.7
-# the mace this repository trains with is the FORK (ticket 10, 2026-09-20): replace the wheel
-pip uninstall -y mace-torch && pip install -e "$MACE_FORK"      # MACE_FORK = the openQHA-Hessian checkout, transferred beside openQHA
+pip install pymsym==0.3.5 parsl==2026.9.7
+# the mace FORK, non-editable -- the same line the environment files carry; enough for eval
+pip install "git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian"
+# machines that TRAIN install the EDITABLE pair from the two checkouts beside this
+# repository (no GitHub needed); this replaces the non-editable fork -- run it last
+bash ../openQHA-Hessian/install.sh ../mace
 python -c "import mace; print(mace.__version__)"                 # 0.3.16+openqha
 ```
 
@@ -389,9 +407,10 @@ packages above are the only ones with no conda-forge package. In `openqha` the f
 requirements file is fine and is what adds the notebook stack, `mdtraj` and `MDAnalysis` —
 which is why `conda list` there shows them as `pypi_0`.
 
-> `mace-torch 0.3.17` **does not exist on PyPI** (releases stop at 0.3.16), although
-> `requirements.txt` says "measured on 0.3.17" in two places. That claim is not currently
-> reproducible. Pin 0.3.16.
+> The `mace-torch` pins are gone (2026-09-29): the environment and requirements files carry
+> the fork's git URL instead, so nothing here installs the PyPI wheel. For bit-identical
+> reproduction, pin `torch==` and stay on one mace fork commit -- every product record
+> carries `engine/torch_version` and `engine/mace_fork_commit`.
 
 ---
 

@@ -3,7 +3,7 @@
 # Move openQHA files between the two Tianhe storage systems.
 #
 #     bash hpc/tools/xfer_tianhe_ai.sh check                       # can I reach it?
-#     bash hpc/tools/xfer_tianhe_ai.sh push-repo                   # code + basins + weights
+#     bash hpc/tools/xfer_tianhe_ai.sh push-repo                   # code + checkouts + basins + weights
 #     bash hpc/tools/xfer_tianhe_ai.sh push data/basins/acetone data/potentials
 #     bash hpc/tools/xfer_tianhe_ai.sh pull analysis/qha/02d_t30
 #     DRY_RUN=1 bash hpc/tools/xfer_tianhe_ai.sh push-repo         # show, do not copy
@@ -48,7 +48,10 @@
 # form that copies contents, not the directory -- which avoids the nesting too.
 #
 # `push-repo` is the curated list the h100x tests need and nothing else: code, confs,
-# the branch A basins, the weights, the environment files. Not analysis, not logs.
+# the branch A basins, the weights, the environment files, the workflows and docs, and
+# the two training checkouts -- `mace` and `openQHA-Hessian`, SIBLINGS of this repository
+# (install_env_tianhe.slurm section 9 installs the training stack from them). Not
+# analysis, not logs.
 # =======================================================================================
 # `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
 
@@ -97,7 +100,7 @@ echo "  here    $ROOT            (XYFS02: tianhexy-cn + tianhexy-a)"
 echo "  there   $ACCT@$HOST:$XYAI_ROOT   (XYAIFS00: tianhexy-ai)"
 
 # ---- can the other side be reached at all, and does it have rsync? ----------------------
-remote="$("${SSH[@]}" "$ACCT@$HOST" 'echo "host=$(hostname) rsync=$(command -v rsync || echo none) root_exists=$([ -d '"'"$XYAI_ROOT"'"' ] && echo yes || echo no)"' 2>&1)"
+remote="$("${SSH[@]}" "$ACCT@$HOST" "echo \"host=\$(hostname) rsync=\$(command -v rsync || echo none) root_exists=\$([ -d '$XYAI_ROOT' ] && echo yes || echo no)\"" 2>&1)"
 rc=$?
 if [ "$rc" -ne 0 ]; then
     echo "openQHA: cannot reach $ACCT@$HOST with $KEY (ssh exit $rc):" >&2
@@ -119,17 +122,25 @@ echo "  method  $([ "$have_rsync" = yes ] && echo rsync || echo "scp (rsync miss
 # What never travels in EITHER direction: caches and sockets. What stays home on a PUSH:
 # results, logs, the frozen baseline, the notes -- a pull is usually FOR the results, so
 # `pull analysis/qha/<tag>` must not exclude `analysis` (a dry run caught exactly that).
+# `/logs` is ANCHORED on purpose: an unanchored `logs` would also match `.git/logs` inside
+# a pushed checkout, and the checkouts must arrive with `.git` COMPLETE -- `mace_fork_info()`
+# reads the fork's commit from it, and training refuses anything else.
 COMMON_EXCLUDES=(--exclude '__pycache__' --exclude '*.pyc' --exclude '*.sock')
-PUSH_EXCLUDES=("${COMMON_EXCLUDES[@]}" --exclude 'logs' --exclude 'analysis'
+PUSH_EXCLUDES=("${COMMON_EXCLUDES[@]}" --exclude '/logs' --exclude 'analysis'
                --exclude '_backup' --exclude '.mem' --exclude 'runs'
                --exclude 'generated/manifest')
 
 if [ "$MODE" = "push-repo" ]; then
-    # Code, confs, tests, environment files, the branch A products and the weights.
-    set -- openqha scripts hpc examples configs tests patches \
+    # Code, confs, tests, environment files, the branch A products and the weights --
+    # plus the TRAINING STACK: the workflows and docs that point at the checkouts, and
+    # the checkouts themselves. `../mace` and `../openQHA-Hessian` are SIBLINGS of this
+    # repository (the layout install_env_tianhe.slurm section 9 defaults to) and travel
+    # `.git` complete -- `mace_fork_info()` reads the fork's commit from it.
+    set -- openqha scripts workflows docs hpc examples configs tests patches \
            data/basins data/potentials \
            environment-tianhe-gpu.yml environment-tianhe.yml environment.yml \
-           install_dependency.sh check_dependency.py requirements.txt requirements-minimal.txt README.md
+           install_dependency.sh check_dependency.py requirements.txt requirements-minimal.txt README.md \
+           ../mace ../openQHA-Hessian
     MODE=push
 fi
 
@@ -163,4 +174,9 @@ for rel in "$@"; do
         fi
     fi
 done
-[ "$fail" = 0 ] && echo "done" || { echo "done, WITH FAILURES above" >&2; exit 1; }
+if [ "$fail" = 0 ]; then
+    echo "done"
+else
+    echo "done, WITH FAILURES above" >&2
+    exit 1
+fi
