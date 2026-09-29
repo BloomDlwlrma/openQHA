@@ -30,9 +30,40 @@ Part of: [hessian-learn-framework](../map.md)
   (split by molecule): 6048 molecules (304 test), 324978 frames: train 15751 valid 486 test
   587 pool 308154; 16824 with a Hessian`; `merged  .../mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz
   (16824 labelled frames, keys REF_energy / REF_forces / REF_hessian / split)`; R4 (S0-C-60)
-  line: `Replay = 63004 frames at config_weight 10`. The `exported molecules-draw300_r1.h5`
-  line and `rc` not yet confirmed from the log tail.
-- Steps 5-7: next (step 4 already ran with the fixed `04_dataset.py`, commit `7536e72`).
+  line: `Replay = 63004 frames at config_weight 10`. Full command block re-run 2026-09-29:
+  `rc=0`, `exported  .../molecules-draw300_r1.h5 (16824 labelled frames)` -- the two runs
+  produced identical numbers because both read the SAME assembled label files (the
+  2026-09-28 assemble refresh; the merge reads the assembled extxyzs, nothing newer);
+  frames finished since are simply not assembled yet.
+- Step 5: done (2026-09-29). `s0_hl_progress.py --tag draw300`: TOTAL labelled 29728 /
+  failed 10554 (the legacy archives) / unlabelled 284692 / running 208 -- the
+  29728-vs-16824 delta is exactly the finished-but-unassembled set this step predicted.
+  Refreshing steps 3+4 again absorbs it (do that after the labelling sweep stops).
+- Steps 6-7: next (fetch once the final refresh is in).
+
+## Budget stop plan (2026-09-29)
+
+Measured unit cost: mean 1862 s/frame (p50 1687, p90 2621, max 12267; 4 ranks) -> **2.07
+core-hours per frame**. The running sweep: 13 blocks (832 cores; block-0..12, all started
+09-26 23:50, all time out **09-29 23:50**). Burn since 09-25: 67,755 core-hours (48,922 of
+them this parsl round); the round burns ~20k core-hours/day.
+
+User ruling (2026-09-29): the remaining budget goes to the hessian training first, and the
+training draws from the SAME core-hour account (both confirmed) -- everything left after
+tonight is the training reserve. Plan:
+
+1. DONE (2026-09-29 morning: user ruling -- the labelled set, 5,018 molecules / ~29.9k
+   frames, is enough for training; cancelled EARLY, before the 23:50 wall). Receipts:
+   driver killed on ln201 (`tmux send-keys -t hl-labels C-c`; `pgrep` clean; the tmux
+   session that remains is just its empty shell), all 13 `parsl.*` blocks scancelled
+   (COMPLETING -> final `squeue` empty). Burn stopped at ~59.3 h per block (~49.3k
+   core-hours for the round; ~10.6k saved vs the natural end).
+2. NEXT: refresh (step 3) + build (step 4) on the now-static tree; fetch with the
+   corrected step-6 list (`index.dat` in, `dataset.dat` out -- never a build product).
+   The per-class labelled-molecule table (the 2026-09-29 check): 5,018/6,048 molecules
+   (83.0%), 29,858 frames; every class 79-100% except `primary_alcohol` 32.3% (221/684 --
+   the lone low class, candidate for any future top-up).
+   Remaining labels after tonight ~ 14k frames ~ 29k core-hours if ever wanted (2.07/frame).
 
 ---
 
@@ -87,12 +118,12 @@ python scripts/tooling/s0_hl_progress.py --tag draw300
 
 ```bash
 D=$S0_RUNS_ROOT/draw300/_datasets/draw300_r1
-du -sh $D
-sha256sum $D/mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz $D/dataset.out $D/dataset.toml $D/dataset.dat
-tar -czf ~/draw300_r1_fetch.tgz -C $D mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz dataset.out dataset.toml dataset.dat
+du -sh $D; ls -lh $D
+sha256sum $D/mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz $D/molecules-draw300_r1.h5 $D/index.dat $D/dataset.out $D/dataset.toml
+tar -czf ~/draw300_r1_fetch.tgz -C $D mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz molecules-draw300_r1.h5 index.dat dataset.out dataset.toml
 ```
 
-把 tar 弄回工作站，路径告诉我。
+`molecules-draw300_r1.h5` 是 OpenREACT 布局的导出（训练阶段用），一并带回；训练若直接在天河上跑可去掉。`index.dat` 是逐帧索引（split 的权威记录，下次重建要读它）——必带。train/valid/test/pool 是派生物，不带。（早期清单里的 `dataset.dat` 不存在——那是 select 步骤的 `select.dat` 混淆。）把 tar 弄回工作站，路径告诉我。
 
 **步骤 7 — 贴回**：步骤 1-6 的全部输出（签名行、select 汇总、04 三行、进度尾行、sha256 + tar 路径）。之后我写 08 号票 Answer + map 一行。将来跑 `RETRY_ONLY=1` 补了标签，重跑步骤 3+4 即刷新（同名 keep_previous；本地已验证两次跑逐字节幂等）。
 
