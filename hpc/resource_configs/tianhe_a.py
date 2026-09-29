@@ -53,11 +53,10 @@ own submissions -- if any -- go to the same controller.
 
 WHAT THIS RESOLVES
 ------------------
-  * `D0-C-25` "Tianhe requires an explicit -G" -- TRUE, in the fine-grained environment.
-  * 2026-09-11 "TianheXY-A refuses any -G" -- TRUE, in the default environment.
-  * The 2026-09-05 ruling "no --exclusive here" -- now MOOT. In a per-card environment
-    `--exclusive` would take the node and be billed as 8 cards. EXCLUSIVE stays False,
-    and there is nothing left to rule on (memory.md open item 39 is closed by this).
+  * "Tianhe requires an explicit -G": TRUE, in the fine-grained environment.
+  * "TianheXY-A refuses any -G": TRUE, in the default environment (observed 2026-09-11).
+  * "--exclusive here": now MOOT. In a per-card environment
+    `--exclusive` would take the node and be billed as 8 cards. EXCLUSIVE stays False.
   * "Two jobs sharing a node both pin from device 0" -- cannot happen here: the job sees
     only its own cards.
 
@@ -214,7 +213,7 @@ WHAT RUNS HERE
     qha    branch B production trajectories: OpenMM + openqha/openmm_mace.py, CUDA.
     train  branch C MACE fine-tuning, one model per card.
 
-    CAVEAT: this repository's only GPU measurement of branch B is D0-C-5, 3.5x SLOWER on
+    CAVEAT: this repository's only GPU measurement of branch B is 3.5x SLOWER on
     a T400 than on CPU. Not transferable to an 80 GB card, and not yet replaced. Take
     seconds-per-ps off the first real job before sizing a campaign.
 """
@@ -238,7 +237,7 @@ ENV_SCRIPT = "/APP/u22/ai_x86/toolshs/set-XY-I.sh"
 #: Production partition and walltime. `ai` = an[45-47,49-51,53,65], 8 nodes (measured
 #: 2026-09-11 evening; the PDF's 2024 screenshot showed an[44-53]). MaxTime=UNLIMITED.
 PARTITION = "ai"
-#: **24 h, not 7 days** (user ruling 2026-09-12: use the machine, do not sit on it).
+#: **24 h, not 7 days** (use the machine, do not sit on it).
 #: The campaign fits: 02d is EQUIL 50 + PROD 500 = 550 ps = 550k steps, and at the
 #: measured ~60 ms/step for 12 workers sharing a card that is ~9.2 h per trajectory with
 #: all 12 running at once -- so ~9.5 h wall, inside the 21.6 h task budget below. A
@@ -294,7 +293,7 @@ MPI_MODULE = None
 CUDNN_MODULE = "cudnn/8.9.6.50-cuda12"    #: recorded, not loaded
 
 #: Never. In a per-card environment this would take the whole node and be billed as 8
-#: cards. (The 2026-09-05 ruling reached the same value for a different reason.)
+#: cards.
 EXCLUSIVE = False
 
 #: Layouts, per CARD.
@@ -305,7 +304,7 @@ TRAIN_CORES_PER_WORKER = CPUS_PER_GPU
 
 #: Nested mode only: cards per parsl block, and how many blocks.
 #:
-#: **A WHOLE NODE PER BLOCK** (user ruling 2026-09-12: make full use of the machine).
+#: **A WHOLE NODE PER BLOCK** (make full use of the machine).
 #: 8 cards x 12 workers = 96 workers = 96 CPUs = exactly one node, because the
 #: fine-grained policy hands out 12 CPUs with every card. Nothing is left idle and
 #: nothing is over-requested; the block IS the node.
@@ -326,13 +325,13 @@ TRAIN_CORES_PER_WORKER = CPUS_PER_GPU
 #: ms/step. Before a long campaign runs this way, measure it:
 #:     python scripts/tooling/s0_gpu_concurrency.py --dtype float64 --precision double \
 #:         --threads 1 --steps 200 12 24 48 96      # inside an 8-card allocation
-#: **ONE CARD PER BLOCK for the first campaign** (user ruling 2026-09-12, after the
-#: full-node setting above was written and before anything ran with it). Both reasons
-#: from that comment stand and neither is hypothetical:
+#: **ONE CARD PER BLOCK for the first campaign** (chosen after the
+#: full-node setting above was written, before anything ran with it). Both reasons
+#: above stand and neither is hypothetical:
 #:   * cards are the scarce resource -- 2026-09-11, all 64 allocated while 248 of 672
 #:     CPUs idled -- so 8 free cards ON ONE NODE is a far rarer event than 1, and a
 #:     full-node block can queue while single-card blocks compute;
-#:   * 96 workers on a node has never been measured (open item 46).
+#:   * 96 workers on a node has never been measured.
 #: Setting this to GPUS_PER_NODE turns the blocks into whole nodes again; the arithmetic
 #: below follows either value, and nothing else needs changing.
 GPUS_PER_BLOCK = 1
@@ -729,7 +728,7 @@ def describe():
             "12 CPUs per card are 6 physical cores hyper-threaded; 12 single-thread "
             "workers per card is therefore 2 per core. Fine for a launch-latency-bound "
             "MACE call chain, unmeasured.",
-            "Branch B on a card is UNMEASURED here (D0-C-5 was a T400, 3.5x slower "
+            "Branch B on a card is UNMEASURED here (the T400 figure was 3.5x slower "
             "than CPU).",
         ],
         verified=False,

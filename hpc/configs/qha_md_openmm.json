@@ -12,8 +12,8 @@
     "is wrong.",
     "",
     "Read hpc/configs/qha_md.json first. Everything there applies unless contradicted",
-    "below, and most of it is not contradicted: the granularity, the CPU ruling, the",
-    "one-thread ruling, the walltime policy and the failure policy are the same because",
+    "below, and most of it is not contradicted: the granularity, the CPU decision, the",
+    "one-thread decision, the walltime policy and the failure policy are the same because",
     "they are properties of the WORK, not of the library that does it."
   ],
   "driver": "scripts/production/s0_B_qha_trajectory_openmm.py",
@@ -99,7 +99,7 @@
     "memory_gb_per_task": 4,
     "_device_why": [
       "CPU, for the same reason as the ASE route: a thermostatted trajectory is a serial",
-      "chain of single-structure force calls, which is the case D0-56 measured as not",
+      "chain of single-structure force calls, which is the case measured as not",
       "filling a card. OpenMM's CUDA platform does not change that -- the cost is in the",
       "MACE forward pass inside a TorchForce, not in the integration.",
       "",
@@ -122,7 +122,7 @@
       "numbers are close enough to plan with and NOT close enough to call equal: the",
       "OpenMM figure was taken on a loaded machine, and neither has been measured with",
       "many concurrent trajectories on one node. Do not divide either by a worker count",
-      "(D0-P1-12, defects 34 and 56).",
+      "(defects 34 and 56).",
       "",
       "The production length is set by the saturation curve, not chosen in advance. At 25",
       "ps acceptance criterion 1 FAILED (+0.4684 kcal/mol over the last doubling, budget",
@@ -159,7 +159,7 @@
 
   "acceptance": {
     "_note": [
-      "Placement must not change a number. The scientific criteria are plan_B's and",
+      "Placement must not change a number. The scientific criteria are branch B's and",
       "scripts/production/s0_B_qha_analyse.py tests all of them; the criteria here are",
       "about the trajectories meaning the same thing wherever they ran.",
       "",

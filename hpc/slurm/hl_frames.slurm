@@ -1,18 +1,18 @@
 #!/bin/bash
 # openQHA Hessian-learning campaign, stage 02 -- the Frame set (MACE E-F-H at every frame)
 # of every molecule of a draw whose branch A is done, as a Slurm ARRAY of one-node tasks:
-# plain bash, a task list, `xargs -P CORES` over 02_frames.py --species, NO parsl (user
-# ruling 2026-09-19). TianheXY-C.
+# plain bash, a task list, `xargs -P CORES` over 02_frames.py --species, NO parsl.
+# TianheXY-C.
 #
 # LAYOUT: MACE on the CPU is single-threaded here (common.sh pins every BLAS/torch thread
 # count to 1), so the layout is ONE WORKER PER CORE -- 64 x 1 on a 64-core node, derived
-# from what Slurm granted, not the 16 x 4 of branch A and the labels. Until 2026-09-21
-# this job pinned 4-core ranges and left 48 of 64 cores idle.
+# from what Slurm granted, not the 16 x 4 of branch A and the labels; it used to pin
+# 4-core ranges and leave 48 of 64 cores idle.
 #
 #     cd $HOME/openQHA-main
 #     TAG=draw300 LIMIT=16 sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_frames.slurm   # the gate
-#     TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm                # the campaign: 2 nodes, ~1 h (ticket 25)
-#     FORCE=1 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_frames.slurm    # REBUILD every Frame set (ticket 28)
+#     TAG=draw300 sbatch --array=0-1 --time=04:00:00 hpc/slurm/hl_frames.slurm                # the campaign: 2 nodes, ~1 h
+#     FORCE=1 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_frames.slurm    # REBUILD every Frame set
 #
 # Molecules with a Frame-set Record are skipped, so a resubmission continues.
 # =======================================================================================
@@ -27,7 +27,7 @@
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.err
 
-# no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
+# no `set -e` (a failing step must not end the job); no `set -u` (the conda hooks, common.sh)
 
 # What Slurm granted, READ FIRST: the unset loop below erases SLURM_CPUS_* (it keeps
 # Slurm's MPI variables out of ORCA's mpirun), and `nproc` is not a fallback for them --
@@ -41,15 +41,15 @@ TAG="${TAG:-draw}"
 NAME="${NAME:-$TAG}"
 # 02 runs MACE on the CPU, and common.sh pins every BLAS/torch thread count to 1 (parallelism
 # lives between processes, never inside threads): a worker uses ONE core, so the layout is one
-# worker per core, not the 16 x 4 of branch A and the labels (ruling 2026-09-21; before this
-# the job pinned 4-core ranges and left 48 of 64 cores idle).
+# worker per core, not the 16 x 4 of branch A and the labels (it used to pin 4-core ranges
+# and leave 48 of 64 cores idle).
 THREADS="${THREADS:-1}"
 CONCURRENCY="${CONCURRENCY:-$(( CORES / THREADS ))}"
 [ "$CONCURRENCY" -ge 1 ] || CONCURRENCY=1
 LIMIT="${LIMIT:-}"
 # FORCE=1 REBUILDS every Frame set of the draw, not only the missing ones: the list stops
 # skipping molecules that have a frames.toml and 02 overwrites it. That is what a change of
-# the displaced draw needs (ticket 28, 2026-09-23: classical -> ani1), so that one campaign
+# the displaced draw needs (classical -> ani1), so that one campaign
 # carries one draw. It costs the full 25 min/molecule again.
 FORCE="${FORCE:-0}"
 FORCE_FLAG=""

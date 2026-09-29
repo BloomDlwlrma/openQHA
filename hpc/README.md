@@ -171,9 +171,8 @@ installed 2026.08.10 rather than from documentation: `sbatch`, `sacct`, `squeue`
   renders wrongly is the failure the criterion is for.
 
 `--array` being available does not change the design: Parsl queues through
-`max_blocks`. It is recorded because it keeps
-`_superseded/cluster_2/s0_submit_array.slurm` open as a fallback shape if Parsl
-ever proves unworkable there.
+`max_blocks`. A plain Slurm-array submission stays on the table as a fallback
+shape if Parsl ever proves unworkable there.
 
 **No alias, and no shim named `sbatch` on `PATH`.** Both would work, and both would
 make *how was this job submitted* something you cannot read off the record. This

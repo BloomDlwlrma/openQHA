@@ -58,7 +58,7 @@
     "_warning": [
       "96.1 s/ps is a SINGLE-TRAJECTORY, UNCONTENDED number for ONE species. The cost",
       "with many concurrent trajectories on one node has not been measured, and this",
-      "figure must not be divided by a worker count to produce one (D0-P1-12, defects 34",
+      "figure must not be divided by a worker count to produce one (defects 34",
       "and 56). On a contended machine this session measured up to 919 s/ps -- nearly ten",
       "times worse -- so a walltime request built from 96.1 alone will be short.",
       "",

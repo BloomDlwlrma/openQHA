@@ -6,9 +6,8 @@
 #
 # 03 (reference labels, ORCA) runs only with --with-labels: it is minutes per frame here
 # and a tianhe Batch in production (README). Without it the Dataset is all pool, which
-# is what steps 05/06 will refuse and what a plumbing test wants to see. 05 and 06 refuse
-# until round 2 is ruled. No `set -e` (project rule, 2026-09-13): every step's status is
-# checked explicitly.
+# is what steps 05/06 will refuse and what a plumbing test wants to see. 05 and 06 are
+# run by hand. No `set -e`: every step's status is checked explicitly.
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tags=(); name=""; limit=""; stratify=""; labels=0; level=""
 while [ $# -gt 0 ]; do
@@ -23,7 +22,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ ${#tags[@]} -gt 0 ] || { echo "usage: run.sh --tag T [--tag T2] [--name NAME] [--limit N] [--stratify] [--with-labels] [--level L]" >&2; exit 2; }
-name="${name:-${tags[0]}}"      # one campaign, one tag, one Dataset (ticket 09)
+name="${name:-${tags[0]}}"      # one campaign, one tag, one Dataset
 tagargs=(); for t in "${tags[@]}"; do tagargs+=(--tag "$t"); done
 lvl=(); [ -n "$level" ] && lvl=(--level "$level")
 
@@ -46,4 +45,4 @@ else
 fi
 echo "== 04 dataset"
 python -u "$here/04_dataset.py" "${tagargs[@]}" --name "$name" --split-by molecule "${lvl[@]}" || { echo "04 failed" >&2; exit 1; }
-echo "== 05 train / 06 judge: round 2 open -- not run"
+echo "== 05 train / 06 judge: not run by this script"

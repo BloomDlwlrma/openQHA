@@ -5,7 +5,7 @@
     "names the Parsl resource configuration, and it resolves every relative path",
     "against master_directory.",
     "",
-    "The reason for master_directory is D0-C-8: no literal absolute path appears in",
+    "The reason for master_directory: no literal absolute path appears in",
     "this repo's code. The same discipline now covers the cluster layer -- a config",
     "that names /home/someone is a config that only runs on one machine and does not",
     "say so."
@@ -40,12 +40,11 @@
       "analysis": "scripts/production/s0_B_qha_analyse.py",
       "fan_out": "scripts/production/s0_E_branchB_parsl.py",
       "device_note": [
-        "CPU. The device question of plan_E section 8 item 2 is closed for now with the",
+        "CPU. The device question is closed for now with the",
         "condition attached rather than left open: a Langevin trajectory is a serial chain",
-        "of single-structure force calls, which is the case D0-56 measured as not filling a",
-        "card, and on this repo's T400 the same trajectory ran 3.5x slower than on the CPU",
-        "(D0-C-5). Reopen it when a batched force interface exists -- D0-54 criterion (ii)",
-        "-- and not before."
+        "of single-structure force calls, which is the case measured as not filling a",
+        "card, and on this repo's T400 the same trajectory ran 3.5x slower than on the CPU.",
+        "Reopen it when a batched force interface exists -- and not before."
       ]
     },
     "qha_md_openmm": {
@@ -96,6 +95,6 @@
   },
   "accounting": {
     "report_three_numbers_separately": ["wall_seconds", "single_job_seconds", "slot_extrapolation"],
-    "_why": "D0-P1-12 and defects 34 and 56: a serial number divided by a process count is not a cost."
+    "_why": "Defects 34 and 56: a serial number divided by a process count is not a cost."
   }
 }

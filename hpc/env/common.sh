@@ -4,9 +4,8 @@
 # **Nothing machine-specific goes in here.** Paths, conda roots, module loads and
 # scheduler details belong in hpc/env/<machine>.sh.
 #
-# Rescued verbatim from _superseded/cluster/env.sh (branch E section 0): the three
-# blocks below were bought with measurements, and they outlive the route that was
-# retired around them.
+# The three blocks below were bought with measurements, and they
+# outlive the cluster route that was retired around them.
 
 # --------------------------------------------------------------------------------------
 # DO NOT ADD `set -u` HERE.
@@ -20,14 +19,13 @@
 # and the job then runs with a half-built environment instead of stopping. This is
 # not hypothetical: it is what made a `gmx --version` check print an empty string
 # earlier the same day and look like a missing install. (`set -e` and `set -o pipefail`
-# used to be set by every caller; removed project-wide 2026-09-13 -- see
-# .mem/notes/notes_2026-09-13_no-errexit-anywhere.md -- so callers now check the steps
+# are deliberately not set anywhere: callers now check the steps
 # that matter explicitly instead of inheriting an exit on any non-zero status.)
 
 # --------------------------------------------------------------------------------------
 # 1. Site requirements (Tianhe). Harmless elsewhere.
 # --------------------------------------------------------------------------------------
-# From the site's own job scripts (user, 2026-08-31; D0-C-24). Without these the
+# From the site's own job scripts (user, 2026-08-31). Without these the
 # parallel run fails on Tianhe. They cost nothing on a machine that does not need
 # them, so they are unconditional rather than guarded by a hostname test -- a
 # guard is another thing that can be wrong.
@@ -42,8 +40,7 @@ export GLEX_USE_ZC_RNDV=0
 #     1 thread 111 ms | 2 threads 90 ms | 4 threads 72 ms | 8 threads 101 ms
 #
 # Eight threads is SLOWER than four, and 1 -> 8 buys only 1.1x. The molecules are
-# too small for thread start-up and synchronisation to pay for themselves
-# (D0-P1-27, D0-P1-32).
+# too small for thread start-up and synchronisation to pay for themselves.
 #
 # **So parallelism lives between processes, never inside threads.** Every executor
 # in hpc/resource_configs therefore runs many single-threaded workers rather than
@@ -65,7 +62,7 @@ export NUMEXPR_NUM_THREADS=1
 #
 #     OpenBLAS Warning : Detect OpenMP Loop and this application may hang.
 #
-# Measured on acetone, same input, this variable the only change (D0-C-9):
+# Measured on acetone, same input, this variable the only change:
 #
 #     unset:  4.4 s | 4406 output lines, 3626 of them that warning | crest.out 476 KB
 #     = 1  :  2.7 s |  779 output lines, 0 warnings                | crest.out  34 KB
@@ -78,7 +75,7 @@ export OPENBLAS_MAIN_FREE=1
 # --------------------------------------------------------------------------------------
 # 4. Repository conventions
 # --------------------------------------------------------------------------------------
-# Everything this repo writes goes under one root (D0-C-8). No literal path appears
+# Everything this repo writes goes under one root. No literal path appears
 # in the code; the code asks openqha.config.runs_root().
 # A DEFAULT, and it says so. `hpc/env/<site>.sh` is sourced after this file and moves the
 # root onto node-local scratch; it must be able to tell "nobody chose one" from "the
@@ -109,7 +106,7 @@ if [ -z "$S0_RUNS_ROOT" ]; then
     export S0_RUNS_ROOT_IS_DEFAULT=1
 fi
 # On Tianhe this default is replaced by hpc/env/root.sh (sourced from tianhe.sh): the
-# shared-filesystem root derived from the partition and the account, ADR 0002.
+# shared-filesystem root derived from the partition and the account.
 mkdir -p "$S0_RUNS_ROOT"
 
 # torch >= 2.6 defaults to weights_only=True, which refuses the MACE-OFF
@@ -134,7 +131,7 @@ openqha_require() {
 
 openqha_report_env() {
     # Printed at the top of every job log. A cost or a result without the
-    # conditions it was taken under is not reportable (D0-P1-12, defect 34).
+    # conditions it was taken under is not reportable (defect 34).
     echo "openQHA environment"
     echo "  host            $(hostname)"
     echo "  date            $(date -Is)"

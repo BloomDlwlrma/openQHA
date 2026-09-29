@@ -32,7 +32,7 @@
 # The working form is `-p ai` from the fine-grained environment, which is what this
 # script runs -- after checking that you are actually in it.
 # =======================================================================================
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -42,7 +42,7 @@ WALLTIME="${2:-02:00:00}"
 PART="${OPENQHA_GPU_PARTITION:-ai}"
 # CPUs per card differ by cluster: 12 is TianheXY-A's fine-grained policy (1 card = 12
 # CPUs = 120 GB, billed as such); h100x on TianheXY-AI is 128 CPUs / 8 cards, and the
-# repo's h100x.slurm asks 14 (open item 41: 16 would be the full share).
+# repo's h100x.slurm asks 14 (16 would be the full share).
 case "$PART" in
     h100x) PER_CARD="${OPENQHA_CPUS_PER_GPU:-14}" ;;
     *)     PER_CARD="${OPENQHA_CPUS_PER_GPU:-12}" ;;

@@ -1,6 +1,6 @@
 """Parsl resource configuration: this machine. Branch E step 0.
 
-**This file is not filler.** D0-C-20 rules that the first thing done on a cluster
+**This file is not filler.** The first thing done on a cluster
 is a benchmark, not a production run, and debugging a Parsl workflow on a cluster
 costs far more than debugging it here. So the whole branch-A chain is proved
 locally first, and going to a cluster then changes exactly one file.
@@ -26,7 +26,7 @@ There are two nested levels of parallelism and they are not interchangeable:
 
 So the machine's core count is divided, not multiplied: `max_workers * threads`
 must not exceed the physical cores, or the measured cost of a molecule stops
-meaning anything (D0-P1-12, defect 34).
+meaning anything (defect 34).
 """
 import os
 import sys
@@ -49,8 +49,8 @@ MAX_WORKERS = max(1, N_CORES // THREADS_PER_JOB)
 #: The two branches divide the cores differently, and the reason is measured. CREST
 #: parallelises its own metadynamics runs across `threads`, so 4 threads per molecule buys
 #: real speed. A branch B trajectory is a single serial chain of MACE force calls, and
-#: MACE's thread scaling on a 10-atom molecule is 111/90/72/101 ms at 1/2/4/8 threads
-#: (D0-P1-27, D0-P1-32): 4 threads gives 1.54x, and 8 is slower than 4. Four independent
+#: MACE's thread scaling on a 10-atom molecule is 111/90/72/101 ms at 1/2/4/8 threads:
+#: 4 threads gives 1.54x, and 8 is slower than 4. Four independent
 #: trajectories on four cores give 4x. Branch B's parallelism is (basin x seed), of which
 #: there are 3 seeds per basin by protocol, so there is always enough of it.
 QHA_THREADS_PER_JOB = 1
@@ -58,8 +58,8 @@ QHA_MAX_WORKERS = max(1, N_CORES // QHA_THREADS_PER_JOB)
 
 #: The OpenMM route runs in THIS environment, unless told otherwise.
 #:
-#: It used to need its own. That changed on 2026-09-05, when the OpenMM stack moved into
-#: the core environment on a user ruling accepting the pins openmm-torch requires (pytorch
+#: It used to need its own. The OpenMM stack moved into
+#: the core environment on 2026-09-05, accepting the pins openmm-torch requires (pytorch
 #: 2.13.0 -> 2.12.1, numpy 2.4.6 -> 1.26.4) -- and the cost was MEASURED at exactly zero:
 #: energy, forces, every Hessian frequency and T*S on fixed frames all bit-identical
 #: (scripts/calibration/s0_B_stack_fingerprint.py).
@@ -124,7 +124,7 @@ def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
     separate stages and never at once. Running both drivers simultaneously would
     oversubscribe the cores, and every cost measured while that was happening would be
     meaningless -- the same trap as dividing a serial time by a process count
-    (D0-P1-12, defect 34). `describe()` reports both sizes so the sum is visible.
+    (defect 34). `describe()` reports both sizes so the sum is visible.
     """
     from parsl.config import Config
     from parsl.executors import HighThroughputExecutor
@@ -157,8 +157,8 @@ def config(max_workers=None, threads_per_job=THREADS_PER_JOB, run_dir=None,
                                        worker_init=_openmm_worker_init()),
             ),
             # collect (s0_E_branchB_collect_parsl.py): one core per molecule, like the
-            # cluster configs. Absent until 2026-09-15, when the qha chain was first run
-            # end to end through examples/chain_body.sh on a workstation and stopped at
+            # cluster configs. It exists because the qha chain's first end-to-end run
+            # through examples/chain_body.sh stopped at
             # "no executor labelled 'openqha_collect_executor'".
             HighThroughputExecutor(
                 label=_labels.label("collect"),
@@ -211,5 +211,5 @@ def describe():
         retries=0,
         note=("Branch E step 0. Costs measured here are single-machine, "
               "uncontended numbers; they must NOT be divided by a process count "
-              "to produce a cluster estimate (D0-P1-12, defect 34)."),
+              "to produce a cluster estimate (defect 34)."),
     )

@@ -86,7 +86,7 @@ CUDA_VERSION = "12.2"
 MPI_MODULE_RECORDED = "mpi/openmpi/5.0.10-gcc-11.4.0-cuda12.4"
 NCCL_MODULE_RECORDED = "nccl/2.23.4-cuda-12.4"
 
-#: TianheXY-A is preferred for GPU work (user ruling 2026-09-07): 8 cards per allocation
+#: TianheXY-A is preferred for GPU work: 8 cards per allocation
 #: against this cluster's one. Use this cluster when A is full, or for a job that wants a
 #: specific card type from the PACKAGE table below.
 PREFER_INSTEAD = "tianhe_a"
@@ -145,7 +145,7 @@ def parsl_walltime(spec):
     return "{:02d}:{:02d}:{:02d}".format(total // 3600, (total % 3600) // 60, total % 60)
 
 
-#: **24 h** (user ruling 2026-09-12: use the machine, do not sit on it), in parsl's form.
+#: **24 h** (use the machine, do not sit on it), in parsl's form.
 #: The old value was `3-00:00:00`, argued from a CPU cost of 96 s/ps that no longer
 #: applies: on a card, 12 workers sharing it run ~60 ms/step, so 02d's 550 ps is ~9.5 h
 #: and fits with margin. The site allows 7 days; nothing here needs it.
@@ -209,7 +209,7 @@ def layout(role, partition):
 def _worker_init(here, partition):
     """Modules, then the environment. CUDA 12.3 -- and nothing else.
 
-    **12.3, not 12.4** (user ruling 2026-09-07). 12.4 exists here and does not exist on
+    **12.3, not 12.4**. 12.4 exists here and does not exist on
     TianheXY-A; 12.3 exists on both. Pinning the version the two clusters share is what
     let `environment-tianhe-cuda.yml` and `environment-tianhe-a-cuda.yml` collapse into
     one `environment-tianhe-gpu.yml`.

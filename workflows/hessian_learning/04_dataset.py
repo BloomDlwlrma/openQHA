@@ -1,22 +1,22 @@
-"""Workflow hessian_learning, step 04: the Dataset -- split, files, index (ticket 04).
+"""Workflow hessian_learning, step 04: the Dataset -- split, files, index.
 
 PRODUCTION. `openqha.data.dataset.build` over the selection of step 01. `--split-by molecule`
-(the default since S0-C-65; MACE-OFF's granularity): test = whole molecules -- the pinned
+(the default; MACE-OFF's granularity): test = whole molecules -- the pinned
 seven plus a per-stratum draw of TEST_FRACTION (5 %) -- so conformers of one molecule never
 sit on both sides; valid = VALID_FRACTION (5 %) of the TRAINING molecules' labelled frames,
-drawn by frame; train = the rest. `--split-by frame` (the smoke / fit mode; production until
-S0-C-65): the pinned seven are whole test molecules, every other labelled frame goes to
+drawn by frame; train = the rest. `--split-by frame` (the smoke / fit mode): the pinned
+seven are whole test molecules, every other labelled frame goes to
 train / valid / test at 90 / 5 / 5 by its own seeded draw. Changing the split mode of an
 existing Dataset is refused by the build -- one index cannot hold two split schemes (the
 library's `resplit=True` is the escape; this workflow does not expose it). pool = frames without a label at the level yet. `--train-generators basin`
-(the default; S0-C-54, ADR 0005): only basin frames may train; every labelled frame of
+(the default): only basin frames may train; every labelled frame of
 another generator (displaced, merged, saddle) is a held-out frame in test, read by the
 judge and never trained on. Writes
 `{train,valid,test,pool}.<level>.extxyz` (with MACE-torch's REF_energy / REF_forces /
 REF_hessian keys and `split`), the single `mace_<name>.<level>.extxyz`, `index.dat`
 
-THE FIXED VALIDATION PROBES (S0-C-67). Every labelled frame with a Hessian is written with
-its own `[VALID_PROBE_KMAX, 3N]` standard-normal set (PHL's Algorithm 1, S0-C-68;
+THE FIXED VALIDATION PROBES. Every labelled frame with a Hessian is written with
+its own `[VALID_PROBE_KMAX, 3N]` standard-normal set (PHL's Algorithm 1;
 `valid_probes` / `REF_valid_probes`),
 drawn HERE from the frame's identity and this Dataset's seed. The training loss draws
 fresh probes every step; the VALIDATION reading takes the first k rows of this set and
@@ -54,18 +54,18 @@ def main():
     ap.add_argument("--name", default=None, help="the Dataset name (default: the first tag)")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="the reference level of the labelled splits")
     ap.add_argument("--split-by", choices=dataset.SPLIT_MODES, default=dataset.DEFAULT_SPLIT_MODE,
-                    help="molecule: whole test molecules, MACE-OFF's granularity (production since S0-C-65); "
+                    help="molecule: whole test molecules, MACE-OFF's granularity (the production mode); "
                          "frame: 90/5/5 of the non-pinned labelled frames (the smoke / fit set)")
-    ap.add_argument("--valid-fraction", type=float, default=None, help="default: 0.05 in both modes (S0-C-65)")
-    ap.add_argument("--test-fraction", type=float, default=None, help="default: 0.05 in both modes (S0-C-65)")
+    ap.add_argument("--valid-fraction", type=float, default=None, help="default: 0.05 in both modes")
+    ap.add_argument("--test-fraction", type=float, default=None, help="default: 0.05 in both modes")
     ap.add_argument("--seed", type=int, default=dataset.SEED)
     ap.add_argument("--no-pinned", action="store_true",
                     help="drop the pinned rule: the seven split by frame like any other molecule. A FIT Dataset "
-                         "(ticket 15) for measuring cost, the epoch-0 balance and w_H -- never a claim about "
+                         "for measuring cost, the epoch-0 balance and w_H -- never a claim about "
                          "generalisation, and the Record says PURPOSE = fit")
     ap.add_argument("--train-generators", nargs="+", choices=list(frames.GENERATORS), default=list(dataset.TRAIN_GENERATORS),
                     metavar="GEN", help="the generators whose frames may train (default: basin); the others are held out "
-                                        "in test for the judge (S0-C-54)")
+                                        "in test for the judge")
     ap.add_argument("--export", choices=("openreact",), default=None)
     args = ap.parse_args()
     root = config.runs_root(config.load())
@@ -90,7 +90,7 @@ def main():
               i["N_VALID"], i["N_TEST"], i["N_POOL"], i["N_HESSIAN_FRAMES"], out["dir"]))
     print("generators: train {} (basin frames in train {}); held out {} ({} labelled frames in test for the judge)".format(
         " ".join(i["TRAIN_GENERATORS"]), i["N_TRAIN_BASIN"], " ".join(i["HELD_OUT_GENERATORS"]) or "-", i["N_TEST_HELD_OUT"]))
-    print("R4 (S0-C-60): {} train frames with a Hessian -> Replay = {} frames at config_weight {:g}:\n"
+    print("R4: {} train frames with a Hessian -> Replay = {} frames at config_weight {:g}:\n"
           "    python scripts/tooling/s0_spice_pt_draw.py --n {} --seed 0 --weight {:g} --out <root>/spice/spice_pt_R4.extxyz".format(
               i["N_TRAIN_HESSIAN"], i["REPLAY_R4_FRAMES"], dataset.REPLAY_CONFIG_WEIGHT_R4, i["REPLAY_R4_FRAMES"],
               dataset.REPLAY_CONFIG_WEIGHT_R4))

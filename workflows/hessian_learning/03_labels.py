@@ -1,15 +1,15 @@
 """Workflow hessian_learning, step 03: reference E-F-H labels for every frame of the selected
-molecules (CONTEXT.md "Frame set", "Batch"; ticket 03 of the Hessian-learning set).
+molecules.
 
 PRODUCTION. The Batch driver over `openqha.data.frame_labels`: ONE FRAME PER TASK (an
 ORCA single point + EnGrad + analytic Hessian at the frame's fixed geometry, `%pal nprocs
-4`), 16 frames per 64-core node on tianhe (role `labels`, user ruling 2026-09-18: 1 node
+4`), 16 frames per 64-core node on tianhe (role `labels`: 1 node
 for the 7-molecule smoke set, 12 nodes for the 200-molecule draw), then `assemble` per
 molecule writes `<generator>.<level>.extxyz` and the Record `frames/labels.<level>.{out,
 toml}`. Finished frames (terminal line + `.hess`) are skipped, so a resubmission continues
 where the last one stopped. The Slurm log is the Batch's report.
 
-The one-shot retry (ticket 02) RIDES EVERY ROUND (ticket 04, ruling 2026-09-26): the
+The one-shot retry RIDES EVERY ROUND: the
 task list carries every FAILED frame whose failure has no archive
 (`frame_labels.retryable`) alongside the never-run frames, marks it `retry` (the worker's
 5th column), and the failed `.out` is archived as `<stem>.failed.out` before ORCA
@@ -18,10 +18,10 @@ holds ONLY those failed frames and nothing else, so the recovery is a few hours 
 of a full pass. After that retry the frame is final whatever the outcome -- a failed
 retry keeps its archive and is never selected again, a cut retry leaves no `.out` and the
 ordinary policy reruns it whole. The round's log carries the summary block only -- no
-frame list, no per-molecule walk (ticket 05); in the submitted-job route each task's own
+frame list, no per-molecule walk; in the submitted-job route each task's own
 retry slice prints in its slurm log (`hpc/slurm/hl_labels.slurm`).
 
-TWO WAYS TO RUN IT (user ruling 2026-09-19):
+TWO WAYS TO RUN IT:
   * a submitted job, plain bash + xargs, NO parsl: `hpc/slurm/hl_labels.slurm` calls this
     driver with `--list FILE` (the pending frames, one per line), runs
     `python -m openqha.data.frame_labels` per line through xargs, then `--assemble`;
@@ -93,7 +93,7 @@ def label_frame_task(molecule_dir, level, generator, basin, k, nprocs, maxcore, 
     Returns the Batch row; an
     exception is caught and returned as `error` so one frame never loses the batch. A
     `SystemExit` (the frame was CUT: SIGTERM at a block's time limit) is not an Exception
-    and propagates -- parsl then reruns the task on another block (ticket 24)."""
+    and propagates -- parsl then reruns the task on another block."""
     import os as _os
     import sys as _sys
     import time as _time
@@ -145,7 +145,7 @@ def _dash(v, spec):
 
 def pending(mols, level, generators, retry_only=False):
     """(molecule, generator, basin, k, retry) for every frame this round should attempt:
-    every kept frame with NO ORCA job on disk, PLUS (ticket 04, ruling 2026-09-26) every
+    every kept frame with NO ORCA job on disk, PLUS every
     FAILED frame whose failure is not archived yet -- the one-shot retry that rides every
     round -- `retry` True exactly for the latter. With `retry_only` the list holds ONLY
     those failed frames: the never-run frames are queued by no other sweep. Per molecule
@@ -191,7 +191,7 @@ def main(argv=None):
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="reference level (orca.LEVELS)")
     ap.add_argument("--generators", nargs="*", default=None, help="subset of {}".format(", ".join(frames.GENERATORS)))
     ap.add_argument("--retry-only", action="store_true",
-                    help="list ONLY the FAILED frames whose failure has no archive yet -- the failures-only sweep (ticket 04); "
+                    help="list ONLY the FAILED frames whose failure has no archive yet -- the failures-only sweep; "
                          "a plain round already carries them once: the previous failed .out is archived as <stem>.failed.out "
                          "before ORCA runs, and a frame whose retry is spent (archive present) is left alone")
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules")
@@ -215,7 +215,7 @@ def main(argv=None):
                     help="run no ORCA: assemble every chosen molecule's files and Record from the finished jobs on disk")
     ap.add_argument("--timeout", type=float, default=None,
                     help="seconds per ORCA job before it is killed and the frame marked failed (default: $TIMEOUT_S, "
-                         "28800 in hl_labels.slurm; round 11 Q2)")
+                         "28800 in hl_labels.slurm)")
     args = ap.parse_args(argv)
 
     cfg = config.load()
@@ -265,7 +265,7 @@ def main(argv=None):
     print("resume       finished frames are skipped; a failed frame without an archive is re-attempted once; a frame "
           "whose retry is spent (archive present) is final; a cut frame (no .out) is rerun whole; assemble refreshes the Record of every molecule with anything on disk (untouched molecules are left alone)")
     print()
-    # ticket 05: the log carries the summary only -- no full frame list, no per-molecule
+    # the log carries the summary only -- no full frame list, no per-molecule
     # walk; each task's own retry slice is printed by hpc/slurm/hl_labels.slurm
     if args.dry_run:
         print(json.dumps(dict(level=args.level, keywords=keywords, resource=described, n_molecules=len(mols),
@@ -383,7 +383,7 @@ def main(argv=None):
         sum(1 for i in summaries if i["N_FAILED"] or i["N_REFUSED"]), quiet))
     if args.assemble:
         # 0 = no frame without an ORCA job. A failed frame does not set the exit code: the
-        # next round re-attempts it once unless its archive exists (tickets 02/04); a
+        # next round re-attempts it once unless its archive exists; a
         # refused frame is a human's decision (--retry after a rerun of 02).
         print("frames failed {}, refused {} over the chosen molecules (a failure without an archive is re-attempted once by the next round)".format(n_fail, n_ref))
         return 0 if all(i["N_UNLABELLED"] == 0 for i in summaries) else 1

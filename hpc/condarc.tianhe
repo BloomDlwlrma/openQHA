@@ -7,8 +7,8 @@
 #
 # Only then does install_dependency.sh copy this file into a scratch directory and run
 # the conda solve with HOME pointed at it. Without that variable the file is inert and
-# conda uses YOUR ~/.condarc and the TUNA mirror, which is the intended arrangement
-# (user ruling 2026-09-08). Your ~/.condarc is never read, written or edited either way.
+# conda uses YOUR ~/.condarc and the TUNA mirror, which is the intended arrangement.
+# Your ~/.condarc is never read, written or edited either way.
 #
 # ---------------------------------------------------------------------------------
 # THE ONE FAILURE THIS IS FOR -- AND IT IS NOT A NETWORK FAILURE

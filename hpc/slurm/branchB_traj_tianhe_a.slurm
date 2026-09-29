@@ -9,7 +9,7 @@
 #     # production on `ai`
 #     bash hpc/slurm/submit_branchB_tianhe_a.sh prod
 #
-# ONE TRAJECTORY PER CARD (user ruling 2026-09-07)
+# ONE TRAJECTORY PER CARD
 # ------------------------------------------------
 # The node is 2 x 28 = 56 cores and 8 cards. A quasi-harmonic trajectory is a SERIAL
 # chain of single-structure force calls, so there is nothing to parallelise inside one;
@@ -24,7 +24,7 @@
 #
 # COST IS UNMEASURED ON THIS MACHINE
 # ----------------------------------
-# The only GPU figure this repository has for branch B is D0-C-5: 3.5x SLOWER than CPU,
+# The only GPU figure this repository has for branch B is 3.5x SLOWER than CPU,
 # on a T400. That is a 2 GB entry-level card against 80 GB HBM2e, so it does not
 # transfer -- but nothing has replaced it either. **Run the 30-minute smoke test and read
 # seconds_per_ps_this_run out of meta.json before sizing a campaign.**
@@ -34,7 +34,7 @@
 #SBATCH --nodes=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=12
-#SBATCH --time=24:00:00        # 2026-09-12, see tianhe_a.py WALLTIME
+#SBATCH --time=24:00:00        # see tianhe_a.py WALLTIME
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
 # **ONE CARD, 12 CPUs -- the fine-grained environment's unit.** Submit from a shell that
@@ -43,19 +43,19 @@
 # controller, where Gres=(null) and this very `--gpus=1` is refused -- measured 2026-09-11.
 # Raise --gpus (and --cpus-per-task = 12 x gpus) for more trajectories per job.
 #
-# NO --exclusive. Banned on TianheXY-AI (manual 6.2.2) and, by the 2026-09-05 ruling,
-# not passed here either -- even though this cluster's own manual calls its nodes
+# NO --exclusive. Banned on TianheXY-AI (manual 6.2.2), and not passed here
+# either -- even though this cluster's own manual calls its nodes
 # exclusive and its `yhbatch --help` does list the flag. If a submission is ever refused
 # for want of exclusivity, this is the line to add back.
 # NO memory request: the system sizes it from the GPU count and specifying it is banned.
 
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 
 SPECIES="${SPECIES:?SPECIES not set (one QM9 id, e.g. dsgdb9nsd_000018)}"
 TAG="${TAG:-prod}"
 BASINS_FILE="${BASINS_FILE:-auto}"      # `auto`: branch A's mace/basinNN/basin.extxyz under TAG (since 2026-09-14)
 N_BASINS="${N_BASINS:-1}"
-N_SEEDS="${N_SEEDS:-1}"       # one per basin (ruling 2026-09-13)
+N_SEEDS="${N_SEEDS:-1}"       # one per basin
 PROD_PS="${PROD_PS:-200}"
 EQUIL_PS="${EQUIL_PS:-50}"
 GPUS="${GPUS:-8}"

@@ -21,7 +21,7 @@
     "device": "cpu",
     "threads_per_task": 4,
     "memory_gb_per_task": 4,
-    "_threads_note": "4 is the condition the 285 s/species cost was measured under (S0-A-8). Changing it invalidates that number."
+    "_threads_note": "4 is the condition the 285 s/species cost was measured under. Changing it invalidates that number."
   },
   "mace_server": {
     "one_per_worker": true,
@@ -37,7 +37,7 @@
   "cost_measured": {
     "seconds_per_species": 285,
     "conditions": "4 threads, single molecule, uncontended, gfn2 workhorse, refine=opt",
-    "source": "S0-A-8, edge C2H5O1N1_19_36, 2026-09-03",
+    "source": "edge C2H5O1N1_19_36, 2026-09-03",
     "_warning": "Uncontended. The per-molecule cost with 16 concurrent jobs on one node has NOT been measured."
   },
   "walltime": {

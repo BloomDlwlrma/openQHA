@@ -18,7 +18,7 @@
 #
 # WHY 4 THREADS AND NOT MORE
 # --------------------------
-# 4 is the condition the 285 s/species cost was measured under (S0-A-8). Changing it
+# 4 is the condition the 285 s/species cost was measured under. Changing it
 # invalidates that number, which is the only cost estimate this repository has. It is
 # also not free: CREST's threads parallelise independent metadynamics runs, but the MACE
 # calls inside them scale 111/90/72/101 ms at 1/2/4/8 threads -- 8 is SLOWER than 4.
@@ -38,7 +38,7 @@
 #SBATCH --output=logs/slurm/%x_%A_%j.out
 #SBATCH --error=logs/slurm/%x_%A_%j.err
 
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 # NOT `set -u` -- see branchA_debug.slurm.
 
 : "${SHARD:?SHARD not set. Submit through hpc/slurm/submit_branchA_deimos.sh, which sets SHARD, RANGE_START, RANGE_END and TAG.}"

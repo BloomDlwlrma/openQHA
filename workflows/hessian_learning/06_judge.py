@@ -1,4 +1,4 @@
-"""Workflow hessian_learning, step 06: the judge (ticket 14; ticket 22).
+"""Workflow hessian_learning, step 06: the judge.
 
 PRODUCTION. The ruler of Algorithm 3: the SHIPPED full Hessian (`MACECalculator.get_hessian`)
 against the Label through `hessian_compare`, per structure class and per distribution,
@@ -6,9 +6,9 @@ with the entropy tier read from the msRRHO Records, the forgetting line on a fix
 draw, and one line per row. Nothing here calls the estimator or the training loss: the
 optimiser reads eq. 6, the judge reads eq. 1 exactly.
 
-THE GATE IS CLOSED (S0-C-60): every row is reported against its number, `VERDICT` reads
+THE GATE IS CLOSED: every row is reported against its number, `VERDICT` reads
 `REPORTED`, and nothing is decided by the judge; `--gate` reopens it. With the gate open,
-GATE rows decide the verdict (S0-C-58/59): the Hessian MATRIX itself against the Label on
+GATE rows decide the verdict: the Hessian MATRIX itself against the Label on
 the held-out Hessian frames -- ||H_theta - H_r||_F^2 / (9 N^2), the training target's own
 number, engine no worse than base -- the in_distribution no-degradation, the forgetting
 line. Everything computed from the matrix afterwards is post-processing and a REFERENCE
@@ -69,7 +69,7 @@ def main():
     ap.add_argument("--spice-file", default=None, help="the fixed SPICE draw for the forgetting line")
     ap.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
     ap.add_argument("--quiet", action="store_true", help="no per-frame progress")
-    # the MD ramp (ticket 22; a reference row; post-processing, off by default -- S0-C-58)
+    # the MD ramp (a reference row; post-processing, off by default)
     ap.add_argument("--ramp", action="store_true", help="run the MD temperature ramp (hours per molecule per model at 600 K)")
     ap.add_argument("--ramp-max-K", type=float, default=judge.RAMP["max_K"], help="the ramp's ceiling (default 600)")
     ap.add_argument("--ramp-step-K", type=float, default=judge.RAMP["step_K"])
@@ -77,7 +77,7 @@ def main():
     ap.add_argument("--ramp-seed", type=int, default=judge.RAMP["seed"])
     ap.add_argument("--ramp-molecules", nargs="+", default=None, metavar="QM9",
                     help="molecules to ramp (default: the pinned molecules present in the judged frames)")
-    ap.add_argument("--gate", action="store_true", help="let the gate rows decide the VERDICT (closed by default, S0-C-60)")
+    ap.add_argument("--gate", action="store_true", help="let the gate rows decide the VERDICT (closed by default)")
     ap.add_argument("--thermo-tag", default=None,
                     help="the tag whose molecule directories hold this engine's msRRHO Records (S0_ENGINE=<engine> branch A under "
                          "its own tag); default: the campaign tag")

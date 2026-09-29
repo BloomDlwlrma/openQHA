@@ -28,16 +28,16 @@
     "threads_per_task": 1,
     "memory_gb_per_task": 3,
     "_device_why": [
-      "CPU, and this is a ruling with a condition attached rather than a preference.",
-      "D0-54 criterion (ii) says a GPU is worth it once structures are evaluated in",
+      "CPU, and this is a decision with a condition attached rather than a preference.",
+      "A GPU is worth it once structures are evaluated in",
       "batches; a Langevin trajectory is a serial chain of single-structure force calls,",
-      "which is the case D0-56 measured as not filling a card. On this repo's T400 the",
-      "same trajectory ran 3.5x SLOWER than on the CPU (394 s against 1393 s, D0-C-5).",
+      "which is the case measured as not filling a card. On this repo's T400 the",
+      "same trajectory ran 3.5x SLOWER than on the CPU (394 s against 1393 s).",
       "Revisit only when a batched interface exists -- not before."
     ],
     "_threads_why": [
       "1, not 4. MACE thread scaling on a 10-atom molecule is 111/90/72/101 ms at",
-      "1/2/4/8 threads (D0-P1-27, D0-P1-32): four threads buy 1.54x while four separate",
+      "1/2/4/8 threads: four threads buy 1.54x while four separate",
       "trajectories buy 4x, and eight threads are slower than four. Branch A uses 4",
       "threads per task because CREST parallelises its own metadynamics runs; the two",
       "branches divide the cores differently and the executors are not interchangeable."
@@ -51,9 +51,9 @@
     "_warning": [
       "Uncontended and for ONE species. The cost per trajectory with 64 concurrent",
       "trajectories on one node has NOT been measured, and this number must not be",
-      "divided by a worker count to produce one (D0-P1-12, defects 34 and 56).",
+      "divided by a worker count to produce one (defects 34 and 56).",
       "",
-      "The production length is NOT settled either: plan_B section 3.1 says the length is",
+      "The production length is NOT settled either: the length is",
       "set by the saturation curve, not chosen in advance. 200 ps is the starting point",
       "the driver defaults to, which at the measured rate is about 5.3 hours per",
       "trajectory."
@@ -65,7 +65,7 @@
     "_why": [
       "The driver takes --wall-budget-s and stops at a chunk boundary once it is past,",
       "leaving a resumable state, rather than being killed with frames still in memory",
-      "(D0-C-25, branch E acceptance criterion 2). Resource configs set the budget to 90",
+      "(branch E acceptance criterion 2). Resource configs set the budget to 90",
       "per cent of the job walltime; the remaining 10 per cent is the final flush.",
       "",
       "per_task_timeout_s = 0 means no hard timeout: a trajectory that is going slowly is",
@@ -90,9 +90,9 @@
     "_note": [
       "Placement must not change a number, so branch E's criteria for this stage are about",
       "the trajectories meaning the same thing wherever they ran. The scientific criteria",
-      "are plan_B's, and scripts/production/s0_B_qha_analyse.py tests all of them.",
+      "are branch B's, and scripts/production/s0_B_qha_analyse.py tests all of them.",
       "",
-      "D0-C-34's rule applies first: ask whether the chain has a random step. It has two.",
+      "Ask first whether the chain has a random step. It has two.",
       "The seed fixes both, so the SAME machine reproduces a trajectory exactly. A",
       "DIFFERENT machine does not, and demanding that it should would be a criterion that",
       "cannot pass -- molecular dynamics is chaotic, and a last-bit difference in one MACE",

@@ -1,6 +1,6 @@
 """Schedulers whose command names Parsl does not already know.
 
-Branch E, plan_E section 3.1. This is the ONLY non-configuration code in hpc/ --
+Branch E. This is the ONLY non-configuration code in hpc/ --
 everything else in this directory is a resource description.
 
 The problem, verified on the installed parsl (2026.08.10) with
@@ -75,11 +75,11 @@ TIANHE_COMMANDS = dict(
 TIANHE_CONFIRMED = ("submit", "launcher", "status", "status_fallback", "cancel")
 
 #: TianheXY-CN, the CPU cluster (`deimos`, `debug`): STOCK SLURM. `sbatch`, not `yhbatch`
-#: -- measured by the user 2026-09-09 (S0-G-74): the yh* wrappers are the GPU clusters',
-#: and the CPU login node submits with the plain names. Until 2026-09-18 tianhe_cpu.py
-#: built `TianheSlurmProvider`, whose map would have sent every block through `yhbatch`;
+#: -- measured by the user 2026-09-09: the yh* wrappers are the GPU clusters',
+#: and the CPU login node submits with the plain names. tianhe_cpu.py used to
+#: build `TianheSlurmProvider`, whose map would have sent every block through `yhbatch`;
 #: it had never submitted (the CPU chain went through examples/run_chain.sh, which reads
-#: the partition table), and the labels Batch of the Hessian-learning set is the first
+#: the partition table), and the Hessian-learning labels Batch is the first
 #: driver to submit its own blocks there.
 TIANHE_CN_COMMANDS = dict(SLURM_COMMANDS)
 
@@ -167,7 +167,7 @@ if SlurmProvider is not None:
         Two notes that belong with the class, not in a README:
 
         1. **Pass the GPU count as `gpus_per_node`, not as a `scheduler_options`
-           string.** Tianhe refuses a submission with no explicit `-G` (D0-C-25),
+           string.** Tianhe refuses a submission with no explicit `-G`,
            and a parameter gets rendered into the template by Parsl itself while a
            string is never checked. `SlurmProvider.__init__` already accepts
            `gpus_per_node` and `gres`; verified on the installed version.
@@ -300,7 +300,7 @@ if SlurmProvider is not None:
 
     class TianheCNSlurmProvider(TianheSlurmProvider):
         """The CPU cluster's provider: the same class, the stock Slurm command names
-        (`TIANHE_CN_COMMANDS`, S0-G-74). The map is then the identity and `_swap` leaves
+        (`TIANHE_CN_COMMANDS`). The map is then the identity and `_swap` leaves
         every command alone; the loud status check and `render_only` are inherited."""
 
         site = "tianhe_cn"
@@ -334,7 +334,7 @@ def describe():
               "replacements only yhbatch and yhrun are measured; run preflight() "
               "on the login node to settle the rest."),
         array_jobs=("Tianhe supports --array (user, 2026-09-03), but Parsl does not "
-                    "use it: it queues through max_blocks. Recorded because it "
-                    "keeps _superseded/cluster_2/s0_submit_array.slurm open as a "
+                    "use it: it queues through max_blocks. Recorded because a plain "
+                    "Slurm-array submission stays on the table as a "
                     "fallback shape if Parsl ever proves unworkable there."),
     )

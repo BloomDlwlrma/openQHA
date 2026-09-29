@@ -4,7 +4,7 @@
 #     mkdir -p $HOME/HDD_POOL/runs/openQHA/logs
 #     TAG=prod yhbatch hpc/slurm/branchB_collect.slurm
 #
-# ONE CPU PER MOLECULE, 64 CONCURRENT, ONE NODE (user ruling 2026-09-07)
+# ONE CPU PER MOLECULE, 64 CONCURRENT, ONE NODE
 # ----------------------------------------------------------------------
 # The trajectories are produced on the GPU cluster, one per card. This is the other half:
 # reading frames back and diagonalising a 3N x 3N covariance per molecule. That work is
@@ -25,7 +25,7 @@
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
 
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 
 TAG="${TAG:-prod}"
 CONCURRENT="${CONCURRENT:-64}"

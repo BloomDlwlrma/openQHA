@@ -1,4 +1,4 @@
-"""Workflow hessian_learning, step 05: the fine-tune (ticket 13; tickets 18 and 21).
+"""Workflow hessian_learning, step 05: the fine-tune.
 
 PRODUCTION. openQHA's own entry point into the mace fork's training loop, in mace-md's
 shape: this driver builds mace's arguments and calls `mace.cli.run_train.run`, the
@@ -9,17 +9,17 @@ evaluation (commit C). Nothing here reimplements a training loop.
 
     python workflows/hessian_learning/05_train.py --tag smoke --run w1 --dry-run
     python workflows/hessian_learning/05_train.py --tag smoke --run w1 --max-epochs 2             # w_H = balance (default)
-    # the production row R4 (S0-C-60): Replay = 4 x N_TRAIN_HESSIAN at config_weight 10, drawn by s0_spice_pt_draw.py
+    # the production row R4: Replay = 4 x N_TRAIN_HESSIAN at config_weight 10, drawn by s0_spice_pt_draw.py
     python workflows/hessian_learning/05_train.py --tag draw300 --run R4 --device cuda --max-epochs 100 \
         --multiheads --pt-train-file $S0_RUNS_ROOT/spice/spice_pt_R4.extxyz --pt-valid-file $S0_RUNS_ROOT/spice/spice_pt_R4.valid.extxyz
 
-THE TARGET is the Cartesian matrix itself and nothing else (S0-C-64: there is no switch);
+THE TARGET is the Cartesian matrix itself and nothing else (there is no switch);
 validation uses four standard-normal probes fixed per frame, drawn by the Dataset and read
-from the file (S0-C-55, S0-C-67, S0-C-68), and every control flag
+from the file, and every control flag
 (`--lr`, `--scheduler-patience`, `--patience`, `--eval-interval`, `--ema`, Stage Two with
 `--start-swa`, `--swa-lr` and the Stage Two weights) is explicit and in the Record.
 
-THE REPLAY (S0-C-56/57): `--multiheads --pt-train-file FILE` concatenates the file
+THE REPLAY: `--multiheads --pt-train-file FILE` concatenates the file
 `scripts/tooling/s0_spice_pt_draw.py` writes -- the only source of a Replay file -- as
 mace's pretraining head. The file IS the size knob: there is no `--num-samples-pt` (mace
 reads that flag only on its Materials-Project path), and mace's duplication threshold is
@@ -74,7 +74,7 @@ def main():
     ap.add_argument("--energy-weight", type=float, default=1.0)
     ap.add_argument("--forces-weight", type=float, default=100.0)
     ap.add_argument("--hessian-weight", type=_weight, default="balance",
-                    help="w_H: a number, or `balance` (default; S0-C-60) = w_F L_F / L_H measured on the base model over the "
+                    help="w_H: a number, or `balance` (default) = w_F L_F / L_H measured on the base model over the "
                          "run's train file with the Cartesian target before the first step")
     ap.add_argument("--probe", choices=phl.PROBE_MODES, default="gaussian",
                     help="gaussian (PHL's draw, the default) / rademacher: k probes per structure (eq. 6'); "
@@ -86,7 +86,7 @@ def main():
     ap.add_argument("--valid-batch-size", type=int, default=None)
     ap.add_argument("--seed", type=int, default=123, help="mace's seed; also the training probe generator's")
     ap.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
-    # the control (ticket 21; the base's recipe)
+    # the control (the base's recipe)
     ap.add_argument("--lr", type=float, default=None, help="default {} (mace's)".format(train_run.DEFAULT_LR))
     ap.add_argument("--scheduler-patience", type=int, default=train_run.DEFAULT_SCHEDULER_PATIENCE,
                     help="ReduceLROnPlateau patience on the total validation loss (the base: 20)")
@@ -101,14 +101,14 @@ def main():
     ap.add_argument("--swa-forces-weight", type=float, default=train_run.DEFAULT_SWA_FORCES_WEIGHT)
     ap.add_argument("--swa-hessian-weight", type=float, default=None,
                     help="default w_H x swa_forces_weight / forces_weight")
-    # the Replay (CONTEXT Replay; S0-C-56/57)
+    # the Replay
     ap.add_argument("--multiheads", action="store_true",
                     help="concatenate a Replay (mace's pretraining head) beside the fine-tuning head")
     ap.add_argument("--pt-train-file", default=None,
                     help="the Replay file written by scripts/tooling/s0_spice_pt_draw.py -- its frame count IS the size")
     ap.add_argument("--no-exact-anchors", action="store_true",
                     help="skip the two full-matrix readings of the Hessian term on the validation file (before and "
-                         "after training, path A / S0-C-65); each costs about a third of one epoch")
+                         "after training); each costs about a third of one epoch")
     ap.add_argument("--pt-valid-file", default=None,
                     help="the Replay's companion validation file (<stem>.valid.extxyz of the draw tool)")
     # the rest

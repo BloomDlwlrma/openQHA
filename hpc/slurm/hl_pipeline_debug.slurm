@@ -1,6 +1,6 @@
 #!/bin/bash
 # openQHA Hessian-learning workflow -- the WHOLE pipeline on the `debug` partition, one
-# node, 30 minutes, nothing on the login node (user ruling 2026-09-19). TianheXY-C.
+# node, 30 minutes, nothing on the login node. TianheXY-C.
 #
 #     cd $HOME/openQHA-main
 #     sbatch hpc/slurm/hl_pipeline_debug.slurm                     # the seven pinned molecules, tag smoke
@@ -28,7 +28,7 @@
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
 
-# no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
+# no `set -e` (a failing step must not end the job); no `set -u` (the conda hooks, common.sh)
 
 # what Slurm granted, READ FIRST (the unset loop below erases SLURM_CPUS_*; `nproc` honours
 # common.sh's OMP_NUM_THREADS=1 and would say 1): the layouts are derived from it
@@ -41,7 +41,7 @@ TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
 SPECIES="${SPECIES:-dsgdb9nsd_000018 dsgdb9nsd_000019 dsgdb9nsd_000035 dsgdb9nsd_000036 dsgdb9nsd_000044 dsgdb9nsd_000046 dsgdb9nsd_000048}"
 LIMIT_FRAMES="${LIMIT_FRAMES:-16}"
-export TIMEOUT_S="${TIMEOUT_S:-28800}"      # ORCA per frame; a killed frame is failed (the next round re-attempts it once, ruling 2026-09-26)
+export TIMEOUT_S="${TIMEOUT_S:-28800}"      # ORCA per frame; a killed frame is failed (the next round re-attempts it once)
 LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
 
 # ---- 1. site environment ---------------------------------------------------------------
@@ -49,7 +49,7 @@ module purge 2>/dev/null || true
 module load anaconda3/202309 2>/dev/null || module load anaconda3/2023.09 2>/dev/null || true
 # The NARROW unset (hpc/slurm/README.md rule 2): scheduling variables for the non-ORCA
 # payloads. ORCA children are made Slurm-blind one layer down, in
-# openqha.qm_interfaces.orca.subprocess_env() (ADR 0008) -- do NOT widen this loop to
+# openqha.qm_interfaces.orca.subprocess_env() -- do NOT widen this loop to
 # "repair" ORCA.
 for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
     unset "$v"

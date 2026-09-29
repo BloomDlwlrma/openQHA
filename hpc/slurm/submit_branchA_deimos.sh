@@ -15,7 +15,7 @@
 #   * records the submission -- which shards, which tag, which job ids -- next to the
 #     logs. A campaign whose parameters live in a shell history is a campaign nobody can
 #     reproduce.
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 
 START="${1:?usage: submit_branchA_deimos.sh START END [TAG] [NODES]}"
 END="${2:?usage: submit_branchA_deimos.sh START END [TAG] [NODES]}"

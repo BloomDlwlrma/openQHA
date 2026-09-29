@@ -1,5 +1,5 @@
 #!/bin/bash
-# ORCA for the `labels` role (Hessian-learning ticket 03). Sourced AFTER common.sh and the
+# ORCA for the `labels` role. Sourced AFTER common.sh and the
 # machine file, in a worker that is already in the `openqha` conda environment.
 #
 # THE PROBLEM THIS SOLVES. On tianhe ORCA 6.1.1 is a SHARED build
@@ -15,7 +15,7 @@
 # recorded paths reach the ORCA subprocess alone, through
 # `openqha.qm_interfaces.orca.subprocess_env()`.
 #
-# That child environment is Slurm-blind and single-owner by policy (ADR 0008): the
+# That child environment is Slurm-blind and single-owner by policy: the
 # function deletes every variable whose name starts with `SLURM` or `PMI` from the ORCA
 # child, and sets `OMPI_MCA_hwloc_base_binding_policy=none` so OpenMPI's own binding is
 # off and the worker's `taskset` range is placement's only owner. Nothing here depends

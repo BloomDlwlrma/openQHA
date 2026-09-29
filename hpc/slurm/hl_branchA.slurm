@@ -1,7 +1,7 @@
 #!/bin/bash
 # openQHA Hessian-learning campaign, stage A -- branch A (CREST + MACE basins) for every
 # molecule of a draw, as a Slurm ARRAY of one-node tasks: plain bash, a task list,
-# `xargs -P 16` over hl_branchA_worker.sh, NO parsl (user ruling 2026-09-19; the hkuhpc
+# `xargs -P 16` over hl_branchA_worker.sh, NO parsl (the hkuhpc
 # shape). TianheXY-C.
 #
 #     cd $HOME/openQHA-main
@@ -28,7 +28,7 @@
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.err
 
-# no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
+# no `set -e` (a failing step must not end the job); no `set -u` (the conda hooks, common.sh)
 
 # What Slurm granted, READ FIRST: the unset loop below erases SLURM_CPUS_* (it keeps
 # Slurm's MPI variables out of ORCA's mpirun), and `nproc` is not a fallback for them --

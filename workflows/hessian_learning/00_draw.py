@@ -1,4 +1,4 @@
-"""Workflow hessian_learning, step 00: the structure-class draw (ticket 05; round 5).
+"""Workflow hessian_learning, step 00: the structure-class draw.
 
 PRODUCTION. `openqha.data.structure_classes.draw`: from the gated QM9 targets outside
 MACE-OFF23's SPICE training file (any match level), PER_CLASS molecules per structure

@@ -9,9 +9,9 @@
 # `taskset` (HL_TASKSET=0 leaves placement to the OS), scratch on the node-local
 # S0_SCRATCH, the full .out and .hess copied back, success judged by ORCA's terminal
 # line. Prints one line per frame; exit 1 only when ORCA did not terminate now (the frame
-# is then FAILED -- ticket 24; the one-shot retry rides every round, ticket 04, so a LATER
+# is then FAILED; the one-shot retry rides every round, so a LATER
 # round re-attempts it once), 143 when the job was cut.
-# The task list's 5th column (ticket 02) marks a FAILED frame the round re-attempts
+# The task list's 5th column marks a FAILED frame the round re-attempts
 # once: `retry` -> `--retry`, which archives the failed .out as <stem>.failed.out and is
 # refused when that archive already exists (the retry is spent -- the frame is final).
 mol="$1"; gen="$2"; basin="$3"; k="$4"; retry="$5"; cores="$6"

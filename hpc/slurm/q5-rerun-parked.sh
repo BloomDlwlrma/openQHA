@@ -2,21 +2,20 @@
 # =====================================================================================
 # openQHA: rerun the draw300 molecules PARKED by the old imaginary-frequency filter.
 #
-# AUTHORITY  Ticket 41, "Rulings of 2026-09-25", bullet Q5 (the imaginary-mode regime,
-#            tickets 34-41). The draw300 branch-A runs that died with "no basin
+# WHY IT EXISTS  The draw300 branch-A runs that died with "no basin
 #            survives the tightening and the imaginary-frequency filter" are rerun
-#            under the frequency-floor census screen (tickets 37/38, ADR 0007). A
+#            under the frequency-floor census screen. A
 #            molecule whose candidates carry inversion windows now FINISHES -- basins
 #            with N_INVERSION_WINDOW / LOWEST_FREQ per row in branchA.toml, the
 #            marker cleared (s0_A_pipeline.py does that on success). A molecule with
-#            no admissible basin REFUSES with the new message, which names ithr and
+#            no admissible basin REFUSES with the message that names ithr and
 #            lists every condemned candidate's below-floor count and lowest frequency
-#            -- that alone is a result to record in ticket 41.
+#            -- that alone is a result.
 #
 # HOW IT RUNS  There is no ssh from the workstation. This file is copied to the Tianhe
 #            checkout and used BY HAND there. One file, THREE ROLES:
 #
-#   1. LAUNCHER -- finds the parked set (the Q5 grep: "no basin survives" under
+#   1. LAUNCHER -- finds the parked set (the parked-set grep: "no basin survives" under
 #      $S0_RUNS_ROOT/draw300), shows it, and submits ONE 'deimos' job per molecule
 #      (24 h, exclusive node -- hl_branchA.slurm's shape). Two ways to run it:
 #        cd ~/openQHA-main
@@ -41,7 +40,7 @@
 #      The parked runs died AT THE SCREEN, after CREST, so their draw300 ensembles
 #      are on disk. The worker then runs --skip-crest on THAT ensemble: the same
 #      candidates go through the new screen -- the decisive verification ("whose
-#      candidates carried window modes", Q5's words) -- and the cost is tighten +
+#      candidates carried window modes") -- and the cost is tighten +
 #      Hessian, not a fresh search. When the on-disk ensemble is ambiguous (a crest/
 #      and a crest_shake*/ both hold one) or absent, the worker says so and reruns
 #      CREST IN FULL. REUSE=0 forces the full, campaign-exact rerun (the driver is
@@ -54,23 +53,22 @@
 #      and a success clears what is there. The old text stays readable in the backup.
 #      An attempt that leaves NO fresh record and NO marker -- the WALL_S soft ceiling
 #      (default 23 h of the 24 h job), a CREST timeout (which writes no marker by
-#      design, ticket 26), anything else dying early -- restores the old marker:
+#      design), anything else dying early -- restores the old marker:
 #      nothing was burned, the molecule stays parked, resubmit is the whole retry.
 #
-# SUBMISSION  The launcher submits the way the rest of hpc/slurm is submitted (user
-#      ruling, 2026-09-26): the default environment, the job's own variables as
+# SUBMISSION  The launcher submits the way the rest of hpc/slurm is submitted:
+#      the default environment, the job's own variables as
 #      command prefixes -- `QID=... TAG=... sbatch ...`. No `--export` argument is
 #      written: the default already carries HOME, USER and LOGNAME. A restricted list
 #      would silently drop the identity ones, and a node whose passwd map cannot
 #      resolve the uid then kills every `getpass.getuser()` at torch's import -- that
 #      was job 7675703 (cnode5582, 2026-09-25); the draw300 hl_* jobs have always
 #      been submitted this way and never hit it.
-#      See openQHA/AGENTS.md, "Submitting jobs".
 #
 # EXPECTED SET  Typically five molecules; dsgdb9nsd_052993 is named in the repo as one
-#            (ticket 38's -6.84 cm^-1 case; t_branch_a_crash section D). A different
+#            (the -6.84 cm^-1 case in t_branch_a_crash section D). A different
 #            count is not an error -- read the launcher's table before confirming.
-#            After the jobs: paste each worker block into ticket 41 and record the
+#            After the jobs: keep each worker block and record the
 #            outcome; the five going forward into the frames/labels stages is the
 #            user's call.
 #
@@ -112,7 +110,7 @@ QIDS="${QIDS:-}"
 YES="${YES:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 FORCE="${FORCE:-0}"
-FIX_COMMIT="ea21bb1bd595f3afd2be4eeeb218995215dfab18"     # Ticket 41, 2026-09-25
+FIX_COMMIT="ea21bb1bd595f3afd2be4eeeb218995215dfab18"     # the commit that carries the frequency-floor census screen
 
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
@@ -122,7 +120,7 @@ die()  { printf 'OPENQHA-Q5: %s\n' "$1" >&2; exit "${2:-2}"; }
 
 usage() {
     cat <<'EOF'
-q5-rerun-parked.sh -- ticket 41 Q5: rerun the draw300 molecules parked by the old
+q5-rerun-parked.sh -- rerun the draw300 molecules parked by the old
 imaginary-frequency filter, under the frequency-floor census screen.
 
   bash hpc/slurm/q5-rerun-parked.sh              launcher: find, show, submit (from the checkout)
@@ -155,30 +153,29 @@ fi
 
 # ---- 2. shared helpers ---------------------------------------------------------------
 check_checkout() {
-    # Ticket 41's precondition: nothing is submitted before the change is on the
+    # The precondition: nothing is submitted before the screen change is on the
     # checkout. The commit check is exact; the file check is for a tree without that
     # object (a shallow, re-created or file-copy tree) and identifies the version by
     # content. A pin must be a string on ONE source line -- grep matches per line.
     if [ -d .git ] && command -v git >/dev/null 2>&1; then
         if git cat-file -e "$FIX_COMMIT^{commit}" 2>/dev/null; then
             if git merge-base --is-ancestor "$FIX_COMMIT" HEAD 2>/dev/null; then
-                say "OPENQHA-Q5: checkout carries ticket 41 (HEAD $(git rev-parse --short HEAD 2>/dev/null))"
+                say "OPENQHA-Q5: checkout carries the floor screen (HEAD $(git rev-parse --short HEAD 2>/dev/null))"
                 return 0
             fi
-            say "OPENQHA-Q5: REFUSED -- this checkout is BEHIND $FIX_COMMIT (ticket 41)."
-            say "  sync it (git pull; origin/main carries 'Ticket 41: the package-1 batch screen') and resubmit."
+            say "OPENQHA-Q5: REFUSED -- this checkout is BEHIND $FIX_COMMIT."
+            say "  sync it (git pull; origin/main carries the floor-screen change) and resubmit."
             return 2
         fi
         say "OPENQHA-Q5: note: commit $FIX_COMMIT is not in this clone; checking file contents instead"
     else
         say "OPENQHA-Q5: note: no .git in this checkout; checking file contents instead"
     fi
-    # The pins: 'hessian_screen(basins, calc, ithr_cm=' is a line only the ticket-41
+    # The pins: 'hessian_screen(basins, calc, ithr_cm=' is a line only the floor-screen
     # census carries (the parent carries 'reject_imaginary=True' instead), and the two
     # identifiers below are what the screen reads. The original third pin, 'the
     # frequency-floor screen', is split across two source lines in the module -- grep
-    # matches per line, so it refused every content check, current file or not. That
-    # was the Tianhe refusal of 2026-09-25.
+    # matches per line, so it refused every content check, current file or not.
     local census=openqha/conformer_search/crest_census.py
     local pins_ok=1 pin
     for pin in 'hessian_screen(basins, calc, ithr_cm=' \
@@ -202,7 +199,7 @@ resolve_root() {
     # root.sh only defines functions (openqha_resolve_root, openqha_count_basins), so
     # it is sourced even when S0_RUNS_ROOT is already exported -- is_done needs its
     # counter. An explicit S0_RUNS_ROOT wins; otherwise the root is derived from the
-    # partition / the mounted prefix (ADR 0002). Safe to source anywhere.
+    # partition / the mounted prefix. Safe to source anywhere.
     [ -f hpc/env/root.sh ] || { say "OPENQHA-Q5: no hpc/env/root.sh -- run this from the checkout root"; return 3; }
     # shellcheck source=/dev/null
     source hpc/env/root.sh
@@ -216,7 +213,7 @@ resolve_root() {
 }
 
 list_markers() {
-    # The Q5 grep, authoritative when the draw300 tree is flat; a find-based fallback
+    # The parked-set grep, authoritative when the draw300 tree is flat; a find-based fallback
     # covers a nested layout without changing the rule. Prints marker paths, one per line.
     local found=""
     found="$(grep -rl -- "no basin survives" "$S0_RUNS_ROOT/$TAG"/*/_records/branchA.failed 2>/dev/null || true)"
@@ -286,7 +283,7 @@ case "$ROLE" in
 launcher)
     if [ -n "$CHECKOUT" ]; then cd "$CHECKOUT" || die "no checkout at $CHECKOUT" 2; fi
     SELF_USE="$(checkout_self)"
-    say "OPENQHA-Q5: launcher -- the draw300 parked molecules (ticket 41, Q5)"
+    say "OPENQHA-Q5: launcher -- the draw300 parked molecules"
     if [ "$FROM_JOB" = 1 ]; then
         say "OPENQHA-Q5: submitted without QID -- the job IS the launcher (dispatching below)"
     fi
@@ -319,7 +316,7 @@ launcher)
             say "  (none)"
             say ""
             say "OPENQHA-Q5: nothing parked under $S0_RUNS_ROOT/$TAG."
-            say "  Check TAG and the root; the Q5 grep is:"
+            say "  Check TAG and the root; the parked-set grep is:"
             say "    grep -rl \"no basin survives\" \"\$S0_RUNS_ROOT/$TAG\"/*/_records/branchA.failed"
             exit 1
         fi
@@ -366,7 +363,7 @@ launcher)
 
     mkdir -p logs/slurm || die "cannot create logs/slurm -- run from the checkout root" 2
     say ""
-    # Submit the way the rest of hpc/slurm is submitted (user ruling, 2026-09-26):
+    # Submit the way the rest of hpc/slurm is submitted:
     # the default environment, the job's own variables as command prefixes -- no
     # `--export` argument. The default carries HOME, USER and LOGNAME; a restricted
     # list would drop the identity ones, and a node whose passwd map cannot resolve
@@ -388,7 +385,7 @@ launcher)
     done
     say ""
     say "when the jobs finish:  bash $SELF_USE --status"
-    say "then paste each worker block (the 'paste this back' section of its log) into ticket 41."
+    say "then keep each worker block (the 'paste this back' section of its log)."
     say "the remaining Frame sets follow:  TAG=$TAG sbatch --time=04:00:00 hpc/slurm/hl_frames.slurm"
     if [ "$FROM_JOB" = 1 ]; then
         say "OPENQHA-Q5: dispatcher job ${SLURM_JOB_ID} exits now; 'squeue -u \$USER -n q5_*' lists the workers (scancel cancels one)."
@@ -402,7 +399,7 @@ worker)
     say "OPENQHA-Q5: checkout  $PWD"
     check_checkout || exit 4
 
-    # ---- the campaign environment, exactly (hl_branchA.slurm / verify-orca-one.sh) --
+    # ---- the campaign environment, exactly (the same as hl_branchA.slurm) ----------
     module purge 2>/dev/null || true
     module load anaconda3/202309 2>/dev/null || module load anaconda3/2023.09 2>/dev/null || true
     # The NARROW unset (hpc/slurm/README.md rule 2): scheduling variables for the

@@ -160,11 +160,11 @@ if [ "${OPENQHA_ROLE:-cpu}" = "cpu" ] && [ -z "$S0_CREST_BIN" ]; then
 fi
 
 # ---- node-local scratch, and the root of the molecule tree -----------------------------
-# Two different places, on purpose (ADR 0002, user ruling 2026-09-14):
+# Two different places, on purpose:
 #
 #   S0_SCRATCH     node-local, per job: <TMPDIR or /tmp>/<user>/<job id>. Holds the MACE
-#                  server sockets (Lustre does not hold a bound socket) and, from ticket
-#                  06 on, CREST's working directory while CREST runs (dozens of small
+#                  server sockets (Lustre does not hold a bound socket) and CREST's
+#                  working directory while CREST runs (dozens of small
 #                  files, measured slow on Lustre). Gone with the node; nothing that
 #                  matters stays here.
 #   S0_RUNS_ROOT   the shared filesystem, derived from the partition and the account by
@@ -172,9 +172,9 @@ fi
 #                  molecule tree (openqha/store/layout.py) is written there ONCE and
 #                  stays. There is no copy-back and no keep directory any more.
 #
-# HISTORY, kept because it explains what is no longer here. Until 2026-09-14 the whole
-# job -- sockets, runs, CREST -- lived under one per-job scratch ($HOME/runs/<jobid> since
-# the 2026-09-12 ruling; $TMPDIR before that), the runs root was $S0_SCRATCH/runs, and
+# HISTORY, kept because it explains what is no longer here: the whole
+# job -- sockets, runs, CREST -- used to live under one per-job scratch ($HOME/runs/<jobid> since
+# 2026-09-12; $TMPDIR before that), the runs root was $S0_SCRATCH/runs, and
 # examples/chain_body.sh copied the whole scratch into logs/node_local/<jobid>/ at exit.
 # Because $HOME/runs is not a tmp base the original was kept as well, so every
 # trajectory existed twice. S0_SCRATCH_TAG separated the drivers examples/02d-2 runs in

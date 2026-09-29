@@ -86,15 +86,15 @@
 #SBATCH --nodes=1
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
-# NO --exclusive: banned on TianheXY-AI (manual 6.2.2) and not passed on TianheXY-A
-# either, by the 2026-09-05 ruling.
+# NO --exclusive: banned on TianheXY-AI (manual 6.2.2), and not passed on TianheXY-A
+# either.
 # NO --mem: the system sizes memory from the GPU count and specifying it is refused.
 # NO --partition / --gpus / --time here ON PURPOSE: they differ per cluster and per run,
 # so they are `yhbatch` arguments (see the header). A `#SBATCH` line cannot be
 # parameterised, and a wrong one baked in here is a rejected submission on some other
-# cluster (S0-G-62).
+# cluster.
 
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 
 ROLE="${ROLE:-gpu}"
 OFFLINE="${OFFLINE:-}"
@@ -103,7 +103,7 @@ OFFLINE="${OFFLINE:-}"
 module purge 2>/dev/null || true
 module load anaconda3/2023.09 2>/dev/null || module load anaconda3 2>/dev/null || true
 
-# Required by the site; without them the parallel run fails (D0-C-24). Harmless here.
+# Required by the site; without them the parallel run fails. Harmless here.
 ulimit -l unlimited 2>/dev/null || true
 export GLEX_USE_ZC_RNDV=0
 

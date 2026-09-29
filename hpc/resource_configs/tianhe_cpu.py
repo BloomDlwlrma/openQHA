@@ -4,7 +4,7 @@ Edit SETTINGS, not the command line. Production is then
 
     python -u scripts/production/s0_E_branchA_parsl.py --edges --resource tianhe_cpu
 
-TWO PARTITIONS, AND ONLY TWO (user ruling 2026-09-07)
+TWO PARTITIONS, AND ONLY TWO
 -----------------------------------------------------
     debug    30 minutes    the smoke test. One edge, real work, a real queue.
     deimos   3 days        production. **The only partition production uses.**
@@ -17,11 +17,11 @@ different queue is not comparable with the one before it. They are recorded in
 **There is no `--dry-run` step in this workflow any more.** A 30-minute `debug` job is
 cheaper than the argument about whether a rendered plan would have worked, and it tests
 the things a plan cannot: that the modules load, that conda activates on a compute node,
-that the weights hash matches there, and that Parsl's status query is understood. Render
+that the weights resolve there, and that Parsl's status query is understood. Render
 the script if you want to read it (`providers.TianheSlurmProvider.render_only`), but the
 gate before production is a debug job that finished.
 
-WHAT RUNS HERE, AFTER THE 2026-09-07 RULING
+WHAT RUNS HERE
 -------------------------------------------
     role       layout            what it is
     crest      16 x 4 threads    branch A. CREST iMTD-GC, GFN2-xTB workhorse.
@@ -33,11 +33,11 @@ WHAT RUNS HERE, AFTER THE 2026-09-07 RULING
                                  KEPT, not deleted: it is the implementation pair that
                                  makes the OpenMM route checkable. Not the production
                                  route.
-    labels     16 x 4 ranks      Hessian-learning set: one ORCA single point + analytic
+    labels     16 x 4 ranks      Hessian learning: one ORCA single point + analytic
                                  Hessian per frame (workflows/hessian_learning/03_labels.py),
                                  `%pal nprocs 4`, `%maxcore 6000`; 1 node for the 7-molecule
-                                 smoke set, 12 nodes for the 200-molecule draw (user ruling
-                                 2026-09-18). ORCA 6.1.1 from the conda env `orca611`
+                                 smoke set, 12 nodes for the 200-molecule draw.
+                                 ORCA 6.1.1 from the conda env `orca611`
                                  (`~/env_orca611.sh`), located by hpc/env/orca.sh without
                                  activating it in the worker. deimos: 7 days, 512 GB.
 
@@ -53,7 +53,7 @@ THE ARITHMETIC PRODUCTION IS SIZED TO
     = 192 molecules in flight
 
     285 s per species        measured, 4 threads, UNCONTENDED, on this project's
-                             workstation (S0-A-8). NOT measured here, and not under
+                             workstation. NOT measured here, and not under
                              contention: 16 concurrent jobs share memory bandwidth.
 
 A per-node capacity is not a speed-up. Branch E acceptance criterion 5 wants wall clock,
@@ -76,8 +76,8 @@ import labels as _labels  # noqa: E402
 # =========================================================================================
 ACCOUNT = None                 #: scheduler account; None lets the site choose
 
-#: Production partition and its walltime. User ruling 2026-09-07: production is deimos,
-#: 3 days, and nothing else. (deimos allows 7 days -- user 2026-09-18; 3 days is kept as
+#: Production partition and its walltime: production is deimos,
+#: 3 days, and nothing else. (deimos allows 7 days; 3 days is kept as
 #: the default, a labels Batch that needs more passes `--walltime`.)
 PARTITION = "deimos"
 WALLTIME = "3-00:00:00"
@@ -109,19 +109,19 @@ NODES_PER_BLOCK = 1
 NODE_QUOTA = 32
 JOB_QUOTA = 32
 
-#: Allocations held at once for branch A. **12, not the 32 the quota allows** (user
-#: ruling 2026-09-07): 12 x 16 = 192 molecules in flight. Raising it to the quota is one
+#: Allocations held at once for branch A. **12, not the 32 the quota allows**:
+#: 12 x 16 = 192 molecules in flight. Raising it to the quota is one
 #: number, but do it after a campaign has shown the queue rather than the node count is
 #: the limit. `init_blocks=0` and `min_blocks=0` still mean nothing is requested until
 #: there is work, and an idle allocation is given back -- a held node is charged whether
 #: or not it computes.
 MAX_BLOCKS = 12
 
-#: Branch B: ONE core per molecule, 64 on ONE node (user ruling 2026-09-07).
+#: Branch B: ONE core per molecule, 64 on ONE node.
 #:
 #: Not a preference -- measured. A quasi-harmonic trajectory is a serial chain of MACE
-#: force calls, and MACE on a 10-atom molecule runs 111/90/72/101 ms at 1/2/4/8 threads
-#: (D0-P1-27, D0-P1-32). Four threads buy 1.54x; four independent tasks buy 4x.
+#: force calls, and MACE on a 10-atom molecule runs 111/90/72/101 ms at 1/2/4/8 threads.
+#: Four threads buy 1.54x; four independent tasks buy 4x.
 QHA_THREADS_PER_JOB = 1
 QHA_WORKERS_PER_NODE = CORES_PER_NODE // QHA_THREADS_PER_JOB      # 64
 
@@ -140,7 +140,7 @@ HESSIAN_MODE = "analytic"
 #: rather than being killed mid-chunk.
 QHA_WALL_BUDGET_S = int(0.90 * 3 * 24 * 3600)
 
-#: Hessian-learning labels (ticket 03): 4 ORCA ranks per frame, 16 frames per node, the
+#: Hessian-learning labels: 4 ORCA ranks per frame, 16 frames per node, the
 #: same division of the node as CREST; `%maxcore` per rank at the 75 % rule on deimos's
 #: 512 GB: 512 x 1024 x 0.75 / 64 = 6144 -> 6000 MB. 16 x 4 x 6 GB = 384 GB per node.
 LABELS_RANKS_PER_JOB = 4
@@ -222,14 +222,14 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         qha      64 workers x 1 core      the CPU fallback route for trajectories
         labels   16 workers x 4 ranks     one ORCA frame label per worker
 
-    THE ONE MODE PARSL IS FOR HERE (user ruling 2026-09-19, after ALF's
+    THE ONE MODE PARSL IS FOR HERE (after ALF's
     `parsl_resource_configs`): a driver on the login node whose blocks parsl submits
     with `SlurmProvider(partition, init_blocks=0, min_blocks=0, max_blocks, nodes_per_block=1,
     scheduler_options, SimpleLauncher(), walltime='HH:MM:SS', cmd_timeout)` -- the ALF
     shape, with the site's command names and worker init on top. **A job submitted with
     `sbatch` does not run parsl inside it**: the Slurm scripts (hpc/slurm/hl_*.slurm) are
-    plain bash + `xargs` over a task list, the hkuhpc shape (ticket 03; the in-allocation
-    LocalProvider mode of 2026-09-19 was removed the same day).
+    plain bash + `xargs` over a task list, the hkuhpc shape (an in-allocation
+    LocalProvider mode was tried and removed).
 
     `debug=True` swaps in DEBUG_PARTITION and DEBUG_WALLTIME and caps the run at one
     allocation. An explicit `partition`/`walltime` still wins.
@@ -246,7 +246,7 @@ def config(partition=None, account=None, nodes_per_block=None, max_blocks=None,
         partition = partition or DEBUG_PARTITION
         walltime = walltime or DEBUG_WALLTIME
         role_blocks = 1
-    # TianheXY-CN is stock Slurm: `sbatch`, not the GPU clusters' `yhbatch` (S0-G-74).
+    # TianheXY-CN is stock Slurm: `sbatch`, not the GPU clusters' `yhbatch`.
     # The CN provider maps nothing; it normalises the walltime (parsl reads HH:MM:SS).
     provider = TianheCNSlurmProvider(
         partition or PARTITION,
@@ -301,7 +301,7 @@ def describe():
     try:
         import providers
         commands = dict(providers.COMMANDS["tianhe_cn"])
-        confirmed = ["submit"]           # sbatch on the CPU cluster: user 2026-09-09 (S0-G-74)
+        confirmed = ["submit"]           # sbatch on the CPU cluster (user, 2026-09-09)
     except Exception:                                    # pragma: no cover
         commands, confirmed = {}, []
     return dict(
@@ -339,11 +339,11 @@ def describe():
             "Home is 100 GB and for configuration only -- run out of HDD_POOL.",
             "Hessian-learning labels: 16 x 4-rank ORCA jobs per node, %maxcore 6000, "
             "node-local scratch (S0_SCRATCH); 1 node for the 7-molecule smoke set, 12 for "
-            "the 200-molecule draw (user ruling 2026-09-18).",
+            "the 200-molecule draw.",
             "XYFS01 has no backup: a deleted file cannot be recovered.",
         ],
         assumptions=[
-            "The `debug` partition and both walltimes are the user's (2026-09-07); "
+            "The `debug` partition and both walltimes are the user's; "
             "they have not been read off `sinfo` here.",
             "285 s/species was measured on this project's workstation, not here, and "
             "not under contention.",

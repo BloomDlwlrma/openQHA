@@ -80,7 +80,7 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, default=None, help="at most N molecules for this task (the debug gate)")
     ap.add_argument("--force", action="store_true",
                     help="stage frames: list every molecule with branch A, whether or not it already has a Frame "
-                         "set -- the REBUILD after a draw change (ticket 28). Ignored for stage branchA.")
+                         "set -- the REBUILD after a draw change. Ignored for stage branchA.")
     ap.add_argument("--workers", type=int, default=None,
                     help="threads over the per-molecule records (default {}; env HL_LIST_WORKERS; 1 disables)"
                          .format(DEFAULT_WORKERS))

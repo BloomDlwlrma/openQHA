@@ -1,4 +1,4 @@
-"""Workflow hessian_learning, step 01: the molecule list of a Dataset (ticket 04).
+"""Workflow hessian_learning, step 01: the molecule list of a Dataset.
 
 PRODUCTION. `openqha.data.dataset.select`: every molecule of the draw (`draw.dat` of
 step 00, when the Dataset has one -- listed whether or not branch A has run for it, so

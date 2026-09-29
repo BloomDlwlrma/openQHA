@@ -1,4 +1,4 @@
-# hpc/env/root.sh -- the root of the molecule tree on Tianhe (ADR 0002, user 2026-09-14).
+# hpc/env/root.sh -- the root of the molecule tree on Tianhe.
 #
 # Sourced by hpc/env/tianhe.sh; safe to source anywhere because it only DEFINES a
 # function. `openqha_resolve_root` exports S0_RUNS_ROOT or returns 1 with the reason on
@@ -78,7 +78,7 @@ openqha_resolve_root() {
 # Not a login-node necessity: a login node can `conda activate openqha` and ask
 # openqha.store.basins the same question. These two functions exist because the submit
 # scripts are shell, and were accepted by the user on 2026-09-14 as part of the work
-# (they were not asked for; see .scratch/native-engine-files/spec.md).
+# (they were not asked for).
 openqha_find_molecule() {
     local tag="$1" qid="$2" hit
     [ -n "$S0_RUNS_ROOT" ] || return 1

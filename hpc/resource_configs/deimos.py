@@ -4,7 +4,7 @@ Why branch A goes here and not on a GPU partition
 -------------------------------------------------
 Branch A's workload is CREST with a GFN2-xTB workhorse plus MACE refinement calls.
 GFN2-xTB does not use a GPU at all, and the MACE calls are single 10-20 atom
-structures, which do not fill one (D0-56). Tianhe's `h100x` partition bills by the
+structures, which do not fill one. Tianhe's `h100x` partition bills by the
 whole card and provides only 14 CPUs with it, so running branch A there would burn
 an H100 to do CPU work and starve the CPU work while doing it.
 
@@ -14,7 +14,7 @@ and is not part of the branch-A slice.
 
 The arithmetic, from measured numbers only
 ------------------------------------------
-    285 s per species          measured, 4 threads, uncontended (S0-A-8)
+    285 s per species          measured, 4 threads, uncontended
     4 threads per molecule     the condition that number was measured under
     64 cores per node          -> 16 molecules per node at a time
 
@@ -30,7 +30,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import labels as _labels  # noqa: E402
 
-#: Physical cores per deimos node (D0-C-26).
+#: Physical cores per deimos node.
 CORES_PER_NODE = 64
 
 #: CREST threads per molecule -- the condition the 285 s/species cost was measured
@@ -42,15 +42,15 @@ WORKERS_PER_NODE = CORES_PER_NODE // THREADS_PER_JOB
 
 #: Branch B: ONE core per trajectory. Same measured reason as in `local.py` -- a
 #: quasi-harmonic trajectory is a serial chain of MACE force calls, and MACE's thread
-#: scaling on a 10-atom molecule is 111/90/72/101 ms at 1/2/4/8 threads (D0-P1-27,
-#: D0-P1-32). Four threads buy 1.54x; four independent trajectories buy 4x. Branch B has
+#: scaling on a 10-atom molecule is 111/90/72/101 ms at 1/2/4/8 threads. Four threads
+#: buy 1.54x; four independent trajectories buy 4x. Branch B has
 #: (basins x 3 seeds) of independent work per species, so it never runs short of it.
 QHA_THREADS_PER_JOB = 1
 QHA_WORKERS_PER_NODE = CORES_PER_NODE // QHA_THREADS_PER_JOB
 
 #: Job walltime. Set to 95% of the queue limit so the job finishes its own work and
-#: writes its results out, instead of being killed with them still in memory
-#: (D0-C-25). The pipeline is per-molecule and every molecule writes on completion,
+#: writes its results out, instead of being killed with them still in memory.
+#: The pipeline is per-molecule and every molecule writes on completion,
 #: so a kill costs at most one molecule -- but only if nothing buffers.
 WALLTIME = "11:24:00"          # 95% of a 12 h queue limit
 
@@ -127,7 +127,7 @@ def describe():
         walltime=WALLTIME,
         provider="parsl.providers.SlurmProvider",
         retries=1,
-        cost_basis=("285 s/species measured uncontended at 4 threads (S0-A-8). "
+        cost_basis=("285 s/species measured uncontended at 4 threads. "
                     "Node capacity is 16 concurrent molecules; that is a capacity, "
                     "NOT a speed-up, and the per-molecule cost under contention has "
                     "not been measured."),

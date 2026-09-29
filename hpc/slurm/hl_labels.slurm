@@ -1,18 +1,18 @@
 #!/bin/bash
 # openQHA Hessian-learning step 03 -- reference labels as a submitted job: plain bash,
-# a task list, `xargs -P 16` over hl_label_worker.sh, NO parsl (user ruling 2026-09-19,
-# the hkuhpc shape of qm9_reaction_eng/docs/bash_orca_remain_workflow_lecture.md).
+# a task list, `xargs -P 16` over hl_label_worker.sh, NO parsl (the hkuhpc shape of
+# qm9_reaction_eng/docs/bash_orca_remain_workflow_lecture.md).
 # TianheXY-C. Then step 04.
 #
 #     cd $HOME/openQHA-main
 #     sbatch hpc/slurm/hl_labels.slurm                                        # tag smoke, deimos, 1 node, 4 h
 #     sbatch --partition=debug --time=00:30:00 hpc/slurm/hl_labels.slurm      # the same on the short queue
-#     GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # the draw300 campaign: 12 nodes, one node each; BASIN frames only (scope ruling 2026-09-25, docs/hessian_learning_campaign.md §3); ~3.5 days in two rounds; the failed frames without an archive ride the round ONCE (ticket 04)
-#     GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # THE FAILURES-ONLY SWEEP (ticket 04, ruling 2026-09-26): ONLY the failed basin frames without an archive -- nothing else is queued
+#     GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # the draw300 campaign: 12 nodes, one node each; BASIN frames only (docs/hessian_learning_campaign.md §3); ~3.5 days in two rounds; the failed frames without an archive ride the round ONCE
+#     GENERATORS=basin RETRY_ONLY=1 TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm   # THE FAILURES-ONLY SWEEP: ONLY the failed basin frames without an archive -- nothing else is queued
 #
 # LAYOUT: the job ASKS for the node (`--exclusive --ntasks=1 --cpus-per-task=64 --mem=0`)
 # and DERIVES the layout from what Slurm granted: CONCURRENCY = CORES / NPROCS, so 16 x 4
-# ORCA ranks on a 64-core node (user ruling 2026-09-18); MAXCORE = 512 GB x 0.75 / 64 =
+# ORCA ranks on a 64-core node; MAXCORE = 512 GB x 0.75 / 64 =
 # 6000 MB per RANK, so the 64 ranks together stay under the node's memory. An ARRAY job splits the task list round-robin
 # over its tasks; a frame another task is already running is skipped (its `running`
 # claim), a finished frame is reused, so a killed or time-limited job is resubmitted as
@@ -29,7 +29,7 @@
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.err
 
-# no `set -e` (project rule 2026-09-13); no `set -u` (the conda hooks, common.sh)
+# no `set -e` (a failing step must not end the job); no `set -u` (the conda hooks, common.sh)
 
 # What Slurm granted, READ FIRST: the unset loop below erases SLURM_CPUS_* (it keeps
 # Slurm's MPI variables out of ORCA's mpirun), and `nproc` is not a fallback for them --
@@ -41,14 +41,14 @@ MEM_MB="${SLURM_MEM_PER_NODE:-0}"
 
 TAG="${TAG:-smoke}"
 NAME="${NAME:-$TAG}"
-# RETRY_ONLY (any non-empty value) turns this round into the FAILURES-ONLY SWEEP
-# (ticket 04, ruling 2026-09-26): the task list holds ONLY the FAILED frames whose
+# RETRY_ONLY (any non-empty value) turns this round into the FAILURES-ONLY SWEEP:
+# the task list holds ONLY the FAILED frames whose
 # failure has no archive -- nothing else is queued, and the round is over when they are.
 # A plain round already carries those failures once (the one-shot retry rides every
 # round by default).
 RETRY_ONLY="${RETRY_ONLY:-}"
-# GENERATORS restricts the round to a subset of the frame generators (`--generators`): the
-# 2026-09-25 scope ruling runs draw300 BASIN-ONLY -- training and the msRRHO chain need
+# GENERATORS restricts the round to a subset of the frame generators (`--generators`):
+# the draw300 campaign runs BASIN-ONLY -- training and the msRRHO chain need
 # the basin Hessians; the other generators stay unlabelled in the Dataset's `pool` (docs/
 # hessian_learning_campaign.md §3). It reaches BOTH the task list and the assemble below,
 # so task 0's exit-0 keeps meaning "every IN-SCOPE frame is labelled". Empty = every
@@ -59,9 +59,9 @@ export NPROCS="${NPROCS:-4}"
 # %maxcore is per RANK: 0.75 x the node's memory / cores (512 GB / 64 = 8 GB -> 6000 MB),
 # so CONCURRENCY x NPROCS ranks together stay below what the allocation holds.
 export MAXCORE="${MAXCORE:-6000}"
-# One attempt per frame, bounded (round 11, S0-G-96): ORCA is killed after TIMEOUT_S and
+# One attempt per frame, bounded: ORCA is killed after TIMEOUT_S and
 # the frame is FAILED (its .out ends with the openQHA trailer). The next round re-attempts
-# it once (the retry rides every round, ticket 04); once its archive exists the frame is
+# it once (the retry rides every round); once its archive exists the frame is
 # final. 8 h = 3x the 19-atom analytic Hessian's estimated upper end. A frame CUT by the
 # walltime has no .out and is rerun whole by the next round.
 export TIMEOUT_S="${TIMEOUT_S:-28800}"
@@ -76,7 +76,7 @@ module purge 2>/dev/null || true
 module load anaconda3/202309 2>/dev/null || module load anaconda3/2023.09 2>/dev/null || true
 # The NARROW unset (hpc/slurm/README.md rule 2): scheduling variables for the non-ORCA
 # payloads. ORCA children are made Slurm-blind one layer down, in
-# openqha.qm_interfaces.orca.subprocess_env() (ADR 0008) -- do NOT widen this loop to
+# openqha.qm_interfaces.orca.subprocess_env() -- do NOT widen this loop to
 # "repair" ORCA.
 for v in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM_(CPU|TASK|NTASKS|NPROCS|STEP))'); do
     unset "$v"
@@ -96,7 +96,7 @@ if [ $((CONCURRENCY * NPROCS)) -gt "$CORES" ]; then
 fi
 
 # ---- 2. the task list: pending frames of the selection, this array task's share --------
-# RETRY_ONLY (any non-empty value) makes the list the FAILURES-ONLY SWEEP (ticket 04):
+# RETRY_ONLY (any non-empty value) makes the list the FAILURES-ONLY SWEEP:
 # ONLY the failed frames without an archive -- a plain round already carries them once.
 # The 5th column (`retry`/`-`) is what tells the worker to pass the frame CLI's `--retry`.
 RETRY_FLAG=""
@@ -117,9 +117,9 @@ if [ -n "$RETRY_ONLY" ]; then
     echo "retry-only the list holds ONLY those failed frames; nothing else is queued"
 fi
 if [ -n "$GENERATORS" ]; then
-    echo "generators $GENERATORS only (scope ruling 2026-09-25): the other frame generators stay unlabelled"
+    echo "generators $GENERATORS only: the other frame generators stay unlabelled"
 fi
-# ticket 05: this task's retry slice only -- the frames it will re-attempt, count + one
+# this task's retry slice only -- the frames it will re-attempt, count + one
 # line each (the driver's log carries the summary, not the whole campaign)
 N_RETRY_TASK=$(awk '$5 == "retry"' "$MINE" | wc -l)
 echo "retries    $N_RETRY_TASK in this task"

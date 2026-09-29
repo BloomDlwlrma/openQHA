@@ -6,7 +6,7 @@
 #     TAG=smoke RUN=gate PROBE=cartesian MAX_EPOCHS=2 \
 #         yhbatch -p ai -G 1 -c 12 -t 00:30:00 hpc/slurm/hl_train.slurm
 #
-#     # a scan row (tickets 16, 18, 19): the Replay file IS its size, s0_spice_pt_draw.py wrote it
+#     # a scan row: the Replay file IS its size, s0_spice_pt_draw.py wrote it
 #     TAG=draw300 RUN=R1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 \
 #         MULTIHEADS=1 PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.extxyz \
 #         PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.valid.extxyz \
@@ -34,18 +34,17 @@
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
 # ONE CARD, 12 CPUs -- the fine-grained environment's unit; `-G` is mandatory there and
-# `--mem` is forbidden. NO --exclusive (banned on the AI clusters; ruling 2026-09-05).
+# `--mem` is forbidden. NO --exclusive (banned on the AI clusters).
 
-# No `set -e`: a failing step must not take the job's reporting with it
-# (.mem/notes/notes_2026-09-13_no-errexit-anywhere.md).
+# No `set -e`: a failing step must not take the job's reporting with it.
 
 TAG="${TAG:?TAG not set (the campaign tag; the Dataset lives under it)}"
 NAME="${NAME:-$TAG}"
 RUN="${RUN:?RUN not set (the run name; the directory is <dataset>/train/<run>/)}"
 LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
-PROBE="${PROBE:-gaussian}"      # PHL's Algorithm 1 (S0-C-68)
+PROBE="${PROBE:-gaussian}"      # PHL's Algorithm 1
 N_PROBES="${N_PROBES:-4}"
-HESSIAN_WEIGHT="${HESSIAN_WEIGHT:-balance}"      # a number, or balance = w_F L_F / L_H on the base (S0-C-60)
+HESSIAN_WEIGHT="${HESSIAN_WEIGHT:-balance}"      # a number, or balance = w_F L_F / L_H on the base
 ENERGY_WEIGHT="${ENERGY_WEIGHT:-1.0}"
 FORCES_WEIGHT="${FORCES_WEIGHT:-100.0}"
 MAX_EPOCHS="${MAX_EPOCHS:-100}"
@@ -117,7 +116,7 @@ fi
 echo
 echo "tag         $TAG    dataset $NAME    run $RUN    level $LEVEL"
 echo "loss        w_E $ENERGY_WEIGHT  w_F $FORCES_WEIGHT  w_H $HESSIAN_WEIGHT"
-echo "probe       $PROBE  k=$N_PROBES  target the full Cartesian matrix (S0-C-64)"
+echo "probe       $PROBE  k=$N_PROBES  target the full Cartesian matrix"
 echo "loop        $MAX_EPOCHS epochs, batch $BATCH_SIZE, seed $SEED, multiheads $MULTIHEADS"
 echo
 

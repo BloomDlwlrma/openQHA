@@ -60,10 +60,10 @@ ROLES = {
     ),
     "labels": (
         "openqha_labels_executor",
-        "Hessian-learning set: reference E-F-H labels per frame from ORCA (single point + "
+        "Hessian learning: reference E-F-H labels per frame from ORCA (single point + "
         "EnGrad + analytic Hessian at the frame's fixed geometry; workflows/hessian_learning/"
-        "03_labels.py). ONE FRAME PER TASK, 4 ORCA ranks each, 16 frames per 64-core node "
-        "(user ruling 2026-09-18): an analytic Hessian on a 10-atom molecule is minutes, "
+        "03_labels.py). ONE FRAME PER TASK, 4 ORCA ranks each, 16 frames per 64-core node: "
+        "an analytic Hessian on a 10-atom molecule is minutes, "
         "and 16 independent frames fill a node better than one 64-rank job.",
         "CPU cluster (TianheXY-C)",
     ),

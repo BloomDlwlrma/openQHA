@@ -37,7 +37,7 @@
 # Paths are RELATIVE TO THE REPOSITORY ROOT on both sides, so the tree stays congruent
 # and every script's relative path (data/basins/<tag>/...) resolves on both clusters.
 #
-# RSYNC FIRST, SCP AS THE FALLBACK -- and why (2026-09-13). The manual's `scp -r DIR
+# RSYNC FIRST, SCP AS THE FALLBACK -- and why. The manual's `scp -r DIR
 # dest/` has cp's semantics: when dest/DIR already exists it copies INTO it, producing
 # dest/DIR/DIR. The AI side already holds an older copy of this repository from the
 # September runs, so a plain scp of `openqha` would have nested a second package inside
@@ -53,7 +53,7 @@
 # (install_env_tianhe.slurm section 9 installs the training stack from them). Not
 # analysis, not logs.
 # =======================================================================================
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 

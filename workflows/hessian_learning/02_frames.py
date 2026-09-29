@@ -1,5 +1,5 @@
 """Workflow hessian_learning, step 02: the Frame set of every selected molecule at the
-engine level (CONTEXT.md "Frame set"; ticket 02 of the Hessian-learning set).
+engine level.
 
 PRODUCTION. One Calculation per molecule: `openqha.data.frames.generate` -> one extxyz
 per generator under `<molecule>/frames/` and the Record `frames/frames.{out,toml}`.
@@ -46,13 +46,13 @@ def main():
                     help="the temperature of the normal-mode sampling draw, in K (default {:.0f})".format(frames.TEMPERATURE_K))
     ap.add_argument("--max-rms", type=float, default=frames.MAX_RMS_A,
                     help="RMS displacement ceiling of a displaced draw, in A (default: none -- the energy "
-                         "window is the only filter, ruling 2026-09-23); with one, a draw over it is "
+                         "window is the only filter); with one, a draw over it is "
                          "redrawn up to 50 times and a basin with a near-zero mode then raises")
     ap.add_argument("--engine", default=None, help="registered engine name (default: the production default)")
     ap.add_argument("--force", action="store_true", help="rebuild a Frame set whose Record exists")
     ap.add_argument("--displaced-hessian", action="store_true",
-                    help="also compute the engine Hessian at every displaced frame (off by default since "
-                         "2026-09-23: it is 3N backward passes -- ~3.4x of this step -- and nothing downstream "
+                    help="also compute the engine Hessian at every displaced frame (off by default: "
+                         "it is 3N backward passes -- ~3.4x of this step -- and nothing downstream "
                          "reads it; the frame's LOWEST_FREQ is blank without it)")
     args = ap.parse_args()
 

@@ -5,10 +5,10 @@
 #     mkdir -p $HOME/HDD_POOL/runs/openQHA/logs        # BEFORE submitting. See below.
 #     yhbatch hpc/slurm/branchA_debug.slurm
 #
-# This is the gate before production, and it is a REAL job, not a rendered plan
-# (user ruling 2026-09-07). Thirty minutes on the short queue tests the five things a
+# This is the gate before production, and it is a REAL job, not a rendered plan.
+# Thirty minutes on the short queue tests the five things a
 # plan cannot: that the module loads, that conda activates on a compute node, that the
-# MACE weights are there and hash correctly, that CREST runs, and that the product is
+# MACE weights resolve, that CREST runs, and that the product is
 # written where the next step expects it.
 #
 # Two molecules, 4 threads each, on one node. That is one edge -- the smallest unit
@@ -28,7 +28,7 @@
 #   HPC skill). The submit directory always exists. The production script writes its
 #   logs under HDD_POOL because there you have already made the directory by hand.
 
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# No `set -eo pipefail`: a failing step must not end the job.
 # NOT `set -u`: the conda GROMACS activation hook fails under it and the environment is
 # then half-built while the script carries on. Measured 2026-09-03.
 
