@@ -46,3 +46,30 @@ pending — no behaviour change beyond the refusal strings is expected, and the 
 the confirmation. The working tree also carries other slices' edits mid-flight (the
 documents/scripts passes over `README.md`, `docs/`, `hpc/`); they are not part of this
 commit.
+
+## Review record (2026-09-30, annotations)
+
+Two-axis review of the two commits (openQHA `8ed521a`, package `16d3e7a`), per the
+`code-review` skill.
+
+**Standards.** No hard violations: the pinned substrings are intact in both messages
+(`split by` / `asks for` / `resplit`; `pip install -e` + `MACE_FORK`), no new text uses a
+`CONTEXT.md` `_Avoid_` term, and the tracker follows the 12a template (the CRLF endings
+match the tracker's existing `i/crlf` convention — the code files stay `i/lf`). Kept
+judgement calls, all accepted as-is: `check_fork` now probes the cwd inside an identity
+check — the requested self-diagnosis — while its docstring and the README's `run` line
+still describe identity only; the Dataset message names the workflow's deliberate
+non-flag (the sentence denies the flag, it does not offer it; the old text already named
+`04_dataset.py`); `mace-checkout` slightly under-reads the fixture (it also hosts the
+fake package — still "the synthetic checkout"); the test comment "changing it needs
+`--resplit`" (`tests/unit/t_dataset.py:401`) is left for the tests pass — this slice's
+contract is the message, and the pin is deliberately unchanged.
+
+**Spec.** Every 12b requirement delivered, no scope creep: the split-change refusal keeps
+the pinned substrings and offers only remedies that exist (the build API's resplit — with
+`04_dataset.py` verified to expose no such flag — or a new `--name`); the fork guard
+names the install script / an editable fork checkout and appends the cwd shadow note
+exactly when the working directory holds `mace/` (tested both ways); the mace-checkout
+fixture loses the retired name; `FORK_COMMIT_B` is ADR 0011's rebuilt commit B
+(`61582b0e…` against the retired `e68390f…`), integration green. Story 17 (tutorials)
+belongs to 12c, not here.
