@@ -34,23 +34,8 @@ Resolved 2026-09-29, agent-run. The effort's single testing seam is green: one f
 environment, built from the documented lines (environment file → activate → the README's
 by-hand exports → `install.sh` → the probes), ends with `import mace` inside the editable
 fork clone (`1110ffb`, tracked-clean), `mace_fork_info()` clean, `run.check_fork(strict=True)`
-passing and `openqha_hessian` importing. The commands and outputs are recorded on ticket
-[05](../decisions/05-install-and-transport.md)'s Answer; the decision's durable record is
-[ADR 0012](../../../docs/adr/0012-install-and-transport.md).
-
-Two facts belong to this run specifically:
-
-- **The watch-list item, resolved and enlarged.** [05a](05a-install-and-transport.md) asked
-  where an editable VCS clone lands in a conda environment (its guess: the environment's
-  `src`). It lands in `<cwd>/src`: pip 26.2.1 classifies a conda environment as a global
-  install (`running_under_virtualenv() == False`), so the run from the README's implied cwd —
-  the openQHA checkout root — put the fork clone at `openQHA/src/mace-torch` (4.9 MB, blobless,
-  `1110ffb`, tracked-clean; `src/` is not git-ignored, so a doc-following user gets a `?? src/`
-  entry). Reported, not fixed here — candidates: `install.sh` passing `--src "$CONDA_PREFIX/src"`
-  to the fork step, or a docs line.
-- **The package the acceptance exercised was the switchover state**: the checkout's HEAD was
-  `ff92141` ("The switchover: judge, run and smoke_fit move in — the Records carry the package
-  identity", 12:42 the same session), so `run.check_fork` really is the moved module.
-
-The scratch environment and the clone were removed after the run (throwaway acceptance
-artifacts, per the 05b throwaway-venv precedent).
+passing and `openqha_hessian` importing. The recorded commands, outputs and the two run
+findings (the conda clone location; the switchover state the probes exercised) are on
+ticket [05](../decisions/05-install-and-transport.md)'s Answer; the decision's durable
+record is [ADR 0012](../../../docs/adr/0012-install-and-transport.md). The scratch
+environment and the clone were removed after the run (throwaway acceptance artifacts).

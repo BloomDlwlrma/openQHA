@@ -72,11 +72,14 @@ carried checkouts, and the local-path argument is the hedge when GitHub is unrea
   the Tianhe install document and the dependency installer's messages all say the same three
   things — fork by git URL, `install.sh` to train, run it last.
 * The fork check is the boundary made executable: a Record made on an eval machine carries
-  `mace_fork_commit: unknown`; a training run refuses it and the refusal names the fix.
+  `mace_fork_commit: unknown`; a training run refuses it.
+* Two deviations from ticket 05's spec letter, both recorded on the slices and kept: the
+  editable requirement carries the `#egg=mace-torch` fragment (bare `-e git+…@branch` fails on
+  pip 24.0), and pure-eval machines ride the environment-built non-editable fork rather than a
+  mace wheel.
 * Where the editable clone lands is pip's business, not the script's: `<env>/src` in a
   virtualenv, `<cwd>/src` under conda (pip classifies a conda environment as a global install).
-  The acceptance (`.scratch/hessian-learn-framework/implementation/05e-fresh-env-acceptance.md`)
-  recorded the conda behavior — following the README's implied cwd from the openQHA root puts
-  the fork clone inside the checkout; a fix is open (reported).
+  The acceptance recorded the practical consequence — from the README's implied cwd the fork
+  clone lands inside the openQHA checkout; a fix is open (ticket 05's Answer has the evidence).
 * Old Records keep their old strings and paths; what they meant is answered by ADR 0011 (the
   fork mapping) and the field-history ADRs (0004, 0006, 0010).

@@ -159,6 +159,13 @@ built, transported, or kept as a fallback; the documentation tells exactly this 
   carried-checkout install does the rest — a one-line change); the clone location for editable VCS
   installs inside a conda environment (pip's documented default is the environment's `src`; only
   the location is affected, never the provenance contract).
+
+  **Amended 2026-09-29 (post-acceptance).** The clone-location item is resolved, with its
+  prediction corrected: pip classifies a conda environment as a global install, so the editable
+  clone lands in `<cwd>/src`, not the environment's `src` — from the README's implied cwd,
+  inside the openQHA checkout (consequence and evidence on ticket
+  [05](../decisions/05-install-and-transport.md)'s Answer). The GitHub-reachability item
+  remains open; the fallback is a one-line change to the environment files' fork requirement.
 - **Cross-ticket:** ticket 06 can take "no change" for its `mace_fork_info()`-contract question
   under this design.
 - **Facts the implementation leans on:** the WSL environment's pip is 26.2.1 (accepts the direct

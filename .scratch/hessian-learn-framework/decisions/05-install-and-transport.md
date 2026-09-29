@@ -125,7 +125,23 @@ $ python -m pip show mace-torch openqha-hessian
 
 **Not verified / deferred.** No suite ran in the fresh env (the spec's testing decision: the
 probes are the seam; no suite tests were added); no weights were fetched or loaded (nothing
-weights-related was probed); the Tianhe path was not executed (05d's evidence stands); URL mode
-only — the local-path mode is 05b's and 05d's evidence. The scratch environment and the clone
-(4.9 MB) were removed after the run; nothing remains in the working tree (`git status -- src`
-clean).
+weights-related was probed); the Tianhe path was not executed (05d's evidence stands) and
+Tianhe's GitHub reachability through the site proxy stays unverified (05a's watch-list: the
+fallback is a one-line change to the environment files' fork requirement; §9's carried-checkout
+install is the primary path); URL mode only — the local-path mode is 05b's and 05d's evidence.
+The scratch environment and the clone (4.9 MB) were removed after the run; nothing remains in
+the working tree (`git status -- src` clean).
+
+**Review (two axes, `890bade..0baaedd` openQHA):** no hard findings. Standards: tracker
+conventions, the `Status` protocol and the ADR's structure/voice all clean; one near-convention
+item fixed — the map's "Not yet specified" fog line for package release artifacts had its
+trigger met ("Sharpens once *Install and transport* picks a mechanism") and is retired (the
+subject is ticket 13's), the map's "Slices:" line now links like its peers, and the run
+findings were thinned to a single home here with 05e pointing at it. Spec: every requirement
+and all four acceptance boxes borne out by the recorded log; no scope creep; three
+record-level corrections in this commit — the ADR no longer says the refusal "names the fix"
+(the repair hint still names the pre-split install; reported by 05d, owned by 12), the ADR now
+marks the two recorded deviations from the spec's letter (the `#egg=` fragment; eval riding
+the non-editable fork rather than a wheel), and the watch-list record is now truthful in both
+directions: this Answer restates the still-open Tianhe GitHub-reachability item, and 05a
+carries a dated amendment resolving the clone-location item.
