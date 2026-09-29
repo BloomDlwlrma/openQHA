@@ -7,7 +7,7 @@ Blocked by: 01b
 Part of: [hessian-learn-framework](../map.md)
 
 > Execution slice for [The package line](../decisions/01-the-package-line.md); the brief is
-> [01a](01a-the-package-line.md). Repeats 01b's pattern for the remaining openqha-free
+> [spec-the-package-line.md](../spec-the-package-line.md). Repeats 01b's pattern for the remaining openqha-free
 > modules; after this slice, every module of the training side that does not touch openQHA
 > has left. Agent-run, no user action required. Wayfinder conventions apply: the `Status`
 > protocol, no triage labels (`docs/agents/issue-tracker.md`, ADR 0009).

@@ -7,7 +7,7 @@ Blocked by: None (02 resolved 2026-09-27 — the fork re-homed to the sibling `m
 Part of: [hessian-learn-framework](../map.md)
 
 > Execution slice for [The package line](../decisions/01-the-package-line.md); the brief is
-> [01a](01a-the-package-line.md). The tracer bullet: the thinnest module (`hvp`, zero
+> [spec-the-package-line.md](../spec-the-package-line.md). The tracer bullet: the thinnest module (`hvp`, zero
 > openQHA imports) through every layer — package layout, editable install, twin runner,
 > fixture locator, consumer rewrite — so the slices after it only repeat a settled
 > pattern. Agent-run, no user action required. Wayfinder conventions apply: the `Status`
@@ -71,7 +71,7 @@ landed first and failed on the missing package; `hvp.py` then made them green.
   `.../envs/openqha/lib/python3.11/site-packages/openqha-dev.pth` holding
   `/mnt/c/Users/10704/Documents/01_Free-Energy-alchemical/openQHA` -- openQHA is
   importable from any cwd. Handed to [05](../decisions/05-install-and-transport.md):
-  the productionised form of both, and 01a's wheel-only caveat for the locator's
+  the productionised form of both, and the spec's wheel-only caveat for the locator's
   `parents[1]`.
 - **Evidence** (WSL `openqha` env, 2026-09-27):
   - `import openqha` pulls no torch/mace/openqha_hessian; `import openqha_hessian.hvp`
@@ -93,7 +93,7 @@ landed first and failed on the missing package; `hvp.py` then made them green.
   `tests/data/propanal_molecule/frames/frames.{out,toml}` on any `--all` run; the two
   files were reverted before this commit.
 - **Unverified:** nothing outstanding for this slice's acceptance. Outside this slice,
-  pointed at their owners: README and `install.sh` (01a/05), the push/force-swap (11),
+  pointed at their owners: README and `install.sh` (01/05), the push/force-swap (11),
   the doc/notebook sweep (12) -- and two inherited docstrings that still say `hvp`
   lives in `openqha/training/` (`openqha/__init__.py`'s layout map and
   `openqha/training/__init__.py`), which 01d's removal of the directory and 12's sweep

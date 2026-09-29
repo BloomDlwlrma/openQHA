@@ -1,17 +1,30 @@
-# The package line: the openQHA-Hessian training package
+# Spec: The package line — the training side moves into `openQHA-Hessian`
 
-Type: task
-Status: open
-Serves: 01
-Blocked by: 01d
-Part of: [hessian-learn-framework](../map.md)
+Label: `ready-for-agent`. Tracker: `.scratch/hessian-learn-framework/`. Spec for
+[01-the-package-line](decisions/01-the-package-line.md), rulings of 2026-09-26; slices:
+[01b](implementation/01b-the-package-skeleton.md),
+[01c](implementation/01c-the-loss-core.md),
+[01d](implementation/01d-the-switchover.md); durable record:
+[ADR 0010](../../docs/adr/0010-hessian-learning-lives-in-openqha-hessian.md).
 
-> The `/to-spec` output for decision [The package line](../decisions/01-the-package-line.md)
-> (resolved 2026-09-26). It is the brief [The move](../decisions/07-the-move.md),
-> [The repo swap](../decisions/11-repo-swap.md) and
-> [References sweep](../decisions/12-references-sweep.md) execute against.
-> Per the effort's conventions in `docs/agents/issue-tracker.md` (Wayfinding operations),
-> wayfinder tickets carry no `ready-for-*` triage labels; readiness is `Status: open`.
+**Rulings taken with this spec.** Q1 (boundary): all seven modules of `openqha/training/`
+move wholesale — no line is drawn inside the directory, and nothing of it stays. Q2
+(direction): the package imports openQHA (`data`, `store`, `thermochem`, `potentials`) and
+the mace fork; the `openqha` library never imports the package, while openQHA's consumers
+do. Q3 (identity): distribution `openqha-hessian`, import `openqha_hessian`, version
+0.1.0; flat layout, no console scripts; the loss address becomes
+`openqha_hessian.phl_loss:build`. Q4 (compatibility): no shim — `openqha.training` dies as
+an address and every reference is swept. Q5 (tests): the nine tests of the moved code move
+with it, under the package's twin runner, reusing openQHA's fixtures from the checkout.
+
+Settled elsewhere, not this spec's work: the fork rebuild
+([02](decisions/02-the-real-fork.md)); the weight-identity strip
+([04](decisions/04-sha256-retirement.md)); the install story
+([05](decisions/05-install-and-transport.md),
+[spec-install-and-transport.md](spec-install-and-transport.md)); identity after the split
+([06](decisions/06-identity-after-the-split.md)); the repo swap
+([11](decisions/11-repo-swap.md)); the reference sweep
+([12](decisions/12-references-sweep.md)); publication ([13](decisions/13-publication.md)).
 
 ## Problem Statement
 
@@ -68,7 +81,7 @@ The package ships its own test runner, running the tests that moved with their c
 - A good test here asserts external behaviour — the numbers the loss produces, the argv mace receives, the Record written, the fork gate's refusals — never module layout or private helpers.
 - Prior art: the existing plain-script tests under `tests/{unit,integration}/t_*.py`, run by a `run_tests`-style runner (one subprocess per file, `check(label, ok)` lines, a FAIL list, exit code). The moved tests keep that shape; the only new mechanism is the twin runner and the fixture locator.
 - Under test: the moved package modules, by the moved tests. No new seams are introduced — the tests run at the existing seams (module functions, CLI argv, Records).
-- Acceptance (as [The move](../decisions/07-the-move.md) states it): openQHA's unit + integration groups pass; the package's own runner passes; `05_train --dry-run` prints the same mace argv as before except the loss address.
+- Acceptance (as [The move](decisions/07-the-move.md) states it): openQHA's unit + integration groups pass; the package's own runner passes; `05_train --dry-run` prints the same mace argv as before except the loss address.
 
 ## Out of Scope
 
@@ -81,5 +94,6 @@ The package ships its own test runner, running the tests that moved with their c
 ## Further Notes
 
 - Vocabulary: "openQHA-Hessian" means the package; the mace side is "the mace fork" (`BloomDlwlrma/mace`).
-- The local folder `openQHA-Hessian/` today is the fork's checkout; it becomes the package's checkout and the fork moves elsewhere (02).
-- The `ready-for-agent` label is deliberately not applied: per the tracker doc and ADR 0009, wayfinder tickets use the `Status` protocol, not triage labels.
+- The local folder `openQHA-Hessian/` is the package's checkout; 02 re-homed the fork to the sibling `mace/` and archived the old checkout under `_to_delete/`.
+- Execution (2026-09-27/28): [01b](implementation/01b-the-package-skeleton.md), [01c](implementation/01c-the-loss-core.md) and [01d](implementation/01d-the-switchover.md) landed — the package carries the whole training side, and [The move](decisions/07-the-move.md) resolved on 01d; [The repo swap](decisions/11-repo-swap.md) and [References sweep](decisions/12-references-sweep.md) carry the remainder.
+- **Amended 2026-09-29:** re-homed from `implementation/01a` to the effort root in the `spec-<slug>` form (like [spec-install-and-transport.md](spec-install-and-transport.md)).

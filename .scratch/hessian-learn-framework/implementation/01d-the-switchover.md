@@ -7,7 +7,7 @@ Blocked by: 01c, 04, 06
 Part of: [hessian-learn-framework](../map.md)
 
 > Execution slice for [The package line](../decisions/01-the-package-line.md); the brief is
-> [01a](01a-the-package-line.md). This is [The move](../decisions/07-the-move.md) executed:
+> [spec-the-package-line.md](../spec-the-package-line.md). This is [The move](../decisions/07-the-move.md) executed:
 > `judge`, `run` and `smoke_fit` move once, carrying what 04 and 06 decided for the records
 > and constants they write — that is why those two tickets block this slice. When it lands,
 > 07 resolves by pointer and [The repo swap](../decisions/11-repo-swap.md) can land the
