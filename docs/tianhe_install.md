@@ -90,7 +90,7 @@ solve here touches. **This is correct. Do not change it.**
 
 Measured 2026-09-08: that path returns HTTP 200 and its `linux-64/repodata.json` (443 MB)
 was last modified the same day. `pypi.tuna.tsinghua.edu.cn` serves the pip packages too
-(the mace fork itself arrives from GitHub, through the same proxy).
+(the mace fork itself arrives from GitHub, not from TUNA).
 
 If you build by hand, `--override-channels -c conda-forge` is the command-line equivalent
 of `nodefaults`. Without it your `channels: [defaults]` is merged in as well.
@@ -294,7 +294,9 @@ Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`
 > `hpc/tools/xfer_tianhe_ai.sh push-repo` carries `mace/` and `openQHA-Hessian/` beside
 > `openQHA/`, `.git` included -- and `install_env_tianhe.slurm` section 9 runs
 > `openQHA-Hessian/install.sh` (local-path mode) inside every environment it manages.
-> `openqha.potentials.engine.provenance()` records the fork's commit as `mace_fork_commit`;
+> Run it last -- or again after any re-run of `install_dependency.sh` (Route B: after the
+> pip step): those reinstall the fork non-editable, and the editable pair is what training
+> needs. `openqha.potentials.engine.provenance()` records the fork's commit as `mace_fork_commit`;
 > a non-editable install (or a wheel) answers `unknown` and `05_train` refuses it.
 > `scripts/tooling/s0_check_weights.py` prints the two lines.
 >

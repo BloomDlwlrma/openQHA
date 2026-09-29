@@ -98,9 +98,31 @@ tells the one story.
 - No Python suite run: no Python changed.
 
 **Reported beyond scope (not changed here):** `docs/tianhe_runbook.md:277` ("serves `mace-torch`
-too") and `:296` ("`mace-torch`, `pymsym` and `parsl` ...") still carry wheel-era wording;
-`openqha/training/run.py:215`'s fork-refusal message still advises the pre-split install
-(`pip uninstall -y mace-torch && pip install -e <path>/openQHA-Hessian`) -- the training side's
-callers are 07/01d territory. The tracker files `05a-install-and-transport.md`,
+too") and `:296` ("`mace-torch`, `pymsym` and `parsl` ...") still carry wheel-era wording; the
+fork-refusal message still advises the pre-split install (`pip uninstall -y mace-torch && pip
+install -e <path>/openQHA-Hessian`) -- at this commit `openqha/training/run.py:215`, and the
+in-flight switchover carries it into the package (`openQHA-Hessian/openqha_hessian/run.py:216`);
+the training-side callers are 07/01d territory. The tracker files `05a-install-and-transport.md`,
 `05e-fresh-env-acceptance.md`, the two research notes and `spec-identity-after-the-split.md`
 remain untracked in the working tree (pre-existing; not this slice's).
+
+**Review (two axes, `da7551b..3c276ce` openQHA):** two content findings, both fixed in this
+commit: the 05c carry-in was half-done -- the document said "run it last" but not "or again after
+any re-run of `install_dependency.sh`" (the clause now sits in the fork block, the one place the
+doc tells the fork story); and the §1.2 parenthetical overclaimed -- "arrives from GitHub,
+through the same proxy" asserted reachability that 05a's watch-list leaves unverified, and is
+now "arrives from GitHub, not from TUNA". One citation re-check: the review found
+`openqha/training/run.py` gone -- true in the working tree (the switchover is landing), false at
+this commit, where line 215 carries the message; the reported item above now names both homes.
+Judgement calls left standing: the shellcheck cleanups beyond 05b's two pointers
+(SC2015/SC2016/SC2086 -- SC2016/SC2086 sit on SC2027's own line, the if/else is
+behaviour-identical, and 05b's touched-file precedent is clean-at-default; no repo shell standard
+to breach); the `cd` guard as a fail-fast precondition (the no-errexit ruling governs failing
+steps, not the ground the script stands on -- proceeding from a failed `cd` would operate on the
+wrong tree); §9's presence guard deliberately repeating `install.sh`'s validation (cheap, and it
+keeps the absent case on the skip-message path); the anchored `/logs` narrowing nested-`logs`
+exclusion (the only shape that keeps `.git` complete; no `push-repo` item carries a nested
+`logs/` worth excluding); the §3.1/§3.2 pip-block repetition (each section stands alone -- the
+05c precedent); and 05a's "wheel path remains" wording staying as the historical record (the
+clarification lives where it acts: the §9 skip message and the document). Spec axis: all of
+"What to build" and all five acceptance boxes borne out; no scope creep.
