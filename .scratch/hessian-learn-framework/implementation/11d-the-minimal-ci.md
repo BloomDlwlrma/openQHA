@@ -12,6 +12,14 @@ Part of: [hessian-learn-framework](../map.md)
 > last step — dropping it means deleting decision 9 and the workflow; the record step
 > stays. Wayfinder conventions apply: the `Status` protocol, no triage labels
 > (`docs/agents/issue-tracker.md`, ADR 0009).
+>
+> **Ready state (2026-09-29, after [11c](11c-the-swap.md)):** the swap is executed and
+> verified — the remote serves only `main` @ `a5f8103`; the description stays the old
+> text (user ruling; no description action); local tracking is clean. The WSL session
+> ssh-agent from 11c may still be alive with the key loaded — reuse it for this slice's
+> push (`export SSH_AUTH_SOCK=/tmp/11c-agent.sock`; fallback `ssh-add
+> ~/.ssh/id_ed25519`); kill when done: `pkill -f 11c-agent.sock`. Swap transcripts under
+> `C:\Users\10704\AppData\Local\Temp\11c\`.
 
 ## What to build
 

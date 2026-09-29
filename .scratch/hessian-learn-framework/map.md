@@ -5,7 +5,7 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 ## Destination
 
-`openQHA-Hessian` stands on its own: the training side lives in it as a package, openQHA imports it, and the mace-internal changes live on the real fork `BloomDlwlrma/mace` (rebased on upstream history, PR-ready). Model weights load the native mace/mace-off way (SHA256 pinning retired). Round 1 of Hessian training runs and is debugged on one assembled xyz of every labeled frame.
+`openQHA-Hessian` stands on its own: the training side lives in it as a package, openQHA imports it, and the mace-internal changes live on the real fork `BloomDlwlrma/mace` (rebased on upstream history; a permanent private fork — the upstream submission was decided against, see [10](decisions/10-upstream-pr.md)). Model weights load the native mace/mace-off way (SHA256 pinning retired). Round 1 of Hessian training runs and is debugged on one assembled xyz of every labeled frame.
 
 ## Notes
 
@@ -16,7 +16,7 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
   - Q1 = split: `BloomDlwlrma/mace` = a true GitHub fork of ACEsuit/mace for the mace-internal changes; `openQHA-Hessian` = the independent package.
   - Q2 = move the training side (`openqha/training/` or the whole 05_train side) out of openQHA into `openQHA-Hessian`.
   - Q3 = openQHA's reference layer may be edited as part of this effort.
-  - Q4 = the mace-side changes are organised as upstream-PR-able.
+  - Q4 = the mace-side changes are organised as upstream-PR-able. (Revised by [10](decisions/10-upstream-pr.md), 2026-09-29: not submitted — a permanent private fork.)
   - Q5 = keep the `openQHA-Hessian` name and URL; replace its content; old history only as a local bundle; new commit ids accepted; old Records keep their old hashes, with a mapping note added.
   - Work items added 2026-09-26: (1) remove SHA256, call models the native mace/mace-off way; (2) assemble every labeled frame into one xyz for round 1 of Hessian training and the debug run.
 - The old fork, for reference: 7 commits = squashed base `8fac5d1` (tag `base-v0.3.16` = upstream v0.3.16 `4d2da09` minus the three bundled binaries) + 6 commits (`0ae78c4` version bump; `1b9c382` A hessian label; `e68390f` B external loss; `904dd3b` C multihead/eval; `a37f8b6` D probes; `f14a56f` probe default); whole change = 12 files, +869/−18.
@@ -39,6 +39,8 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 
 - [The move: training code from openQHA into openQHA-Hessian](decisions/07-the-move.md): `judge`, `run`, `smoke_fit` and their five tests live in `openqha_hessian` (package commit `ff92141`); openQHA deletes `openqha/training/` and re-addresses every consumer; the writers carry 04's fields (`FOUNDATION_FILE`; no fingerprints) and 06's package identity — `HL_PACKAGE_VERSION`/`HL_PACKAGE_COMMIT` through `package_identity()`, one reader (`engine.checkout_commit`) shared with the fork guard. Slice: [01d](implementation/01d-the-switchover.md).
 
+- [Upstream: submit the mace-side changes](decisions/10-upstream-pr.md): **not submitted** — the fork becomes a permanent private fork (release-line base, already v0.3.16; frozen — `1110ffb`/`5c2d761` are the permanent anchors; branch-name reference; never upstream), revising Q4; the identity layer (version marker, `mace_fork_info()`, mapping) is kept. Findings: [research/mace-md-fork-practice.md](research/mace-md-fork-practice.md); durable record: ADR 0013.
+
 ## Implementation
 
 <!-- one line per landed execution slice (implementation/): [<ticket title>](implementation/NNx-slug.md): gist -->
@@ -56,12 +58,15 @@ Tickets: `decisions/NN-<slug>.md` — the map's route (`Type:` grilling/research
 - [01d: The switchover](implementation/01d-the-switchover.md): `judge`, `run` and `smoke_fit` move into `openqha_hessian` (imports rewritten; siblings relative) with their five tests on the `_testlib` locator; the records carry 04's `FOUNDATION_FILE` and the judge drops its fingerprint fields; 06's `HL_PACKAGE_VERSION`/`HL_PACKAGE_COMMIT` ride in through `package_identity()`, the reader `engine.checkout_commit` shared with `mace_fork_info`; `registry_entry` becomes a stamped fixed revision; the Slurm gate's import and stale provenance print fixed. openQHA `--all` 73/73; package `--all` 9/9; the dry-run argv identical except the loss address.
 - [05e: Fresh-env acceptance](implementation/05e-fresh-env-acceptance.md): one fresh conda env from the documented lines (env file → activate → by-hand exports → `install.sh` → probes) ends with `import mace` inside the editable fork clone (`1110ffb`, tracked-clean), `mace_fork_info()` clean, `run.check_fork(strict=True)` passing and `openqha_hessian` importing; recorded on the way that pip under conda puts the editable clone in `<cwd>/src` — from the README's cwd, inside the openQHA checkout (reported; fix open). The scratch env and clone were removed after the run.
 - [11b: The safe deletion](implementation/11b-the-safe-deletion.md): the old-history bundle verified against the remote (`list-heads` = `ls-remote`; `openqha-hessian` `f14a56f`, `base-v0.3.16` `8fac5d1`) and the retired old-fork checkout deleted whole; the workspace-root bundle stays the old-history home.
+- [08a: The Tianhe merge runbook](implementation/08a-tianhe-merge-runbook.md): the `draw300_r1` merge executed on Tianhe (6,048 molecules; 324,978 frames; the build prints the R4 Replay line). The labeling sweep was CANCELLED 2026-09-29 at the training-sufficient set (5,022 molecules / ~29.9k Hessian frames, 0 failures; the budget is the training reserve) and the post-cancel rebuild is the canonical r1 dataset -- the 2026-09-28 build and its recorded sha256 set are retired; the fetch and the Tianhe old-extxyz cleanup close with the 08 Answer.
+- [11a: The README rewrite](implementation/11a-the-readme-rewrite.md): the package repo's front page rewritten (`main` @ `a5f8103`, README-only) -- the function statement and the Important fork warning (user-directed), index links, "How PHL enters MACE" (target, estimator and cost, the six modules, the 00-06 workflow, a PHL-paper citation hint), Install/Verify kept, Citation = the single openQHA entry under the combined cite line (the PHL entry out; user-directed), License (CC BY-NC 4.0 + badge; user-directed); the draft shown to the human before the commit; package suite 9/9.
+- [11c: The swap](implementation/11c-the-swap.md): the package on the remote -- `main` published as a fresh branch (`a5f8103`; the six package commits + README, ids untouched); default branch switched by the human, API-verified before the deletion; both old refs deleted in one push (`openqha-hessian`, `base-v0.3.16`); local bookkeeping done (stale tracking ref pruned, `origin/HEAD` → `main`, local old tag dropped, `main` → `origin/main`); description kept old -- user ruling 2026-09-29 (web action 2 dropped); both pushes WSL-SSH -- after the plain-prompt flow lost twice to GitHub's auth window (`Bye Bye`), the deletion used a session ssh-agent (one local `ssh-add` prompt; socket left for 11d); tip suite 9/9. CI + the ticket-11 record ride [11d](implementation/11d-the-minimal-ci.md).
 
 ## Not yet specified
 
 <!-- fog: in scope, not sharp enough to ticket yet; graduates as the frontier advances -->
 
-- What to do with old artifacts whose recorded paths point at the old checkout (`mace_fork_path` in Records, run configs under `~/runs/openQHA`): migrate, note, or leave as history. Sharpens once *The repo swap* settles the new paths.
+- *(none — the old-artifact fog item was settled in the 2026-09-29 grilling: records citing old paths stay as history, no migration, no repair; recorded on [Round 1](decisions/09-round-1-run.md)'s old-assets boundary)*
 
 ## Out of scope
 

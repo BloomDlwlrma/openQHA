@@ -216,3 +216,23 @@ openQHA-free tests. Record the swap's evidence on the ticket.
 - **Done means:** the remote serves only `main` (rewritten README, new description), the
   retired checkout is gone, the bundle verifies, and a green CI run exists — all recorded on
   the ticket.
+
+## Execution notes (2026-09-29, after 11c — append-only; the sections above stand as the spec's letter)
+
+- **Decision 10, corrected in practice.** GitHub's SSH endpoint closes the connection with
+  `Bye Bye` when the signature doesn't arrive promptly after the key offer is accepted; the
+  as-written "passphrase typed at the terminal prompt" flow failed twice for anything but
+  instant typing (push attempt 1, delete attempt 1) and passed on a fast retry (push
+  attempt 2). Both pushes still ran over the ruled WSL-SSH route with the same key; the
+  deletion used a session `ssh-agent` — one **local** `ssh-add` prompt, no server-side
+  window. If still alive: socket `/tmp/11c-agent.sock` (reuse: `export
+  SSH_AUTH_SOCK=/tmp/11c-agent.sock`; kill: `pkill -f 11c-agent.sock`).
+- **Decision 3(b), superseded by the user (2026-09-29).** The description keeps its
+  pre-existing text — the ruled replacement sentence was decided against; the description
+  web action was dropped. The default-branch switch (action 1) stands.
+- **UI pointer corrected:** the default-branch switch lives in Settings → **General**
+  ("Default branch"), not Settings → Branches, in the current GitHub UI.
+- **Push end-to-end verified:** the WSL key `id_ed25519` authenticates to GitHub (over
+  `ssh.github.com:443`, per the existing WSL `~/.ssh/config`).
+- **Status:** the swap is executed and verified (11c resolved, 2026-09-29); the CI and the
+  ticket-11 record + resolution ride [11d](../implementation/11d-the-minimal-ci.md).
