@@ -107,3 +107,18 @@ Repo and branch are exactly decision 2's. (05c's venv check saw the bare form pa
   [05e](05e-fresh-env-acceptance.md)'s proof.
 - openQHA's full `--all` group was not run here (no Python changed; `t_train_engine` still
   waits on 01d and the group rewrites shared fixtures) -- its unit group was run instead.
+- **Review (two axes, `b18acde` openQHA / `b37ac55` package):** no hard findings.
+  Standards: no documented-standard breach; two judgement calls left in place on purpose --
+  the verification heredoc keeps its two independent 40-hex probes (the direct-read one and
+  the `mace_fork_info()` one) rather than a shared helper, and `MACE_SRC`'s URL-or-path
+  sentinel is the plain shell idiom; the install story repeated across the two READMEs is
+  this ticket's own instruction. Spec: decisions 1-7/14 and stories 1-9/15 borne out; the
+  `#egg=mace-torch` fragment is the one documented deviation (decision 2's repo and branch
+  exact); the ordering note in both READMEs is 05c's hand-off sentence, not creep. Two nits
+  recorded deliberately: the `|| true` on the mace-torch uninstall is bounded by the
+  verification block (a shadowing wheel fails the import probe) and carries the
+  venv/system-site refusal case; a missing `git` binary would exit non-zero via traceback
+  (decision 5's "non-zero on any failure" holds; its list-the-problems reporting would
+  not). Story 8's `check_fork(strict=True)` is out of the script by design (it exercises
+  the stable `engine.mace_fork_info()` contract; the trainer's check moves with 01d) and
+  was run post-review as evidence: passes, `1110ffb…` clean, `0.3.16+openqha`.
