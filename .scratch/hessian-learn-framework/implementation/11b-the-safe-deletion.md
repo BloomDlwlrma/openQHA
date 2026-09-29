@@ -69,3 +69,32 @@ Reported per the operating rule — files changed: this ticket and the map's Imp
 line; checks run: `git bundle verify`, `bundle list-heads` vs `ls-remote`, `Test-Path`,
 bundle sha256, old-path grep, env imports; not verified: the Python test suites were not
 re-run — no code was touched and no runtime consumer of the deleted path exists.
+
+Transcripts: `C:\Users\10704\AppData\Local\Temp\11b-check.log` (bundle verify, list-heads,
+ls-remote), `11b-post.log` (post-deletion state, sha256 re-check), `11b-probe2.log` (env
+imports).
+
+## Review record (2026-09-29, two-axis review of `7a59882`)
+
+Two-axis review of the resolution commit (parent `24fc576`) per the `code-review` skill;
+both axes clean.
+
+**Standards (repo standards + the smell baseline).**
+
+- Conformant; no hard violations. The resolve protocol is followed (evidence `## Answer`,
+  `Status: resolved`, one `Implementation` line, no triage labels), and every evidence
+  claim in the Answer re-checks against the session logs (verify output, refs equality,
+  sha256 unchanged, 395 files, the rest of `_to_delete/` untouched).
+- The `Status: claimed` step is a working state, recorded in the session log only -> kept
+  as is.
+- Baseline smells (Data Clumps on the ref/SHA pair; docs-variant duplication between
+  "What to build" and the Answer) -> judgement calls, kept: tracker gisting is the
+  convention here.
+
+**Spec (this ticket).**
+
+- Faithful; all four acceptance items are backed by evidence. Exactly the two tracker
+  files changed; nothing outside the contract.
+- The Answer quotes the check outputs rather than appending raw transcripts -> the
+  transcript paths added above (this annotation).
+- Beyond-contract checks (env import probe, old-path grep) are reported-only and stay.
