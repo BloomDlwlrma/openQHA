@@ -299,9 +299,9 @@ def provenance(name=None):
         # that can be checked.
         mace_module_path=str(getattr(mace, "__file__", "")),
         # Which mace: since 2026-09-20 the intended one is the fork
-        # BloomDlwlrma/openQHA-Hessian (branch openqha-hessian), installed editable, and
-        # its commit is the only thing that says which loss-side changes were in the
-        # loop. A pip-installed 0.3.16 answers "unknown" here; 05_train refuses that.
+        # BloomDlwlrma/mace (branch openqha-hessian), installed editable, and its commit
+        # is the only thing that says which loss-side changes were in the loop. A
+        # pip-installed 0.3.16 answers "unknown" here; 05_train refuses that.
         **mace_fork_info(),
         torch_version=torch.__version__,
         dtype=DTYPE,
@@ -317,8 +317,11 @@ def provenance(name=None):
 #: mace's internals is two generic commits on a branch, everything else uses the public
 #: API from `openqha/training/`). The fork's commit is part of a fine-tuned potential's
 #: identity, next to the resolved weights path.
-MACE_FORK = "BloomDlwlrma/openQHA-Hessian@openqha-hessian"
-MACE_FORK_BASE = "base-v0.3.16"      # = upstream ACEsuit/mace v0.3.16 (4d2da09) minus three bundled model binaries
+MACE_FORK = "BloomDlwlrma/mace@openqha-hessian"
+#: The fork's base tag: upstream ACEsuit/mace v0.3.16 (`4d2da09`) minus the three
+#: bundled model binaries. The tag now lives on the fork's rebuilt history, at the
+#: binary-drop commit `5c2d7612eed88dc1463b5588a79c2d5f5718d322`.
+MACE_FORK_BASE = "base-v0.3.16"
 
 
 def _git(args):
