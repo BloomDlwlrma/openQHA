@@ -1,7 +1,7 @@
 # 11b: The safe deletion — the bundle verified, the old checkout gone
 
 Type: task
-Status: open
+Status: resolved
 Serves: 11
 Blocked by: None
 Part of: [hessian-learn-framework](../map.md)
@@ -33,11 +33,39 @@ The bundle stays at the workspace root — no copy of it lands in the package re
 
 ## Acceptance
 
-- [ ] `git bundle verify` passes; `list-heads` equals `ls-remote` on both old refs — or the mismatch stopped the deletion and a re-bundle was reported
-- [ ] `_to_delete/openQHA-Hessian-old-fork-2026-09-26/` is gone (`Test-Path` false); the workspace-root bundle is untouched
-- [ ] The old-history pointers stand: the bundle path and the ADR 0011 mapping report these as the old-history home
-- [ ] Reported per the operating rule: files changed, checks run, anything not verified
+- [x] `git bundle verify` passes; `list-heads` equals `ls-remote` on both old refs — or the mismatch stopped the deletion and a re-bundle was reported
+- [x] `_to_delete/openQHA-Hessian-old-fork-2026-09-26/` is gone (`Test-Path` false); the workspace-root bundle is untouched
+- [x] The old-history pointers stand: the bundle path and the ADR 0011 mapping report these as the old-history home
+- [x] Reported per the operating rule: files changed, checks run, anything not verified (see the Answer)
 
-## Answer
+## Answer (2026-09-29, implemented in this commit)
 
-<!-- resolver: append the bundle check output + the deletion evidence; set Status: resolved; add a line to the map's Implementation -->
+**Bundle check (before any deletion).** `git bundle verify` on
+`_backup/openQHA-Hessian-old-history-2026-09-26.bundle`: okay — 2 refs, a complete history:
+
+- `f14a56fe40330766219cb83f9ebbf2d813b99e05` `refs/heads/openqha-hessian`
+- `8fac5d11bb34954e17ed7a41e7a4bb6f908017be` `refs/tags/base-v0.3.16`
+
+`git bundle list-heads` lists exactly those two; `git ls-remote
+https://github.com/BloomDlwlrma/openQHA-Hessian.git` lists the same two SHAs plus
+`HEAD` = `f14a56f` (`--symref`: `HEAD` → `refs/heads/openqha-hessian`). Equal on both old
+refs — the remote holds nothing the bundle lacks, so the deletion proceeded. Bundle
+sha256 `729ad1bb8b0ddf3b94435d0838f92ac0966a5dbbf79a9abfd457e6fb5c73a3e7` (522,591 B),
+re-checked after the deletion: unchanged, still at the workspace root.
+
+**Deletion (Windows side, per decision 8).** `Remove-Item -Recurse -Force` on
+`_to_delete/openQHA-Hessian-old-fork-2026-09-26` — gone (`Test-Path` false); 395 files
+removed, including `logs/`, `results/`, `mace_torch.egg-info/`, `.pytest_cache/` and the
+four `mp_finetuning*.xyz`; the rest of `_to_delete/` untouched. A repo-wide grep finds the
+path only in tracker records (history, by design). The WSL `openqha` env still imports
+`mace` from the editable `mace/` clone (`0.3.16+openqha`) and `openqha_hessian` from
+`openQHA-Hessian/`.
+
+**Pointers stand.** ADR 0011 still names the bundle
+(`../../../_backup/openQHA-Hessian-old-history-2026-09-26.bundle`) as the old-history
+home; no copy of the bundle was placed in the package repo.
+
+Reported per the operating rule — files changed: this ticket and the map's Implementation
+line; checks run: `git bundle verify`, `bundle list-heads` vs `ls-remote`, `Test-Path`,
+bundle sha256, old-path grep, env imports; not verified: the Python test suites were not
+re-run — no code was touched and no runtime consumer of the deleted path exists.
