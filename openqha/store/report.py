@@ -3,8 +3,8 @@
 --------------------------------------------------------------------------------------
 Why this changed, and what it changed to
 --------------------------------------------------------------------------------------
-The analysis tree is `.log` text and not JSON: text like ORCA and CREST produce, or
-parquet.
+The readable form is `.log` text like ORCA and CREST produce, or parquet tables --
+not the JSON itself.
 
 **The conclusion is "both, with a division of labour", not one or the other** -- because
 products contain two kinds of thing with entirely different natures:

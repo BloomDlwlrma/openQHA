@@ -230,7 +230,7 @@ def rigid_block_floor_cm(hessian_eV_A2, masses, positions):
     put this block at zero for an exact Hessian; an analytic ORCA Hessian leaves a few
     cm^-1 there, a numerical one (NumFreq of numerical gradients) the size of its
     finite-difference noise. It must be read BEFORE projection: after P H P the block is
-    in the kernel by construction and says nothing (the review)."""
+    in the kernel by construction and says nothing (checked in review)."""
     m = np.repeat(np.asarray(masses, dtype=float), 3)
     hm = np.asarray(hessian_eV_A2, dtype=float) / np.sqrt(np.outer(m, m))
     v, _sing, _rank = rigid_body_vectors(masses, positions)
@@ -398,7 +398,7 @@ def thermal_displacements(atoms, calc=None, temperature_K=298.15, n_samples=4,
     B) samples. Below 300 cm^-1 the two agree to 1-6 % in amplitude at 298 K; above
     1000 cm^-1 the quantum draw is 1.6-2.8x wider (zero-point motion) and carries 88 % of
     a quantum frame's ~27 kcal/mol (propanal), against ~7 kcal/mol classical -- measured
-    2026-09-18, the Hessian-learning note.
+    2026-09-18.
 
     `max_rms_displacement_A=` rejects and redraws a displacement whose RMS over the 3N
     coordinates exceeds it, `max_draws_per_sample` times, then raises. **A basin with a

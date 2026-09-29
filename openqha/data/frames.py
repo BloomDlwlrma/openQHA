@@ -90,8 +90,8 @@ WHAT THE DRAW DOES AND DOES NOT TOUCH. msRRHO thermochemistry is computed at BAS
 changes neither. The displaced frames are DIAGNOSTICS: their reference label is EnGrad
 only, and they serve the judge's held-out rows, the in-distribution and forgetting checks
 and rho_k (the curvature change from the basin). The draw is therefore the SCALE of those
-diagnostics, and one campaign must use one scale -- which is why, on 2026-09-23, every
-Frame set of draw300 was rebuilt with `--force` rather than mixing. No draw bounds the
+diagnostics, and one campaign must use one scale -- which is why the draw300 Frame sets
+are built with `--force` rather than mixed (since 2026-09-23). No draw bounds the
 GEOMETRY: the amplitude is sqrt(2E_k)/omega_k, so a basin with a near-zero mode (4-6 cm^-1
 surviving the Eckart projection) displaces by angstroms and its displaced frames are
 dropped by the energy window.

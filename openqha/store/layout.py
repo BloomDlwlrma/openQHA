@@ -240,8 +240,8 @@ def orca_level_file(molecule, level, basin, ext):
 def thermo_dir(molecule):
     """`msrrho/thermo/`: the msRRHO study's Records, flat -- `<level>.<step>.<ext>` per level
     (`wb97m-d3bj_def2-tzvppd.thermo_msrrho.toml`, `mace-off23_medium.merge_map.dat`) and the
-    cross-level ones bare (`level_compare.toml`, `hessian_compare.toml`). Replaces the
-    earlier per-level folders."""
+    cross-level ones bare (`level_compare.toml`, `hessian_compare.toml`). The per-level
+    folders are gone (flat since 2026-09-20)."""
     return msrrho_dir(molecule) / THERMO
 
 

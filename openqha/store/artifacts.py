@@ -40,7 +40,7 @@ What is enforced, and how each rule can fail
 
 `status="unknown"` is deliberately allowed. It is for artifacts inherited from
 before this module existed, and the INDEX lists them separately with a count --
-per the design's criterion 3, unknown is not the same as absent (write down what
+unknown is not the same as absent (write down what you
 you cannot source, do not invent it).
 """
 import json
@@ -184,7 +184,7 @@ def _shown(path):
     `ANALYSIS` is a rebindable module constant, so a destination can legitimately
     sit outside the repository (a test redirects it to a temporary directory). A
     bare `relative_to` would then raise ValueError while BUILDING an error message,
-    which replaces a clear refusal with a confusing traceback -- this is the
+    which replaces a clear refusal with a confusing traceback -- a
     lesson in miniature: an error path is only verified under the caller's
     real conditions.
     """

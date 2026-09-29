@@ -49,7 +49,7 @@ PRUNE_RMS_EMBED = 0.125         # A, **all-atom** geometric deduplication after 
 #
 # 2026-09-04: DEDUP_RMSD_A was 0.30 A, with **no source anywhere in the repository** --
 # the config claimed "this package carries its own threshold sweep" and the sweep had
-# never been run. It has now been run, on two molecules:
+# never been run. It has been run, on two molecules:
 #
 #     threshold / A     OCCC(=O)CO basins     OCCO basins
 #     0.05 - 0.25             23                  10       <- flat plateau
