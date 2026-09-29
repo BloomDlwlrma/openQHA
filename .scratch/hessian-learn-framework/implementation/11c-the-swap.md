@@ -42,9 +42,9 @@ at the keyboard.
 
 - [x] The remote serves exactly one branch, `main`, at the pushed tip; `HEAD` → `main`; the old branch and the old tag are gone
 - [x] The pushed tip's README is 11a's rewrite (the first visitor sees the finished state)
-- [x] Default branch = `main`; description: **kept old** — user ruling 2026-09-29 (the ruled sentence decided against; web action 2 dropped)
+- [x] The web description is the ruled sentence verbatim — amended 2026-09-29 per user ruling: **kept old** (the ruled sentence decided against; web action 2 dropped); default branch = `main`
 - [x] Local: the stale `origin/openqha-hessian` pruned, `origin/HEAD` → `main`, the local old tag deleted, `main` tracks `origin/main`
-- [x] Swap-side evidence recorded on ticket 11; the CI item of decision 11's list rides 11d
+- [x] Every item of decision 11's evidence list recorded on ticket 11 — swap-side items recorded; the CI item rides 11d (as sliced)
 - [x] Reported per the operating rule: files changed, checks run, anything not verified
 
 ## Answer (2026-09-29, agent-run; SSH pushes WSL-side, human at the terminal)
@@ -90,8 +90,47 @@ deleted in one push.
 
 Reported per the operating rule — files changed: this ticket, [ticket 11](../decisions/11-repo-swap.md)'s
 swap evidence, the map's Implementation line, the spec's execution notes, 11d's
-ready-state note (this commit). Checks run: `ls-remote --symref` before/after, the repo
-API before the deletion and after, `bundle verify` + `list-heads`, `git status` /
-`branch -vv` / `for-each-ref`, the retired-path check, the package suite (9/9). Not
-verified: the CI install path on a clean machine (11d's job); nothing else in this
-slice's list.
+ready-state note (`map.md` additionally carried other sessions' riding lines — see the
+review record). Checks run: `ls-remote --symref` before/after, the repo API before the
+deletion and after, `bundle verify` + `list-heads`, `git status` / `branch -vv` /
+`for-each-ref`, the retired-path check, the package suite (9/9). Not verified: the CI
+install path on a clean machine (11d's job); nothing else in this slice's list.
+
+## Review record (2026-09-29, two-axis review of `088adfe`)
+
+Two-axis review of the resolution commit (fixed point `af23691`) per the `code-review`
+skill; the axes ran as parallel sub-agents. No hard violations; two findings were fixed
+in this annotation commit, the rest kept or reported (gist of both reports):
+
+**Standards.** Resolve protocol conformant — `## Answer`, `Status: resolved`, the map's
+Implementation line, no triage labels; "Reported per the operating rule" complete on
+this ticket and on ticket 11.
+
+- Ticket 11's Answer is written ahead of its resolution (the resolve sequence completes
+  in 11d) — kept: the Answer's title and its `<!-- 11d: ... -->` footer make the split
+  explicit.
+- This ticket's acceptance items 3 and 5 were found rewritten in place — fixed in this
+  annotation: originals restored with dated amendment notes (the spec's append-only
+  execution notes are the model; `AGENTS.md`'s "done only when its acceptance criteria
+  are paid" anchors the letter of the list).
+- Smell baseline: the push-mechanics/agent-socket instructions repeat across ticket 11,
+  this ticket, the spec and 11d, and the SHA/ref set travels with them — kept as
+  judgement calls (same precedent as 11b's review record: docs-variant duplication is
+  the house style, and each site is a doc variant, not code).
+- Reported, not fixed: `map.md`'s "Out of scope" still reads "The upstream review cycle
+  after the PR is opened" while the riding ticket-10 line reads "not submitted ...
+  never upstream" — ticket 10's session owns those lines.
+
+**Spec.** Faithful to the swap's decisions; two micro-gaps, both closed in this
+annotation: the bundle path is now named on ticket 11's Answer (decision 12 asks for
+branch shape + bundle path + CI), and the README acceptance item is covered by tip
+identity (`a5f8103` = the README commit — same SHA, same content).
+
+- Scope note accepted as the tracked convention: `map.md` carried other sessions'
+  riding lines (ticket 10's record, the 08a/11a lines, the fog replacement) into this
+  commit — per 11a's own Answer, "the 11a line rides the next tracker commit". The
+  commit message covers this slice; the riding lines' records live in their own tickets.
+- `final-check.txt`'s `description_exact: False` compares against the superseded
+  sentence — per the user ruling the old text is the intended state (not a failed
+  check).
+- Deliberately out (sliced): the CI item and ticket 11's resolution ride 11d.

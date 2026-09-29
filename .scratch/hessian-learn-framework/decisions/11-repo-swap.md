@@ -24,9 +24,10 @@ Decision 2's sequence ran as approved; swap-side evidence (transcripts under
 - **Before** (2026-09-29): `ls-remote --symref` = `ref: refs/heads/openqha-hessian HEAD`,
   `f14a56fe40330766219cb83f9ebbf2d813b99e05` HEAD + `refs/heads/openqha-hessian`,
   `8fac5d11bb34954e17ed7a41e7a4bb6f908017be refs/tags/base-v0.3.16`; the workspace-root
-  bundle re-verified — `bundle verify` okay (2 refs, complete history), `list-heads` =
-  `ls-remote`, sha256 `729ad1bb8b0ddf3b94435d0838f92ac0966a5dbbf79a9abfd457e6fb5c73a3e7`
-  (522,591 B). Transcripts: `before.txt`, `gh-before.json`.
+  bundle `_backup/openQHA-Hessian-old-history-2026-09-26.bundle` re-verified —
+  `bundle verify` okay (2 refs, complete history), `list-heads` = `ls-remote`, sha256
+  `729ad1bb8b0ddf3b94435d0838f92ac0966a5dbbf79a9abfd457e6fb5c73a3e7` (522,591 B).
+  Transcripts: `before.txt`, `gh-before.json`.
 - **Publish**: fresh branch `main` → `a5f8103c7d644f42c892a495ecb13298f38bfe64` (the six
   package commits `909b91f` … `ff92141` + 11a's README; no force-push, no squash — ids as
   ruled). Transcript: `11c-push2.log` (`* [new branch] main -> main`).
