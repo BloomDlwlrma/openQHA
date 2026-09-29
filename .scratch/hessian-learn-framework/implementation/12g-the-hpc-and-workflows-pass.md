@@ -66,3 +66,35 @@ compile-checked and content-pinned by the existing tests, not executed as
 jobs. The working tree also carries the other sweep slices' edits
 (`openqha/`, `tests/`, `scripts/`, root files — 12d/12e/12f in flight); they
 are not part of this commit.
+
+## Review record (2026-09-30, annotations commit)
+
+Two-axis review of the sweep commit (`becb4a9`, range `41d1e28..becb4a9`),
+per the `code-review` skill, run as two read-only sub-agents on the
+pre-commit diff; the findings below were fixed before the sweep commit
+landed, and are recorded here.
+
+**Standards.** No documented-standard violation: the residual scans
+(case-insensitive, all token families) are empty; nothing in the diff
+changes behaviour (flags, values, the `FIX_COMMIT` hash and every identifier
+untouched); no `CONTEXT.md` `_Avoid_` term in the new text; the changed
+user-visible strings carry no test pin. Judgement calls, accepted as-is: the
+now-identical `set -eo pipefail` note across eight scripts (comment-only);
+the near-duplicated "it used to pin 4-core ranges" note in `hl_frames.slurm`
+(existing duplication); the surviving `(user, <date>)` attributions (the 12c
+precedent). One wording risk raised and fixed before the commit: the
+array-submission sentence had lost its referent when the dead path was
+removed — `providers.py` and `hpc/README.md` now say "a plain Slurm-array
+submission stays on the table as a fallback shape".
+
+**Spec.** Every 12g requirement delivered, no scope creep: 43/43 files lie
+inside the subtree and every hunk is a comment/docstring/help/echo/JSON
+description string; the Slurm scripts 12a touched are cleared in the same
+files; `FIX_COMMIT` keeps its hash and carries the spec's why-comment; no
+retired hash/fingerprint claims remain (the one `fingerprint` survival is
+the script name `s0_B_stack_fingerprint.py`). Hard findings, fixed before
+the commit: a "the the" splice in `hl_labels.slurm` (an inline parenthetical
+removed mid-sentence) and a dropped observation date in `tianhe_a.py`'s
+first bullet (restored as "(observed 2026-09-11)"). The pin-reading suites
+(`t_frame_labels`, `t_hl_campaign`, `t_walltime_forms`) re-ran green after
+the fixes; the full unit suite was 60/60 on the swept tree.
