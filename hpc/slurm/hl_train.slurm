@@ -13,7 +13,7 @@
 #         yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
 #
 # WHAT RUNS: `workflows/hessian_learning/05_train.py`, which builds mace's arguments and
-# calls `mace.cli.run_train.run` from the FORK (BloomDlwlrma/openQHA-Hessian, branch
+# calls `mace.cli.run_train.run` from the FORK (BloomDlwlrma/mace, branch
 # openqha-hessian) with `--loss external --loss_module openqha_hessian.phl_loss:build`.
 # The driver REFUSES a mace that is not the fork or whose checkout is dirty, so this job
 # fails in seconds rather than producing a model nobody can trace. Install the fork in

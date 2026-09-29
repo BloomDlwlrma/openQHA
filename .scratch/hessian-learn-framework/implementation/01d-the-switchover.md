@@ -53,7 +53,8 @@ code-clean tree.
 The move landed. `openQHA-Hessian` @ `ff92141` carries `judge`, `run` and
 `smoke_fit` under their names, their outside imports rewritten to
 `openqha.{data,store,thermochem,potentials}` (the sibling imports stay relative),
-and the five tests on the `_testlib` locator. This repo's commit deletes
+and the five tests (the fixture locator where they read openQHA's `tests/data`).
+This repo's commit deletes
 `openqha/training/` and its five tests, re-addresses the consumers -- the drivers,
 the Slurm gate's import *and* its stale provenance print (it read the retired
 `prov["params_sha256"]`/`["params_pin_status"]` keys: a `KeyError` today), the
@@ -101,8 +102,40 @@ old commit B (`FORK_COMMIT_B`, now in the package) and the fork reader test's
 cosmetic fake id.
 
 Not assigned anywhere, flagged: the package `README.md` still lists only the loss
-modules as the package's content (not in 12's list); `hl_train.slurm`'s WHAT-RUNS
-comment still names the fork's old repository (`BloomDlwlrma/openQHA-Hessian`);
-running python from the workspace root shadows `import mace` with the sibling
-`mace/` directory (a namespace package answers `mace_fork_info` "unknown") --
-repo roots are used everywhere it matters.
+modules as the package's content (not in 12's list); running python from the
+workspace root shadows `import mace` with the sibling `mace/` directory (a
+namespace package answers `mace_fork_info` "unknown") -- repo roots are used
+everywhere it matters.
+
+## Review record (2026-09-29, annotations)
+
+Two-axis review of the two commits (package `ff92141`, this repo `890bade`), per the
+`code-review` skill, with the dispositions below.
+
+**Standards.** The move's delta is import rewrites, the 04 field swaps, the identity
+additions and the registration stamp; no baseline smell was introduced (the flagged
+`HIP_METRICS` dead name, `frame_rows`'s unused `name`, the REF-key clumps and the two
+`_num` helpers are pre-existing and moved verbatim). One documented-standard breach
+inside a hunk this slice touches: `hl_train.slurm`'s WHAT-RUNS comment still named the
+fork's old repository (`BloomDlwlrma/openQHA-Hessian`, where ADR 0011 puts
+`BloomDlwlrma/mace`) -- fixed in this round; the earlier "flagged" disposition was too
+conservative.
+
+**Spec.** No scope creep; the fields, the reader-sharing and the 04a leftovers
+(`run_training`'s `parameter_fingerprint` call, `t_judge_engine`'s final kwargs shape)
+all check out. Two findings actioned:
+
+- `06_judge.py`'s train-record auto-discovery still keyed on the retired
+  `<base>-<run>` engine naming, so a model registered under the new
+  `<campaign>-<run>+<stamp>` key would silently judge without its training curves
+  -- fixed to derive the run from the engine name with `--tag` (the caller's own
+  tag), help text follows. Not exercised by the suites (no registered engine
+  exists yet); reasoned from the two naming rules.
+- The Answer's "five tests on the `_testlib` locator" was loose (`t_train_run`
+  reads no fixture) -- reworded.
+
+Kept as 12's, per the spec: the `check_fork` repair message, the pinned
+`FORK_COMMIT_B` (whose `!=` guard is vacuous against the rebuilt history until 12
+updates it), the tutorials/READMEs and the `.scratch/hessian-learning-set` pointers.
+Kept as documented in the Answer: the package README content list and the
+workspace-root `mace/` shadowing note.

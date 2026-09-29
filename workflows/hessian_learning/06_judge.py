@@ -82,7 +82,8 @@ def main():
                     help="the tag whose molecule directories hold this engine's msRRHO Records (S0_ENGINE=<engine> branch A under "
                          "its own tag); default: the campaign tag")
     ap.add_argument("--train-record", default=None,
-                    help="the fine-tune's train.toml (default: found from the engine name <base>-<run> under the Dataset)")
+                    help="the fine-tune's train.toml (default: found from the engine's "
+                         "<campaign>-<run>+<stamp> name under the Dataset)")
     args = ap.parse_args()
 
     name = args.name or args.tag
@@ -90,16 +91,17 @@ def main():
     base_name = args.base_engine or engine.engine_name()
     engine_name = base_name if args.engine == "base" else args.engine
 
-    calc, engine_name, prov = engine.calculator(device=args.device, name=engine_name)
-    base_calc, base_name, base_prov = engine.calculator(device=args.device, name=base_name)
+    calc, engine_name, _prov = engine.calculator(device=args.device, name=engine_name)
+    base_calc, base_name, _base_prov = engine.calculator(device=args.device, name=base_name)
     run_name = args.run or (engine_name if args.scale == 1.0 else "{}_x{:g}".format(engine_name, args.scale))
     if args.scale != 1.0:
         calc = judge.ScaledCalculator(calc, args.scale)
 
     root = config.runs_root(config.load())
     train_record = args.train_record
-    if train_record is None and engine_name.startswith(base_name + "-"):
-        cand = Path(dataset.datasets_dir(root, args.tag, name)) / "train" / engine_name[len(base_name) + 1:] / "train.toml"
+    if train_record is None and engine_name.startswith(args.tag + "-"):
+        run_part = engine_name[len(args.tag) + 1:].split("+", 1)[0]
+        cand = Path(dataset.datasets_dir(root, args.tag, name)) / "train" / run_part / "train.toml"
         train_record = str(cand) if cand.is_file() else None
     ramp = dict(max_K=args.ramp_max_K, step_K=args.ramp_step_K, step_ps=args.ramp_step_ps, seed=args.ramp_seed) if args.ramp else None
     print("judging    {}{}  against {}".format(engine_name, "" if args.scale == 1.0 else
