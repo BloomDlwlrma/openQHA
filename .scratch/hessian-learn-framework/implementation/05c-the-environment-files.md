@@ -6,7 +6,7 @@ Serves: 05
 Blocked by: None
 Part of: [hessian-learn-framework](../map.md)
 
-> Execution slice of [05a](05a-install-and-transport.md): spec decisions 8–10.
+> Execution slice of [the spec](../spec-install-and-transport.md): decisions 8–10.
 > Wayfinder conventions apply: the `Status` protocol, no triage labels
 > (`docs/agents/issue-tracker.md`, ADR 0009).
 

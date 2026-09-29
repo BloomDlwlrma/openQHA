@@ -1,15 +1,26 @@
-# Install and transport: the three-artifact stack, mace-md style
+# Spec: Install and transport — the three-artifact stack, mace-md style
 
-Type: task
-Status: resolved
-Serves: 05
-Part of: [hessian-learn-framework](../map.md)
+Label: `ready-for-agent`. Tracker: `.scratch/hessian-learn-framework/`. Spec for
+[05-install-and-transport](decisions/05-install-and-transport.md), rulings of 2026-09-28/29;
+findings: [research/mace-md-install-pattern.md](research/mace-md-install-pattern.md); durable
+record: [ADR 0012](../../docs/adr/0012-install-and-transport.md).
 
-> The `/to-spec` output for decision [Install and transport](../decisions/05-install-and-transport.md)
-> — the brief [05b](05b-the-install-script.md), [05c](05c-the-environment-files.md),
-> [05d](05d-the-tianhe-path.md) and [05e](05e-fresh-env-acceptance.md) execute against.
-> Per the effort's conventions in `docs/agents/issue-tracker.md` (Wayfinding operations),
-> wayfinder tickets carry no `ready-for-*` triage labels; readiness is `Status: open`.
+**Rulings taken with this spec.** Q1: only the training side requires the editable fork — pure-eval
+machines tolerate the wheel (provenance `unknown`); every environment that carries the checkouts
+gets both artifacts. Q2: one `install.sh` — the fork by branch URL by default, an optional local
+checkout path for the offline/Tianhe case; both artifacts editable; the stack is never built or
+shipped as a wheel. Q3: the ref is the branch, never a commit pin — the run's Record carries the
+commit. Q4: Tianhe's transport is the transfer tool carrying the two checkouts beside the
+repository (with `.git`) plus `workflows`/`docs`; the install job delegates to the script in
+local-path mode. Q5: the install scripts are the last mile only — the environment files own the
+dependencies, the environment scripts own `import openqha`; the single test seam is the
+fresh-environment acceptance.
+
+Settled elsewhere, not this spec's work: the fork rebuild ([02](decisions/02-the-real-fork.md));
+the package line and the move ([01](decisions/01-the-package-line.md), [07](decisions/07-the-move.md));
+the identity after the split ([06](decisions/06-identity-after-the-split.md)); the weight-identity
+strip ([04](decisions/04-sha256-retirement.md)); the repo swap ([11](decisions/11-repo-swap.md));
+publication ([13](decisions/13-publication.md)).
 
 ## Problem Statement
 
@@ -61,11 +72,11 @@ built, transported, or kept as a fallback; the documentation tells exactly this 
    fixed by the package-line decision). Contract: it runs inside an already-created, activated
    environment; it acts on that environment through `python -m pip`; it never creates environments
    and never touches openQHA's importability.
-2. **Fork source.** Default `git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian`; an
-   optional local checkout path argument replaces it (the offline / Tianhe mode). The script does no
-   cloning of its own — pip's editable VCS install performs a blobless partial clone (default on
-   git ≥ 2.17) and keeps the checkout with `.git` in place, which is what the provenance contract
-   needs.
+2. **Fork source.** Default `git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian`, spelled
+   with `#egg=mace-torch` so older pips can name the editable requirement; an optional local
+   checkout path argument replaces it (the offline / Tianhe mode). The script does no cloning of its
+   own — pip's editable VCS install performs a blobless partial clone (default on git ≥ 2.17) and
+   keeps the checkout with `.git` in place, which is what the provenance contract needs.
 3. **Validation before mutation.** A local path must exist and be a git checkout whose root carries
    the mace package (so `mace_fork_info()`'s ".git beside the package" contract will hold). Failures
    abort before any uninstall/install.
@@ -97,8 +108,9 @@ built, transported, or kept as a fallback; the documentation tells exactly this 
 11. **Tianhe environment-install §9.** Rewritten to install BOTH artifacts per managed environment
     by delegating to the package's `install.sh` in local-path mode (run through the environment's
     own python). `MACE_FORK` keeps its name and now points at the mace checkout (default: sibling
-    of the repository); a sibling variable names the package checkout. Absent checkouts produce the
-    explicit skip message (the wheel path remains for eval).
+    of the repository); the sibling variable `HESSIAN_PKG` names the package checkout. Absent
+    checkouts produce the explicit skip message; eval environments are unaffected — they ride the
+    non-editable fork the environment files install.
 12. **Transport.** The transfer tool's push list gains the two checkouts (sibling layout) plus the
     workflows directory (and docs) — `.git` must ride along (no exclusion may touch it). The Tianhe
     install document is corrected so its "the checkout travels beside the repository" claim is true
@@ -147,10 +159,10 @@ built, transported, or kept as a fallback; the documentation tells exactly this 
 
 ## Further Notes
 
-- **Findings with primary-source citations:** the mace-md install-pattern research note in this
-  effort's research folder — pip's editable VCS clone location and blobless partial clone verified
-  by `GIT_TRACE`; conda pip sections are requirements files (so `-e` entries are legal); mace-md's
-  own script and env file quoted verbatim.
+- **Findings with primary-source citations:** [the mace-md install-pattern research
+  note](research/mace-md-install-pattern.md) — pip's editable VCS clone location and blobless
+  partial clone verified by `GIT_TRACE`; conda pip sections are requirements files (so `-e` entries
+  are legal); mace-md's own script and env file quoted verbatim.
 - **Done means:** the ticket's acceptance — a fresh WSL env from the documented lines ends with
   `import mace` resolving to the fork checkout, `mace_fork_info()` clean, the fork check passing;
   script and documentation agree; the Tianhe path is decided with the offline constraint stated.
@@ -164,19 +176,10 @@ built, transported, or kept as a fallback; the documentation tells exactly this 
   prediction corrected: pip classifies a conda environment as a global install, so the editable
   clone lands in `<cwd>/src`, not the environment's `src` — from the README's implied cwd,
   inside the openQHA checkout (consequence and evidence on ticket
-  [05](../decisions/05-install-and-transport.md)'s Answer). The GitHub-reachability item
+  [05](decisions/05-install-and-transport.md)'s Answer). The GitHub-reachability item
   remains open; the fallback is a one-line change to the environment files' fork requirement.
 - **Cross-ticket:** ticket 06 can take "no change" for its `mace_fork_info()`-contract question
   under this design.
 - **Facts the implementation leans on:** the WSL environment's pip is 26.2.1 (accepts the direct
   `-e git+…@branch` form; older pips need the `#egg=` spelling); pip's partial-clone behavior needs
   git ≥ 2.17.
-
-## Answer
-
-Resolved as the brief, 2026-09-29: the design was settled in the grilling round (the mace-md
-simplification — git URLs, editable where provenance needs it, no wheels) and this spec was
-approved with granularity; execution is sliced as [05b](05b-the-install-script.md),
-[05c](05c-the-environment-files.md), [05d](05d-the-tianhe-path.md) and
-[05e](05e-fresh-env-acceptance.md). The findings it leans on: [the mace-md install
-pattern](../research/mace-md-install-pattern.md).
