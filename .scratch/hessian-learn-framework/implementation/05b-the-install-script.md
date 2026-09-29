@@ -122,3 +122,16 @@ Repo and branch are exactly decision 2's. (05c's venv check saw the bare form pa
   not). Story 8's `check_fork(strict=True)` is out of the script by design (it exercises
   the stable `engine.mace_fork_info()` contract; the trainer's check moves with 01d) and
   was run post-review as evidence: passes, `1110ffb…` clean, `0.3.16+openqha`.
+
+**Postscript (shellcheck, 2026-09-29):** the deferred lint is closed. ShellCheck v0.11.0
+(static binary at `~/.local/bin/shellcheck`; not added to the environment files -- dev
+tooling, not runtime) on `install.sh`: clean at default severity and `-S warning`; with
+`-o all` only optional style preferences remain (SC2292 `[[ ]]`, SC2250 brace-quoting,
+SC2312 substitution-masking) -- not applied (no repo shell-style standard; churn would
+invalidate the recorded acceptance run). Read-only sweep of both repos' 50 shell scripts:
+`install.sh` clean; findings elsewhere are pre-existing and outside this ticket -- mostly
+SC2164 (`cd` without `|| exit`) in hpc/examples, SC2155 in the two Tianhe
+`LD_LIBRARY_PATH` exports; two pointers for [05d](05d-the-tianhe-path.md) on files it
+touches (`install_env_tianhe.slurm:109` SC2164; `xfer_tianhe_ai.sh:100` SC2027); one
+malformed directive worth its owner's look (`examples/chain_body.sh:399` -- SC1073/SC1072,
+the intended SC2086 suppression does not apply).
