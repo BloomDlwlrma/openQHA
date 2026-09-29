@@ -176,7 +176,7 @@ def main():
             "sys.path.insert(0, {root!r}); sys.path.insert(0, {tooling!r}); sys.path.insert(0, {td!r})\n"
             "import stub\n"
             "import s0_probe_calibration as t\n"
-            "from openqha.training import judge\n"
+            "from openqha_hessian import judge\n"
             "judge.hessian_at = stub._hessian_at\n"
             "t.judge.hessian_at = stub._hessian_at\n"
             "t.engine.calculator = lambda **kw: (None, 'stub', None)\n"

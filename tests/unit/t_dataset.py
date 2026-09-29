@@ -424,7 +424,7 @@ def main():
               and dataset.VALID_FRACTION == 0.05,
               (dataset.DEFAULT_SPLIT_MODE, dataset.TEST_FRACTION, dataset.VALID_FRACTION))
         # the judge reads a whole test molecule as out_of_molecule, not interpolation
-        from openqha.training import judge as judge_mod
+        from openqha_hessian import judge as judge_mod
         check("a non-pinned molecule whose molecule_split is test reads out_of_molecule (S0-C-65); "
               "with no molecule_split it is interpolation",
               judge_mod.distribution_of("dsgdb9nsd_099999", molecule_split="test") == "out_of_molecule"

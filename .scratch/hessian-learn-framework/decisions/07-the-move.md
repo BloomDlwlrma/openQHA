@@ -1,7 +1,7 @@
 # The move: training code from openQHA into openQHA-Hessian
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 01, 04, 06
 Part of: [hessian-learn-framework](../map.md)
 
@@ -21,4 +21,9 @@ Execute [The package line](01-the-package-line.md)'s boundary as actual code mov
 
 ## Answer
 
-<!-- resolver: append what was done + evidence; set Status: resolved; add a line to the map's Decisions so far -->
+Resolved by [01d](implementation/01d-the-switchover.md) -- the move landed in two
+commits: the package's `ff92141` (`judge`, `run`, `smoke_fit` and their five tests;
+04's record fields; 06's package identity) and this repo's commit that follows (the
+deletions, the consumer re-addresses, `engine.checkout_commit`, the extended reader
+test, the map line). Evidence is in 01d's Answer: openQHA `--all` 73/73, the package
+`--all` 9/9, and the dry-run argv unchanged except the `--loss_module` string.

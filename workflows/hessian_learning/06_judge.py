@@ -51,7 +51,7 @@ sys.path.insert(0, str(ROOT))
 from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels               # noqa: E402
 from openqha.potentials import engine                        # noqa: E402
-from openqha.training import judge                           # noqa: E402
+from openqha_hessian import judge                            # noqa: E402
 
 
 def main():
@@ -114,8 +114,6 @@ def main():
     out = judge.run(root, args.tag, name, args.level, calc, engine_name,
                     base_calc=base_calc, base_engine=base_name, run_name=run_name, splits=splits,
                     scale=args.scale, spice_file=args.spice_file,
-                    engine_params_sha256=prov.get("params_sha256"),
-                    base_params_sha256=base_prov.get("params_sha256"),
                     progress=None if args.quiet else (lambda s: print("  ...", s, end="\r", flush=True)),
                     ramp=ramp, ramp_molecules=args.ramp_molecules, train_record=train_record, gate=args.gate, thermo_tag=args.thermo_tag)
     if not args.quiet:

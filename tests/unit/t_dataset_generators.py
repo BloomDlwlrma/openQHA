@@ -135,7 +135,7 @@ def main():
                 check("train_generators {!r} is refused".format(bad), "train_generators" in str(exc))
 
         # the judge's frame filter reads test frames as before
-        from openqha.training import judge
+        from openqha_hessian import judge
         rows = judge.frame_rows.__doc__ or ""
         check("judge.frame_rows exists and reads a split (unchanged interface)", "split" in rows or callable(judge.frame_rows))
 

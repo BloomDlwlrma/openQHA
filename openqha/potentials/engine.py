@@ -315,8 +315,8 @@ def provenance(name=None):
 
 #: The mace this repository trains with is a FORK (mace-md's pattern: what must touch
 #: mace's internals is two generic commits on a branch, everything else uses the public
-#: API from `openqha/training/`). The fork's commit is part of a fine-tuned potential's
-#: identity, next to the resolved weights path.
+#: API from the `openqha_hessian` package). The fork's commit is part of a fine-tuned
+#: potential's identity, next to the resolved weights path.
 MACE_FORK = "BloomDlwlrma/mace@openqha-hessian"
 #: The fork's base tag: upstream ACEsuit/mace v0.3.16 (`4d2da09`) minus the three
 #: bundled model binaries. The tag now lives on the fork's rebuilt history, at the
@@ -329,6 +329,38 @@ def _git(args):
     return subprocess.run(["git"] + list(args), check=True, capture_output=True, text=True, timeout=30).stdout
 
 
+def checkout_commit(module_file=None, run=None):
+    """The full commit of the git checkout a module file belongs to -- or "unknown".
+
+    One set of rules for every identity read in this workspace (the mace fork's commit,
+    and the `openqha_hessian` package's own): an editable install (`pip install -e
+    <checkout>`) imports from the checkout itself, so the module file's grandparent must
+    hold `.git`; a wheel in site-packages has no `.git` beside the package and answers
+    "unknown"; nothing walks further up than that one directory -- a `.git` two levels
+    above a site-packages would be somebody's home repository, not the package's;
+    `rev-parse HEAD` must answer a full 40-hex commit; every failure -- no git, not a
+    repository, a timeout, a stray answer -- is "unknown". The read never raises, and it
+    asks nothing else: the dirty question is the fork guard's (`mace_fork_info`).
+
+    Returns (commit, root): the 40-hex commit and the checkout, or ("unknown", None).
+    `run` is the git runner, injectable for the unit tests.
+    """
+    import re
+    if not module_file:
+        return "unknown", None
+    root = Path(module_file).resolve().parent.parent
+    if not (root / ".git").exists():
+        return "unknown", None
+    run = run or _git
+    try:
+        commit = run(["-C", str(root), "rev-parse", "HEAD"]).strip()
+    except Exception:                                     # noqa: BLE001 -- no git, not a repo, timeout
+        return "unknown", None
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        return "unknown", None
+    return commit, root
+
+
 def mace_fork_info(module_file=None, run=None):
     """Which mace checkout is imported, as a git commit -- or "unknown".
 
@@ -337,29 +369,25 @@ def mace_fork_info(module_file=None, run=None):
     `.git` is right there. A wheel in site-packages has no `.git` beside the package and
     answers "unknown". Nothing walks further up than that one directory: a `.git` two
     levels above a site-packages would be somebody's home repository, not mace's.
+    The commit rules live in `checkout_commit`; this adds the dirty question, asked only
+    once a checkout was found.
 
     Returns mace_fork_commit (40 hex or "unknown"), mace_fork_dirty (True when a TRACKED
     file of the checkout is modified -- untracked build products such as `*.egg-info`
     do not count -- None when unknown), mace_fork_path (the checkout, or None).
     `run` is the git runner, injectable for the unit test.
     """
-    import re
     if module_file is None:
         import mace
         module_file = getattr(mace, "__file__", None)
     unknown = dict(mace_fork_commit="unknown", mace_fork_dirty=None, mace_fork_path=None)
-    if not module_file:
-        return unknown
-    root = Path(module_file).resolve().parent.parent
-    if not (root / ".git").exists():
+    commit, root = checkout_commit(module_file, run)
+    if root is None:
         return unknown
     run = run or _git
     try:
-        commit = run(["-C", str(root), "rev-parse", "HEAD"]).strip()
         dirty = bool(run(["-C", str(root), "status", "--porcelain", "--untracked-files=no"]).strip())
-    except Exception:                                     # noqa: BLE001 -- no git, not a repo, timeout
-        return unknown
-    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+    except Exception:                                     # noqa: BLE001 -- the same rules as the commit read
         return unknown
     return dict(mace_fork_commit=commit, mace_fork_dirty=dirty, mace_fork_path=str(root))
 

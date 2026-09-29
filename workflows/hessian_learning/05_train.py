@@ -3,7 +3,7 @@
 PRODUCTION. openQHA's own entry point into the mace fork's training loop, in mace-md's
 shape: this driver builds mace's arguments and calls `mace.cli.run_train.run`, the
 Hessian label comes from the Dataset's `mace_<name>.<level>.extxyz` (`REF_hessian`,
-fork commit A), the loss from `openqha.training.phl_loss` (`--loss external
+fork commit A), the loss from `openqha_hessian.phl_loss` (`--loss external
 --loss_module`, fork commit B), kept in multihead mode and given the force graph at
 evaluation (commit C). Nothing here reimplements a training loop.
 
@@ -30,9 +30,10 @@ mace takes `--valid-fraction` (10 %) of the Replay for the pretraining head's va
 
 One run writes `<root>/<tag>/_datasets/<name>/train/<run>/`: mace's own files plus the
 Record `train.{out,toml,dat}` (the settings, the epoch table with the three validation
-curves, the Dataset, the base and fine-tuned fingerprints, the config SHA, the mace
-fork's commit). `--register` prints the `ENGINES` entry for the fine-tuned potential
-and, with `--register-copy`, puts the model into `data/potentials/`.
+curves, the Dataset, the base potential's resolved file and the fine-tuned one's, the
+config SHA, the mace fork's commit, this package's version and commit). `--register`
+prints the `ENGINES` entry for the fine-tuned potential and, with `--register-copy`,
+puts the model into `data/potentials/`.
 
 The driver REFUSES a mace that is not the fork, or a dirty checkout: a potential whose
 loss cannot be reproduced from a commit is not a product. `--no-strict-fork` is for
@@ -54,8 +55,8 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels               # noqa: E402
-from openqha.training import run as train_run                # noqa: E402
 from openqha_hessian import phl, phl_loss                    # noqa: E402
+from openqha_hessian import run as train_run                 # noqa: E402
 
 
 def _weight(text):
@@ -157,7 +158,7 @@ def main():
         print("  replay       {} frames from {} (config_weight {}), {:.3f} per Hessian frame; valid file {}".format(
             info["PT_N_FRAMES"], info["PT_TRAIN_FILE"], info["PT_CONFIG_WEIGHT"], info["REPLAY_PER_HESSIAN_FRAME"],
             info["PT_VALID_FILE"]))
-    print("  base         {}  {}...".format(info["FOUNDATION_MODEL"], info["FOUNDATION_PARAMS_SHA256"][:12]))
+    print("  base         {}  {}".format(info["FOUNDATION_MODEL"], info["FOUNDATION_FILE"]))
     print("  mace         {}  fork {}...".format(info["MACE_VERSION"], info["MACE_FORK_COMMIT"][:12]))
     if out["dry_run"]:
         print("\nmace_run_train \\\n  " + " \\\n  ".join(
@@ -165,7 +166,7 @@ def main():
         return 0
     print("  epochs       {} in {:.1f} s ({:.1f} s per epoch)".format(
         info["N_EPOCHS"], info["SECONDS"], info["SECONDS_PER_EPOCH"]))
-    print("  model        {}  {}...".format(info["MODEL_FILE"], (info.get("MODEL_PARAMS_SHA256") or "-")[:12]))
+    print("  model        {}".format(info["MODEL_FILE"]))
     if info["MULTIHEADS"]:
         print("  heads        pt train {} valid {}; fine-tune train {} valid {} (mace's log)".format(
             info["PT_HEAD_TRAIN"], info["PT_HEAD_VALID"], info["FT_HEAD_TRAIN"], info["FT_HEAD_VALID"]))
@@ -191,6 +192,7 @@ def main():
             import shutil
             from openqha.potentials import engine
             target = engine.model_root() / entry["filename"]
+            target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(info["MODEL_FILE"], target)
             print("  copied       {}".format(target))
         print("\nENGINES entry (openqha/potentials/engine.py):")
@@ -198,7 +200,6 @@ def main():
         print('        filename="{}",'.format(entry["filename"]))
         print('        source="{}",'.format(entry["source"]))
         print('        note="{}",'.format(entry["note"]))
-        print('        params_sha256="{}",'.format(entry["params_sha256"] or ""))
         print("    ),")
     return 0
 

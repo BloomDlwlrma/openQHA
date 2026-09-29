@@ -58,7 +58,7 @@ ROOT = _repo_root()
 sys.path.insert(0, str(ROOT))
 from openqha.data import dataset as dataset_mod, training_set    # noqa: E402
 from openqha.store import dat, property as prop                  # noqa: E402
-from openqha.training import judge                               # noqa: E402
+from openqha_hessian import judge                                # noqa: E402
 
 PROGNAME = "openQHA spice_pt_draw"
 DEFAULT_OUT = ROOT / "data" / "training_sets" / "spice_pt_{n}.extxyz"

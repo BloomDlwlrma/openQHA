@@ -39,7 +39,7 @@ from openqha import config                                   # noqa: E402
 from openqha.data import dataset, frame_labels               # noqa: E402
 from openqha.potentials import engine                        # noqa: E402
 from openqha.store import property as prop, report           # noqa: E402
-from openqha.training import judge, run as train_run, smoke_fit   # noqa: E402
+from openqha_hessian import judge, run as train_run, smoke_fit   # noqa: E402
 
 PROGNAME = "openQHA hl_smoke_fit"
 STEP = "smoke_fit"

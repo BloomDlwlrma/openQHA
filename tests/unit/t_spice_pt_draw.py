@@ -57,7 +57,7 @@ def write_ids(path, smiles_list):
 
 
 def write_membership(path, smiles_by_qid):
-    from openqha.training import judge
+    from openqha_hessian import judge
     cols = {"qm9_index": ("String", None, "q"), "smiles": ("String", None, "s"), "n_heavy": ("Integer", None, "n"),
             "in_training": ("Boolean", None, "t")}
     rows = [dict(qm9_index=q, smiles=smiles_by_qid[q], n_heavy=2, in_training=True) for q in judge.IN_DISTRIBUTION]
@@ -67,7 +67,7 @@ def write_membership(path, smiles_by_qid):
 def main():
     import numpy as np
     from ase.io import read
-    from openqha.training import judge
+    from openqha_hessian import judge
     perm = np.random.default_rng(0).permutation(7).tolist()
     with tempfile.TemporaryDirectory(prefix="ptdraw_") as td:
         td = Path(td)

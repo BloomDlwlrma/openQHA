@@ -1,7 +1,7 @@
 # 01d: The switchover — the move lands, ticket 07 resolves
 
 Type: task
-Status: open
+Status: resolved
 Serves: 01
 Blocked by: 01c, 04, 06
 Part of: [hessian-learn-framework](../map.md)
@@ -19,8 +19,10 @@ Part of: [hessian-learn-framework](../map.md)
 `judge`, `run` and `smoke_fit` move into `openqha_hessian` under their names, their
 outside-facing imports rewritten to `openqha.{data,store,thermochem,potentials}`, with
 [SHA256 retirement](../decisions/04-sha256-retirement.md)'s field changes and
-[Identity after the split](../decisions/06-identity-after-the-split.md)'s constants
-already in the code they carry.
+[Identity after the split](../decisions/06-identity-after-the-split.md)'s package-identity
+fields (`HL_PACKAGE_VERSION`, `HL_PACKAGE_COMMIT`) and their reader — shared with the fork
+reader, per [the spec](../spec-identity-after-the-split.md) — already in the code they
+carry (06's constant flip is the separate slice [06a](06a-fork-identity-and-mapping.md)).
 
 Their tests follow: `t_judge`, `t_smoke_fit`, `t_train_run`, `t_judge_engine`,
 `t_train_engine`. The consumers left in openQHA change addresses only — the drivers
@@ -33,8 +35,74 @@ code-clean tree.
 
 ## Acceptance
 
-- [ ] `openqha/training/` does not exist, and `import openqha` still pulls nothing from `openqha_hessian`
-- [ ] openQHA's `tests/run_tests.py --all` passes; the package runner passes all nine moved tests
-- [ ] `05_train --dry-run` prints the argv with `--loss_module openqha_hessian.phl_loss:build` and nothing else changed from before this effort
-- [ ] No shipping module, script or test references `openqha.training` in code (documentation and notebooks are 12's)
-- [ ] Reported per the operating rule: files moved, checks run, anything not verified
+- [x] `openqha/training/` does not exist, and `import openqha` still pulls nothing from `openqha_hessian`
+      -> in the WSL env: `'training' not in openqha.SUBPACKAGES`; `import openqha` pulls no `openqha_hessian`, no `torch`, no `mace`
+- [x] openQHA's `tests/run_tests.py --all` passes; the package runner passes all nine moved tests
+      -> openQHA `--all`: 73/73 (unit 60, integration 11, regression 2); the package `--all`: 9/9
+- [x] Both Records carry the package identity — `HL_PACKAGE_VERSION` and the best-effort `HL_PACKAGE_COMMIT` (`unknown` tolerated; never a gate) — with the reader shared with the fork reader and the extended tests green
+      -> both schemas and both Records on disk; `package_identity()` reads the distribution metadata + `engine.checkout_commit`; the fallback cases run on the package's module file (`t_engine_fork`: 18 checks)
+- [x] `05_train --dry-run` prints the argv with `--loss_module openqha_hessian.phl_loss:build` and nothing else changed from before this effort
+      -> the four argv builders compare byte-identical to `HEAD:openqha/training/run.py`; the printed argv carries the new loss address (the identity lines print the resolved files, per decision 04)
+- [x] No shipping module, script or test references `openqha.training` in code (documentation and notebooks are 12's)
+      -> grep over `openqha/`, `scripts/`, `tests/`, `workflows/`, `hpc/` is clean; the remaining mentions are documentation (12's)
+- [x] Reported per the operating rule: files moved, checks run, anything not verified
+      -> the Answer below
+
+## Answer (2026-09-29, implemented in the two commits)
+
+The move landed. `openQHA-Hessian` @ `ff92141` carries `judge`, `run` and
+`smoke_fit` under their names, their outside imports rewritten to
+`openqha.{data,store,thermochem,potentials}` (the sibling imports stay relative),
+and the five tests on the `_testlib` locator. This repo's commit deletes
+`openqha/training/` and its five tests, re-addresses the consumers -- the drivers,
+the Slurm gate's import *and* its stale provenance print (it read the retired
+`prov["params_sha256"]`/`["params_pin_status"]` keys: a `KeyError` today), the
+three s0 scripts, the four staying tests -- drops `training` from `SUBPACKAGES`
+and the layout docstring, and generalizes the identity reader:
+`engine.checkout_commit` now holds the checkout rules, `mace_fork_info` keeps its
+public shape and delegates to it (the dirty question stays the fork guard's).
+
+What the three modules carry, from decisions 04 and 06:
+
+- 04 (training side): `FOUNDATION_FILE` in; `FOUNDATION_PARAMS_SHA256`,
+  `MODEL_PARAMS_SHA256`, `MODEL_N_TENSORS`, the `ENGINE_PARAMS_SHA256` alias and
+  the judge's `ENGINE_PARAMS_SHA256`/`BASE_PARAMS_SHA256` out; the deleted
+  `engine.parameter_fingerprint` call gone from `run_training` (the
+  `t_train_engine` failure that [04a's Answer](04a-strip-weight-identity.md)
+  declared this slice's); both report identity sections list the resolved files;
+  `registry_entry` is a stamped fixed revision
+  (`mace_off23_<campaign>/<run>+<YYYYMMDD-HHMMSS>.model`, no pin line;
+  `--register-copy` creates the sub-directory).
+- 06 (identity after the split): both writers carry `HL_PACKAGE_VERSION` and
+  `HL_PACKAGE_COMMIT` through `openqha_hessian.package_identity()` (version from
+  the distribution metadata; commit best-effort via `engine.checkout_commit`).
+
+Evidence (WSL `openqha` env, 2026-09-29):
+
+- openQHA `python tests/run_tests.py --all` -> **all 73 passed** (unit 60,
+  integration 11, regression 2); `t_engine_fork` -- extended with the package's
+  module-file cases -- 18 checks, 0 failed.
+- package `python tests/run_tests.py --all` -> **all 9 passed** (the six unit and
+  three integration moved tests); `t_train_engine` also asserts the training
+  Record on disk carries the package identity.
+- `05_train --dry-run`: `mace_argv` / `argv_pairs` / `control_settings` /
+  `stage_two_weights` compare byte-identical to `HEAD:openqha/training/run.py`
+  (extracted with `ast`); the printed argv carries
+  `--loss_module openqha_hessian.phl_loss:build`.
+- `import openqha` pulls no `openqha_hessian`, no `torch`, no `mace`; `training`
+  is gone from `SUBPACKAGES`.
+- grep: no shipping module, script or test references `openqha.training`.
+
+Left to 12, per the spec: the `check_fork` repair message
+(`pip install -e <path>/openQHA-Hessian` -- the retired name);
+`workflows/hessian_learning/README.md`, the tutorials and the
+`.scratch/hessian-learning-set` pointers; the training integration test's pinned
+old commit B (`FORK_COMMIT_B`, now in the package) and the fork reader test's
+cosmetic fake id.
+
+Not assigned anywhere, flagged: the package `README.md` still lists only the loss
+modules as the package's content (not in 12's list); `hl_train.slurm`'s WHAT-RUNS
+comment still names the fork's old repository (`BloomDlwlrma/openQHA-Hessian`);
+running python from the workspace root shadows `import mace` with the sibling
+`mace/` directory (a namespace package answers `mace_fork_info` "unknown") --
+repo roots are used everywhere it matters.

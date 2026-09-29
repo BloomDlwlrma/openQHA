@@ -25,8 +25,6 @@ before anyone has had to find anything in it.
             curated_qm9, qm9_uncharacterized
         qm_interfaces/      reference-level quantum chemistry  (ALF's own name)
             orca
-        training/           Hessian learning: the loss side of fine-tuning the potential
-            hvp             (probes, loss, judge follow; the mace fork holds the rest)
         extensions/         optional cross-checks; no production number depends on one
 
 The subpackages are named for what they DO, not for which branch of this project's plan
@@ -109,7 +107,7 @@ _MOVED = {
 
 #: Subpackages, for `dir()` and for anyone reading this file to find the map.
 SUBPACKAGES = ("conformer_search", "quasi_harmonic", "potentials", "thermochem",
-               "store", "data", "qm_interfaces", "training", "extensions")
+               "store", "data", "qm_interfaces", "extensions")
 
 __all__ = ["S0_ROOT", "__version__", "SUBPACKAGES", "config", "capabilities"] + \
     sorted(_MOVED)

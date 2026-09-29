@@ -14,7 +14,7 @@
 #
 # WHAT RUNS: `workflows/hessian_learning/05_train.py`, which builds mace's arguments and
 # calls `mace.cli.run_train.run` from the FORK (BloomDlwlrma/openQHA-Hessian, branch
-# openqha-hessian) with `--loss external --loss_module openqha.training.phl_loss:build`.
+# openqha-hessian) with `--loss external --loss_module openqha_hessian.phl_loss:build`.
 # The driver REFUSES a mace that is not the fork or whose checkout is dirty, so this job
 # fails in seconds rather than producing a model nobody can trace. Install the fork in
 # the environment first (`docs/tianhe_install.md`, `install_env_tianhe.slurm` section 9).
@@ -85,7 +85,7 @@ python - <<'PY' || exit 1
 import sys
 import torch
 from openqha.potentials import engine
-from openqha.training import run as train_run
+from openqha_hessian import run as train_run
 print("torch       {}  cuda_available={}  n_devices={}".format(
     torch.__version__, torch.cuda.is_available(), torch.cuda.device_count()))
 if not torch.cuda.is_available():
@@ -98,7 +98,7 @@ except RuntimeError as exc:
 print("mace        {}  fork {}  ({})".format(info["mace_version"], info["mace_fork_commit"][:12],
                                              info["mace_fork_path"]))
 p = engine.provenance()
-print("engine      {}  params {}  pin {}".format(p["engine"], p["params_sha256"][:16], p["params_pin_status"]))
+print("engine      {}  weights {}".format(p["engine"], p["weights_path"]))
 PY
 
 # ---- 3. the fine-tune -----------------------------------------------------------------------
