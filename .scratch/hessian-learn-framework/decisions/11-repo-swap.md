@@ -58,3 +58,33 @@ Decision 2's sequence ran as approved; swap-side evidence (transcripts under
   `t_hvp` + `t_phl_loss`). With it the evidence list of decision 11 is complete;
   closing re-checks 2026-09-29: the package checkout's `git status` clean, the
   retired path gone, the package suite 9/9 on the pushed tip.
+
+Reported per the operating rule — **files changed**: the tracker (`spec-repo-swap.md`,
+`implementation/11a-…`–`11d-…`, this ticket, `map.md`'s ticket-11 lines) and the package
+repository (`README.md`, `.github/workflows/ci.yml`); the retired
+`_to_delete/openQHA-Hessian-old-fork-2026-09-26/` deleted. **Checks run**: `bundle
+verify` + `list-heads` = `ls-remote` (11b); `ls-remote --symref` before/after and the
+repo API for the default branch and description (11c); the package suite 9/9 on the
+pushed tip; the retired-path and `git status` re-checks; the CI workflow's first run
+green (11d). **Not verified**: nothing outstanding.
+
+## Review record (2026-09-29, ticket-level two-axis review)
+
+Two-axis review of the closed ticket per the `code-review` skill — openQHA
+`dd18a84...3334955` (spec, slices, this ticket, map lines) and package `ff92141...ccc5a38`
+(README, CI); both axes ran as parallel sub-agents, with a lead-verification pass.
+
+- **Standards** — one hard finding: this Answer's missing "files changed / checks run /
+  not verified" report (discharged above). Judgement calls, all fixed or noted: the
+  README's "projected Hessian loss" against `CONTEXT.md`'s `_Avoid_`, and a duplicated
+  Citation lead-in — both fixed in the package repo (`7d85d27`, pushed);
+  [11c](../implementation/11c-the-swap.md)'s step 4 and the spec's decision 6 lacking dated
+  amendment notes (the annotations commit).
+- **Spec** — faithful: decision 11's evidence list complete; the swap sequence (1/2/4/10),
+  the bundle check (5), the CI acceptance (9) and decision 13 verified against the
+  records; slice blockers match the approved breakdown; no scope creep beyond the
+  recorded user rulings.
+- Per-slice review records ([11a](../implementation/11a-the-readme-rewrite.md) in-file;
+  [11b](../implementation/11b-the-safe-deletion.md), [11c](../implementation/11c-the-swap.md),
+  [11d](../implementation/11d-the-minimal-ci.md) annotation commits) stand; nothing
+  re-litigated here.

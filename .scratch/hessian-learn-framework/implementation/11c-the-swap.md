@@ -30,6 +30,8 @@ The swap itself, in the approved sequence (decision 2):
    value survives in the bundle) (decision 4).
 4. **The human**: edit the description to the ruled sentence, verbatim —
    `openQHA Extension: openqha_hessian — the training side of active Hessian learning (PHL fine-tuning of MACE).`
+   *— amended 2026-09-29 per user ruling: **kept old** (the ruled sentence decided
+   against; web action 2 dropped); see acceptance item 3 and the Answer.*
 5. Local bookkeeping (decision 10): `git fetch --prune origin` + `git branch -u
    origin/main main`; the HTTPS `origin` stays for fetch.
 

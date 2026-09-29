@@ -230,11 +230,17 @@ openQHA-free tests. Record the swap's evidence on the ticket.
 - **Decision 3(b), superseded by the user (2026-09-29).** The description keeps its
   pre-existing text — the ruled replacement sentence was decided against; the description
   web action was dropped. The default-branch switch (action 1) stands.
+- **Decision 6, superseded in part by the user (2026-09-29, the README revision waves).**
+  The final README carries the single openQHA citation entry (the PHL paper's own entry
+  out; its citation hint in the body stands), a License section (CC BY-NC 4.0) with a
+  badge — overriding "No badge" — and no eval-wheel note (the run-it-last note stands).
+  The wave list (plus the Important fork warning and "How PHL enters MACE") is on
+  [11a](implementation/11a-the-readme-rewrite.md)'s Answer.
 - **UI pointer corrected:** the default-branch switch lives in Settings → **General**
   ("Default branch"), not Settings → Branches, in the current GitHub UI.
 - **Push end-to-end verified:** the WSL key `id_ed25519` authenticates to GitHub (over
   `ssh.github.com:443`, per the existing WSL `~/.ssh/config`).
 - **Status:** the swap is executed and verified (11c resolved, 2026-09-29); the CI and the
-  ticket-11 record + resolution ride [11d](../implementation/11d-the-minimal-ci.md).
+  ticket-11 record + resolution ride [11d](implementation/11d-the-minimal-ci.md).
 
 - **11d green (2026-09-29):** the minimal CI landed (`.github/workflows/ci.yml` on `main`, `ccc5a38`) and its first run is green — https://github.com/BloomDlwlrma/openQHA-Hessian/actions/runs/36564158729; ticket 11's record completed and resolved with it. Nothing in this spec remains open.
