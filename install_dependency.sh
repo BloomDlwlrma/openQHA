@@ -720,8 +720,8 @@ python -m pip install --no-user -r "$REQ"
 
 # Named explicitly rather than left to the requirements file, because these two are the
 # ones with no conda-forge package and the ones whose absence is least obvious. MACE is
-deliberately NOT on this line: $REQ carries the fork by git URL now, and re-installing
-the wheel here would overwrite it.
+# deliberately NOT on this line: $REQ carries the fork by git URL now, and re-installing
+# the wheel here would overwrite it.
 python -m pip install --no-user "pymsym>=0.3.5"
 [ "$REQ" = "requirements-minimal.txt" ] || python -m pip install --no-user "parsl>=2024.01"
 

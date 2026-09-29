@@ -36,7 +36,7 @@ Building an environment must install the fork, never the wheel.
 
 Resolved 2026-09-29, agent-run. Building an environment now installs the fork, never the wheel.
 
-**What changed** (8 files, +50/-36):
+**What changed** (the 8 dependency files, +50/-36):
 
 - The five environment files (`environment.yml`, `environment-cuda.yml`, `environment-openmm.yml`,
   `environment-tianhe.yml`, `environment-tianhe-gpu.yml`) and the two requirements files
@@ -90,3 +90,16 @@ Resolved 2026-09-29, agent-run. Building an environment now installs the fork, n
 the direct git URL against the editable's local-path `direct_url.json`). Training then refuses
 loudly at `check_fork(strict=True)`; the fix is re-running `install.sh`. The docs (05b/05d) should
 phrase it as "`install.sh` last -- or again after any re-run of `install_dependency.sh`".
+
+**Review (two axes, `1e1af86..88a9cab` openQHA):** one hard finding, caught on both axes and
+fixed in this commit: the new pip-pass comment's two continuation lines had lost their leading
+`#`, so every run would have executed them as commands ("command not found" before the pymsym
+install) -- invisible to `bash -n` (bare words are valid syntax) and to the greps. The lines are
+comments again. Judgement calls left standing: (a) the fork comment block repeats across the six
+files -- kept, each file stands alone and this is the mace-md pattern; (b) "keep to one mace fork
+commit" cites `engine/mace_fork_commit`, which the same files' non-editable install answers
+`unknown` -- kept, the advice addresses training-side reproducibility (the editable install), and
+eval Records carry `unknown` by design (05a decisions 8/10). Spec: every requirement and all five
+acceptance boxes borne out by the diff and the recorded evidence; no scope creep. Carried, not
+touched: `hpc/slurm/install_env_tianhe.slurm:285`/`:302` still call the environment files' mace
+"the wheel" -- false now, and already [05d](05d-the-tianhe-path.md)'s file (§9, decisions 11-13).
