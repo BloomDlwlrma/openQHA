@@ -9,7 +9,7 @@
 # You want it for BRANCH C ONLY -- fine-tuning the potential with the PHL loss. That is
 # the one part of this repository that is faster on a GPU.
 #
-# You do NOT want it for branches A or B. Measured on this project (D0-48, D0-C-5): both
+# You do NOT want it for branches A or B. Measured on this project: both
 # are SLOWER on the GPU than on the CPU. Branch A's cost is ~10^5 GFN2-xTB gradient calls
 # and xtb never touches a GPU at all; MACE refines only the ~2% that survive. Running the
 # conformer search on a GPU partition buys nothing and, on Tianhe, bills the whole card
@@ -132,7 +132,7 @@ dependencies:
   # compiled against -- mixing a CPU openmm-torch with a CUDA pytorch is the same class of
   # hazard as two BLAS builds, and worse because it is silent.
   #
-  # Branch B itself is a CPU job (D0-C-5: the same trajectory ran 3.5x SLOWER on this
+  # Branch B itself is a CPU job (the same trajectory ran 3.5x SLOWER on this
   # repo's T400), so this environment exists for branch C training and carries the OpenMM
   # stack only so that one environment can do everything.
   - openmm>=8.1
@@ -160,7 +160,7 @@ dependencies:
 #   gromacs   branch B's cross-check; branch B is a CPU job, so it belongs to
 #             environment.yml. Its activation hook also fails under `set -u`.
 #   orca      registration required, installed by hand; branch C's RI-MP2 labels.
-#   MACE-OFF weights   fetched by install_dependency.sh, hash-checked on every load.
+#   MACE-OFF weights   fetched by install_dependency.sh; resolved by name at load.
 #             On Tianhe, fetch them where you have bandwidth and rsync them in --
 #             `install_dependency.sh --tianhe` deliberately does not pull 100 MB
 #             through the proxy from a login node.

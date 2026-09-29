@@ -6,7 +6,7 @@
 > records redesign (section 8: property-style `.toml`, no setting level, no Batch record).
 > This file is kept as the inventory those decisions were taken from.
 
-Taken from the code on 2026-09-15, after tickets 01-10 of the layout change. This is the
+Taken from the code on 2026-09-15, after the layout change. This is the
 input to step 2 (the form and home of the records). "Reader" is a program in this
 repository that opens the file; "human" means nothing does.
 
@@ -15,9 +15,9 @@ repository that opens the file; "human" means nothing does.
 | file | written by | read by | what it is for |
 |---|---|---|---|
 | `basins.json` | `s0_A_pipeline.py` | `basins.read_record()` -> ensemble report (relative electronic energies, sigma, degeneracy per basin), 02c, 02d, 02a debug script; `s0_E_branchA_parsl.py` (did the run finish) | the branch A record: gate, CREST settings and counts, census (tightening, dedup, Hessian), the labelled basins, the 11 acceptance criteria, machine and timing. The one source of "which basins, at what energy, with what symmetry number" |
-| `basins.xyz` | `s0_A_pipeline.py` | nothing (since ticket 07; the geometries are read from `mace/basinNN/basin.extxyz`) | the basins as one multi-frame xyz with a comment line per basin; a convenience copy of the engine files |
+| `basins.xyz` | `s0_A_pipeline.py` | nothing (the geometries are read from `mace/basinNN/basin.extxyz`) | the basins as one multi-frame xyz with a comment line per basin; a convenience copy of the engine files |
 | `<route>/<setting>/basinNN/meta.json` | the trajectory driver (openmm or ase) | `s0_B_qha_analyse.py` (the identity assertion: thermostat, timestep, bias, constraints, hydrogen mass; the masses the driver integrated with), the driver itself (resume: seed, frames on disk), the parsl driver (summary line), 02d (identity assertion) | the trajectory's record: seed, segments, settings, force check against ASE, engine provenance, relaxation, equilibration, production statistics, the engine file names, the job id |
-| `<route>/<setting>/basinNN/frames.npy` | the trajectory driver | nothing (kept by ticket 03's text; the DCD / md.traj is the trajectory) | float64 copy of the sampled positions. A duplicate |
+| `<route>/<setting>/basinNN/frames.npy` | the trajectory driver | nothing (the DCD / md.traj is the trajectory) | float64 copy of the sampled positions. A duplicate |
 | `openmm/<setting>/basinNN/equilibrated.json` | the OpenMM driver | the OpenMM driver (resume after a kill during production, without re-equilibrating) | the equilibration statistics, flushed the moment equilibration ends |
 | `ase/<setting>/basinNN/progress.json` | the ASE driver | nothing | frames done / asked, integrity check, wall |
 | `<route>/<setting>/basinNN/driver.log` | `s0_E_branchB_parsl.py` | human | stdout + stderr of the trajectory driver subprocess |

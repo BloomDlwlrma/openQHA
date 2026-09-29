@@ -141,7 +141,7 @@ automatically, reading the value from the `cuda-version=` pin so the two cannot 
 > Do not "verify" that this is unnecessary on a workstation that has a driver — the test
 > is self-confirming. Check `conda info | grep -A6 "virtual packages"` and confirm
 > `__cuda` is genuinely absent first. A truncated read of exactly that output is what made
-> this look unnecessary once (`S0-G-67`).
+> this look unnecessary once.
 
 ### 1.5 Two environments (fact 5)
 
@@ -285,7 +285,7 @@ python -c "import mace; print(mace.__version__)"                 # 0.3.16+openqh
 Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`,
 `cudnn 9.10.2.21`, `libblas 3.9.0=37_h5875eb1_mkl`, `mkl 2024.2.2`, `llvm-openmp 23.1.0`.
 
-> **The mace fork.** Since the split (2026-09-26) the fork is `BloomDlwlrma/mace` (branch
+> **The mace fork.** The fork is `BloomDlwlrma/mace` (branch
 > `openqha-hessian`, base tag `base-v0.3.16` = upstream v0.3.16 minus three bundled model
 > binaries), and the training side is the `openQHA-Hessian` package. The environment files
 > install the fork from its git URL, **non-editable** -- enough for eval, and what a machine
@@ -310,9 +310,9 @@ Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`
 > per-structure Hessian label (`--hessian_key`), **B** the external-loss hook (`--loss
 > external --loss_module`), **C** multihead fine-tuning with that hook and the `evaluate`
 > changes, **D** (2026-09-23) `--hessian_mode_weighting` and `--hessian_probe modes`
-> removed -- there is one target (S0-C-64) -- and `--valid_probes_key` added: the
-> per-structure fixed probe set the dataset draws and the loss reads at evaluation
-> (S0-C-67), and the probe default (tip `1110ffb`, 2026-09-26). There is no pinned sha to
+> removed -- there is one target -- and `--valid_probes_key` added: the
+> per-structure fixed probe set the dataset draws and the loss reads at evaluation,
+> and the probe default (tip `1110ffb`). There is no pinned sha to
 > keep in step: `engine.provenance()` reads the checkout's own commit and `05_train`
 > refuses a dirty or unknown one, so the only thing that must be true is that the checkout
 > is committed.
@@ -409,7 +409,7 @@ packages above are the only ones with no conda-forge package. In `openqha` the f
 requirements file is fine and is what adds the notebook stack, `mdtraj` and `MDAnalysis` —
 which is why `conda list` there shows them as `pypi_0`.
 
-> The `mace-torch` pins are gone (2026-09-29): the environment and requirements files carry
+> The `mace-torch` pins are gone: the environment and requirements files carry
 > the fork's git URL instead, so nothing here installs the PyPI wheel. For bit-identical
 > reproduction, pin `torch==` and stay on one mace fork commit -- every product record
 > carries `engine/torch_version` and `engine/mace_fork_commit`.
@@ -505,4 +505,3 @@ and using it there only changes which mirror gets blamed.
 | What to run and where results land | [`branchA_production.md`](branchA_production.md) |
 | Why the GPU environment is what it is | [`../environment-tianhe-gpu.yml`](../environment-tianhe-gpu.yml) header |
 | Why the CPU environment pins its BLAS | [`../environment-tianhe.yml`](../environment-tianhe.yml) header |
-| Decisions, dated, with the measurement behind each | `.mem/decisions/decisions_G_governance.md`, `S0-G-63` … `S0-G-67` |

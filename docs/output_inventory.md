@@ -125,11 +125,11 @@ files (`crest_conformers.xyz`, `crest_best.xyz`, `crest_rotamers.xyz`, `frames.n
 the relaxed geometry `basins.xyz`; this code writes about 25 more, and on Tianhe the copy
 to `logs/node_local/` doubles the run tree.
 
-## 6. Since 2026-09-14: the molecule tree (ADR 0001, ADR 0002)
+## 6. The molecule tree (the layout since 2026-09-14)
 
 Everything above this line is the state the user objected to. What replaced it:
 
-    <root>/<tag>/<qid>/                (flat since 2026-09-20, ADR 0001 amendment 3; before: <tag>/<range>/<chunk>/<qid>)
+    <root>/<tag>/<qid>/                (flat; before: <tag>/<range>/<chunk>/<qid>)
       crest/                      CREST's working directory, verbatim (+ input.toml, <qid>.xyz, crest.out)
       crest_shake1/               the SHAKE fallback attempt, only when it ran
       mace/confNN/                opt.traj  opt.log  conf.extxyz      every tightened conformer
@@ -138,9 +138,9 @@ Everything above this line is the state the user objected to. What replaced it:
                                   state.xml state.chk                  (the default setting)
                                   start_<setting>.pdb ... traj_<setting>.dcd ...
                                   (every other setting, same folder, its name in the file)
-      frames/                     the Hessian-learning set (ticket 09): Frame sets, labels,
+      frames/                     the Hessian-learning workflow: Frame sets, labels,
                                   orca.<level>.<gen>_bBB_kK.{inp,out,hess,engrad} file groups
-      msrrho/                     the msRRHO study (ticket 09b): orca.<level>.basinNN.* file
+      msrrho/                     the msRRHO study: orca.<level>.basinNN.* file
                                   groups, thermo/<level>.<step>.* Records, crest_entropy/, xtb/
       _records/                   everything this repository writes about the run:
         basins.json  basins.xyz                       branch A's record
@@ -202,7 +202,7 @@ Readers: `openqha.store.toml_out` (TOML in and out), `openqha.store.dat` (tables
 
 ## 8. Records redesign (2026-09-15, afternoon): one Record per Calculation, ORCA property style
 
-Two words (CONTEXT.md): a **Calculation** is one step on one molecule or basin and owns a
+Two words: a **Calculation** is one step on one molecule or basin and owns a
 **Record**, a **Report** (`.out`) plus a **Property file** (`.toml`); a **Batch** is one
 driver over many Calculations and owns nothing, its Slurm log is the report. The
 `<setting>` level under `_records/` is gone: the setting is in the file stem, as for
@@ -273,7 +273,6 @@ a test failure. Column names are unchanged.
 The criteria are not a table: each verdict is a sentence with its measure in `collect.out`
 (once), and the counts a later step reads are `[Criteria]` in `collect.toml`; the ensemble
 reads them there. The expanded dump at the end of `collect.out` no longer repeats the
-rows the Table and the `Criteria` section hold. Glossary: CONTEXT.md **Table**; decision:
-ADR 0003, amendment of 2026-09-16. Writer and reader: `openqha.store.dat`
+rows the Table and the `Criteria` section hold. Glossary: **Table**. Writer and reader: `openqha.store.dat`
 (`write_tables`, `read_tables`), `openqha.quasi_harmonic.chain_records` (`COLUMNS`,
 `write_collect_table`, `read_collect_table`).

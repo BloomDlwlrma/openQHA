@@ -153,15 +153,15 @@ it does not recognise.
 
 ## Tutorials live in `docs/tutorials/`
 
-Two notebooks, moved there 2026-09-04 because they are documentation rather than
+The notebooks are documentation rather than
 worked examples of this project's own campaign:
 
 | | What it is |
 |---|---|
-| [`../docs/tutorials/T02_openQHA_Practice_CREST_conformers.ipynb`](../docs/tutorials/T02_openQHA_Practice_CREST_conformers.ipynb) | **Practice.** A conformer search end to end — the published iMTD-GC protocol and its boundary, the composite calculator, and the tighten → deduplicate → Hessian chain that turns an ensemble into a basin list. Worked on `OCCC(=O)CO` (24 conformers → 23 basins) and `OCCO` (10 basins, σ varying between them). |
-| [`../docs/tutorials/archive/T03_openQHA_Theory_Projected_Hessian_Loss.ipynb`](../docs/tutorials/archive/T03_openQHA_Theory_Projected_Hessian_Loss.ipynb) | **Archived (superseded 2026-09-23, S0-C-53 / S0-C-64).** The projected Hessian loss for the msRRHO entropy — the Eckart projector, the reference modes, the entropy weights, the HVP estimator and its variance, verified on propanal. Kept as the record of the superseded design; the training loss is now PHL verbatim (see T04 / T05). |
+| [`../docs/tutorials/T01_openQHA_Practice_CREST_conformers.ipynb`](../docs/tutorials/T01_openQHA_Practice_CREST_conformers.ipynb) | **Practice.** A conformer search end to end — the published iMTD-GC protocol and its boundary, the composite calculator, and the tighten → deduplicate → Hessian chain that turns an ensemble into a basin list. Worked on `OCCC(=O)CO` (24 conformers → 23 basins) and `OCCO` (10 basins, σ varying between them). |
+| [`../docs/tutorials/archive/T03_openQHA_Theory_Projected_Hessian_Loss.ipynb`](../docs/tutorials/archive/T03_openQHA_Theory_Projected_Hessian_Loss.ipynb) | **Archived (superseded).** The projected Hessian loss for the msRRHO entropy — the Eckart projector, the reference modes, the entropy weights, the HVP estimator and its variance, verified on propanal. Kept as the record of the superseded design; the training loss is now PHL verbatim (see T04 / T05). |
 | [`../docs/tutorials/T04_openQHA_Theory_Hessian_Surface_Learning.ipynb`](../docs/tutorials/T04_openQHA_Theory_Hessian_Surface_Learning.ipynb) | **Theory (2026-09-22, PHL verbatim).** The derivation under T05: what E/F training leaves free (Proposition 1), PHL's full-Hessian loss and its random-probe estimator (unbiased, its variance, exact with 3N unit probes, what it bounds by Weyl), what the held-out generator reads off the minimum, the HVP's gradient and cost, the masked objective, and the algorithm listings as the code stands. Nothing projected but the probe. |
-| [`../docs/tutorials/T05_openQHA_Theory_PHL_Finetune_EFH_to_wB97M.ipynb`](../docs/tutorials/T05_openQHA_Theory_PHL_Finetune_EFH_to_wB97M.ipynb) | **Theory (2026-09-22).** The goal of the Hessian-learning set as PHL gave it: fine-tune MACE-OFF23_medium with E, F and Hessian-vector products to its own level at the molecules' minima — PHL's loss verbatim as the target (S0-C-53), basin frames only with the held-out generator as the extrapolation readout (S0-C-54), fixed-probe validation (S0-C-55), the Replay as a drawn file and the rows R0–R4 with R4 the one that runs (S0-C-56/57/60), `w_H` measured by the driver, the judge's gate on the matrix itself and its reference rows (S0-C-58/59), the five-step recipe. |
+| [`../docs/tutorials/T05_openQHA_Theory_PHL_Finetune_EFH_to_wB97M.ipynb`](../docs/tutorials/T05_openQHA_Theory_PHL_Finetune_EFH_to_wB97M.ipynb) | **Theory (2026-09-22).** The goal of the Hessian-learning set as PHL gave it: fine-tune MACE-OFF23_medium with E, F and Hessian-vector products to its own level at the molecules' minima — PHL's loss verbatim as the target, basin frames only with the held-out generator as the extrapolation readout, fixed-probe validation, the Replay as a drawn file and the rows R0–R4 with R4 the one that runs, `w_H` measured by the driver, the judge's gate on the matrix itself and its reference rows, the five-step recipe. |
 | [`../docs/tutorials/T02_openQHA_Theory_AD_Hessian_and_PHL.ipynb`](../docs/tutorials/T02_openQHA_Theory_AD_Hessian_and_PHL.ipynb) | **Theory.** Where a Hessian comes from in a MACE model, why the analytic one beats finite differences, and how to supervise curvature with Hessian-vector products instead of Hessians — Projected Hessian Learning, with the two corrections it needs and a variance criterion that can fail. |
 
 ```bash
@@ -196,6 +196,6 @@ remaining distance to that gate.
 ## Data
 
 What ships with the repository is the reference geometries of 7 species (11 KB) and a
-7-row excerpt of the index, which is what lets package 2 reproduce with no external data
-(`D0-41`). The full QM9 set is placed by `scripts/tooling/s0_prepare_data.py` and does not
+7-row excerpt of the index, which is what lets package 2 reproduce with no external data.
+The full QM9 set is placed by `scripts/tooling/s0_prepare_data.py` and does not
 go into version control.

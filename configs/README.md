@@ -1,7 +1,6 @@
 # `configs/` — every setting, and who reads it
 
-Ten YAML files, one shell-template directory, one `.mdp` directory. **English only since
-2026-09-09** (`S0-G-71`).
+Ten YAML files, one shell-template directory, one `.mdp` directory. **English only.**
 
 `configs/openqha.yaml` is the entry point and the only file anything loads by name.
 Everything else is merged into it through its `include:` list, one level deep. It is a
@@ -72,7 +71,7 @@ package from Grimme JCTC 2019, 15, 2847, measured together and not separable**. 
 
 ### `edges_testset.yaml` — this project's campaign, not the method
 The 11 QM9 isomerisation edges and the 7 species they name. **σ and g0 are declared, never
-derived** (D0-9): `openqha/symmetry.py` can derive σ, and these declarations are the
+derived**: `openqha/symmetry.py` can derive σ, and these declarations are the
 independent answers it is checked against — 7/7 agreement, including acetone, which ORCA
 gets wrong (C1, σ=1; correct is C2v, σ=2, worth RT ln 2 = 0.411 kcal/mol). Oxetane's
 declaration is deliberately **conditional** on ring planarity.

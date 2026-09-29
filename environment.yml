@@ -71,14 +71,14 @@ dependencies:
   #
   # CPU build, pinned. Unpinned, conda-forge hands you a CUDA build -- 2 GB of libraries
   # that branches A and B never touch, and both are MEASURED SLOWER on this project's GPU
-  # than on its CPU (D0-48, D0-C-5). Branch C training is the one thing that wants CUDA:
+  # than on its CPU. Branch C training is the one thing that wants CUDA:
   # `install_dependency.sh --tianhe` swaps the build, or drop the `=*=cpu*` yourself.
   - pytorch>=2.0=*cpu*
 
 
   # ---- branch B: OpenMM, openmmtools, MDAnalysis. CORE. --------------------------------
   # These are what branch B's production number is made of, and they are in the ONE
-  # environment on a user ruling of 2026-09-05 that accepts what the solver requires:
+  # environment that accepts what the solver requires:
   #
   #     pytorch  2.13.0 -> 2.12.1     numpy   2.4.6 -> 1.26.4
   #     libtorch 2.13.0 -> 2.12.1     pandas  3.0.5 -> 2.3.3

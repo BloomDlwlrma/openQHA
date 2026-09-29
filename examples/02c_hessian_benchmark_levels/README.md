@@ -35,7 +35,7 @@ sitting right there. Propanal under the same tag needs its own step 1:
 `run_chain.sh` refuses the `SPECIES=... bash ...` form for that reason).
 
 **`CHAIN=levels` runs on CPU partitions only.** ORCA has no GPU path in this repository
-and `D0-75` puts production quantum chemistry on deimos; `run_chain.sh` refuses a GPU
+and production quantum chemistry runs on deimos; `run_chain.sh` refuses a GPU
 partition for it on the login node rather than wasting the allocation in the queue.
 A finished `.hess` is reused on a re-run — and only if `verify_hess_frequencies` still
 passes on it, so a truncated file fails rather than being trusted for existing. Use

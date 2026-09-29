@@ -5,8 +5,7 @@ into `G - E_el`. It is the alternative to branch C's Hessian route, and the two 
 their translational, rotational and electronic terms exactly — so the difference between
 them is the vibrational treatment and nothing else.
 
-This document is the operational one. The reasoning lives in
-`.mem/plan/plan_B_quasi-harmonic-analysis.md`; the tutorial that runs it end to end is
+This document is the operational one; the tutorial that runs it end to end is
 `docs/tutorials/T01b_openQHA_Practice_BranchB_QHA.ipynb`.
 
 ---
@@ -174,7 +173,7 @@ atom"*, and *"a piston collision frequency of 50 ps⁻¹"*).
 **The cost is real and is recorded.** At 500 ps × 6 seeds the adopted setting measures
 **−0.128 ± 0.064** kcal/mol, against Langevin's **+0.004 ± 0.015**. That is inside the
 1.0 kcal/mol stage-0 target and outside the 0.10 kcal/mol tooling budget. It is a
-known-cost decision (`S0-B-25`), not a free one.
+known-cost decision, not a free one.
 
 ### Three traps
 
@@ -333,5 +332,5 @@ trajectory that was actually produced.
 
 * **25 ps is not converged.** The production length is set by the saturation curve, not by
   a constant in a file.
-* Two rulings in `plan_B` §7 are still the user's: the molecule scope, and whether the
+* Two choices are still open: the molecule scope, and whether the
   quasi-harmonic or the rigid-rotor-harmonic number enters the final free energy.

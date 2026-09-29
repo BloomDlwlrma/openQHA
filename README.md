@@ -111,7 +111,7 @@ Open items are listed, not hidden: see [`docs/branchA_workflow.md`](docs/branchA
 * **`refine=opt` vs `sp` is measured and awaiting a decision.** On `OCCC(=O)CO` under
   GFN2, `opt` finds 23 basins to `sp`'s 37 (union 45), costs 7.7× the wall clock, and
   errs by 0.40 kcal/mol against a ~0.1 target. Propanal, with 2 basins, showed no
-  difference at all. The production value stays `opt` pending a ruling.
+  difference at all. The production value stays `opt` for now.
 * nothing has been submitted to Tianhe; three scheduler command names unverified
 
 ---
@@ -174,38 +174,30 @@ beside the run. `bash install_dependency.sh` downloads them for you into
 
 Loading one is three steps and there is no fourth: `openqha/potentials/engine.py` maps an
 engine **name** to a **filename**, looks for that filename in that one directory, and uses
-the file it finds. Nothing can refuse a file for what it contains (beyond the physical
-ceiling on its numbers). What every product records is the engine name, the path, and
-the **parameter fingerprint**: a SHA-256 over the model's `state_dict` sorted by tensor
-name (name, dtype, shape, raw bytes). A file hash would answer "the same bytes?"; the
-fingerprint answers "the same numbers?" -- a `torch.save`/`load` round trip changes the
-byte count and the file hash and leaves the fingerprint alone, while one changed
-parameter changes it (`tests/unit/t_engine_fingerprint.py`). The registry may pin a
-fingerprint (`params_sha256`; the production default is pinned); `provenance()` then
-writes `params_pin_status` = matches / differs / unpinned into the record and warns on
-stderr -- reported, never enforced.
+the file it finds. Nothing reads the file's bytes, and nothing refuses one for what it
+contains (beyond the physical ceiling on its numbers). What every product records is the
+engine name and the resolved file path (`provenance()` writes both, plus the registry's
+`source` and the software stack that decides the numbers): two runs that name the same
+engine and resolve the same path hold the same potential as far as this repository is
+concerned.
 
-**Registering a fine-tuned potential** (the Hessian-learning workflow produces one):
-
-```bash
-cp <run>/<name>.model data/potentials/                      # flat, keep the name
-python scripts/tooling/s0_check_weights.py --pin data/potentials/<name>.model
-```
-
-paste the printed entry into `engine.ENGINES` with `source` = the Dataset index it was
-trained on plus the training config's SHA, and select it with `S0_ENGINE=<name>`. Every
-Record made with it then carries its fingerprint, so a frame's MACE labels are tied to
-the exact numbers that produced them. `s0_check_weights.py` with no arguments prints the
-three lines (bytes, file hash, fingerprint) for every registered file present;
-`--json` + `--compare` settle in one command whether two machines hold the same numbers.
+**Registering a fine-tuned potential** (the Hessian-learning workflow produces one).
+`05_train.py --register-copy` copies the model into
+`data/potentials/mace_off23_<campaign>/` as a stamped, fixed revision
+(`<run>+<YYYYMMDD-HHMMSS>.model`) and prints the `ENGINES` entry to paste into
+`engine.ENGINES` -- `filename`, `source` (the Dataset index it was trained on plus the
+training config's SHA) and `note`. Select it with `S0_ENGINE=<name>`. The file then travels
+with the run's configuration; `scripts/tooling/s0_check_weights.py` shows which mace is
+imported and, for every registered engine whose file is present, the path the name
+resolves to and the file's size.
 
 **The mace fork.** Fine-tuning needs two small changes inside mace-torch (a Hessian field on
 the batch, an external-loss hook), so the mace this repository imports is the fork
 `BloomDlwlrma/mace`, branch `openqha-hessian`, whose base tag `base-v0.3.16` is upstream
 v0.3.16 minus three bundled foundation-model binaries -- mace-md's pattern
 (`jharrymoore/mace@softcore`): what must touch mace's internals is a fork branch, everything
-else (the Hessian-vector product, the probes, the loss, the judge -- the `openqha-hessian`
-package) uses the public API. One script installs both the fork and the `openqha-hessian`
+else (the Hessian-vector product, the probes, the loss, the judge -- the `openqha_hessian`
+package) uses the public API. One script installs both the fork and the `openqha_hessian`
 package, editable, in the active environment:
 
 ```bash
@@ -218,7 +210,7 @@ reinstalls the fork from its requirement line (non-editable).
 
 `engine.provenance()` records `mace_fork_commit` (and `mace_fork_dirty`); `05_train` refuses
 to train on a fork it cannot name. Machines that only evaluate tolerate a mace wheel, with
-that commit recorded as `unknown`. Effort: `.scratch/hessian-learn-framework/`.
+that commit recorded as `unknown`.
 
 Verify what you have:
 
@@ -332,7 +324,7 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 | 7 reference geometries + a 7-row index excerpt | 11 KB | **yes** — the core deliverable reproduces with no external data |
 | QM9 (133 885 molecules) | ~340 MB | no — `scripts/tooling/s0_prepare_data.py` |
 | curatedQM9 (repaired geometries) | ~200 MB, 133 661 files | no — unpack under `data/qm9/`, **or one file**: `scripts/tooling/s0_pack_curated_qm9.py` writes it into `data/qm9/curated_qm9.h5` — one group per molecule (`dsgdb9nsd_%06d`: species, positions, Mulliken charges, frequencies, both SMILES and InChI, and the file's text); a cluster gets that one file and `curated_qm9.find()` extracts a molecule on demand |
-| MACE-OFF weights | ~120 MB | no — downloaded by the installer, hash-checked on every load |
+| MACE-OFF weights | ~120 MB | no — downloaded by the installer; resolved by name at load |
 
 **curatedQM9** repairs the molecules whose deposited QM9 geometry is not the molecule its
 SMILES describes. Whether you use it is your choice, and the `f7_mode` switch is where
@@ -371,7 +363,7 @@ python scripts/production/s0_E_branchA_parsl.py --edges --resource deimos --acco
 One directory per molecule under a tag -- the tag directory is flat since 2026-09-20
 (the two shard layers of 2026-09-14 are gone) -- with one folder per engine inside it and
 the engines' own files in those folders (`docs/output_inventory.md` sections 6 and 8); a
-frame's reference label is a file group of the molecule directory (ADR 0001, amendment 3):
+frame's reference label is a file group of the molecule directory:
 
 ```
 <root>/<tag>/dsgdb9nsd_000018/
@@ -403,7 +395,7 @@ The msRRHO free energy (Pracht & Grimme, Chem. Sci. 2021, 12, 6551, assembled in
 openQHA with CREST's conventions: tau = 25 cm^-1, rotor moment capped by the mean principal
 moment, entropy and Cp interpolated, imaginary modes inverted inside the -50 cm^-1 floor
 while a mode below the floor excludes the basin) is one Calculation per level,
-written to the molecule's level folder (ADR 0004):
+written to the molecule's level folder:
 
 ```bash
 python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step mace
@@ -413,14 +405,14 @@ python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag p
 ```
 
 ```
-<molecule>/msrrho/thermo/                                  (flat since 2026-09-20, ticket 09b)
+<molecule>/msrrho/thermo/                                  (flat)
   mace-off23_medium.degeneracy.{out,toml}  mace-off23_medium.thermo_msrrho.{out,toml}
   wb97m-d3bj_def2-tzvppd.thermo_msrrho.{out,toml}  wb97m-d3bj_def2-tzvppd.merge_map.dat
-  gfn2.thermo_msrrho.{out,toml}                            (the CREST --entropy seam, ticket 25)
+  gfn2.thermo_msrrho.{out,toml}                            (the CREST --entropy seam)
   hessian_compare.{out,toml}  the MACE Hessian at the reference geometry vs the reference Hessian
   level_compare.{out,toml}  every level beside the reference and the experiment, every term
 <molecule>/msrrho/orca.wb97m-d3bj_def2-tzvppd.basinNN.{inp,out,hess,xyz}   (engine files, a file group)
-<molecule>/msrrho/crest_entropy/runNN/  msrrho/xtb/entropy_runNN/confKK/  (ticket 25's engines)
+<molecule>/msrrho/crest_entropy/runNN/  msrrho/xtb/entropy_runNN/confKK/
 <molecule>/mace/basinNN/{hessian,forces}_at_wb97m-d3bj_def2-tzvppd.npy      (engine files)
 ```
 
@@ -503,20 +495,19 @@ have one rule for an imaginary mode but three (`src/entropy/thermocalc.f90:207-2
 carries zero entropy, and still enters the zero-point energy, H(T)-H(0) and Cp with its
 negative frequency; nothing is ever refused. Propanal's third `--entropy` conformer has
 -68.4 cm^-1 in CREST's own numerical Hessian and went into CREST's dS_bar with
-S_vib = 5.035 cal/mol/K (its neighbours: 8.97, 8.47). Since 2026-09-25 (ticket 35)
-openQHA runs **one production policy**: `invert_below` with the frequency floor
+S_vib = 5.035 cal/mol/K (its neighbours: 8.97, 8.47). openQHA runs **one production policy**: `invert_below` with the frequency floor
 ithr = -50 cm^-1 -- a mode in [ithr, 0) is inverted, a mode below the floor excludes the
 basin, which is listed with its reason -- and a mode with |omega| < 1 cm^-1 is dropped
 from every sum ORCA-style (`CutOffFreq`), counted in `N_BELOW_FLOOR` with its value
 recorded; three or more in one spectrum are the signature of an unprojected spectrum and
-raise. The third policy `refuse` was removed with the ruling (`[Imaginary_Spread]`, the
-spread over the policies, went with it); the GFN2 seam keeps `crest_native` (CREST line
+raise. The third policy `refuse` was removed (`[Imaginary_Spread]`, the spread over the
+policies, went with it); the GFN2 seam keeps `crest_native` (CREST line
 for line), which is what closed its Hessian tier (dS_bar within 0.03 of CREST instead of
 0.1). `[Calculation_Info].ITHR_POLICY` names the policy every record used. On propanal
 the MACE and reference levels have no imaginary mode; at GFN2 the seam's kept-negative
 conformer changes S_abs by 0.09 cal/mol/K, all of it that one conformer.
 
-**A numerical reference level, and what the dry run found (ticket 32, 2026-09-17).**
+**A numerical reference level, and what the dry run found.**
 `dlpno-ccsdt_cc-pvtz` is declared in `orca.LEVELS` with the hkuhpc keywords (`! DLPNO-CCSD(T)
 cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C TightPNO TightSCF Opt NumGrad NumFreq`, `%mdci TCutPairs
 1e-6`, `%loc AHFB`); ORCA 6 has no analytic gradient for any coupled-cluster method, so the

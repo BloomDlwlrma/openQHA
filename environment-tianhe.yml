@@ -144,7 +144,7 @@ dependencies:
   # CPU torch, deliberately, on a machine where every job holds a GPU. Branch A's cost is
   # ~1e5 GFN2-xTB gradient calls and xtb has no GPU path; MACE refines 10-20 atom
   # structures that cannot fill a card. Both branches A and B are MEASURED slower on this
-  # project's GPU than on its CPU (D0-48, D0-C-5).
+  # project's GPU than on its CPU.
   #
   # PINNED to the version this project's workstation runs. `e3nn 0.4.4` compiles 18 of
   # the model's modules to TorchScript AT LOAD TIME against whichever torch is installed,

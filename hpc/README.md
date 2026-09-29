@@ -54,18 +54,18 @@ source hpc/env/common.sh                     # do NOT set -u first; see the file
 python scripts/production/s0_E_branchA_parsl.py --species dsgdb9nsd_000018 --dry-run
 python scripts/production/s0_E_branchA_parsl.py --species dsgdb9nsd_000018
 
-# branch B: trajectories, then the analysis that tests every plan_B criterion
+# branch B: trajectories, then the analysis that tests every protocol criterion
 python scripts/production/s0_E_branchB_parsl.py --species dsgdb9nsd_000018 --dry-run
 python scripts/production/s0_E_branchB_parsl.py --species dsgdb9nsd_000018
 python scripts/production/s0_B_qha_analyse.py --species dsgdb9nsd_000018 --tag prod
 ```
 
-Local first is not a formality. `D0-C-20` rules that the first thing done on a
+Local first is not a formality. The first thing done on a
 cluster is a benchmark, not a production run, and debugging a Parsl workflow on a
 cluster costs far more than debugging it here. Once the chain runs locally, going
 to a cluster changes one argument: `--resource tianhe_cpu`.
 
-**On a cluster the gate is `--debug`, not `--dry-run`** (user ruling 2026-09-07): the same
+**On a cluster the gate is `--debug`, not `--dry-run`**: the same
 command, on the site's short partition, at a 30-minute walltime, capped at one
 allocation. A real short job tests what a rendered plan cannot — that the module loads,
 that conda activates on a *compute* node, that the weights hash correctly there, and that
@@ -82,30 +82,30 @@ specification guarantees that one of them is wasted.
 
 | workload | branch | parallel over | device | per task | source |
 |---|---|---|---|---|---|
-| conformer search — CREST(GFN2-xTB) + MACE `refine=sp` | A | molecules | **CPU** (TianheXY-C) | 4 threads, 16/node | 285 s/species measured, `S0-A-8` |
-| quasi-harmonic trajectories — unbiased MACE MD | B | basin × seed | **GPU** (TianheXY-A) | **1 card**, 8/node | user ruling 2026-09-07. **Cost UNMEASURED there** — see below |
+| conformer search — CREST(GFN2-xTB) + MACE `refine=sp` | A | molecules | **CPU** (TianheXY-C) | 4 threads, 16/node | 285 s/species measured |
+| quasi-harmonic trajectories — unbiased MACE MD | B | basin × seed | **GPU** (TianheXY-A) | **1 card**, 8/node | **Cost UNMEASURED there** — see below |
 | collection — quasi-harmonic analysis of finished trajectories | B | molecules | **CPU** (TianheXY-C) | **1 core**, 64 on **one** node | small, serial, float64; its real cost is Lustre metadata |
 | QM labels — `xtb --hess`, ORCA RI-MP2 | C | structures | CPU | xtb 1 core; ORCA 4 processes | `NumFreq` parallelises over displacements; ORCA 1.85 GB/process measured |
-| reference E-F-H labels per frame — ORCA wB97M-D3BJ single point + EnGrad + analytic Hessian (`workflows/hessian_learning/03_labels.py`, role `labels`) | Hessian learning | frames | **CPU** (TianheXY-C, `sbatch`) | **4 ranks**, 16/node, `%maxcore 6000` | user ruling 2026-09-18; 1 node smoke / 12 nodes draw; ORCA 6.1.1 from conda env `orca611` via `hpc/env/orca.sh`; the job script's narrow unset serves the non-ORCA payloads while ORCA children are made Slurm-blind and unbound in `subprocess_env()` (ADR 0008 — the worker's `taskset` owns placement) |
+| reference E-F-H labels per frame — ORCA wB97M-D3BJ single point + EnGrad + analytic Hessian (`workflows/hessian_learning/03_labels.py`, role `labels`) | Hessian learning | frames | **CPU** (TianheXY-C, `sbatch`) | **4 ranks**, 16/node, `%maxcore 6000` | 1 node smoke / 12 nodes draw; ORCA 6.1.1 from conda env `orca611` via `hpc/env/orca.sh`; the job script's narrow unset serves the non-ORCA payloads while ORCA children are made Slurm-blind and unbound in `subprocess_env()` — the worker's `taskset` owns placement |
 | training — MACE + PHL loss | C | data-parallel | **GPU** | 1 card | the first workload here that batches naturally |
 
 Three things follow directly, and only one of them is a preference:
 
 1. **Conformer search must not go on a GPU partition.** Tianhe's `h100x` bills by
    the whole card and gives 14 CPUs with it; GFN2-xTB never touches a GPU. That is
-   arithmetic, not taste (`D0-56`).
+   arithmetic, not taste.
 2. **Training is the only workload that certainly wants a GPU.** The other three
    need a benchmark before anyone decides.
-3. **The quasi-harmonic device was reopened, by ruling rather than by measurement.**
-   Until 2026-09-07 branch B was CPU, on two measurements: a 10-atom structure fed one
-   at a time fills no card (`D0-56`), and on this repo's T400 the same trajectory ran
-   3.5× *slower* than on the CPU (`D0-C-5`). The user has ruled that the trajectories
+3. **The quasi-harmonic device was reopened, by decision rather than by measurement.**
+   Branch B had been CPU, on two measurements: a 10-atom structure fed one
+   at a time fills no card, and on this repo's T400 the same trajectory ran
+   3.5× *slower* than on the CPU. The trajectories
    run on TianheXY-A, one per card, through OpenMM.
 
-   That ruling is followed and the state of the evidence is stated rather than
-   dressed up: **a T400 is a 2 GB entry-level card and 80 GB HBM2e is not, so D0-C-5
-   does not transfer — but nothing has replaced it either, and no batched force
-   interface exists yet (`D0-54` criterion (ii)).** Run the 30-minute `temp` smoke test
+   That choice is followed and the state of the evidence is stated rather than
+   dressed up: **a T400 is a 2 GB entry-level card and 80 GB HBM2e is not, so the T400's
+   figure does not transfer — but nothing has replaced it either, and no batched force
+   interface exists yet.** Run the 30-minute `temp` smoke test
    and read `SECONDS_PER_PS` out of `md.toml` before sizing a campaign. The
    CPU route is kept as `--route ase`, which is also the independent implementation pair
    that makes the OpenMM numbers checkable.
@@ -144,7 +144,7 @@ its own server on its own socket under `$S0_RUNS_ROOT/sockets/`.
 
 ## Tianhe
 
-Confirmed on site (`D0-C-24`, `D0-C-25`, `D0-56`):
+Confirmed on site:
 
 - directives are `#SBATCH` — it is a Slurm derivative;
 - submission is **`yhbatch`**, launcher **`yhrun`**;

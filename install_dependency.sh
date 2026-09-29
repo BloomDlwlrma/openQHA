@@ -913,7 +913,7 @@ export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 export S0_RUNS_ROOT="\${S0_RUNS_ROOT:-\$HOME/runs/openQHA}"
 mkdir -p "\$S0_RUNS_ROOT"
 
-# The potential's weights. Fetched by install_dependency.sh, hash-checked on every load.
+# The potential's weights. Fetched by install_dependency.sh; resolved by name at load.
 export S0_MACE_ROOT="\${S0_MACE_ROOT:-$MACE_ROOT}"
 
 # Optional: curatedQM9, only if you set f7_mode: "curated". See README.

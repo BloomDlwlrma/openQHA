@@ -24,7 +24,7 @@
 #
 # Re-testing this on a workstation that HAS a driver proves nothing: check
 # `conda info | grep -A6 "virtual packages"` and confirm `__cuda` is genuinely absent
-# first. A truncated read of that output is what made this look unnecessary once (S0-G-67).
+# first. A truncated read of that output is what made this look unnecessary once.
 #
 # or:  bash install_dependency.sh --tianhe-cuda    # TianheXY-AI
 #      bash install_dependency.sh --tianhe-a       # TianheXY-A
@@ -32,7 +32,7 @@
 # Both flags now build THIS file. They differ only in which modules they load.
 #
 # ---------------------------------------------------------------------------------------
-# WHY ONE FILE, WHEN THERE ARE TWO CLUSTERS (user ruling 2026-09-07)
+# WHY ONE FILE, WHEN THERE ARE TWO CLUSTERS
 # ---------------------------------------------------------------------------------------
 # There were two: environment-tianhe-cuda.yml pinned 12.4 for TianheXY-AI and
 # environment-tianhe-a-cuda.yml pinned 12.3 for TianheXY-A. Both are now in
@@ -91,12 +91,12 @@
 # ---------------------------------------------------------------------------------------
 #   branch C   MACE fine-tuning with the PHL loss. Genuinely faster on a GPU.
 #   branch B   quasi-harmonic trajectories through OpenMM + openqha/openmm_mace.py,
-#              one trajectory per card (user ruling 2026-09-07). That is why openmm,
+#              one trajectory per card. That is why openmm,
 #              openmm-torch and openmmtools are in this file and were in neither of the
 #              two it replaces.
 #
 #              CAVEAT, recorded rather than buried: this repository only GPU measurement
-#              of branch B is D0-C-5, where the same trajectory ran 3.5x SLOWER on the
+#              of branch B: the same trajectory ran 3.5x SLOWER on the
 #              GPU than on the CPU. That was a T400 -- a 2 GB entry-level card -- against
 #              an H100 or A100 here, so the number does not transfer. It has also not
 #              been re-measured. Take the per-ps cost from the temp-partition smoke test
@@ -197,7 +197,7 @@ dependencies:
   #
   # SOLVED VERSIONS -- RE-MEASURED 2026-09-08, libmamba, linux-64, CONDA_OVERRIDE_CUDA=12.3
   # (5 min 30 s including the repodata download. The same file under the CLASSIC solver
-  # was still running after 1 h 37 min at 100% CPU on a Tianhe login node -- see S0-G-66.
+  # was still running after 1 h 37 min at 100% CPU on a Tianhe login node.
   # This file is not "slow to solve"; it is slow to solve with the wrong solver.)
   #
   #     python         3.11.16  h5f976f7_2_cpython
@@ -327,7 +327,7 @@ dependencies:
   # as well turns "the solver quietly handed me the CPU build" into a solver error.
   - pytorch>=2.0=*cuda*
 
-  # ---- branch B on a card (user ruling 2026-09-07) --------------------------------------
+  # ---- branch B on a card ------------------------------------------------------------
   # openmm-torch is what carries openqha/openmm_mace.py traced MACE module into an OpenMM
   # context; the CUDA build is what lets that context use the CUDA platform. openmmtools
   # supplies NoseHooverChainVelocityVerletIntegrator at ITS OWN documented defaults

@@ -24,7 +24,7 @@ different filesystems:
 | **TianheXY-AI** | `tianhe_ai.py` | GPU | `hx`, `h100x`, `a100x`, `a800x`, `v100x` | **per card** | **BANNED** | **mandatory** |
 | **TianheXY-A** | `tianhe_a.py` | GPU | `ai` (fine-grained²) | **per card**: 12 CPUs, 120 GB | never (= 8 cards) | **mandatory²** |
 
-¹ By the 2026-09-05 ruling TianheXY-A follows TianheXY-AI's rules. Recorded tension: A's
+¹ TianheXY-A follows TianheXY-AI's rules. Recorded tension: A's
 own manual says its nodes are exclusive and its `yhbatch --help` *does* list the flag. If
 a submission is ever refused for want of exclusivity, `EXCLUSIVE` in `tianhe_a.py` is the
 line to change.
@@ -50,8 +50,8 @@ cards were allocated** while 248 CPUs sat idle — a new job waits on cards, not
 
 **This project uses the fine-grained environment.** `examples/run_chain.sh` refuses to
 submit to `ai` until `sinfo -h -p ai -o %G` mentions gpu — that is, until the script has
-been sourced in the submitting shell. `D0-C-25` ("Tianhe requires an explicit `-G`") and
-the 2026-09-11 "any `-G` is refused" are both true, of the two environments respectively.
+been sourced in the submitting shell. ("Tianhe requires an explicit `-G`") and
+the "any `-G` is refused" report are both true, of the two environments respectively.
 
 One job carries the driver and the workers: `tianhe_a.py` sees `SLURM_JOB_ID` and runs
 parsl in-allocation, so there is no second allocation and no idle driver card.
@@ -100,7 +100,7 @@ setting. `tianhexy-i` appears in the table and this repository knows nothing els
 A writes under the root (`<root>/<tag>/<range>/<chunk>/<qid>/mace/basinNN/`) is what branch
 B reads. Submit both from the XYFS02 checkout and forget about copying.
 
-**The root (since 2026-09-14, ADR 0002).** Not the checkout, not `$HOME`:
+**The root.** Not the checkout, not `$HOME`:
 
 ```
 /XYFS02/HDD_POOL/<acct>/<user>/sherwin/runs      partitions ai, cn
@@ -425,7 +425,7 @@ cluster that bans it.
 
 ## 5. The gate: a real 30-minute job  **[unverified]**
 
-**Not a dry run** (user ruling 2026-09-07). A short real job tests five things a plan
+**Not a dry run**. A short real job tests five things a plan
 cannot: that the module loads, that conda activates on a *compute* node, that the weights
 are there and hash correctly, that the scheduler accepts the directives, and that Parsl can
 read its own status query.
@@ -658,7 +658,7 @@ cost an allocation.
 sockets and, while CREST runs, CREST's working directory (`openqha_crest/<qid>/`), which
 is copied once into `<molecule>/crest/` when CREST returns. The molecule tree itself is
 written straight to the shared root and stays there; there is no exit-trap copy and no
-`logs/node_local/` any more (ADR 0002). The section below describes the arrangement
+`logs/node_local/` any more. The section below describes the arrangement
 before that date and is kept as its record.
 
 ### Node-local scratch: run there, carry the end state back  **[before 2026-09-14; measured 2026-09-09]**
@@ -746,7 +746,7 @@ ls -l scripts/production/s0_mace_engrad.py     # want -rwx
 from the file alone — the job re-sources the same conf on the compute node.
 
 **`CHAIN=levels` on a GPU partition is refused on the login node.** ORCA has no GPU path
-in this repository and `D0-75` puts production quantum chemistry on deimos; catching it
+in this repository and production quantum chemistry runs on deimos; catching it
 before `yhbatch` turns a wasted allocation into a one-line error.
 
 ### What Tianhe actually buys you here, and what it does not
@@ -762,8 +762,7 @@ from, now withdrawn.
 
 **What it still buys most is concurrency.** A production 02d run is 2 molecules x up to 4
 basins x 3 seeds = up to 24 independent trajectories, and a 1.3-1.6x per trajectory does
-not change that shape. What would change it is a batched force interface (`D0-54`
-criterion ii), which does not exist yet.
+not change that shape. What would change it is a batched force interface, which does not exist yet.
 
 **It buys concurrency.** A production 02d run is 2 molecules × up to 4 basins × 3 seeds =
 **up to 24 independent trajectories**, and they have no communication between them at all.

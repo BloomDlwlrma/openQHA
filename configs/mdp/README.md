@@ -65,7 +65,7 @@ The handover between the branches is **the basin geometries, never the trajector
 | `_superseded/s0_stage2_nvt_dos.mdp` | retired | package 3, density-of-states sampling |
 
 The two retired files belonged to the multi-molecule near-critical gas box, a route
-struck out by `D0-P3-19`. They are kept rather than deleted so that a retired protocol's
+struck out. They are kept rather than deleted so that a retired protocol's
 parameters stay quotable — the same rule that keeps overturned measurements in the
 config files.
 

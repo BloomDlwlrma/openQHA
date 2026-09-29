@@ -127,7 +127,7 @@ routes and the Parsl driver read it** through `qha.protocol()`.
 
 | | value | why |
 |---|---|---|
-| timestep | 1 fs | `D0-C-30` |
+| timestep | 1 fs | the protocol's fixed value |
 | equilibration | 50 ps | a 10-atom molecule in vacuum, not a solvated protein |
 | production | 500 ps (range 500–1000) | **set by basin residence**, not by the source paper |
 | sampling interval | 1.0 ps (range 0.5–2.0) | decorrelation and storage |

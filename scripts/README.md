@@ -24,7 +24,7 @@ taxonomy test is what makes it visible instead of letting the directory quietly 
 ## `diagnostics/` is empty, and that is not an oversight
 
 The defect probes it was meant to hold went to `scripts/_superseded/closed-defects/`
-instead, on the user's ruling `S0-D-2`. That leaves a tension with the definition above,
+instead. That leaves a tension with the definition above,
 which says a probe should stay runnable after its defect closes — and plan_D section 2.3
 is how it resolves: each probe becomes a named regression test under `tests/regression/`,
 carrying its defect number in the file name. Once the test exists, the probe can be

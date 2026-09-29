@@ -1,8 +1,8 @@
 # Branch A in production, and branch E under it
 
 What actually runs, where each setting lives, how to submit it both ways, and where the
-answer lands. Written 2026-09-07, after the rulings that moved branch B's trajectories to
-the GPU and cut the CPU cluster down to two partitions.
+answer lands. Written 2026-09-07, after branch B's trajectories moved to
+the GPU and the CPU cluster was cut down to two partitions.
 
 **Nothing in this repository has ever been submitted to Tianhe.** Everything below is
 either verified locally (the configs build, the job scripts render and parse, the
@@ -284,13 +284,13 @@ run will use, and they are what every product records.
 | the registry | `openqha/potentials/engine.py` → `ENGINES` | name → **filename**, source, note — no paths, nothing verified |
 | the directory | `openqha/potentials/engine.py` → `model_root()` | `<repo>/data/potentials`, or `S0_MACE_ROOT` |
 | add a potential | an `ENGINES` entry: `filename=`, `source=`, `note=` | any MLIP. Drop the file in that directory, flat |
-| production default | `openqha/potentials/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` since 2026-09-03 (S0-A-16) |
+| production default | `openqha/potentials/engine.py` → `DEFAULT_ENGINE` | `MACE-OFF23_medium` |
 | select another | `S0_ENGINE=MACE-OFF23_large` | must be a registered name; unknown names raise |
 | move the directory | `S0_MACE_ROOT=/path/to/potentials` | the one flat directory of weights |
 | one file | `S0_MACE_MODEL=/path/to/x.model` | overrides that engine only |
 | what the run used | `configs/openqha.yaml` → `engine:` | records *which* weights, **not authoritative for the path** |
 
-**ONE directory, FLAT** (user ruling 2026-09-09). `model_root()/<filename>` and nothing
+**ONE directory, FLAT**. `model_root()/<filename>` and nothing
 else — no subdirectories, no search:
 
 ```
@@ -350,7 +350,7 @@ trade.
 
 ## 6. Submitting: `debug` first, then `deimos`
 
-**There is no `--dry-run` gate any more** (user ruling 2026-09-07). A 30-minute real job on
+**There is no `--dry-run` gate any more**. A 30-minute real job on
 the short partition tests five things a rendered plan cannot: that the module loads, that
 conda activates on a *compute* node, that the weights are there and hash correctly, that the
 scheduler accepts the directives, and that Parsl can read its own status query.
@@ -497,7 +497,7 @@ arguments; neither touches chemistry.
 
 ## 7. Where the answer lands, and how to read it
 
-> **Since 2026-09-14 this is history.** Results live in one molecule directory per (tag, molecule) with one folder per engine -- `docs/output_inventory.md` section 6 is the description; `docs/adr/0001` and `0002` the decisions. The block below describes the layout before that date and is kept as its record.
+> **The layout changed on 2026-09-14.** Results live in one molecule directory per (tag, molecule) with one folder per engine -- `docs/output_inventory.md` section 6 is the description. The block below describes the layout before that date and is kept as its record.
 
 ### The basin store — sharded, because 133 885 molecules is not one directory (before 2026-09-14)
 
@@ -592,7 +592,7 @@ bandwidth. Replace it with a real one from the first production shard.
 
 ## 8. Branch B, since it changed at the same time
 
-Branch B's two halves now run on different machines (user ruling 2026-09-07):
+Branch B's two halves now run on different machines:
 
 ```
 trajectories   TianheXY-A, GPU, ONE TRAJECTORY PER CARD
@@ -646,7 +646,7 @@ the CPU -- that mismatched row is where the earlier claim in this file, "the car
 came from, and it has been withdrawn. `openmm_mace.platform_properties_for()` now sets
 the matching property so the mismatch cannot be reached by leaving an argument out.
 
-`D0-C-5` (3.5x slower on a T400) is not contradicted by this: it is a different card and
+The 3.5x-slower T400 is not contradicted by this: it is a different card and
 was never re-run. Still read `SECONDS_PER_PS` out of `md.toml` (`[Production]`) before sizing a
 campaign.
 
@@ -713,7 +713,7 @@ address one `(basin, seed)` and writing to `$HOME` instead of `S0_RUNS_ROOT`.
 * the `debug` partition name and both walltimes are the user's, not read off `sinfo` here;
 * CUDA/12.3 on TianheXY-AI (section 3);
 * whether `--exclusive` is actually required on TianheXY-A — its manual says its nodes are
-  exclusive and its `yhbatch --help` lists the flag, while the 2026-09-05 ruling says not to
+  exclusive and its `yhbatch --help` lists the flag, while the current guidance says not to
   pass it. If a submission is refused for want of exclusivity, `EXCLUSIVE` in
   `hpc/resource_configs/tianhe_a.py` is the line to change;
 * every cost, on every cluster;

@@ -4,7 +4,7 @@
 `identity`, both on an113 / a100x). Every number below is either cited or measured here;
 the arithmetic at the end is spelled out so it can be redone when a number changes.*
 
-## 0. Ruling (user, 2026-09-13) -- supersedes the recommendation in section 5
+## 0. The chosen protocol -- supersedes the recommendation in section 5
 
 **One trajectory per (molecule, basin), everywhere: examples and campaign alike.** The
 velocity seed follows OpenMM's own convention for `randomNumberSeed=0` -- a fresh seed
@@ -24,7 +24,7 @@ accepted):
   seed spread.
 * `configs/branchB_protocol.yaml`: `trajectories_per_basin: 1`, `velocity_seed` recorded.
 
-Sections 1-5 below are the argument as it stood before the ruling and are kept as such.
+Sections 1-5 below are the argument as it was first written and are kept as such.
 
 ## 1. What the quasi-harmonic method is, and what it is not
 

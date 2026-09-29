@@ -2,7 +2,7 @@
 
     python check_dependency.py
 
-It never guesses. Everything below is imported, executed or hashed, and each row says
+It never guesses. Everything below is imported or executed, and each row says
 what stops working if it is missing — because "dependency X is absent" is not useful and
 "branch A cannot run" is.
 
@@ -141,7 +141,7 @@ def main():
             path = "-"
         print("%-10s %-42s %-16s %s" % (name, str(path)[-42:], need, status))
 
-    # ---- the potential: a path AND a checksum, not just an import --------------------
+    # ---- the potential: a path, not just an import -----------------------------------
     print()
     engine_ok = False
     try:

@@ -42,7 +42,7 @@ TAG=prod yhbatch hpc/slurm/branchB_collect.slurm          # back on the CPU clus
    lower, in its child environment: `openqha.qm_interfaces.orca.subprocess_env()` deletes
    EVERY `SLURM*`/`PMI*` variable from an ORCA child and sets
    `OMPI_MCA_hwloc_base_binding_policy=none`, so the worker's `taskset` range is
-   placement's only owner (ADR 0008). Do not widen this loop to "repair" ORCA, and do
+   placement's only owner. Do not widen this loop to "repair" ORCA, and do
    not add ORCA variables here. If an ORCA launch ever reports "not enough slots", the
    documented fallback is `OMPI_MCA_rmaps_base_oversubscribe=1` for that launch; it is
    not set by default.
@@ -51,9 +51,10 @@ TAG=prod yhbatch hpc/slurm/branchB_collect.slurm          # back on the CPU clus
    is nothing for the launcher to lay out — and going through it would re-import the
    variables just unset.
 
-4. **Refuse early.** Each script checks the executables and recomputes the MACE-OFF
-   SHA-256 before doing any work. A missing weight file discovered one task at a time
-   wastes an allocation; discovered at the top it wastes ten seconds.
+4. **Refuse early.** Each script checks the executables and the registered weight files
+   (through `s0_check_weights.py`, which prints each name's resolved path) before doing any
+   work. A missing weight file discovered one task at a time wastes an allocation;
+   discovered at the top it wastes ten seconds.
 
 5. **Scan when the job STARTS, not when it was submitted.** `branchA_deimos.slurm` builds
    its worklist from what is on disk at that moment (`s0_E_worklist.py`), so a shard that

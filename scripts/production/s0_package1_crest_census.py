@@ -618,7 +618,7 @@ def main():
 
     n_workers, limits = plan_workers(args.device, args.workers, args.reserve_cpus)
     v = crest.crest_version()
-    prov = engine.provenance()          # **hashes the weights only; loads no model**
+    prov = engine.provenance()          # **resolves the registered weights only; loads no model**
 
     print("=" * 104)
     print("package 1 - CREST branch   indices {}-{}   one worker per molecule".format(args.lo, args.hi))

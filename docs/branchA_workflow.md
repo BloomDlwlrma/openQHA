@@ -4,8 +4,6 @@
 runs, in what order, with which parameters, and how to put it on a cluster.
 
 - Parameters: [`configs/conformers.yaml`](../configs/conformers.yaml) — the authority.
-- Argumentation: `.mem/plan/plan_A_conformational-search.md`
-- Measurements: `.mem/checkpoints/checkpoints_A_conformational-search.md`
 - Dynamics protocol, side by side with branch B:
   [`configs/mdp/s0_branchA_crest_metadynamics.mdp`](../configs/mdp/s0_branchA_crest_metadynamics.mdp)
 
@@ -106,7 +104,7 @@ reported; `resource_budget` = affects speed only.
 | parameter | value | class | why |
 |---|---|---|---|
 | `workhorse` | **`gfn2`** | published_protocol | upstream example 1 is `crest struc.xyz --gfn2` |
-| `refine` | **`sp`** | user ruling 2026-09-04 | quality layer scores survivors; it does **not** re-optimise and merge them |
+| `refine` | **`sp`** | measurement | quality layer scores survivors; it does **not** re-optimise and merge them |
 | `backend` | `generic` | — | this repo's socket client; `mlip` needs CREST 3.1 |
 | `engine_client` | `scripts/production/s0_mace_engrad.py` | — | one resident server per parallel slot |
 
@@ -119,11 +117,11 @@ reported; `resource_budget` = affects speed only.
 | gfnff | 352.1 s | 116 535 |
 
 A better workhorse converges in fewer calls and hands fewer structures to the expensive
-refinement. One species does not overturn `D0-50` in general; it removes cost as an
+refinement. One species does not settle the general case; it removes cost as an
 objection here.
 
 > **Settled 2026-09-04.** `refine=opt` vs `sp` was previously measured only under
-> **gfnff**, and the 2026-09-03 ruling chose `opt` on the stated grounds that those
+> **gfnff**, and `opt` had been chosen on the stated grounds that those
 > numbers no longer applied under gfn2. Acceptance criterion 3 tested that premise and it
 > did not hold. Under gfn2, on `OCCC(=O)CO`:
 >
@@ -145,7 +143,7 @@ objection here.
 > energy window bites on MACE energies under `opt` and gfn2 energies under `sp`
 > (retention 11.2% against 19.2%). Both happen **inside CREST, before the ensemble
 > reaches us**, so nothing downstream can recover what was discarded. See
-> `scripts/calibration/s0_A_refine_mechanism.py` and checkpoint 9.
+> `scripts/calibration/s0_A_refine_mechanism.py`.
 
 ### 3.3 The dynamics package — three settings, one protocol
 
@@ -246,7 +244,7 @@ python scripts/production/s0_A_pipeline.py --smiles "OCCO" --label ethyleneglyco
 ```
 
 Products land in the molecule directory (`<root>/<tag>/<qid>/`, or `<root>/<tag>/<label>/` for
-a SMILES molecule; flat since 2026-09-20, ADR 0001 amendment 3; `docs/output_inventory.md` sections 6 and 8): `mace/confNN/`,
+a SMILES molecule; flat; `docs/output_inventory.md` sections 6 and 8): `mace/confNN/`,
 `mace/basinNN/`, and under `_records/`: `branchA.out`, `branchA.toml` (and `driver.log`
 when a Batch ran it). CREST runs node-local and its directory is moved once into `crest/`.
 
@@ -288,7 +286,7 @@ molecules run at once. Replacing it with a `for` loop must not change a single n
 Conformer search is a **CPU workload parallel over molecules**:
 
 - GFN2-xTB never touches a GPU;
-- MACE calls are single 10–20 atom structures, which fill no card (`D0-56`).
+- MACE calls are single 10–20 atom structures, which fill no card.
 
 **So it must not go on a GPU partition.** Tianhe's `h100x` bills by the whole card and
 gives 14 CPUs with it — running branch A there burns an H100 to do CPU work *and*
@@ -325,8 +323,7 @@ back from `configs/conformers.yaml` — proof the execution layer has no science
 of its own.
 
 Cost is reported as **three separate numbers** and never divided: batch wall clock,
-single-task seconds, and *slot extrapolation is explicitly not computed* (`D0-P1-12`;
-defects 34 and 56).
+single-task seconds, and *slot extrapolation is explicitly not computed* (defects 34 and 56).
 
 ---
 
@@ -342,15 +339,15 @@ defects 34 and 56).
 |---|---|
 | directives are `#SBATCH` — a Slurm derivative | site job scripts |
 | submission **`yhbatch`**, launcher **`yhrun`** | site job scripts |
-| `h100x` = 1 GPU / 14 CPU / 240 GB, billed **per card** | `D0-56` |
+| `h100x` = 1 GPU / 14 CPU / 240 GB, billed **per card** | site manual |
 | a submission **without explicit `-G` fails** | site announcement |
-| `--array` is available | user, 2026-09-03 |
-| outbound network via proxy; no container; CREST from conda-forge | `D0-C-22` |
-| `ulimit -l unlimited` and `GLEX_USE_ZC_RNDV=0` required | `D0-C-24` |
+| `--array` is available | site, 2026-09-03 |
+| outbound network via proxy; no container; CREST from conda-forge | measured on the site |
+| `ulimit -l unlimited` and `GLEX_USE_ZC_RNDV=0` required | measured on the site |
 
 ### 6.2 Step 0 — before anything is submitted
 
-`D0-C-20`: **the first thing done on a cluster is a benchmark, not a production run.**
+**The first thing done on a cluster is a benchmark, not a production run.**
 Prove the chain locally first; going to the cluster then changes one argument.
 
 ```bash
@@ -445,7 +442,7 @@ python scripts/production/s0_E_branchA_parsl.py \
 
 | | |
 |---|---|
-| **Walltime** | set to **95%** of the queue limit. The job must finish and *write out*, not be killed holding results (`D0-C-25`). Every molecule writes on completion, so a kill costs at most one molecule — provided nothing buffers. |
+| **Walltime** | set to **95%** of the queue limit. The job must finish and *write out*, not be killed holding results. Every molecule writes on completion, so a kill costs at most one molecule — provided nothing buffers. |
 | **Scratch** | CREST writes many small files into parallel `_N` subdirectories. Use node-local `$TMPDIR`, copy **results** back — not the process. |
 | **`set -u`** | `hpc/env/common.sh` must not use it. The conda GROMACS activation hook fails under `set -u` (`GMXRC: line 10: shell: unbound variable`) and the job then runs with a half-built environment **without stopping**. |
 | **`OPENBLAS_NUM_THREADS`** | Must be `1`. conda-forge's CREST can link the pthreads OpenBLAS while CREST is OpenMP-parallel; unset, that costs 3992 warning lines and 11 s on a 10-atom molecule. One environment now, not two — `_superseded/environment-crest.README.md` has the numbers that retired the split. `S0_CREST_BIN` still overrides, for a CREST from elsewhere. |
@@ -483,13 +480,13 @@ they must not share an `.mdp`.
 
 | | item | status 2026-09-04 |
 |---|---|---|
-| 1 | `refine=opt` vs `sp` under gfn2 | **paid, and the answer reversed on the second molecule.** Propanal: same 2 basins, error 0.0000, `opt` 4.2× the cost. `OCCC(=O)CO`: `opt` 5980 s → **23** basins, error **0.4023 kcal/mol**; `sp` 777 s → **37** basins, error 0.0025; union 45. `opt` loses 14 of 37 basins, costs 7.7×, and errs by 0.40 kcal/mol — above the ~0.1 target. Propanal has only 2 basins and could not show it. **Closed: `refine` changed to `"sp"` on 2026-09-04** by user ruling, after this measurement showed the premise of the 2026-09-03 ruling did not hold. The mechanism is in checkpoint 9 and `scripts/calibration/s0_A_refine_mechanism.py`; one component of it (structural merging vs the energy window) is still unseparated. |
-| 2 | `shake_fallback` never fired | **closed.** All three strained rings run. `000607` 9 aborts → fallback → 0, 3 basins, 9/9. `003163` 15 → fallback → 0, 2 basins, 9/9. `002334` **0 aborts, no fallback needed**, 6 basins, 9/9. Against `D0-P1-34`'s 31/24/4 the counts did not reproduce, and on `002334` the aborts did not happen at all — so **zero-vs-nonzero is not a stable criterion either** at low counts. That is what makes the pointwise, reactive design right: it responds to the abort in the run at hand instead of assuming a prior list still holds. |
-| 3 | dedup plateau on two molecules | **closed 2026-09-04 by ruling, not by measurement.** All three deduplication conditions are CREST's own published CREGEN values — `RTHR` 0.125 Å, `ETHR` 0.05 kcal/mol, `BTHR` 1%. What this repository owes them is fidelity to the source; a plateau study is the evidence you need to pick a number *of your own*, and we are not picking one. The sweep that retired the unsourced 0.30 Å stays in §3.4 as the reason the old value went. |
+| 1 | `refine=opt` vs `sp` under gfn2 | **paid, and the answer reversed on the second molecule.** Propanal: same 2 basins, error 0.0000, `opt` 4.2× the cost. `OCCC(=O)CO`: `opt` 5980 s → **23** basins, error **0.4023 kcal/mol**; `sp` 777 s → **37** basins, error 0.0025; union 45. `opt` loses 14 of 37 basins, costs 7.7×, and errs by 0.40 kcal/mol — above the ~0.1 target. Propanal has only 2 basins and could not show it. **Closed: `refine` changed to `"sp"` on 2026-09-04** after this measurement showed the earlier premise did not hold. The mechanism is in `scripts/calibration/s0_A_refine_mechanism.py`; one component of it (structural merging vs the energy window) is still unseparated. |
+| 2 | `shake_fallback` never fired | **closed.** All three strained rings run. `000607` 9 aborts → fallback → 0, 3 basins, 9/9. `003163` 15 → fallback → 0, 2 basins, 9/9. `002334` **0 aborts, no fallback needed**, 6 basins, 9/9. Against the earlier claimed 31/24/4 the counts did not reproduce, and on `002334` the aborts did not happen at all — so **zero-vs-nonzero is not a stable criterion either** at low counts. That is what makes the pointwise, reactive design right: it responds to the abort in the run at hand instead of assuming a prior list still holds. |
+| 3 | dedup plateau on two molecules | **closed 2026-09-04 by decision, not by measurement.** All three deduplication conditions are CREST's own published CREGEN values — `RTHR` 0.125 Å, `ETHR` 0.05 kcal/mol, `BTHR` 1%. What this repository owes them is fidelity to the source; a plateau study is the evidence you need to pick a number *of your own*, and we are not picking one. The sweep that retired the unsourced 0.30 Å stays in §3.4 as the reason the old value went. |
 | 4 | **The energy and rotational conditions have never blocked a merge** — both counters still zero. |
 | 5 | **Nothing has been submitted to Tianhe.** Three scheduler command names unverified. |
 | 6 | **Per-molecule cost under contention unmeasured** — only the uncontended 285 s exists. |
-| 7 | **`f7_mode` implemented and curatedQM9 in place** (`openqha/conformer_search/filters.py`, `openqha/curated_qm9.py`). Default is still `drop_all`; switching the default to `curated` is a separate ruling and has not been made. `curated` refuses to run when the archive is absent rather than falling back silently. |
+| 7 | **`f7_mode` implemented and curatedQM9 in place** (`openqha/conformer_search/filters.py`, `openqha/curated_qm9.py`). Default is still `drop_all`; switching the default to `curated` is a separate decision and has not been made. `curated` refuses to run when the archive is absent rather than falling back silently. |
 
 ---
 
@@ -522,7 +519,7 @@ they must not share an `.mdp`.
    **Closed 2026-09-09.** The live tree is English: the final run reported `ok -- 0 lines`
    after clearing 26 files / 1278 lines, with `t_translation_preserved_numbers` confirming
    `no number lost`. The 28 files under `_superseded/` were counted but never failed and
-   remain an open ruling (`S0-D-2`) -- they are marked ready to delete, not to translate.
+   remain an open question -- they are marked ready to delete, not to translate.
    Both gates have been retired now that the migration they policed is complete.
 4. **`t_filters_f7` fails on one case** — `dsgdb9nsd_000080` passes F7 under
    `f7_scope="identity_from_geometry_only"` because its index uses the relaxed SMILES,
@@ -534,7 +531,7 @@ they must not share an `.mdp`.
    0.0034 kcal/mol, 3.4% of the target. Report the correction; report a basin count as
    one draw, never as the answer. Untested on a second molecule.
 7. **`f7_mode` default is still `drop_all`** — conservative and lossy (drops ~2.2% of QM9
-   to avoid 0.05%). Switching it to `curated` is a separate ruling that has not been made.
+   to avoid 0.05%). Switching it to `curated` is a separate decision that has not been made.
 
 ### How repeatable is the answer itself?
 
@@ -549,7 +546,7 @@ Worth knowing before comparing your run to ours. Two runs of the **identical** p
 **A spread of 5 basins in 37, about 14%.** iMTD-GC is a stochastic search and two runs do
 not find the same set; this is the same lesson the `terminated EARLY` counts taught
 (31/24/4 in one campaign, 9/15/0 in another). All runs are far above `refine="opt"`'s 23,
-so the ruling is unaffected — if anything they confirm it independently.
+so the choice is unaffected — if anything they confirm it independently.
 
 ### And what that costs the answer — measured 2026-09-05, five runs
 
@@ -586,7 +583,7 @@ run it" and "a stranger can run it and get what the documentation promises".
 
 ## 9. Where the results are, and how to find one again
 
-> **Since 2026-09-14 this is history.** Results live in one molecule directory per (tag, molecule) with one folder per engine -- `docs/output_inventory.md` section 6 is the description; `docs/adr/0001` and `0002` the decisions. The block below describes the layout before that date and is kept as its record.
+> **The layout changed on 2026-09-14.** Results live in one molecule directory per (tag, molecule) with one folder per engine -- `docs/output_inventory.md` section 6 is the description. The block below describes the layout before that date and is kept as its record.
 
 
 A full QM9 campaign is 133 885 molecules. **One directory per molecule is not an option** —
@@ -665,8 +662,8 @@ end.
 Because runs are interrupted. Per-molecule files mean an interrupted campaign holds
 exactly the molecules it finished, each complete, and resuming is a set difference. An
 append-only file would need locking across a node's 16 workers, and a partial write at a
-walltime kill would corrupt its tail — which is the case that actually happens
-(`D0-C-25`). Writes go to `.part` and are renamed, so **a missing result is resumable
+walltime kill would corrupt its tail — which is the case that actually happens.
+Writes go to `.part` and are renamed, so **a missing result is resumable
 and a corrupt one would have to be found first**.
 
 The parquet summaries under `analysis/` are built *from* these files, not instead of them.

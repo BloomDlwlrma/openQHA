@@ -7,7 +7,7 @@ python tests/run_tests.py --group regression
 ```
 
 Each test is a standalone program returning an exit code, and the runner launches each in
-its own process. That is deliberate: `D0-79` is a real defect in which a script behaved
+its own process. That is deliberate: a real defect once made a script behave
 differently when **executed** than when imported, and importing tests into one process
 would erase the distinction part of this suite is about. (`regression/t_defect46_shebang.py`
 is the test for it. **It is planned, not written** -- plan_D section 2.3 lists it among the
@@ -109,7 +109,7 @@ baseline snapshot and a scan that can only ever report "still nothing to do":
 |---|---|---|
 | `t_code_is_english.py` | live code must carry no CJK | **The translation is finished**: `ok -- 0 lines`. Its last run cleared 26 files / 1278 lines |
 | `t_translation_preserved_numbers.py` | translating must lose no measured number | It verified that translation: **`no number lost`, 0 tokens gone from the tree**. Its baseline is a 2026-09-04 snapshot and goes stale from here |
-| `t_superseded_isolated.py` | nothing live imports anything retired | A rule about `_superseded/`, which is itself marked ready to delete (`S0-D-2`) |
+| `t_superseded_isolated.py` | nothing live imports anything retired | A rule about `_superseded/`, which is itself marked ready to delete |
 | `t_legacy_import_forms.py` | every pre-2026-09-07 import form still works | A compatibility shim for one rename, in a fresh process each time |
 | `regression/t_defect13_langevin_units.py` | ASE old `Langevin` took temperature in eV, not K | A fixed defect in a route no production driver takes |
 
