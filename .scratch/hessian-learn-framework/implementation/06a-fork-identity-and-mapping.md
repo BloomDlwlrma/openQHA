@@ -81,3 +81,36 @@ docstring still names `BloomDlwlrma/openQHA-Hessian` -- it rides the training si
 ([01d](01d-the-switchover.md)) or the sweep ([12](../decisions/12-references-sweep.md);
 its list does not mention this file yet); `openqha/training/run.py`'s gate message is
 already on 12's list.
+
+## Review record (2026-09-29, annotations)
+
+Two-axis review of the slice's diff (against its parent `c2205be`), per the
+`code-review` skill, with the dispositions below:
+
+- unit group: **all 63 tests passed** (`python tests/run_tests.py`);
+- integration group: **12 of 13 passed** -- the one failure is `t_train_engine`, unchanged.
+
+**Standards (repo standards + the smell baseline).**
+
+- No hard violations: the changed text uses no `CONTEXT.md` `_Avoid_` word; the edits sit
+  inside the slice's declared scope; the `#:` comment block matches the file's style.
+- The ADR amended in place, undated (precedent dates amendments: ADRs 0001/0003/0004)
+  -> kept: ticket 06a rules the consequence line "replaced by the table itself"; the
+  mapping is the existing consequence being filled in, not a new decision, and the
+  file's history dates it.
+- "each old commit vs its replay" used the word `CONTEXT.md` reserves for training
+  Replay -> fixed to "its rebased counterpart" before the commit.
+- The mapping now lives in two formats (ADR full 40-hex; 02b short-old/full-new), the
+  tag fact a third time in the constant's comment -> kept: the ticket ruled the ADR the
+  mapping's home ("No separate docs page") and 02b is an immutable verification record;
+  the comment states the base-tag fact only.
+
+**Spec (this ticket).**
+
+- All three acceptance items verified: `MACE_FORK`/`MACE_FORK_BASE`/no retired name in
+  the engine; `s0_check_weights` prints the new identity; ADR 0011 carries the table, the
+  old-string note and the bundle path (all 14 SHAs re-verified against the archived
+  checkout, the bundle heads and the fork; the relative bundle path resolves from the
+  ADR's directory).
+- No missing requirements, no scope creep, no implemented-but-wrong findings; the
+  expected absences (package fields -> 01d; sweep items -> 12) confirmed absent.
