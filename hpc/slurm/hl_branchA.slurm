@@ -60,7 +60,7 @@ source hpc/env/common.sh
 source hpc/env/tianhe.sh || { echo "openQHA: hpc/env/tianhe.sh refused (root unresolved); stopping." >&2; exit 1; }
 openqha_report_env
 openqha_require crest xtb python || exit 1
-python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "registry pin" || echo "openQHA: weights check failed" >&2
+python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "^  path" || echo "openQHA: the weights check did not list a weight file" >&2
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME   layout ${CONCURRENCY} x ${THREADS} threads   array task $ARRAY_ID/$ARRAY_N"
 echo "allocation $CORES cores, ${MEM_MB} MB (0 = the node's memory); CREST runs -T $THREADS per molecule"

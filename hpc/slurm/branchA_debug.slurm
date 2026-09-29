@@ -55,9 +55,8 @@ openqha_report_env
 openqha_require crest xtb python || exit 1
 python - <<'PY' || exit 1
 from openqha import engine
-p = engine.provenance()          # recomputes the SHA-256 and raises on a mismatch
-print("engine      {}  sha256 {}  pinned={}".format(
-    p["engine"], p["sha256"][:16], p["sha256_pinned"]))
+p = engine.provenance()          # resolves the registry entry; a missing weight file raises here
+print("engine      {}  weights {}".format(p["engine"], p["weights_path"]))
 PY
 
 # ---- 3. the work -----------------------------------------------------------------------

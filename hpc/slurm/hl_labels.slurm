@@ -140,7 +140,9 @@ if [ "$ARRAY_ID" = 0 ]; then
     python -u workflows/hessian_learning/03_labels.py --tag "$TAG" --name "$NAME" --level "$LEVEL" $GENERATORS_FLAG --assemble 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
     rc=${PIPESTATUS[0]}
     echo; echo "== 04 Dataset"
-    python -u workflows/hessian_learning/04_dataset.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --export openreact 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
-    echo; echo "== assemble exit $rc (1 = frames with no ORCA job yet: resubmit; a failed frame without an archive is re-attempted once by the next round); Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
-    exit "$rc"
+    python -u workflows/hessian_learning/04_dataset.py --tag "$TAG" --name "$NAME" --level "$LEVEL" --split-by molecule --export openreact 2>&1 | grep -v "Warning\|_Jd\|cuequivariance\|torch.load"
+    rc_ds=${PIPESTATUS[0]}
+    echo; echo "== assemble exit $rc / dataset exit $rc_ds (assemble 1 = frames with no ORCA job yet: resubmit; a failed frame without an archive is re-attempted once by the next round); Dataset under $S0_RUNS_ROOT/$TAG/_datasets/$NAME/"
+    if [ "$rc" -ne 0 ]; then exit "$rc"; fi
+    exit "$rc_ds"
 fi

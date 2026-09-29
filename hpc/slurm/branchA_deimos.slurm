@@ -71,7 +71,7 @@ python -c "
 import sys; sys.path.insert(0,'.')
 from openqha import engine
 p = engine.provenance()
-print('engine      {}  sha256 {}'.format(p['engine'], p['sha256'][:16]))" || exit 1
+print('engine      {}  weights {}'.format(p['engine'], p['weights_path']))" || exit 1
 
 echo "shard       $SHARD"
 echo "range       $RANGE_START .. $RANGE_END"

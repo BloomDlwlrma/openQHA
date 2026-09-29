@@ -64,7 +64,7 @@ openqha_report_env
 echo "runs root  $S0_RUNS_ROOT"
 echo "tag/name   $TAG / $NAME"
 echo "species    $SPECIES"
-python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "registry pin|params sha" || echo "openQHA: weights check failed" >&2
+python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "^  path" || echo "openQHA: the weights check did not list a weight file" >&2
 
 # ---- A. branch A: whatever is not done yet ---------------------------------------------
 echo; echo "== A  branch A (CREST + MACE) under tag $TAG"

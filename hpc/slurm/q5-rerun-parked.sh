@@ -417,8 +417,8 @@ worker)
     source hpc/env/tianhe.sh || die "hpc/env/tianhe.sh refused (conda env / root unresolved)" 4
     openqha_report_env
     openqha_require crest xtb python || die "the environment is missing crest, xtb or python" 4
-    python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "registry pin" \
-        || warn "the weights check did not print a registry pin"
+    python scripts/tooling/s0_check_weights.py 2>/dev/null | grep -E "^  path" \
+        || warn "the weights check did not list a weight file"
     resolve_root || exit 4
 
     MOL="$(find_molecule_dir "$QID")" || true

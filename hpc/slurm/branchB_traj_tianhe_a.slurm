@@ -106,7 +106,7 @@ if not torch.cuda.is_available():
              "CPU -- it would produce correct numbers at the wrong cost and nothing "
              "downstream would say so.")
 p = engine.provenance()
-print("engine      {}  sha256 {}".format(p["engine"], p["sha256"][:16]))
+print("engine      {}  weights {}".format(p["engine"], p["weights_path"]))
 import openmm
 print("openmm      {}  platforms {}".format(
     openmm.version.version,
