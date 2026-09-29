@@ -67,8 +67,9 @@ the fork is permanent-private (ADR 0013)`, linkified per file; history kept, poi
   `1110ffb`, `base-v0.3.16` @ `5c2d761` (no rebase, no force-push, no rewrite; ADR 0013).
 
 **Re-scan (the same regex, over `.scratch/hessian-learn-framework/` + `openQHA/AGENTS.md`).**
-Transcript: `C:\Users\10704\AppData\Local\Temp\10a-verify-out.txt`. Every remaining hit is a
-pointer or benign:
+Transcript: `C:\Users\10704\AppData\Local\Temp\10a-verify-out.txt` (mid-work); the
+post-commit re-run on `4c77a81` is `C:\Users\10704\AppData\Local\Temp\10a-postscan.txt`.
+Every remaining hit is a pointer or benign:
 
 - `decisions/10-upstream-pr.md` — 9 hits, all its own text (the decision; benign by acceptance).
 - The pointer lines themselves — one per spot (02's blockquote included).
@@ -82,9 +83,46 @@ pointer or benign:
   pre-decision inferences — the outcome line governs the note.
 - This slice's own text.
 
-**Reported per the operating rule.** Files changed: the eight records above plus this ticket
-and `map.md`'s Implementation line. Checks run: the full diff read back; the re-scan (grep,
-the ticket's regex) — no un-pointed expectation; `file` — UTF-8/CRLF unchanged. Not verified:
-nothing runtime — no code touched, so no typecheck and no test suite was run (docs-only). The
-ticket-10 records this slice points at (`10-upstream-pr.md`'s resolution, `docs/adr/0013`, the
-research note) were landed in the same commit — uncommitted from ticket 10's session.
+**Reported per the operating rule.** Files changed: commit `4c77a81`'s eleven — the eight
+records pointed above (the research note among them; `map.md` also carries the Implementation
+line), this ticket, and the ticket-10 records landed with it (`decisions/10-upstream-pr.md`'s
+resolution and `docs/adr/0013`, uncommitted from ticket 10's session). Checks run: the full
+diff read back; the re-scan (grep, the ticket's regex) — no un-pointed expectation; the
+post-commit re-run on `4c77a81`; `file` — UTF-8/CRLF unchanged. Not verified: nothing runtime —
+no code touched, so no typecheck and no test suite was run (docs-only).
+
+## Review record (2026-09-29, two-axis review of `4c77a81`)
+
+Two-axis review of the resolution commit (fixed point `e7f079b`) per the `code-review`
+skill; the axes ran as parallel sub-agents. No hard violations; two findings were fixed in
+this annotation commit, the rest kept or reported (gist of both reports):
+
+**Standards.** Resolve protocol conformant — both tickets carry `Status: resolved` and
+`## Answer`, no triage labels; ADR 0013 follows the house ADR shape; the dated-pointer
+appends respect "Records are immutable" (the shape 11c's review record blessed). Baseline
+smells (all judgement, kept): the pointer sentence's repetition (worst:
+`decisions/02-the-real-fork.md` carries it twice ~8 lines apart) and the ref/SHA clump
+travelling across the records — the 11b record already ruled that clump a kept call.
+
+- This ticket's Answer "Files changed" line named 9 of the commit's 11 files — fixed in
+  this annotation (the ticket-10 records are now named in it).
+- Ticket 10's Answer carries no "Reported per the operating rule" block — reported, not
+  fixed (ticket 10's text is outside this slice).
+- Noted (outside the diff): the map's ticket-10 Decisions line and Q4 revision landed a
+  commit before ticket 10's resolution (`e7f079b`, where the ticket still read
+  `Status: open`) — timing only; the endpoint is consistent.
+
+**Spec.** Faithful — all spec'd spots pointed, every relative link resolves at its file's
+depth, both refs verbatim, no scope creep (the ticket-10 records riding in the commit are
+the sanctioned set), and the re-scan on the committed tree stays clean (the post-commit
+transcript added above).
+
+- Reported, not fixed: ticket 10's Answer and ADR 0013 cite a PR precedent (`#1445`
+  retargeted main→develop before merge) that the findings note does not carry; spot-checked
+  during this review on the PR page — base changed main→develop, merged into `develop` on
+  2026-06-05 — verified, but its provenance lives only in ticket 10's text.
+- `11c`'s record still quotes the stale map line while deferring it to ticket 10's session;
+  the Answer discloses it as history — the deferral it names is this slice's fix, now
+  landed.
+- The mid-work transcript gave way to the post-commit re-run (fixed above); the earlier
+  file stays as the work log.
