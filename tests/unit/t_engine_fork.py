@@ -57,7 +57,7 @@ def fake_git(answers):
 def main():
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        checkout = td / "openQHA-Hessian"
+        checkout = td / "mace-checkout"
         (checkout / "mace").mkdir(parents=True)
         (checkout / "mace" / "__init__.py").write_text("")
         (checkout / ".git").mkdir()

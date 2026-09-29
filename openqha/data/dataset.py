@@ -637,8 +637,9 @@ def build(root, tags, name, level=frame_labels.DEFAULT_LEVEL, split_by=DEFAULT_S
         raise ValueError(
             "this Dataset was split by {0} and the build asks for {1}: a rebuild would mix two split schemes in one "
             "index (the old molecules by {0}, the new frames by {1}) and the test split would mean neither. Pass "
-            "resplit=True (04_dataset.py --resplit) to discard the previous decisions and draw it all again by {1}, "
-            "or keep --split-by {0}.".format(previous_mode, split_by))
+            "resplit=True to dataset.build directly (04_dataset.py deliberately exposes no --resplit flag) to "
+            "discard the previous decisions and draw it all again by {1}, or rebuild under a new --name; or keep "
+            "--split-by {0}.".format(previous_mode, split_by))
     if resplit:
         keep_previous = False
     prev_frames, prev_mols = _previous_split(d) if keep_previous else ({}, {})
