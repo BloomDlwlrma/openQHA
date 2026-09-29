@@ -6,8 +6,14 @@ frame carries energy and forces only -- no engine Hessian, `has_hessian = False`
 no pin).
 
     python tests/integration/t_frames_engine.py <molecule dir>
+
+The molecule directory is copied to a temporary directory first and the check runs
+there: the source -- the tests/data fixture by default -- is never written to (this test
+used to rewrite the fixture in place; fixed 2026-09-29).
 """
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -28,6 +34,13 @@ from openqha.store import layout, property as prop           # noqa: E402
 
 
 def main(molecule):
+    with tempfile.TemporaryDirectory(prefix="frames_engine_") as tmp:
+        work = Path(tmp) / Path(molecule).name
+        shutil.copytree(molecule, work)
+        _check(work)
+
+
+def _check(molecule):
     out = frames.generate(molecule, n_displaced=1)
     lvl = out["info"]["LEVEL"]
     fb = frames.read_frames(layout.frames_file(molecule, "basin", lvl))
