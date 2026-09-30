@@ -283,7 +283,7 @@ def write_molecule(rec, dirs, qid, basins=None, crest_out=None,
             Path(dirs["xyz"]) / (qid + "_basins.xyz"), basins,
             rec.get("basin_energies_eV") or [],
             rec.get("basin_provenance") or [], qid)
-    # **CREST's native output, kept verbatim, only renamed** -- the naming specified
+    # **CREST's engine file, kept verbatim, only renamed** -- the naming specified
     # on 2026-08-31
     if keep_crest_out and crest_out and Path(crest_out).exists():
         dst = Path(dirs["out"]) / "crest_{}.out{}".format(

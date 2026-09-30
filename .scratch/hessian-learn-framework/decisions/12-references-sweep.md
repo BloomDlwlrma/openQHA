@@ -88,3 +88,11 @@ runner image — the remote run is the authoritative check.
 retry contract reads `RETRY_ONLY`); the `.scratch/hessian-learning-set` pointer note from
 the work list is superseded by the boundary ruling (scratch trackers take no notes, no
 rewrites).
+
+**Postscript (2026-09-30, the ticket-level two-axis review).** Standards × Spec over the
+whole sweep (`091a055...HEAD` on openQHA, `7d85d27...HEAD` on the package; the interleaved
+ticket-09 hunks excluded): no implementation errors; the two Spec-axis deviations (the
+finer commit split, the CI's extra PyYAML) stand as recorded above. The Standards axis'
+three `_Avoid_` terminology leftovers — `potentials/engine.py` "level folder",
+`store/record.py` "native output", `README.md` "level folder" — are fixed in the
+annotations commit on top of this record.

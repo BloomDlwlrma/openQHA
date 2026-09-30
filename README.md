@@ -395,7 +395,7 @@ The msRRHO free energy (Pracht & Grimme, Chem. Sci. 2021, 12, 6551, assembled in
 openQHA with CREST's conventions: tau = 25 cm^-1, rotor moment capped by the mean principal
 moment, entropy and Cp interpolated, imaginary modes inverted inside the -50 cm^-1 floor
 while a mode below the floor excludes the basin) is one Calculation per level,
-written to the molecule's level folder:
+written to the molecule's Thermo folder:
 
 ```bash
 python scripts/production/s0_thermo_msrrho.py --species dsgdb9nsd_000035 --tag propanal --step mace

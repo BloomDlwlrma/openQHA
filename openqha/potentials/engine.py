@@ -592,6 +592,6 @@ def level_name(name=None):
 
 def composite_notation(reference=None, name=None):
     """The `high // low` string that must appear in every product, spelled with
-    level names so that records and the level folders agree: the reference level first
+    level names so that records and the Thermo folders agree: the reference level first
     (REFERENCE_LEVEL unless another level is given), then the engine's level."""
     return "{} // {}".format(reference or REFERENCE_LEVEL, level_name(name))
