@@ -90,3 +90,26 @@ live-documents pass and the draws.
 **Carried.** The commit also carries the shared worktree's pending one-line 12i refresh in
 `map.md` (the annotations `669f823` now verified on the package remote) — `map.md` was
 touched for this slice's line and the edit already sat in the working tree.
+
+## Review record (2026-09-30, annotations -- the two-axis review of `05c48d8`)
+
+Two read-only sub-agents over `5a48d12..05c48d8`, per the `code-review` skill. Both axes
+found no hard violations: the checklist's requirements all present; the fork-mechanism and
+docs-quote claims check out (the `mace/` checkout at `1110ffb`; `multihead_tools.py:105-128`
+and `:188`, `run_train.py:297-314`, `arg_parser.py:587-591`); links resolve; the 30k naming
+is consistent across the five files. Annotations made in this commit:
+
+- The two mace-docs quotes carry a trailing "…" (they are truncated).
+- `spec-round-1-run.md` Q3 no longer reads "the two Replay draws are unchanged" against the
+  re-ruled Q2 — the draws follow Q2; placement/visit/log checks stay unchanged.
+- `decisions/09-round-1-run.md`'s block caption notes the 2026-09-30 amendment.
+- `research/replay-ratio-provenance.md` §1's stale pointers are re-pointed: the "Current
+  effort text" list becomes "where the R4 statement lived at assembly", and the 63,004
+  pointer no longer cites a replaced line.
+- `map.md`'s 09a line marks the supersession of the 08/08a R4 row and scopes the scan
+  ("spec/decision scan 0").
+
+Recorded, not changed: the map's 08/08a entries keep their (historical) R4 values; the "--num_samples_pt read only in `assemble_replay_data`" claim stands (`run_train.py:307`
+only prints the value in the download branch); `implementation/12i-the-package-pass.md`
+still records `669f823` as local-only while the carried map refresh says remote-verified —
+that reconciliation belongs to the 12h close-out.

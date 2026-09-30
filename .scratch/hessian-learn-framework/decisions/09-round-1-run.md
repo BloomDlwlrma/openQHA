@@ -9,7 +9,7 @@ Part of: [hessian-learn-framework](../map.md)
 
 Run the first Hessian training round on [Round-1 xyz](08-round-1-xyz.md)'s assembled dataset, and debug what breaks.
 
-Settled (grilling, 2026-09-29 — unless the run itself says otherwise):
+Settled (grilling, 2026-09-29 — unless the run itself says otherwise; amended by the 2026-09-30 re-ruling, see the spec):
 
 - **Stack**: the latest tree only — openQHA and the package at their current `main` (the package's README rewrite `a5f8103` atop `ff92141`), fork `BloomDlwlrma/mace` @ `openqha-hessian` `1110ffb`; no old fork chain, no sha256-era code, no maintenance of old versions; old Records stay byte-identical and readable (no migration, no repair).
 - **Entry and knobs**: `workflows/hessian_learning/05_train.py` on the campaign's two production arms — run names `replay30k_w1` / `replay30k_w10`, multiheads on; the Replay is a 30,000-frame draw of SPICE's train split (the mace-docs guidance, user ruling 2026-09-30), drawn twice with seed 0 at `--weight 1` / `--weight 10` so the two frame sets are identical by construction (the weight lives in the file); `--hessian-weight` stays the default; the epoch cap is the optional parameter (`--max-epochs`; Slurm `MAX_EPOCHS`, default 100) set to the budget at claim time and recorded; `--register-copy` on the production runs and on the debug runs (stamped `<campaign>-<run>+<stamp>` entries).

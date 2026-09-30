@@ -14,11 +14,12 @@ forced decay `0.99999`, **Stage Two off**, `clip_grad 1.0`, `weight_decay 0.0`, 
 `E1/F100` + `w_H = balance`. Q2 (re-ruled 2026-09-30): the Replay is a **30,000-frame draw** of
 SPICE's train split — the mace-docs multihead guidance ("Dataset size ratio: It usually gives best
 performance to use as many replay sample as you can. Use `--num_samples_pt` to control this (30000
-is a good value)."; "Number of epochs for training: The number of epochs for convergence is between
-10 and 30 epochs.") — consumed by **two arms** identical except the frames' `config_weight`:
+is a good value). …"; "Number of epochs for training: The number of epochs for convergence is between
+10 and 30 epochs. …") — consumed by **two arms** identical except the frames' `config_weight`:
 `replay30k_w1` (weight 1) and `replay30k_w10` (weight 10), submitted together; Mode 1 (original
 labels; SPICE and the target labels share the ωB97M-D3(BJ)/def2-TZVPPD level — no pseudolabel).
-Q3: dataset placement, the Tianhe visit and the two Replay draws are unchanged, plus log checks.
+Q3: dataset placement, the Tianhe visit and the log checks are unchanged; the two Replay draws
+follow Q2.
 Q4: the local gate mirrors the production argv for both arms (plus the optional naive arm). Q5: the
 launch lines carry the re-selected flags (both arms); the epoch cap stays
 `min(60, floor(0.9 × 86400 / SECONDS_PER_EPOCH))`. Q6: the done bar keeps its thresholds and gains

@@ -22,7 +22,8 @@ composition to future work.
 - **110,960** = 4 × 27,740. First appearance: `decisions/08-round-1-xyz.md:42` —
   `"R4 (S0-C-60): 27740 train frames with a Hessian -> Replay = 110960 frames at config_weight 10"`.
   It occurs nowhere else except as derived from this build line. (An earlier build printed
-  63,004 = 4 × 15,751; superseded — `decisions/09-round-1-run.md:15`.)
+  63,004 = 4 × 15,751; superseded — its authority line in `decisions/09-round-1-run.md` was
+  replaced by the 2026-09-30 re-ruling, §6.)
 - The replay **source** is SPICE's train split, drawn uniformly by frame, one seed file for the
   whole campaign (S0-C-56; drawn by `s0_spice_pt_draw.py`) — the "same-corpus draw".
 
@@ -63,9 +64,10 @@ composition to future work.
    `REPLAY_CONFIG_WEIGHT_R4 = 10.0`), `:249` (`"REPLAY_R4_FRAMES": (…, "4 x N_TRAIN_HESSIAN: …")`);
    `openQHA-Hessian/openqha_hessian/smoke_fit.py:99-106` (`"the number to compare with PFT's 4."`,
    `PFT_REFERENCE = 4.0`); `run.py:30`.
-9. Current effort text: `spec-round-1-xyz.md:35-37`, `decisions/09-round-1-run.md:15`,
-   `spec-round-1-run.md:13,129-136` ("R4 = 110,960 frames (4×N_TRAIN_HESSIAN of the canonical
-   rebuild) at `config_weight` 10").
+9. Where the R4 statement lived at assembly: `spec-round-1-xyz.md:35-37` (still carries it —
+   ticket 09c's pass), `decisions/09-round-1-run.md:15` and `spec-round-1-run.md:13,129-136`
+   ("R4 = 110,960 frames (4×N_TRAIN_HESSIAN of the canonical rebuild) at `config_weight` 10")
+   — both replaced by the 2026-09-30 re-ruling (see §6).
 
 ## 3. What PFT actually says (primary source, arXiv:2601.07742v4)
 
