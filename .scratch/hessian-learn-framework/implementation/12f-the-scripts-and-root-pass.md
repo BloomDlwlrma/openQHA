@@ -71,8 +71,10 @@ event sentences reworded to current-state (measurement dates kept). The notables
   `--plan-only`), the `s0-1_conformer-to-free-energy.ipynb` filename (an external
   artifact's name in two tools' default paths), the `"s0-1_edge"` mapping key, and
   `.gitignore`'s `.mem/` ignore entry (behaviour: it keeps the directory out of the
-  repository).
-
+  repository).- `configs/baseline.yaml`'s recorded loss inventory (`D0-86`, `D0-C-30` in the
+  `reported`/`finding`/`resolution` fields of the accounting) — the record's subject
+  IS the tokens that were lost and restored; anonymising it would have half-erased
+  the audit (the review's call, accepted; the file's prose comments are swept).
 **Evidence.**
 
 - Compile/parse: `py_compile` over the 48 changed `.py` files; `bash -n` over the
@@ -82,14 +84,51 @@ event sentences reworded to current-state (measurement dates kept). The notables
   with value edits (`baseline`, `branchB_protocol`, `cluster_tianhe`, `conformers`,
   `electronic`, `hessian`) were diffed key-by-key — every change is a string reword
   or the two dropped pointer keys above.
-- Residual scan over the subtree (families as above; sources only): **98 hitting
-  lines, all in the kept identifier/data classes** (64 + 21 + 5 + 3 + 2 + 1 + 1 + 1);
-  every comment/docstring/message hit is gone.
+- Residual scan over the subtree (families as above plus `\bruled\b`; sources only):
+  **106 hitting lines — 101 in the kept identifier/data classes** (64 + 21 + 1 index
+  decisions / mem namespace / migrate key; 5 + 3 + 2 + 1 + 1 + 3 plan-function,
+  census-flag, notebook-filename, ignore-entry and baseline-accounting identifiers)
+  **and 5 ordinary-English "ruled out" eliminations** (site/route narratives, not
+  citations); every comment/docstring/message citation is gone.
 - Unit suite: **60/60** on the final tree
-  (`C:\Users\10704\AppData\Local\Temp\12f_unit_final.log`). Not run here: `--all`
+  (`C:\Users\10704\AppData\Local\Temp\12f_unit_final2.log`). Not run here: `--all`
   (the retirement baseline belongs to 12h); nothing submitted to Tianhe; no
   notebook re-execution.
 
 Reported per the operating rule — files changed: the 90 above (plus this ticket and
 the map line). Checks run: as listed. Not verified: the Slurm-side runtime paths were
 not re-executed; a behaviour change is excluded by the AST-equivalence check.
+
+## Review record (2026-09-30, annotations)
+
+Two-axis review of `3a677d0` (the `code-review` skill; standards + spec, run as
+parallel sub-agents).
+
+**Standards.** Two hard findings, both fixed in the annotations commit: the SMILES
+path's `census["reference_geometry_note"]` read "The The" — the rewrite doubled a
+word in a product string (second line re-flowed); and
+`scripts/tooling/s0_verify_curated_qm9.py` had come back all-LF against its
+all-CRLF stored form (the applier normalised it) — CRLF restored, the one-line edit
+kept. Judgement calls: the `configs/baseline.yaml` accounting fields are RESTORED to
+their recorded codes (`D0-86`, `D0-C-30`) — the record's subject is the lost
+tokens, and anonymising it was inconsistent with the kept-provenance policy
+(now listed as a kept class above); `requirements.txt`'s sentence corrected to
+`openqha/potentials/engine.py` (the old text's dead path, fixed while there);
+`s0_package2_highlevel_freq.py` no longer asserts the reference level is settled —
+it says "one of the two candidates", matching the benchmark's "not settled"; the
+`configs/README.md` stray space before the colon and the dangling separator in
+`s0_lowfreq_and_separable_terms.py` removed. The apparent date-attribution
+inconsistency (`array_ai.conf`'s "(the account page, 2026-09-13)") is not one —
+that cite is the site's own account page, a fact source, not a user-ruling date.
+The `plan:/checkpoints:` key removal stays (disclosed, consumer-free).
+
+**Spec.** One substantive finding, fixed: four residual "ruled" citations the
+family scan had missed (`configs/state_points.yaml`; `s0_composite_energy_force.py`
+×3, one inside a payload string) — rewritten, and `\bruled\b` added to the scan
+families (its five remaining hits are the plain-English elimination idiom). The
+EOL flip was also this axis's second finding. Otherwise: no scope creep, the named
+obligations verified, the exceptions consistent with the old-assets boundary.
+
+Re-run after the fixes: `py_compile` on the five edited Python files, the EOL audit
+(only the tracker file carries CRLF), the scan (106 lines, classified above), and
+the unit suite — 60/60 (`12f_unit_final2.log`).

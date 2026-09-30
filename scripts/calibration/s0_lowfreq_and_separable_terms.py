@@ -572,7 +572,7 @@ PARAMETER_TABLE = [
     dict(name="P_STD", value=1.0e5, unit="Pa", classification="literature value",
          note="the IUPAC 1 bar standard state; it enters only the translational term, which is identically 0 on this edge"),
     dict(name="SIGMA_INTERNAL_METHYL", value=3, unit="1", classification="derived criterion",
-         note="the three-fold axis of the methyl top itself; counted separately from the external symmetry number, "),
+         note="the three-fold axis of the methyl top itself; counted separately from the external symmetry number"),
     dict(name="ELECTRONIC_DEGENERACY", value="declared explicitly", unit="1",
          classification="modifiable convention",
          note="the spin multiplicity. A missing one refuses to run and there is no default -- the same principle as the external symmetry number"),

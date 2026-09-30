@@ -53,14 +53,14 @@ superseded:
       reported: "MISSING"
       finding: >
         Renamed to configs/openqha.yaml and rewritten on 2026-09-04. The rewrite LOST
-        SIX TOKENS that existed nowhere else in the tree: 1066, 4.9, 5.7, 5.9, 929 and
-        one identifier. This is a real loss, not a bookkeeping artefact.
+        SIX TOKENS that existed nowhere else in the tree: 1066, 4.9, 5.7, 5.9, 929,
+        D0-86. This is a real loss, not a bookkeeping artefact.
       resolution: >
         RESTORED VERBATIM to configs/conformers.yaml before this snapshot was taken:
         the SHAKE x timestep temperature table (GFN-FF, 20 ps, target 300 K, molecules
         002334 and 000018), the `terminated EARLY` root cause with its three CREST
         source locations (shake_module.f90:80-81, dynamics_module.f90:437-444,
-        parallel.f90:1066), the composite calculator settings, and the
+        parallel.f90:1066), decision D0-86 for the composite calculator, and the
         full-chain cost 2985 / 929 / 189 s.
       status: "resolved -- restored"
     - path: "configs/crest_composite.toml.template"
@@ -82,7 +82,7 @@ superseded:
         was reorganised across configs/mdp/ and the branch configs on 2026-09-04.
       status: "resolved -- accounted for elsewhere"
     - path: "configs/mdp/s0_qha_production.mdp"
-      reported: "LOST (one identifier, 1.0)"
+      reported: "LOST (D0-C-30, 1.0)"
       finding: "Both tokens present elsewhere in the current tree."
       status: "resolved -- accounted for elsewhere"
 

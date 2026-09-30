@@ -2,7 +2,7 @@
 
 CALIBRATION. The reference side of the error bar.
 
-The reference level is **`CCSD(T)/cc-pVTZ` numerical frequencies**. **Why numerical frequencies are affordable**: ORCA 6.0.1
+The reference level is one of the two candidates: **`CCSD(T)/cc-pVTZ` numerical frequencies**. **Why numerical frequencies are affordable**: ORCA 6.0.1
 on this machine prints `CARTESIAN GRADIENT (ANALYTIC)` for `CCSD(T)`, so the gradient is
 **analytic** and numerical frequencies need only **6N+1 gradients** (55 for 9 atoms, 61 for 10),
 not the `(3N)^2`-scale single points an energy difference would need.

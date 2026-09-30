@@ -2,7 +2,7 @@
 
 CALIBRATION. Benchmarks energies and forces against the composite reference.
 
-The scope was ruled on twice, the second revising the first. Both are recorded here; history is not overwritten:
+The scope changed twice, the second revision superseding the first. Both are recorded here; history is not overwritten:
 
 * **2026-08-29 (morning)**: what we care about is the accuracy of **energies and forces**;
     **validating frequencies costs too much** (validating a composite frequency means really
@@ -32,7 +32,7 @@ Usage::
     # smoke test: the single term MP2/cc-pVDZ
     python scripts/calibration/s0_composite_energy_force.py --recipe smoke_mp2_dz --limit 3 --displace 3
 
-    # E2 (the accuracy ruled by the user on 2026-08-29, "MP2 DZ* -> QZ*"): 44 structures, one ladder
+    # E2 (the accuracy set on 2026-08-29: "MP2 DZ* -> QZ*"): 44 structures, one ladder
     python scripts/calibration/s0_composite_energy_force.py --ladder mp2_dz_to_qz --displace 3 \
         --nprocs 12 --tag E2 --resume
 
@@ -385,8 +385,8 @@ def main():
 
     payload = dict(
         generated_by="scripts/calibration/s0_composite_energy_force.py",
-        scope=("energies and forces primarily (ruled 2026-08-29 morning); the frequency capability exists but is off by default "
-               "(the user asked on the afternoon of 2026-08-29 for it to be able to produce them)"),
+        scope=("energies and forces primarily (2026-08-29, morning); the frequency capability exists but is off by default "
+               "(asked for on the afternoon of 2026-08-29)"),
         engine=prov, tag=tag,
         recipes={n: t for n, t in chosen},
         pool_terms=[list(x) for x in pool_terms],

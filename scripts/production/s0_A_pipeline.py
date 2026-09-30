@@ -798,7 +798,7 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
         census["reference_geometry_note"] = (
             "No deposited geometry exists for a SMILES-specified molecule, so step 3 "
             "pooled nothing and every structure below descends from CREST. The "
-            "The CREST-only route's systematic error (mean +0.1209, max +0.5824 "
+            "CREST-only route's systematic error (mean +0.1209, max +0.5824 "
             "kcal/mol) is therefore UNBOUNDED here.")
     labelled = label_basins(qid, basins, census, cfg, args)
 

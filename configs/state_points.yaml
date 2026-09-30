@@ -10,8 +10,8 @@
 # --------------------------------------------------------------------------------------
 # Package 3 -- near-critical gas-phase state points (added 2026-08-31)
 # --------------------------------------------------------------------------------------
-# **Why it is needed**: on 2026-08-31 the user ruled that package 3 moves to a **real
-#   multi-molecule gas phase**, using "near-critical / near-saturated dense gas plus
+# **Why it is needed**: package 3 moved to a **real multi-molecule gas phase**,
+#   using "near-critical / near-saturated dense gas plus
 #   thermodynamic extrapolation" (option A).
 #   At 298.15 K the saturated vapour of this system is far too dilute (acetone
 #   0.0074 nm^-3, a collision interval of about 368 ps), so the simulation has to run at

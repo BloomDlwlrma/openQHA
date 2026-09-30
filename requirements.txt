@@ -12,9 +12,9 @@
 #   orca     registration required, installed by hand; branch C only
 #
 # NOT A PACKAGE AT ALL:
-#   MACE-OFF weights. install_dependency.sh downloads them and openqha/engine.py
-#   resolves them by name at load; a missing file raises (nothing inspects what
-#   is inside it).
+#   MACE-OFF weights. install_dependency.sh downloads them and
+#   openqha/potentials/engine.py resolves them by name at load; a missing file
+#   raises (nothing inspects what is inside it).
 
 # ---- reproducibility: lower bounds are not pins ----------------------------------------
 # The bounds below say what the code REQUIRES. They do not make two machines agree to the
