@@ -69,7 +69,7 @@ def main():
         (root / "mace_off23_draw300").mkdir(parents=True)
         flat = root / "MACE-OFF23_medium.model"
         flat.write_bytes(b"the name and the path are the identity; nothing opens this")   # never read
-        sub_rel = "mace_off23_draw300/draw300-r4+20260927-101530.model"
+        sub_rel = "mace_off23_draw300/replay30k_w1+20260927-101530.model"
         (root / sub_rel).write_bytes(b"nor this")
         try:
             os.environ["S0_MACE_ROOT"] = str(root)

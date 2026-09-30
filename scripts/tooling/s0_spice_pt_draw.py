@@ -1,23 +1,25 @@
-"""The Replay draw: one seed, one file, from SPICE's TRAIN split.
+"""The Replay draw: one seed, one draw, from SPICE's TRAIN split.
 
 TOOLING. Produces no scientific number of its own; it selects frames, once, by seed, and
 writes the list of ids beside them so that the same draw can be made again anywhere.
 
     python scripts/tooling/s0_spice_pt_draw.py --n 5000 --seed 0
-    python scripts/tooling/s0_spice_pt_draw.py --n 68528 --seed 0 --weight 10 --out $S0_RUNS_ROOT/spice/spice_pt_68528_w10.extxyz
+    python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 1  --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz
+    python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz
     python scripts/tooling/s0_spice_pt_draw.py --n 3 --seed 0 --source tests/data/spice_tiny/train_large_neut_no_bad_clean.xyz \\
         --forgetting-ids tests/data/.../spice_test_x.extxyz.ids.dat --out /tmp/x.extxyz
 
 WHAT IT WRITES. `<out>` (extxyz): the first N ELIGIBLE frames of ONE seeded permutation
 of the source file (`default_rng(seed).permutation(n_frames)`), so a smaller `--n` is a
-prefix of a larger one with the same seed and the scan rows R0-R4 are nested; every
-frame carries `config_weight = --weight` (1.0 by default; R4 is the same frames at 10),
+prefix of a larger one with the same seed (the S0 scan rows R0-R4 were nested); every
+frame carries `config_weight = --weight` (1.0 by default; round 1's production draw is the
+30,000-frame size written twice, at weights 1 and 10),
 `REF_energy` / `REF_forces` (MACE-torch's keys), `spice_index` (its row in the source)
 and no Hessian. `<out>.ids.dat`: one row per drawn frame (source index, SMILES, config
 type, atoms, the frame's molecule key and that molecule's frame count in the draw, so
 the coverage of a by-frame draw is a number). `<out>.valid.extxyz`: `--n-valid` frames
 (200) from the END of the same permutation -- the pretraining head's own validation
-set, the same for every row (mace would otherwise take `--valid_fraction` of the Replay
+set, the same for every draw (mace would otherwise take `--valid_fraction` of the Replay
 file itself). `<out>.toml`: the Record (`[Replay]`: DOI, SPLIT, SEED, N, WEIGHT,
 N_MOLECULES, FRAMES_PER_MOLECULE_MAX, the exclusions).
 
@@ -262,9 +264,9 @@ def prepare(atoms, weight, index, energy_key="REF_energy", forces_key="REF_force
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--n", type=int, required=True, help="frames to draw (R1 5000, R2 17132, R3/R4 68528)")
-    ap.add_argument("--seed", type=int, default=0, help="the permutation's seed; one seed, one file, the whole campaign")
-    ap.add_argument("--weight", type=float, default=1.0, help="config_weight on every frame (R4: 10)")
+    ap.add_argument("--n", type=int, required=True, help="frames to draw (round 1's production draw: 30000; the S0 ladder used 5000 / 17132 / 68528)")
+    ap.add_argument("--seed", type=int, default=0, help="the permutation's seed; one seed, one draw, the whole campaign")
+    ap.add_argument("--weight", type=float, default=1.0, help="config_weight on every frame (round 1: 1 and 10)")
     ap.add_argument("--source", default=None, help="the SPICE train file (default: data.training_set's)")
     ap.add_argument("--forgetting-ids", default=None,
                     help="the forgetting draw's ids file (default: data/training_sets/spice_test_5000.extxyz.ids.dat)")

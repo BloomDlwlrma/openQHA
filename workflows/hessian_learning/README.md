@@ -188,43 +188,53 @@ stratification keys, the structure `classes` (from `draw.dat`, else classified f
 SMILES with `configs/structure_classes.yaml`), SPICE membership, pin status; the Record has
 a `[[Class]]` table (molecules / with basins / with frames per class).
 
-## The production row R4, end to end
+## The production arms, end to end
 
-One row is trained: Replay = **4 × the train frames that carry a Hessian**, every Replay
-frame at `config_weight = 10`, `w_H` = the epoch-0 balance measured on the base model over
-the run's own train file (the default of `05_train.py`), everything else `05_train.py`'s defaults.
-The judge reports every row and decides nothing (the gate is closed).
+Two arms are trained — `replay30k_w1` and `replay30k_w10` — identical except for the
+Replay frames' `config_weight`: the Replay is a **30,000-frame draw** of SPICE's train
+split at the mace-docs multihead guidance's size ("30000 is a good value"), drawn twice
+with one seed so the two frame sets are identical by construction (the weight lives in
+the file; user ruling 2026-09-30). `w_H` = the epoch-0 balance measured on the base model
+over the run's own train file (the default of `05_train.py`); the two jobs are submitted
+together, one per arm. The judge reports every row and decides nothing (the gate is closed).
 
 ```bash
 # 1. labels -> the Dataset: basin frames train and validate, the other generators are held out
 python workflows/hessian_learning/04_dataset.py --tag draw300 --name draw300 --train-generators basin
-#    ... prints N_TRAIN_HESSIAN and REPLAY_R4_FRAMES = 4 x N_TRAIN_HESSIAN (also in dataset.toml)
+#    ... prints N_TRAIN_HESSIAN and the two production draw commands (the S0 ladder fields stay as history)
 
-# 2. the two SPICE draws (the release is on tianhe): the forgetting set, then the Replay of exactly that size
+# 2. the SPICE draws (the release is on tianhe): the forgetting set, then the Replay twice at the production size
 python scripts/tooling/s0_spice_test_draw.py --n 5000
-python scripts/tooling/s0_spice_pt_draw.py --n <REPLAY_R4_FRAMES> --seed 0 --weight 10 --out $S0_RUNS_ROOT/spice/spice_pt_R4.extxyz
-#    ... writes spice_pt_R4.extxyz (+ .ids.dat, .toml) and spice_pt_R4.valid.extxyz
+python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 1  --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz
+python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz
+#    ... one seed, so the two frame sets are identical by construction; the weight lives in the file
+#    ... each writes the file (+ .ids.dat, .toml [Replay]) and its .valid.extxyz companion
 
-# 3. the fine-tune (one A800): w_H = balance is the default; the Record prints REPLAY_PER_HESSIAN_FRAME = 4.0
-TAG=draw300 RUN=R4 MAX_EPOCHS=100 MULTIHEADS=1 PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_R4.extxyz \
-    PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_R4.valid.extxyz yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+# 3. the fine-tune (one A800 per arm, submitted together): w_H = balance is the default; round 1's
+#    re-selected knobs ride the same EXTRA line (explicit lr, no Stage Two, clip 1, wd 0, EMA 0.99999)
+EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad=1.0 --mace-arg=--weight_decay=0.0 --mace-arg=--ema_decay=0.99999'
+TAG=draw300 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
+    PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
+    yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+# the w10 arm: the same line with RUN=replay30k_w10 and the _w10 paths (the weight lives in the file, nothing else differs)
 
-# 4. register R4 as an engine (needed before anything can run WITH it), then its own minima and msRRHO for the seven
-python workflows/hessian_learning/05_train.py --tag draw300 --run R4 --register-copy   # prints the ENGINES entry and the name to select
-export S0_ENGINE=<the name --register-copy printed>
-python scripts/production/s0_A_pipeline.py --tag r4 --species dsgdb9nsd_000035   # x 7
-python scripts/production/s0_thermo_msrrho.py --tag r4 --species dsgdb9nsd_000035 --step mace
-#    (--step reference reuses the ORCA basins of the smoke tags; --step compare writes MODEL_ERROR_S_REF under tag r4)
+# 4. each arm registered itself (--register --register-copy ride its EXTRA; the run prints its ENGINES entry),
+#    then its own minima and msRRHO for the pinned seven under the arm's tag
+export S0_ENGINE=<the name the arm's run printed>
+python scripts/production/s0_A_pipeline.py --tag replay30k_w1 --species dsgdb9nsd_000035   # x 7, once per arm
+python scripts/production/s0_thermo_msrrho.py --tag replay30k_w1 --species dsgdb9nsd_000035 --step mace
+#    (--step reference reuses the ORCA basins of the smoke tags; --step compare writes MODEL_ERROR_S_REF under the arm's tag)
 
 # 5. the judge, gate closed: every row against its number, VERDICT = REPORTED
 python workflows/hessian_learning/06_judge.py --tag draw300 --engine <that name> \
-    --spice-file data/training_sets/spice_test_5000.extxyz --thermo-tag r4
-#    the MD ramp only afterwards, if wanted:  ... --run R4_ramp --ramp --ramp-max-K 600
+    --spice-file data/training_sets/spice_test_5000.extxyz --thermo-tag replay30k_w1
+#    the MD ramp only afterwards, if wanted:  ... --run replay30k_w1_ramp --ramp --ramp-max-K 600
 ```
 
 The smoke run on the tianhe test set (one day of CREST + one day of ORCA) is the same
 five steps with `--tag smoke` and `MAX_EPOCHS=20`; its Record's `SECONDS_PER_EPOCH` sets
-the walltime of step 3.
+the walltime of step 3 (one measurement -- `config_weight` does not change per-epoch cost --
+serves both arms).
 
 ## Step 05: the fine-tune
 
@@ -251,11 +261,13 @@ python workflows/hessian_learning/05_train.py --tag smoke --run w1 --dry-run
 # the smoke Dataset, two epochs (the exact Cartesian loss: --probe cartesian, 3N HVPs)
 python workflows/hessian_learning/05_train.py --tag smoke --run w1 --hessian-weight 0.01 --max-epochs 2
 
-# the Replay file, once per campaign (one seed, one file; a smaller --n is a prefix of a larger one)
+# the production Replay: one seed for the campaign (a smaller --n is a prefix of a larger one),
+# drawn twice at the production weights -- the same frame set, the weight lives in the file
 python scripts/tooling/s0_spice_test_draw.py --n 5000                         # the forgetting draw first
-python scripts/tooling/s0_spice_pt_draw.py --n 5000 --seed 0 --out $S0_RUNS_ROOT/spice/spice_pt_5000.extxyz
+python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 1  --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz
+python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz
 
-# a scan row, on one A800
+# an S0 scan row (history), on one A800
 TAG=draw300 RUN=R1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 MULTIHEADS=1 \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.extxyz PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.valid.extxyz \
     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
@@ -285,7 +297,7 @@ acts only on its Materials‑Project download path and is never emitted; mace's
 frames when they are fewer than a tenth of the Replay) is passed as 0. The Record counts
 the file's frames (`PT_N_FRAMES`), reads their `config_weight` (`PT_CONFIG_WEIGHT`),
 parses both heads' counts from mace's log and prints `REPLAY_PER_HESSIAN_FRAME`
-(`PT_N_FRAMES / N_TRAIN_HESSIAN`), the number the scan rows R0–R4 are defined by.
+(`PT_N_FRAMES / N_TRAIN_HESSIAN`), the number the S0 scan rows R0–R4 were defined by.
 `--pt-valid-file` names the draw tool's companion `<stem>.valid.extxyz`; without it mace
 takes `--valid_fraction` (10 %) of the Replay for the pretraining head's own validation.
 

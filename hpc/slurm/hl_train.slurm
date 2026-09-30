@@ -6,11 +6,15 @@
 #     TAG=smoke RUN=gate PROBE=cartesian MAX_EPOCHS=2 \
 #         yhbatch -p ai -G 1 -c 12 -t 00:30:00 hpc/slurm/hl_train.slurm
 #
-#     # a scan row: the Replay file IS its size, s0_spice_pt_draw.py wrote it
-#     TAG=draw300 RUN=R1 HESSIAN_WEIGHT=0.01 N_PROBES=4 MAX_EPOCHS=100 \
-#         MULTIHEADS=1 PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.extxyz \
-#         PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_5000.valid.extxyz \
+#     # the production arms: the 30,000-frame Replay at both production weights (one seed for both
+#     # draws; the weight lives in the file) -- one job per arm, submitted together, with round 1's
+#     # re-selected knobs on the same EXTRA line
+#     EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad=1.0 --mace-arg=--weight_decay=0.0 --mace-arg=--ema_decay=0.99999'
+#     TAG=draw300 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
+#         PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
+#         PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
 #         yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+#     # ... and the same line with RUN=replay30k_w10 and the _w10 paths
 #
 # WHAT RUNS: `workflows/hessian_learning/05_train.py`, which builds mace's arguments and
 # calls `mace.cli.run_train.run` from the FORK (BloomDlwlrma/mace, branch
@@ -53,7 +57,7 @@ SEED="${SEED:-123}"
 MULTIHEADS="${MULTIHEADS:-0}"
 PT_TRAIN_FILE="${PT_TRAIN_FILE:-}"         # the Replay file (s0_spice_pt_draw.py); its frame count is the size
 PT_VALID_FILE="${PT_VALID_FILE:-}"         # its companion validation file (<stem>.valid.extxyz)
-EXTRA="${EXTRA:-}"                       # passed to the driver as is (e.g. --register)
+EXTRA="${EXTRA:-}"                       # passed to the driver as is (e.g. --register; round 1's re-selected knobs ride here)
 
 # ---- 1. site environment ------------------------------------------------------------------
 module purge 2>/dev/null || true

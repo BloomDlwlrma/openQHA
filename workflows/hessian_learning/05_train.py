@@ -9,9 +9,10 @@ evaluation (commit C). Nothing here reimplements a training loop.
 
     python workflows/hessian_learning/05_train.py --tag smoke --run w1 --dry-run
     python workflows/hessian_learning/05_train.py --tag smoke --run w1 --max-epochs 2             # w_H = balance (default)
-    # the production row R4: Replay = 4 x N_TRAIN_HESSIAN at config_weight 10, drawn by s0_spice_pt_draw.py
-    python workflows/hessian_learning/05_train.py --tag draw300 --run R4 --device cuda --max-epochs 100 \
-        --multiheads --pt-train-file $S0_RUNS_ROOT/spice/spice_pt_R4.extxyz --pt-valid-file $S0_RUNS_ROOT/spice/spice_pt_R4.valid.extxyz
+    # the production arms: a 30,000-frame Replay, one seed, written twice (weights 1 and 10; the weight
+    # lives in the file) -- one job per arm, submitted together (replay30k_w1 / replay30k_w10)
+    python workflows/hessian_learning/05_train.py --tag draw300 --run replay30k_w1 --device cuda --max-epochs 100 \
+        --multiheads --pt-train-file $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz --pt-valid-file $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz
 
 THE TARGET is the Cartesian matrix itself and nothing else (there is no switch);
 validation uses four standard-normal probes fixed per frame, drawn by the Dataset and read
