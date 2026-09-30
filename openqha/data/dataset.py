@@ -134,7 +134,15 @@ SEED = 0
 #: the generators whose frames may train (basin Hessians only); every other
 #: generator is held out -- its labelled frames go to test for the judge
 TRAIN_GENERATORS = ("basin",)
-#: the production replay row: Replay frames = this x the train frames with a Hessian
+#: the production Replay (the mace-docs multihead guidance: draw as many replay frames
+#: as you can, "30000 is a good value"): one 30,000-frame draw of SPICE's train split at
+#: REPLAY_SEED, written twice -- the same frame set at the two REPLAY_WEIGHTS -- so the
+#: two arms differ only in the stored config_weight
+REPLAY_N_FRAMES = 30000
+REPLAY_SEED = 0
+REPLAY_WEIGHTS = (1.0, 10.0)
+#: the S0 replay ladder's R4 scan row (2026-09-21/22; historical -- the production
+#: Replay is REPLAY_N_FRAMES above): Replay frames = this x the train frames with a Hessian
 REPLAY_PER_HESSIAN_FRAME_R4 = 4
 REPLAY_CONFIG_WEIGHT_R4 = 10.0
 #: a label file whose positions differ from the engine file's by more than this is stale
@@ -245,8 +253,8 @@ SCHEMA = {
         "VALID_PROBE_KMAX": ("Integer", None, "rows stored per valid frame; the loss takes the first k of them (nested, so a K scan needs no rebuild)"),
         "VALID_PROBE_MODE": ("String", None, "the stored probes' distribution (gaussian: PHL's own draw, Algorithm 1)"),
         "N_HESSIAN_FRAMES": ("Integer", None, "labelled frames carrying a reference Hessian (basin / merged / saddle)"),
-        "N_TRAIN_HESSIAN": ("Integer", None, "train frames carrying a reference Hessian: the number the production Replay is 4x of"),
-        "REPLAY_R4_FRAMES": ("Integer", None, "4 x N_TRAIN_HESSIAN: the Replay size of the production replay row (s0_spice_pt_draw.py --n)"),
+        "N_TRAIN_HESSIAN": ("Integer", None, "train frames carrying a reference Hessian (the S0 replay ladder's R4 row was 4 x this; the production Replay is a fixed 30,000-frame draw)"),
+        "REPLAY_R4_FRAMES": ("Integer", None, "the S0 replay ladder's R4 scan row (2026-09-21/22), 4 x N_TRAIN_HESSIAN: historical recipe, not the production Replay (a fixed 30,000-frame draw, s0_spice_pt_draw.py)"),
         "N_STALE": ("Integer", None, "label frames ignored because their geometry differs from the engine file's (a rerun of branch A / 02 after 03)"),
         "MERGED_FILE": ("String", None, "the single xyz of the three labelled splits (mace_<name>.<level>.extxyz), or - when nothing is labelled"),
         "KEPT_PREVIOUS": ("Boolean", None, "a previous index.dat existed and its splits were kept"),

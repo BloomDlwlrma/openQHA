@@ -90,10 +90,17 @@ def main():
               i["N_VALID"], i["N_TEST"], i["N_POOL"], i["N_HESSIAN_FRAMES"], out["dir"]))
     print("generators: train {} (basin frames in train {}); held out {} ({} labelled frames in test for the judge)".format(
         " ".join(i["TRAIN_GENERATORS"]), i["N_TRAIN_BASIN"], " ".join(i["HELD_OUT_GENERATORS"]) or "-", i["N_TEST_HELD_OUT"]))
-    print("R4: {} train frames with a Hessian -> Replay = {} frames at config_weight {:g}:\n"
-          "    python scripts/tooling/s0_spice_pt_draw.py --n {} --seed 0 --weight {:g} --out <root>/spice/spice_pt_R4.extxyz".format(
-              i["N_TRAIN_HESSIAN"], i["REPLAY_R4_FRAMES"], dataset.REPLAY_CONFIG_WEIGHT_R4, i["REPLAY_R4_FRAMES"],
-              dataset.REPLAY_CONFIG_WEIGHT_R4))
+    print("Replay (production): {} SPICE train frames, one seed ({}), written twice -- config_weight {} -- "
+          "so both arms hold the same frame set and differ only in the stored weight:".format(
+              dataset.REPLAY_N_FRAMES, dataset.REPLAY_SEED,
+              " and ".join("{:g}".format(w) for w in dataset.REPLAY_WEIGHTS)))
+    for w in dataset.REPLAY_WEIGHTS:
+        print("    python scripts/tooling/s0_spice_pt_draw.py --n {} --seed {} --weight {:g} --out "
+              "<root>/spice/spice_pt_replay30k_w{:g}.extxyz".format(
+                  dataset.REPLAY_N_FRAMES, dataset.REPLAY_SEED, w, w))
+    print("R4 (the S0 replay ladder's scan row, 2026-09-21/22 -- historical; not the production Replay): "
+          "4 x {} train frames with a Hessian = {} frames at config_weight {:g}".format(
+              i["N_TRAIN_HESSIAN"], i["REPLAY_R4_FRAMES"], dataset.REPLAY_CONFIG_WEIGHT_R4))
     if i["MERGED_FILE"] != "-":
         print("merged  {} ({} labelled frames, keys REF_energy / REF_forces / REF_hessian / split)".format(
             i["MERGED_FILE"], i["N_LABELLED"]))
