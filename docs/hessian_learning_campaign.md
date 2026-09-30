@@ -330,8 +330,8 @@ one-node blocks as the queue demands and releasing them as it drains
 
 The labels feed the round-1 production arms: **two 30,000-frame Replay draws** of SPICE's
 train split — `replay30k_w1` / `replay30k_w10`, one seed so the two frame sets are identical,
-differing only in the stored `config_weight` (1 / 10; the mace-docs multihead guidance, user
-ruling 2026-09-30) — at `w_H` = the epoch-0 balance the driver measures by default, the gate
+differing only in the stored `config_weight` (1 / 10; the mace-docs multihead guidance; user,
+2026-09-30) — at `w_H` = the epoch-0 balance the driver measures by default, the gate
 closed (every judge row reported, `VERDICT = REPORTED`). The five commands, with what
 each needs from this page, are the block "The production arms, end to end" of
 [`../workflows/hessian_learning/README.md`](../workflows/hessian_learning/README.md):

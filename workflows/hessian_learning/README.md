@@ -194,7 +194,7 @@ Two arms are trained — `replay30k_w1` and `replay30k_w10` — identical except
 Replay frames' `config_weight`: the Replay is a **30,000-frame draw** of SPICE's train
 split at the mace-docs multihead guidance's size ("30000 is a good value"), drawn twice
 with one seed so the two frame sets are identical by construction (the weight lives in
-the file; user ruling 2026-09-30). `w_H` = the epoch-0 balance measured on the base model
+the file; user, 2026-09-30). `w_H` = the epoch-0 balance measured on the base model
 over the run's own train file (the default of `05_train.py`); the two jobs are submitted
 together, one per arm. The judge reports every row and decides nothing (the gate is closed).
 

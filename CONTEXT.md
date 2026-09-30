@@ -235,9 +235,10 @@ _Avoid_: training set (alone -- that is one split), benchmark, corpus
 
 **Replay**:
 The base model's own training frames that a fine-tune concatenates into the same training
-set as the Dataset -- a fixed draw from SPICE's train split, one seed one file for a whole
-campaign, energies and forces only, no Hessian -- so that the fine-tune keeps what the base
-knew. Its size is reported as frames per Hessian frame (the same file is a different ratio
+set as the Dataset -- a fixed draw from SPICE's train split, one seed for the whole campaign
+(the production draw is written twice, at the two weights), energies and forces only, no
+Hessian -- so that the fine-tune keeps what the base
+knew. Its size is reported as frames per Hessian frame (the same draw is a different ratio
 on every Dataset), its weight is each frame's `config_weight`; it never overlaps the
 forgetting set's molecules nor the in_distribution molecules: the tool that draws it
 skips their frames (SPICE's test split is by frame, so most molecules have frames on both

@@ -53,12 +53,14 @@ notebook outputs untouched by design:
   runs" -> the two-arm standard) and the registry-name fixture in `t_engine_identity` moved
   off the S0 run name.
 
-**The scan.** Sources-only over both repos (`.scratch`, `_superseded`, `_backup`, data files
-and notebook stored outputs out of scope; `.ipynb` cells' sources only) for `110960` /
+**The scan.** Sources-only over both repos (`.scratch` and `.mem/` (the S0-era narrative),
+`_superseded`, `_backup`, data files and notebook stored outputs out of scope; `.ipynb` cells'
+sources only) for `110960` /
 `110,960` / `4 x N_TRAIN_HESSIAN` / `REPLAY_R4_FRAMES` / `R4` / `r4`: **53 hits, all
 labelled S0 history or code identifiers** — S0-ladder phrases ("the S0 scan rows R0–R4 were
 defined by", "the S0 ladder, history"), the build print and schema descriptions 09b's slice
-labels "historical; not the production Replay", `r4` variables (probe/ring/SMARTS) and 09b's
+labels "historical; not the production Replay" (09b's commit rides its own ticket; its edits
+are in this worktree), `r4` variables (probe/ring/SMARTS) and 09b's
 negative assertions. Zero hits read "the production Replay = R4"; `110960` has zero live
 hits (the tracker's history and the provenance note keep it by design).
 
@@ -80,3 +82,29 @@ ladder language). (4) Stored notebook outputs keep the old text by design.
 **Not verified.** Nothing runnable changed (text only; `py_compile` / `bash -n` / the suites
 stand in). The Tianhe side stays to be executed — 09d's two draws, the timing job and the
 two production jobs; 09b's slice carries the build print and schema in this worktree.
+
+## Review record (2026-09-30, annotations -- the two-axis review of `5685aaf` / `411abe1`)
+
+Two read-only sub-agents over the commit pair, per the `code-review` skill. Spec axis: the
+requirements are present (the three boxes; every live site of the old statement re-stated; the
+launch / registration / EXTRA story matches story 14 / Q5; stored outputs byte-identical; the
+scan recount agrees). Standards axis: the EOL conventions hold (`.scratch` CRLF, deployed LF,
+the fixture's stored CRLF) and the added live lines carry no stripped citations. Findings
+applied in this commit:
+
+- **Register form (hard).** The six live sites credited the ruling as "user ruling 2026-09-30";
+  the tree's kept form is `(user, <date>)` (the ADRs, `hpc/`, scripts). All six now read
+  `; user, 2026-09-30` — README, campaign page, T04 intro, T05 intro / §5 / §7.
+- **`CONTEXT.md` glossary (judgement).** The Replay entry still said "one seed one file for a
+  whole campaign" — the exact claim the pass retires. It now reads "one seed for the whole
+  campaign (the production draw is written twice, at the two weights)", and "the same draw is a
+  different ratio".
+- **Record scope (spec).** The scan's exclusion list now names `.mem/` (kept S0-era narrative)
+  and the 09b boundary is explicit (its build-print / schema half commits on its own ticket).
+
+Recorded, not changed: the `EXTRA` string is written out in the three launch surfaces (README,
+`hl_train.slurm`, T05 §7) on purpose — each is a standalone copy-paste surface; the era names
+"round 1" / "S0" enter live files as the effort's vocabulary (the campaign page already keeps
+its round names); the package driver's text stays generic machinery (it names the S0 ratio, not
+the production size — the two-arm standard lives with the campaign texts); the
+`t_engine_identity` fixture rename is recorded in the Answer.
