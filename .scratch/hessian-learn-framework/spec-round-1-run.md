@@ -107,6 +107,9 @@ from or consciously deviating from that standard, each deviation recorded:
     runs are reproducible from one line. (Amended 2026-09-30, the local gate: two tokens per mace
     flag — a single `--key=value` token reaches mace fine, but `argv_pairs`/`config.yaml` can only
     read it as a bare flag (`clip_grad=1.0: True`), which story 16's config truth would fail.)
+    (Review amendment, 2026-09-30: the launch lines also NAME the Dataset — `NAME=draw300_r1` /
+    `--name draw300_r1` — the default `NAME=$TAG` would address `_datasets/draw300`, not the
+    canonical `draw300_r1`.)
 15. As the reviewer, I want the accepted-log evidence ("Multihead finetuning mode, setting learning
     rate to 0.0001 and EMA to True"; "Param group 0: lr = 0.0001"), so that the fork's silent
     override is *observed* rather than assumed.

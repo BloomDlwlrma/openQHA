@@ -17,7 +17,7 @@ whatever the gate broke fixed in session.
 - [x] Story 9: `mini_w1` + `mini_w10` -- two mini replays (spice-tiny, one seed, weights 1 / 10), the production argv mirrored, 3 epochs each.
 - [x] Story 10: `mini_naive` -- multiheads off, same data/loss/knobs.
 - [x] Story 11: the truth battery passes on the local Records (the same battery 09g runs on the production arms).
-- [x] Finding (fixed in session): the single-token `--mace-arg=--key=value` form; the two-token form pinned on four surfaces + spec story 14. Driver-side items ticketed: [14](../decisions/14-driver-truth-follow-ups.md).
+- [x] Findings fixed in session: (1, the gate) the single-token `--mace-arg=--key=value` form — two tokens per mace flag pinned on the four surfaces + spec story 14; (2, the review) the launch lines' missing Dataset name — `NAME=draw300_r1` / `--name draw300_r1` on every surface, and T05's production cell's stray `--split-by frame` corrected to `molecule`. Driver-side items ticketed: [14](../decisions/14-driver-truth-follow-ups.md).
 
 ## Answer (2026-09-30, implemented in this commit)
 
@@ -44,19 +44,32 @@ carrying `clip_grad 1.0` etc.) would fail. **Fixed at the run level**: two token
 (`--mace-arg=--clip_grad --mace-arg=1.0`), verified first in `argv_pairs` (no stray `key=value`
 keys) and then end-to-end in the three mini arms' `config.yaml` (`clip_grad: 1.0`,
 `weight_decay: 0.0`, `ema_decay: 0.99999`). The four pinned surfaces updated together -- the
-workflow README's production block, `hl_train.slurm`'s header example, T05's two source cells --
-and spec story 14 amended with the dated note; the driver-side fix and the `control_settings`
+workflow README's production block, `hl_train.slurm`'s header example, T05's source cell -- and
+spec story 14 amended with the dated note; the driver-side fix and the `control_settings`
 mirror are ticketed ([14](../decisions/14-driver-truth-follow-ups.md)).
+
+**Second finding (the two-axis review of `016f95a`, fixed in the annotations commit).** Every
+pinned launch line omitted the Dataset's NAME: `05_train.py`'s `--name` defaults to the tag, so
+`TAG=draw300 RUN=...` addresses `_datasets/draw300` -- not the canonical `draw300_r1` -- and the
+production jobs would have failed on the absent merged file. Fixed on every surface:
+`NAME=draw300_r1` on the README / `hl_train.slurm` / T05 launch lines and [09g](09g-the-timing-and-production-runbook.md)'s
+timing + both production commands; `--name draw300_r1` in the README build line, the README and
+T05 judge lines, T05's hand-run line, `05_train.py`'s docstring example and the campaign page's
+command 6. The same sweep caught T05's production cell carrying a stray `--split-by frame` (the
+smoke mode) where the production split is `molecule` -- corrected to `--split-by molecule`, as
+the campaign page's own note requires. `decisions/14` gained its `Blocked by: None.` line.
 
 **Story 8 -- the subset.** Throwaway script `oqt09-subset1.py` (workspace temp; the repo keeps no
 debug piles): picks whole molecules from the real `dataset.toml` Molecule table (the first two
-train-side molecules with `N_VALID >= 2`, then further train-only molecules with `N_TRAIN >= 3`,
-capped at 8 molecules / 80 frames), streams the real merged file (29,979 frames, ~4 min) and
+train-side molecules with `N_VALID >= 2`, then further train-only molecules with `N_TRAIN >= 3`),
+streams the real merged file (29,979 frames, ~4 min) and
 re-writes the kept frames through `dataset._write_split(..., reference=True)` into
 `.../draw300_r1dbg/mace_draw300_r1dbg.wb97m-d3bj_def2-tzvppd.extxyz` -- **2 molecules, 96 frames
 (92 train / 4 valid), all with Hessians**; the real `REF_*` keys, the fixed per-frame probes and
 the `split` keys survive. The picks: `dsgdb9nsd_000547` (stratum r0_O2, 44 train + 2 valid) and
-`dsgdb9nsd_001478` (r0_N1O2, 48 + 2).
+`dsgdb9nsd_001478` (r0_N1O2, 48 + 2). The script's stop rule (8 molecules / 80 frames) bounds
+ADDITIONS after the valid providers; the two providers alone reached 96 frames, so it stopped
+there.
 
 **Stories 9-11 -- the mini arms.** Two mini replays drawn with the real tool from the spice-tiny
 fixture (the tool's own documented rehearsal source): `--n 4 --seed 0 --weight 1|10 --n-valid 2`,
@@ -105,3 +118,23 @@ fetch-back -- are the runbook [09g](09g-the-timing-and-production-runbook.md), d
 awaiting execution. The mini replays are the tiny fixture (the production pair lives on Tianhe,
 [09d](09d-the-two-30k-draws.md)) and `--device cpu` is a local-only deviation; both ride the
 receipts.
+
+## Review record (2026-09-30, annotations -- the two-axis review of `016f95a`)
+
+Two read-only sub-agents over `48ce3ba..016f95a`, per the `code-review` skill. The Spec axis
+verified the receipts (five SHA256s, splits 27,740/868, the subset counts, the three arms'
+arithmetic, the suite 73/73) and the story-14 amendment's token-for-token consistency; it found
+the launch lines' missing Dataset name (fixed above) and flagged 09g's per-step wall check as an
+unrecorded deviation from story 13's formula (now noted in 09g as a review annotation). The
+Standards axis checked the house conventions (ticket shape, `(user, <date>)` register, EOL,
+one-map-line rules): the same two fixes plus `decisions/14`'s missing `Blocked by` line; it
+recorded the EXTRA literal living on six pinned surfaces as a judgement call -- deliberate, and
+this session is the case for the consistency invariant it must hold. Recorded, not changed: the
+README's S0 scan-row example keeps its historical `TAG=draw300 RUN=R1` form (it is labelled
+history); `hl_labels.slurm`'s tail build keeps `--name "$NAME"` (operator-set, not the training
+launch); the Answer's subset-cap phrasing was corrected for accuracy (the stop rule bounds
+additions after the valid providers, it does not truncate). Both fixes landed with the tests
+that pinned the old text updated in the same commit: `t_frame_labels.py`'s NAME guard now
+forbids only the bare `NAME=draw300` (the tag used as the Dataset name) and
+`t_hl_campaign.py`'s command-6 literal gains `--name draw300_r1`; unit group all 60 test(s)
+passed.

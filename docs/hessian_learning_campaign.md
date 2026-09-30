@@ -73,7 +73,7 @@ tmux new -s hl-labels                                                           
 python -u workflows/hessian_learning/03_labels.py --tag draw300 --resource tianhe_cpu --generators basin \
     --max-blocks 12 --walltime 3-00:00:00 2>&1 | tee $S0_RUNS_ROOT/logs/labels_draw300_$(date +%F_%H%M).log
                                                                                                  # 5  03: the parsl driver, <= 12 blocks of 3 days, basin frames only (§3), ~3.5 days
-python workflows/hessian_learning/04_dataset.py --tag draw300 --split-by molecule --export openreact   # 6  04: after the driver ends
+python workflows/hessian_learning/04_dataset.py --tag draw300 --name draw300_r1 --split-by molecule --export openreact   # 6  04: after the driver ends
 python scripts/tooling/s0_hl_progress.py --tag draw300                                           # any time, a minute or two (threaded walk; §5)
 ```
 
@@ -338,12 +338,12 @@ each needs from this page, are the block "The production arms, end to end" of
 `04_dataset` (prints `N_TRAIN_HESSIAN` and the two production draw commands) → the SPICE draws
 (`s0_spice_test_draw.py --n 5000`, then `s0_spice_pt_draw.py --n 30000 --seed 0 --weight 1`
 and `--weight 10`; the SPICE release is on tianhe, the draws are minutes on the login node) →
-`hl_train.slurm` with `TAG=draw300 RUN=replay30k_w1` / `RUN=replay30k_w10` on the A800
+`hl_train.slurm` with `TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1` / `RUN=replay30k_w10` on the A800
 partition (one job per arm, submitted together) → `05_train.py` registration per arm
 (`--register --register-copy` ride the launch's `EXTRA`; the run prints its `ENGINES` entry),
 then branch A and the msRRHO `mace` / `compare` steps for the pinned seven with the registered
 engine (`S0_ENGINE=<the name the arm's run printed> --tag replay30k_w1`, each arm its own
-tag) → `06_judge.py --engine <that name> --thermo-tag replay30k_w1`. The smoke set of §1's
+tag) → `06_judge.py --tag draw300 --name draw300_r1 --engine <that name> --thermo-tag replay30k_w1`. The smoke set of §1's
 gate (one day CREST + one day ORCA) runs the same five steps first with `--tag smoke` and
 `MAX_EPOCHS=20`; its Record's `SECONDS_PER_EPOCH` sets the production runs' walltime (one
 measurement serves both arms). The Dataset is

@@ -33,7 +33,7 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 cd $R/openQHA-main
 export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs
 EXTRA='--lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
-TAG=draw300 RUN=timing1 MAX_EPOCHS=2 MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 NAME=draw300_r1 RUN=timing1 MAX_EPOCHS=2 MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
     yhbatch -p ai -G 1 -c 12 -t 12:00:00 hpc/slurm/hl_train.slurm
@@ -64,6 +64,9 @@ cap = min(60, floor(0.9 * 86400 / SECONDS_PER_EPOCH))
 (固定头 ≈ slurm 日志里 wrapper 的 `wall N s` − MAX_EPOCHS × S/E);超了就把 cap 下调到
 满足。数字贴回后由工作站复核。)
 
+(评审批注 2026-09-30:spec 故事 13 钉的是公式本身;这条墙钟检查是批注加入的下限保护,
+只会在固定头会擑破 24 h 墙时下调 cap,两个数都贴回记录。)
+
 **回执 3**:`SECONDS_PER_EPOCH` → 算出的 `CAP`。
 
 ## 步骤 3 -- 两条生产臂(一起交,各一条作业)
@@ -76,11 +79,11 @@ cd $R/openQHA-main
 export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs
 EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
 CAP=<步骤 2 的数>
-TAG=draw300 RUN=replay30k_w1 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
-TAG=draw300 RUN=replay30k_w10 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 NAME=draw300_r1 RUN=replay30k_w10 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.valid.extxyz \
     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm

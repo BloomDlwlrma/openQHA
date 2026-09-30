@@ -10,8 +10,9 @@ evaluation (commit C). Nothing here reimplements a training loop.
     python workflows/hessian_learning/05_train.py --tag smoke --run w1 --dry-run
     python workflows/hessian_learning/05_train.py --tag smoke --run w1 --max-epochs 2             # w_H = balance (default)
     # the production arms: a 30,000-frame Replay, one seed, written twice (weights 1 and 10; the weight
-    # lives in the file) -- one job per arm, submitted together (replay30k_w1 / replay30k_w10)
-    python workflows/hessian_learning/05_train.py --tag draw300 --run replay30k_w1 --device cuda --max-epochs 100 \
+    # lives in the file) -- one job per arm, submitted together (replay30k_w1 / replay30k_w10); `--name`
+    # names the Dataset (draw300_r1; the default is the tag, which is not where the Dataset lives)
+    python workflows/hessian_learning/05_train.py --tag draw300 --name draw300_r1 --run replay30k_w1 --device cuda --max-epochs 100 \
         --multiheads --pt-train-file $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz --pt-valid-file $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz
 
 THE TARGET is the Cartesian matrix itself and nothing else (there is no switch);

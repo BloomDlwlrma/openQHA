@@ -200,7 +200,7 @@ together, one per arm. The judge reports every row and decides nothing (the gate
 
 ```bash
 # 1. labels -> the Dataset: basin frames train and validate, the other generators are held out
-python workflows/hessian_learning/04_dataset.py --tag draw300 --name draw300 --train-generators basin
+python workflows/hessian_learning/04_dataset.py --tag draw300 --name draw300_r1 --train-generators basin
 #    ... prints N_TRAIN_HESSIAN and the two production draw commands (the S0 ladder fields stay as history)
 
 # 2. the SPICE draws (the release is on tianhe): the forgetting set, then the Replay twice at the production size
@@ -215,7 +215,7 @@ python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out 
 #    two tokens per mace flag (`--mace-arg=--clip_grad --mace-arg=1.0`) -- a single `--key=value` token
 #    reaches mace but the run's config.yaml can only read it as a bare flag
 EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
-TAG=draw300 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
 # the w10 arm: the same line with RUN=replay30k_w10 and the _w10 paths (the weight lives in the file, nothing else differs)
@@ -228,7 +228,7 @@ python scripts/production/s0_thermo_msrrho.py --tag replay30k_w1 --species dsgdb
 #    (--step reference reuses the ORCA basins of the smoke tags; --step compare writes MODEL_ERROR_S_REF under the arm's tag)
 
 # 5. the judge, gate closed: every row against its number, VERDICT = REPORTED
-python workflows/hessian_learning/06_judge.py --tag draw300 --engine <that name> \
+python workflows/hessian_learning/06_judge.py --tag draw300 --name draw300_r1 --engine <that name> \
     --spice-file data/training_sets/spice_test_5000.extxyz --thermo-tag replay30k_w1
 #    the MD ramp only afterwards, if wanted:  ... --run replay30k_w1_ramp --ramp --ramp-max-K 600
 ```

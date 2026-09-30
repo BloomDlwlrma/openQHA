@@ -180,7 +180,7 @@ def main():
                 "tmux new -s hl-labels",
                 "03_labels.py --tag draw300 --resource tianhe_cpu",
                 "--max-blocks 12 --walltime 3-00:00:00",
-                "04_dataset.py --tag draw300 --split-by molecule")
+                "04_dataset.py --tag draw300 --name draw300_r1 --split-by molecule")
     check("the page carries the six-command production sequence (A array, 02 on two nodes, 01, tmux, the parsl driver "
           "with 12 blocks of 3 days, 04), the quota (32 submissions, every array task counted), the tmux gate and its "
           "three outcomes, the sbatch rounds as the fallback",

@@ -685,8 +685,9 @@ def main():
     heads = "".join((ROOT / "hpc" / "slurm" / f).read_text(encoding="utf-8") for f in
                     ("hl_branchA.slurm", "hl_frames.slurm", "hl_labels.slurm", "hl_pipeline_debug.slurm"))
     readme = (ROOT / "workflows" / "hessian_learning" / "README.md").read_text(encoding="utf-8")
-    check("NAME defaults to TAG in every stage script; no `NAME=draw` left in the slurm headers or the README; the steps' --name is optional",
-          heads.count('NAME="${NAME:-$TAG}"') == 4 and "NAME=draw" not in heads and "NAME=draw" not in readme
+    check("NAME defaults to TAG in every stage script; no bare `NAME=draw300` (the tag used as the Dataset name) in the slurm headers or the README -- the training launch names the canonical draw300_r1; the steps' --name is optional",
+          heads.count('NAME="${NAME:-$TAG}"') == 4 and "NAME=draw" not in heads
+          and "NAME=draw" not in readme.replace("NAME=draw300_r1", "")
           and all('"--name", default=None' in (ROOT / "workflows" / "hessian_learning" / s).read_text(encoding="utf-8")
                   for s in ("00_draw.py", "01_select.py", "04_dataset.py"))
           and '"--name", default=None' in (ROOT / "hpc" / "slurm" / "hl_list.py").read_text(encoding="utf-8"),
