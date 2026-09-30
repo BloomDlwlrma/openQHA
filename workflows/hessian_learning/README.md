@@ -211,8 +211,10 @@ python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out 
 #    ... each writes the file (+ .ids.dat, .toml [Replay]) and its .valid.extxyz companion
 
 # 3. the fine-tune (one A800 per arm, submitted together): w_H = balance is the default; round 1's
-#    re-selected knobs ride the same EXTRA line (explicit lr, no Stage Two, clip 1, wd 0, EMA 0.99999)
-EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad=1.0 --mace-arg=--weight_decay=0.0 --mace-arg=--ema_decay=0.99999'
+#    re-selected knobs ride the same EXTRA line (explicit lr, no Stage Two, clip 1, wd 0, EMA 0.99999);
+#    two tokens per mace flag (`--mace-arg=--clip_grad --mace-arg=1.0`) -- a single `--key=value` token
+#    reaches mace but the run's config.yaml can only read it as a bare flag
+EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
 TAG=draw300 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm

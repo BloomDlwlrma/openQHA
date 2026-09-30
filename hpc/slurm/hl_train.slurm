@@ -8,8 +8,9 @@
 #
 #     # the production arms: the 30,000-frame Replay at both production weights (one seed for both
 #     # draws; the weight lives in the file) -- one job per arm, submitted together, with round 1's
-#     # re-selected knobs on the same EXTRA line
-#     EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad=1.0 --mace-arg=--weight_decay=0.0 --mace-arg=--ema_decay=0.99999'
+#     # re-selected knobs on the same EXTRA line (two tokens per mace flag -- a single `--key=value`
+#     # token reaches mace but config.yaml can only read it as a bare flag)
+#     EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
 #     TAG=draw300 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
 #         PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
 #         PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \

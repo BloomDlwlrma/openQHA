@@ -27,3 +27,20 @@ spec is the operative text.
 ## Answer
 
 <!-- resolver: append what was run + evidence; set Status: resolved; add a line to the map's Decisions so far -->
+
+**Progress (2026-09-30, the workstation legs -- [09f](../implementation/09f-the-local-gate.md)).**
+The local gate ran end to end: the fetched `draw300_r1` dataset is placed at the mirror
+(`~/runs/openQHA/draw300/_datasets/draw300_r1/`; the five SHA256s re-verified), the dry-run on
+the real merged file is green (splits 27,740 train / 868 valid; production argv mirrored), the
+`draw300_r1dbg` subset (2 molecules / 96 frames) backs three 3-epoch mini arms -- both replay
+arms (`--weight 1` / `10`, one seed) and the naive comparison -- and all three Records pass the
+truth battery the production runbook reuses (LR 0.0001 / EMA True / SWA False; `config.yaml`
+carrying clip_grad 1.0 / weight_decay 0.0 / ema_decay 0.99999; the two fork log lines;
+`HESSIAN_CURVE_MOVED`; exact anchors 0 < AFTER < BEFORE; the soft E0s look). One gate finding
+was fixed at the run level: the single-token `--mace-arg=--key=value` form reaches mace but
+`config.yaml` can only read it as a bare flag -- the pinned EXTRA on the four live surfaces and
+spec story 14 now use two tokens per mace flag; the driver-side fix and the `control_settings`
+mirror are ticketed as [14](../decisions/14-driver-truth-follow-ups.md). The Tianhe legs (timing
+job -> cap -> the two production arms -> evidence fetch-back) are the runbook
+[09g](../implementation/09g-the-timing-and-production-runbook.md), delivered and awaiting
+execution; Status stays open until the two production Records land.

@@ -102,9 +102,11 @@ from or consciously deviating from that standard, each deviation recorded:
 14. As the operator, I want the production launch lines — both arms submitted together, one job
     each (`replay30k_w1`, `replay30k_w10`), the same `EXTRA` line (the weight lives in the replay
     file; nothing else differs between arms) — to carry the re-selected flags via the Slurm `EXTRA`
-    variable (`--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad=1.0
-    --mace-arg=--weight_decay=0.0 --mace-arg=--ema_decay=0.99999`), so that both runs are
-    reproducible from one line.
+    variable (`--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0
+    --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999`), so that both
+    runs are reproducible from one line. (Amended 2026-09-30, the local gate: two tokens per mace
+    flag — a single `--key=value` token reaches mace fine, but `argv_pairs`/`config.yaml` can only
+    read it as a bare flag (`clip_grad=1.0: True`), which story 16's config truth would fail.)
 15. As the reviewer, I want the accepted-log evidence ("Multihead finetuning mode, setting learning
     rate to 0.0001 and EMA to True"; "Param group 0: lr = 0.0001"), so that the fork's silent
     override is *observed* rather than assumed.
