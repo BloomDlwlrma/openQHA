@@ -1,8 +1,8 @@
-"""Probe calibration: how far the fixed-probe validation reading is from the exact one (ticket 32; S0-C-65).
+"""Probe calibration: how far the fixed-probe validation reading is from the exact one.
 
 TOOLING. Measures the ESTIMATOR, not a model: it needs no fine-tune and no training. The
-question it answers is the one S0-C-55 left open -- the validation Hessian term is
-`L^(K) = sum_j ||H_theta v_j - H_r v_j||^2 / (9 N^2 K)` with K probes FIXED per frame, so
+question it answers: with the validation Hessian term
+`L^(K) = sum_j ||H_theta v_j - H_r v_j||^2 / (9 N^2 K)` and K probes FIXED per frame,
 how far is the mean over frames from the exact `mean_n ||dH_n||_F^2 / (9 N_n^2)`, and is
 K = 4 enough?
 
@@ -24,15 +24,15 @@ then everything else is linear algebra on the two matrices:
   exact      L_n      = ||H_theta - H_r||_F^2 / (9 N^2)                  (the training target)
   check 1    OFFSET   = |mean_n L^(K)_n - mean_n L_n| / mean_n L_n       with the PRODUCTION probes
                        (the frame's own stored set, or the same draw 04_dataset would make from
-                        its identity -- the set a run would use; S0-C-67)
+                        its identity -- the set a run would use)
   check 2    SPREAD   = sd over `--seed-sets` independent fixed sets of (mean_n L^(K)_n) / mean_n L_n
   predicted  sd       = sqrt(Var) from `phl.estimator_variance` (eq. 2.3), per frame and for the mean
 
-A frame's probes are its own (drawn from its identity by the Dataset, S0-C-67), so the probe errors are
+A frame's probes are its own (drawn from its identity by the Dataset), so the probe errors are
 independent ACROSS frames whatever the frames' own correlation, and Var(mean) = sum_n Var_n / n^2
 is exact rather than an assumption. What this tool does NOT do is decide whether K is enough:
 that depends on how large a change in the validation reading a training decision turns on, which
-is a property of a real run and is measured by ticket 34 (the exact value on the validation file
+is a property of a real run and is measured on one (the exact value on the validation file
 before and after training, beside the last epoch's probe reading). An earlier version of this
 tool printed an `ENOUGH` column against an asserted 2 % target and extrapolated the spread to a
 hypothetical frame count; both were voided on 2026-09-23 as unearned.
@@ -41,7 +41,7 @@ WHAT IT READS. `--tag`: the molecule tree `<root>/<tag>/<qid>/frames/`, preferri
 assembled `basin.<level>.extxyz` (`frame_labels.load_frames`) and falling back to the ORCA
 job files `orca.<level>.basin_bBB_kK.hess` (`frame_labels.parse_label`) for molecules whose
 labels are not assembled yet. `--frames`: a glob of extxyz files with `hessian` in info.
-Only basin frames carry a Hessian in the campaign (S0-C-54); `--generator` overrides. A molecule
+Only basin frames carry a Hessian in the campaign; `--generator` overrides. A molecule
 whose branch A finished but whose Frame set does not exist yet (step 02 has not reached it) is
 skipped, not an error: the campaign's stages run at different speeds and this tool reads whatever
 is labelled so far.
@@ -79,7 +79,7 @@ from openqha_hessian import phl, phl_loss                         # noqa: E402
 PROGNAME = "openQHA probe_calibration"
 DEFAULT_K = (1, 2, 4, 8, 16)
 DEFAULT_SEED_SETS = 10
-#: the production value (S0-C-55/65): the K the validation actually uses
+#: the production value: the K the validation actually uses
 PRODUCTION_K = phl_loss.VALID_N_PROBES
 
 K_ROW = {
@@ -117,7 +117,7 @@ SCHEMA = {
         "EXACT_MEAN": ("Double", "eV^2/A^4", "mean_n ||dH_n||_F^2 / (9 N_n^2): what the validation term estimates"),
         "R_EFF_MEDIAN": ("Double", None, "median stable rank of the error matrix; the estimator's noise falls as 1/sqrt(K r_eff)"),
         "PRODUCTION_K": ("Integer", None, "the K the validation uses (phl_loss.VALID_N_PROBES)"),
-        "PROBE": ("String", None, "the probe distribution the readings and the predicted sd use (phl_loss.VALID_PROBE; gaussian since S0-C-68)"),
+        "PROBE": ("String", None, "the probe distribution the readings and the predicted sd use (phl_loss.VALID_PROBE; gaussian)"),
         "SEED_SETS": ("Integer", None, "independent fixed probe sets drawn for check 2"),
         "SECONDS": ("Double", "s", "wall time"),
         "FILE": ("String", None, "this Record"),
@@ -216,7 +216,7 @@ def frame_probes(qid, key, n_atoms, k_max, seed_sets, stored=None):
 
     Production is what a run would read: the set stored with the frame when it comes from a
     Dataset's valid file, and otherwise the same draw `04_dataset` would make from the
-    frame's IDENTITY and the Dataset's seed (S0-C-67) -- never anything derived from the
+    frame's IDENTITY and the Dataset's seed -- never anything derived from the
     Label. The independent sets are the same draw under shifted seeds, for check 2.
     """
     n3 = 3 * int(n_atoms)
@@ -242,12 +242,12 @@ def frame_statistics(h_engine, h_ref, ks, production_v, probe_sets):
     r_eff = (tr * tr / fro2) if fro2 > 0 else float("nan")
     out = dict(exact=exact, n3=n3, r_eff=r_eff, production={}, sets={}, var={})
     for k in ks:
-        # the closed form of the draw the validation actually uses (S0-C-68: PHL's normal),
+        # the closed form of the draw the validation actually uses (PHL's normal),
         # not of the one with the smaller variance
         var = phl.estimator_variance(h_engine, h_ref, k=k)[phl_loss.VALID_PROBE]
         out["var"][k] = float(var)
         # the production reading: the FIRST K rows of the frame's own stored set, which is
-        # what the validation takes (S0-C-67). The sets are nested, so the K rows of this
+        # what the validation takes. The sets are nested, so the K rows of this
         # table are readings of one set, not of K unrelated draws.
         v = np.asarray(production_v, dtype=float)[:k]
         out["production"][k] = float(np.sum((v @ a.T) ** 2)) / (n3 * n3 * k)
@@ -286,7 +286,7 @@ def main(argv=None):
     ap.add_argument("--frames", default=None, help="a glob of labelled extxyz files instead of a tree")
     ap.add_argument("--species", action="append", default=[], help="restrict to these molecules")
     ap.add_argument("--limit", type=int, default=None, help="at most this many molecules")
-    ap.add_argument("--generator", default="basin", help="the generator whose frames carry a Hessian (S0-C-54)")
+    ap.add_argument("--generator", default="basin", help="the generator whose frames carry a Hessian")
     ap.add_argument("--level", default=frame_labels.DEFAULT_LEVEL, help="the reference level")
     ap.add_argument("--engine", default=None, help="the engine (default: the configured base model)")
     ap.add_argument("--device", default="cpu")
@@ -399,7 +399,7 @@ def main(argv=None):
         print("\nproduction K = {}: offset {:.2%}, spread {:.2%} over {} seed sets and {} frames".format(
             PRODUCTION_K, prod["OFFSET"], prod["SEED_SPREAD"], args.seed_sets, len(rows)))
         print("no verdict is drawn from this table: whether K = {} changes a training decision is measured on a real\n"
-              "run (ticket 34: the exact value on the validation file before and after training, beside the last\n"
+              "run (the exact value on the validation file before and after training, beside the last\n"
               "epoch's probe reading), not extrapolated from here.".format(PRODUCTION_K))
     print("written    {}".format(out))
     return 0

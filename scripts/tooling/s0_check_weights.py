@@ -6,11 +6,10 @@ TOOLING. Produces no scientific number.
     python scripts/tooling/s0_check_weights.py MACE-OFF23_medium       # one, by name
 
 The identity of a potential is the registered engine name and the file that name resolves
-to (2026-09-27, decision 04 of the Hessian-learning effort: the file hash, the parameter
-fingerprint and the registry pin are retired). This tool reads no byte of any weight
-file: it prints which mace is imported -- version, module path, fork commit and dirty
-flag -- and, per registered engine, the path the name resolves to and the file's size.
-Nothing else.
+to. The file hash, the parameter fingerprint and the registry pin are retired; this tool
+reads no byte of any weight file: it prints which mace is imported -- version, module
+path, fork commit and dirty flag -- and, per registered engine, the path the name
+resolves to and the file's size. Nothing else.
 """
 import argparse
 import sys
@@ -37,8 +36,8 @@ def print_weights(name):
 
 
 def print_mace():
-    """Two lines that settle which mace is imported: its version and the fork commit
-    (ticket 10 of the Hessian-learning set). 'unknown' means a wheel, not the fork."""
+    """Two lines that settle which mace is imported: its version and the fork commit.
+    'unknown' means a wheel, not the fork."""
     try:
         import mace
         ver = mace.__version__

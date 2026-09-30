@@ -1,6 +1,6 @@
 # openQHA -- Species scope: the F0-F7 gates. Read by openqha/filters.py.
 #
-# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# Split out of configs/openqha.yaml on 2026-09-04: that file
 # now holds ONLY global configuration and the `include:` index. This is a
 # MOVE, not a copy -- openqha/config.py raises if two files define the same
 # key -- and it was moved by byte range, so every comment and every measured
@@ -10,7 +10,7 @@
 # --------------------------------------------------------------------------------------
 # Species scope -- rewritten clause by clause from stage 1's gates F0-F6
 # --------------------------------------------------------------------------------------
-# User ruling 2026-08-28: **only neutral molecules, with no unpaired electrons and a net charge of 0**. Stage 1's docs/02 section 4.1 split that into gates that can be counted
+# **Only neutral molecules, with no unpaired electrons and a net charge of 0.** Stage 1's docs/02 section 4.1 split that into gates that can be counted
 # separately; this is a REWRITE of each, not a reference to it.
 # The order is normative and short-circuits: the first gate that fails decides, so every
 # rejection is attributed to exactly one cause.
@@ -40,7 +40,7 @@ species_filter:
   # silently changing which molecules are in a dataset, because a directory was
   # missing, is exactly the condition that cannot be read off the products afterwards.
   #
-  # ===== RULING 2026-09-05: USE THE ORIGINAL QM9. `drop_all` stays the default. =====
+  # ===== USE THE ORIGINAL QM9. `drop_all` stays the default. =====
   #
   # Geometries come from QM9 as deposited. The 3054 molecules whose deposited geometry is
   # not the molecule their SMILES names are REMOVED, not repaired: curatedQM9's repaired
@@ -54,7 +54,7 @@ species_filter:
   # of theory (B3LYP/6-31G(2df,p), as deposited). `curated` would mix deposited
   # coordinates with coordinates produced by someone else's repair workflow, and the
   # products would not record which molecule got which -- the condition that has already
-  # cost this repository one data set (defect 57). Uniform provenance is worth 2.2%.
+  # cost this repository one data set. Uniform provenance is worth 2.2%.
   #
   # `curated` REMAINS SELECTABLE and keeps its guard rail: it RAISES if the archive is
   # absent rather than falling back to drop_all, because silently changing which
@@ -71,7 +71,7 @@ species_filter:
     **Set it to true to make the species set comparable one-for-one with stage 1** -- a
     one-line change. Measured over indices 1-4000: turning it on removes a further 7
     molecules (0.17%).
-  # ---- F7: an upstream QM9 data defect (added 2026-09-02, defect 63) -------------------
+  # ---- F7: an upstream QM9 data defect (added 2026-09-02) ------------------------------
   f7_note: >
     3054 molecules in QM9 (2.3% of 133885) have a deposited B3LYP/6-31G(2df,p) geometry
     that IS NOT THE MOLECULE their deposited SMILES describes -- the initial geometry

@@ -18,7 +18,7 @@
 #     $1  manifest: one generated conf per line, in row order
 #     $2  G: cards in this task
 #     $3  R: rows per card (default 1; since 2026-09-13 a 12-CPU card takes twelve
-#            single-trajectory rows -- ruling S0-B-59, one trajectory per basin)
+#            single-trajectory rows -- one trajectory per basin)
 #
 # The rows this task owns are  row = (SLURM_ARRAY_TASK_ID * G + k) * R + j,
 # k = 0..G-1 the card, j = 0..R-1 the slot on it.

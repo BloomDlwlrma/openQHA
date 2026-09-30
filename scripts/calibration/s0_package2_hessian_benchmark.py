@@ -1,21 +1,21 @@
 """Package 2 -- the Hessian side branch, the frequency benchmark, and the rigid-rotor harmonic-oscillator reference free energy.
 
 CALIBRATION. The docstring below settles the classification itself: the free
-energies produced here are a reference sample, not stage 0's product (D0-28).
+energies produced here are a reference sample, not stage 0's product.
 
-Plan `.mem/plan/plan_stage0-vdos-baseline.md` section 4, package 2. It does four things:
+Package 2. It does four things:
 
 1. **7 species x lowest basin x one finite-difference Hessian**, with the Eckart projection before diagonalisation;
 2. **the frequency benchmark**: mode by mode against the native QM9 B3LYP/6-31G(2df,p) 3N-6 frequencies;
 3. **a free-energy error bar converted from the frequency error**, by three routes (measured direct displacement / uncorrelated / fully correlated);
 4. **the rigid-rotor harmonic-oscillator reference free energy**: a complete four-term `(G - E_el)`, and the differences over the 11 edges.
 
-> **The fourth overturns premise 4 of plan section 1** ("no L1-min branch, produces no competing harmonic free energy").
+> **The fourth overturns an earlier premise** ("no L1-min branch, produces no competing harmonic free energy").
 > The user asked explicitly on 2026-08-27 to "actually produce free energies for reference".
 > So the identity of these numbers is **a reference quantity / control**, not a stage 0 product --
-> the stage 0 product is still only the density-of-states route. See decision `D0-28`.
+> the stage 0 product is still only the density-of-states route.
 
-**The reference level has not been ruled on** (plan revision 3): `r2SCAN-3c` or `CCSD(T)/cc-pVTZ` numerical frequencies, undecided.
+**The reference level is not settled**: `r2SCAN-3c` or `CCSD(T)/cc-pVTZ` numerical frequencies, undecided.
 Until then this script makes one **free preliminary benchmark** using the **B3LYP/6-31G(2df,p) frequencies QM9 ships**.
 B3LYP/6-31G(2df,p) is not itself a high-level reference -- it is simply a second set of
 frequencies already on disk, free, and of exactly the same provenance as stage 1. **What it gives
@@ -62,13 +62,13 @@ PKG2 = OUT / "package2"
 # --------------------------------------------------------------------------------------
 # 7 species. The indices come from the 11 edges of the stage 2 production configuration (C3H6O1N0 {18,35,44,46,48} + C2H5O1N1 {19,36}).
 #
-# **External symmetry number and electronic ground-state degeneracy: declared explicitly, never derived automatically** (plan section 7, risk 6).
+# **External symmetry number and electronic ground-state degeneracy: declared explicitly, never derived automatically**.
 # Each carries its reason; the contested one (oxetane) is decided at run time from the actual optimised structure.
 CFG = config.load()
 _P2 = config.package(2, CFG)
 
 # The 7 species, their external symmetry numbers and electronic degeneracies all come from this
-# repository own configuration, no longer derived from the stage 2 production configuration (decision D0-41). A missing one raises; there is no default.
+# repository own configuration, no longer derived from the stage 2 production configuration. A missing one raises; there is no default.
 SPECIES = {}
 for _e in config.edges(CFG):
     for _q in config.edge_species(_e):
@@ -185,7 +185,7 @@ def main():
                 spec["name"], flat, tol, sigma))
 
         # ---- 3. one Hessian and one free energy per thermally accessible basin --------------
-        # Acceptance 3 of plan section 4 package 3, and the first error source in ChemRxiv 2026, are both
+        # Acceptance criterion 3 and the first error source in ChemRxiv 2026 are both
         # the multi-conformer sum -- taking only the lowest basin misses a conformer that is not lowest in electronic energy but is lowest in free energy, and this system has one measured example.
         kt = thermo.KB_KCAL * T_REF
         rel = np.asarray(rec["basin_relative_kcal"])
@@ -505,7 +505,7 @@ def main():
     print("**This is not the frequency error bar of MACE-OFF23-SC.** B3LYP/6-31G(2df,p) is not a high-level")
     print("reference; it is itself tens of cm^-1 from coupled cluster. What the numbers above measure is")
     print("**how far the answer moves when the frequency level is changed** -- a scale, not an error.")
-    print("The real error bar waits on the ruling for the reference level (r2SCAN-3c or CCSD(T)/cc-pVTZ numerical frequencies).")
+    print("The real error bar waits on the reference level decision (r2SCAN-3c or CCSD(T)/cc-pVTZ numerical frequencies).")
 
     payload = dict(
         error_bar_scale=pooled,
@@ -519,12 +519,12 @@ def main():
         delta_convergence=delta_scan,
         edge_thermodynamic_terms=edge_rows,
         reference_level_decision=dict(
-            status="not yet ruled on",
+            status="not yet settled",
             candidates=["r2SCAN-3c", "CCSD(T)/cc-pVTZ numerical frequencies"],
             interim="native QM9 B3LYP/6-31G(2df,p) -- free, but **not a high-level reference**",
             consequence="until a high-level reference is in place, the error bars in this file are a **scale**, not an **error**"),
-        identity_note=("the rigid-rotor harmonic-oscillator free energy is a **reference quantity / control**; it overturns premise 4 of plan section 1, "
-                       "on the explicit request of the user on 2026-08-27; see decision D0-28. "
+        identity_note=("the rigid-rotor harmonic-oscillator free energy is a **reference quantity / control**; it overturns an earlier premise, "
+                       "produced on request on 2026-08-27. "
                        "The stage 0 product is still only the density-of-states route."),
         total_seconds=time.time() - t_all)
 

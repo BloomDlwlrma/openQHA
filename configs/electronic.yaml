@@ -1,6 +1,6 @@
 # openQHA -- Package 5: the electronic term. RECORD ONLY -- no code reads this section.
 #
-# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# Split out of configs/openqha.yaml on 2026-09-04: that file
 # now holds ONLY global configuration and the `include:` index. This is a
 # MOVE, not a copy -- openqha/config.py raises if two files define the same
 # key -- and it was moved by byte range, so every comment and every measured
@@ -27,10 +27,10 @@ package5:
   # engine.composite_notation() (which reads engine_name()), so the products were always
   # right; this hand-written line is what disagreed with them.
   composite_notation: "DLPNO-CCSD(T)/cc-pVTZ // MACE-OFF23_medium"
-  orca_version: "6.1.1"              # the conda environment orca611 on deimos (user ruling 2026-08-29)
+  orca_version: "6.1.1"              # the conda environment orca611 on deimos
   orca_env_script: "configs/env_orca611_tianhe.sh"
   run_location: "deimos only"        # **WSL is for testing only; it produces no production number**
-  supersedes: "the 5.0.4 version lock of D0-26 -- digit-for-digit comparability with the hkuhpc batch is given up here; see D0-75"
+  supersedes: "the 5.0.4 version lock -- digit-for-digit comparability with the hkuhpc batch is given up here"
   keyword_line: "! DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C"
   tcut_pairs: "1e-6"
   loc_method: "AHFB"

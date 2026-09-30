@@ -53,7 +53,7 @@ OUT = ORCA / "deimos_504"
 EDGE = "C2H5O1N1_19_36"
 SPECIES = ["acetamide", "N-methylformamide"]
 
-# ---- Parameter classes (skills section 1.4) --------------------------------------------
+# ---- Parameter classes -------------------------------------------------------------------
 # Method and thresholds: literature values / matching conventions -- changing them makes this incomparable with the user's other work
 KEYWORD_LINE = "! DLPNO-CCSD(T) cc-pVTZ cc-pVTZ/JK RIJK cc-pVTZ/C"
 MDCI_BLOCK = "%mdci\n   TCutPairs 1e-6\n   printlevel 4\nend"
@@ -137,7 +137,7 @@ def main():
 #
 # The two species must use **the same ORCA version, the same keyword line and the same thresholds**,
 # or the DLPNO truncation error does not cancel between the two ends of the reaction.
-# `set -u` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# `set -u` is deliberately not used: a failing step must not end the job.
 ORCA_BIN="${ORCA_BIN:?set ORCA_BIN to the absolute orca binary path (deimos: ORCA 5.0.4)}"
 
 for var in $(env | awk -F= '{print $1}' | grep -E '^(PMI|SLURM)'); do unset "$var"; done

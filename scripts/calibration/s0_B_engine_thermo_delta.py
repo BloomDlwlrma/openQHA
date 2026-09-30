@@ -11,7 +11,7 @@ The production default is MACE-OFF23_medium, and it has a hole in its short-rang
 repulsion that destroys a trajectory every few picoseconds. Three models hold their wall:
 MACE-OFF23-SC, MACE-OFF23_large and MACE-OFF23b_medium. Switching to one of them is a
 repo-wide change -- the engine sets branch A's basins as well, and the composite notation
-`RI-MP2/cc-pVTZ // <engine>` has to name one surface (D0-4).
+`RI-MP2/cc-pVTZ // <engine>` has to name one surface.
 
 So the question "which engine" is not settled by the wall alone. This script supplies the
 other half: **how far apart are these models on the number branch B exists to produce?**

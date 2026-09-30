@@ -119,7 +119,7 @@ declaration stays because re-anchoring it is the first step in bringing the chec
 
 1. **One key, one file.** `openqha/config.py` raises on a duplicate rather than letting
    the last loader win.
-2. **Every parameter carries a class** (skills section 1.4): `physical_constant |
+2. **Every parameter carries a class** : `physical_constant |
    derived_criterion | literature_value | modifiable_convention | numerical_tolerance |
    resource_budget`. The class says what changing it costs.
 3. **Comments hold measurements.** The SHAKE deviation table, the `refine=opt/sp`

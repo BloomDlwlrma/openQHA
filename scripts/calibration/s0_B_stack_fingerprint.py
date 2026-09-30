@@ -5,8 +5,8 @@ an environment change is judged.
 
 Why
 ---
-On 2026-09-05 the OpenMM stack was moved into the core environment on a user ruling,
-accepting the downgrades the solver requires:
+The OpenMM stack lives in the core environment, accepting the
+downgrades the solver requires:
 
     pytorch   2.13.0 -> 2.12.1        numpy   2.4.6 -> 1.26.4
     libtorch  2.13.0 -> 2.12.1        pandas  3.0.5 -> 2.3.3

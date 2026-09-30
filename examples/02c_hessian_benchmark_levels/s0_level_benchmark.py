@@ -5,7 +5,7 @@ EXAMPLE. Three levels on the same molecules, all the way from energies and force
 
     MACE-OFF23_medium      the production potential
     GFN2-xTB               branch A's workhorse -- the level that PICKS the geometries
-    RI-MP2/RIJK/cc-pVTZ    the reference (plan_C section 5.3, user-specified)
+    RI-MP2/RIJK/cc-pVTZ    the reference (user-specified)
 
 WHAT IT PRODUCES, AND WHY IT IS NEEDED BEFORE ANYTHING ELSE
 -----------------------------------------------------------
@@ -73,7 +73,7 @@ ORCA_OPTFREQ_ROUTE = "! RI-MP2 cc-pVTZ cc-pVTZ/C cc-pVTZ/JK RIJK TightOpt NumFre
 ORCA_ENGRAD_METHOD = "RI-MP2"
 ORCA_ENGRAD_BASIS = "cc-pVTZ cc-pVTZ/C cc-pVTZ/JK RIJK TightSCF"
 
-#: Bands for the signed frequency deviation. plan_C section 8.5's convention: the sign
+#: Bands for the signed frequency deviation. The convention: the sign
 #: is what carries the systematic-softening prediction, so it is never made absolute.
 BANDS = ((0.0, 500.0, "below_500"), (500.0, 1500.0, "500_to_1500"),
          (1500.0, float("inf"), "above_1500"))
@@ -279,7 +279,7 @@ def main():
     rec_a = basin_reader.read_record(args.species, tag=args.tag)
     if rec_a is None:
         raise SystemExit(basin_reader.missing_message(args.species, args.tag))
-    # The geometries are the engine files mace/basinNN/basin.extxyz (ADR 0001), located
+    # The geometries are the engine files mace/basinNN/basin.extxyz, located
     # by the layout, never by a path inside the record (the record crosses clusters,
     # a path in it does not).
     geoms = [(list(a.get_chemical_symbols()), np.asarray(a.get_positions(), dtype=float))

@@ -1,4 +1,4 @@
-# Structure classes of the Hessian-learning draw (round 5, Q2 (a), 2026-09-19).
+# Structure classes of the Hessian-learning draw.
 #
 # One entry per class. `smarts` is matched with RDKit on the molecule's relaxed SMILES
 # (explicit H removed); a `rule` entry is a ring rule evaluated on RDKit's ring info:

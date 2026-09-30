@@ -70,7 +70,7 @@ def main():
     v = crest.crest_version()
     print("CREST        {} (commit {})".format(v["version"], v["commit"]))
     print("mlip support {}   <- needs CREST 3.1; this repo drives 3.0.2 through "
-          "`generic` (D0-87)".format(crest.supports_mlip()))
+          "`generic`".format(crest.supports_mlip()))
     print("settings     runtype={} workhorse={} refine={} optlev={} threads={} "
           "backend={}".format(C["runtype"], C["workhorse"], C["refine"], C["optlev"],
                               C["threads"], C["backend"]))

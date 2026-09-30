@@ -1,6 +1,6 @@
 """Scan analysis/, assign every artifact a category and a status, write the INDEX.
 
-TOOLING. Branch D, plan_D section 8.6 steps 0-1. Produces no science.
+TOOLING. Produces no science.
 
 Why an index rather than a tidy-up
 ----------------------------------
@@ -8,7 +8,7 @@ analysis/ grew to 77 top-level entries / 12 388 files / 188 MB with no conventio
 The repo's own contrast shows what fixes that and what does not: record.py has a
 four-directory convention (out/log/mol/xyz) and has never drifted, while analysis/
 had none. So the durable fix is `openqha/artifacts.py::write_artifact`, which makes
-category and status REQUIRED at write time (plan_D section 8.4).
+category and status REQUIRED at write time.
 
 This script is the other half: it reads what is already on disk, states an identity
 for each entry, and refuses to invent one where none can be established.
@@ -16,16 +16,15 @@ for each entry, and refuses to invent one where none can be established.
 THE RULE ABOUT NOT GUESSING
 ---------------------------
 Anything whose identity cannot be established from the repo record gets
-status="unknown" -- never a plausible-looking guess. User ruling 2026-09-03, and the
-same discipline as D0-11: a source that cannot be traced is written down as untraced
-rather than dressed up.
+status="unknown" -- never a plausible-looking guess. A source that cannot be traced is
+written down as untraced rather than dressed up.
 
 Statuses
 --------
     production   feeds a deliverable
     calibration  produced a number used to make a decision
     diagnostics  written to locate one numbered defect
-    raw          third-party output kept verbatim (skills section 1.3)
+    raw          third-party output kept verbatim
     superseded   belongs to a route that has been ruled out; kept, never cited as live
     unknown      identity not established -- counted and listed, never silently filed
 
@@ -70,9 +69,9 @@ IDENTITY = {
     # ---- superseded routes -------------------------------------------------------
     "package1": ("production", "superseded", "S0-D-7",
                  "Branch A conformer census (ETKDG + CREST). Its basins are minima on "
-                 "MACE-OFF23-SC; after the engine change (S0-A-16) they are no longer "
-                 "stationary points. Kept for the measurements built on it "
-                 "(D0-P1-16, D0-37, D0-P1-13); regenerate under MACE-OFF23_medium."),
+                 "MACE-OFF23-SC; under the current engine they are no longer "
+                 "stationary points. Kept for the measurements built on it; "
+                 "regenerate under MACE-OFF23_medium."),
     "package1_etkdg_1_4000.log": ("production", "superseded", "S0-A-3", "ETKDG census log; ETKDG retired."),
     "package1_etkdg_1_4000__basins.parquet": ("production", "superseded", "S0-A-3", "ETKDG basins; ETKDG retired."),
     "package1_etkdg_1_4000__failures.parquet": ("production", "superseded", "S0-A-3", "ETKDG failures; ETKDG retired."),
@@ -125,7 +124,7 @@ IDENTITY = {
                                 "RI-MP2 OPT NumFreq cost model over the 436 basins."),
     "package1_cost_model_full_qm9.json": ("calibration", "superseded", "D0-C-23",
                                           "Full-QM9 cost extrapolation, measured with the GFN-FF workhorse; "
-                                          "must be re-measured under gfn2 (S0-A-9)."),
+                                          "must be re-measured under gfn2."),
     "package1_cost_model_full_qm9.log": ("calibration", "superseded", "D0-C-23", "Same, human-readable."),
     "package1_flexibility_predictor.json": ("calibration", "calibration", "D0-P1-31",
                                             "Rotatable-bond / basin-count rank sum as a cost predictor."),
@@ -147,7 +146,7 @@ IDENTITY = {
     "composite_energy_force_E2.partial.jsonl": ("calibration", "calibration", "D0-P2-11", "E2 incremental records."),
     "frequency_benchmark.json": ("calibration", "calibration", "D0-35",
                                  "Package-2 frequency benchmark vs QM9 native B3LYP; 3428 numeric fields, "
-                                 "used as the refactor reproduction criterion (D0-41)."),
+                                 "used as the refactor reproduction criterion."),
     "frequency_benchmark.log": ("calibration", "calibration", "D0-35", "Same, human-readable."),
     "hessian_rrho_free_energy.json": ("calibration", "calibration", "D0-28", "RRHO free energies from the Hessian bypass."),
     "hessian_rrho_free_energy.log": ("calibration", "calibration", "D0-28", "Same, human-readable."),
@@ -156,7 +155,7 @@ IDENTITY = {
     "package2": ("calibration", "calibration", "D0-28", "Package-2 Hessian bypass working directory."),
     "s0-1_edge_result.json": ("production", "superseded", "D0-25",
                               "First assembled edge, +17.5088 kcal/mol. Not a result: 6 ps trajectory, "
-                              "no error bar, and its electronic term is marked SUPERSEDED (D0-26)."),
+                              "no error bar, and its electronic term is marked SUPERSEDED."),
     "s0-1_edge_result.log": ("production", "superseded", "D0-25", "Same, human-readable."),
     "package1_crest_1_4000.log": ("production", "superseded", "S0-A-16",
                                   "CREST census log; basins live on MACE-OFF23-SC."),
@@ -175,7 +174,7 @@ IDENTITY = {
     # ---- branch 2 production (RI-MP2 labels; still live as branch-C input) --------
     "branch2_optfreq_shard0.jsonl": ("production", "production", "S0-C-5",
                                      "RI-MP2 OPT NumFreq records, shard 0. provenance.status=test "
-                                     "(local ORCA 6.0.1; D0-75 reserves production for deimos 6.1.1)."),
+                                     "(local ORCA 6.0.1; production numbers come only from deimos 6.1.1)."),
     "branch2_optfreq_shard1.jsonl": ("production", "production", "S0-C-5", "Same, shard 1."),
     "branch2_optfreq_shard2.jsonl": ("production", "production", "S0-C-5", "Same, shard 2."),
     "symmetry_number.json": ("calibration", "calibration", "S0-A-13",
@@ -183,17 +182,17 @@ IDENTITY = {
                              "PLUS must-fail cases (ethane graph automorphism 72 against correct "
                              "sigma 6; methane 24 against 12). Verdict PASS, 0 failures, 0 cases "
                              "printing the forbidden answer. Its detector holds sigma=2 out to "
-                             "0.05 A where raw pymsym flips at 0.005 A (S0-A-14)."),
+                             "0.05 A where raw pymsym flips at 0.005 A."),
     "isomerisation_electronic_energy.json": ("calibration", "calibration", "D0-P2-12",
                                              "MACE isomerisation dE_el vs composite QZ*: MAD 1.87 kcal/mol."),
 }
 
-#: Entries whose identity the repo record does not settle. User ruling 2026-09-03:
+#: Entries whose identity the repo record does not settle:
 #: these get status="unknown" rather than a guess. Each line says what IS known.
 UNKNOWN = {
     "composite_energy_force_SMOKE2.json":
         "Smoke run of the composite energy/force driver. What distinguishes SMOKE2 from "
-        "SMOKE3 is not recorded anywhere in .mem; both predate the E2 production run.",
+        "SMOKE3 is not recorded anywhere in the repository record; both predate the E2 production run.",
     "composite_energy_force_SMOKE2.log": "See composite_energy_force_SMOKE2.json.",
     "composite_energy_force_SMOKE2.partial.jsonl": "See composite_energy_force_SMOKE2.json.",
     "composite_energy_force_SMOKE3.json":
@@ -201,24 +200,24 @@ UNKNOWN = {
     "composite_energy_force_SMOKE3.log": "See composite_energy_force_SMOKE3.json.",
     "composite_energy_force_SMOKE3.partial.jsonl": "See composite_energy_force_SMOKE3.json.",
     "composite_energy_force_smoke_mp2_dz.json":
-        "MP2/cc-pVDZ smoke run (D0-82 describes a run with this recipe: 12 structures, 59 s). "
+        "MP2/cc-pVDZ smoke run (12 structures, 59 s). "
         "Whether this file is that exact run is not established.",
     "composite_energy_force_smoke_mp2_dz.log": "See composite_energy_force_smoke_mp2_dz.json.",
     "branch2_probe_10.jsonl":
-        "Branch-2 cost probe, 10-atom molecule. The probe series is described in "
-        "plan_branch2 section 3 but individual files are not tied to specific runs.",
+        "Branch-2 cost probe, 10-atom molecule. Individual files are not tied to "
+        "specific runs.",
     "branch2_probe_15.jsonl": "Branch-2 cost probe, 15-atom molecule. Same caveat.",
     "branch2_probe_15_cosx.jsonl":
         "Branch-2 cost probe, 15 atoms, apparently the RIJCOSX arm. The suffix is not "
-        "defined in any decision or plan.",
+        "defined anywhere.",
     "branch2_probe_15_rijk.jsonl":
         "Branch-2 cost probe, 15 atoms, apparently the RIJK arm. Same caveat.",
     "_def46_tmp.md":
-        "Scratch note, apparently about defect 46 (the s0_mace_engrad.py shebang, D0-79). "
+        "Scratch note, apparently about s0_mace_engrad.py's shebang. "
         "Neither its author nor its status is recorded.",
     "crest_diag2":
         "EMPTY DIRECTORY. A CREST diagnostic working directory whose contents are gone; "
-        "no decision references it.",
+        "nothing references it.",
 }
 
 
@@ -290,7 +289,7 @@ def write_index(rows, root):
         "> **Generated by `scripts/tooling/openqha_index_artifacts.py` -- do not hand-edit.**",
         "> Every artifact carries a category, a status, and one line saying what it is.",
         "> `status=\"unknown\"` means the identity could not be established from the repo",
-        "> record. It is never a guess (user ruling 2026-09-03; same discipline as D0-11).",
+        "> record. It is never a guess.",
         "",
         "## Summary by status",
         "",

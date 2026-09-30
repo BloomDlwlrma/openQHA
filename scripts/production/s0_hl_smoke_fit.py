@@ -1,4 +1,4 @@
-"""The smoke fit: the numbers the campaign's settings are read off (ticket 15).
+"""The smoke fit: the numbers the campaign's settings are read off.
 
 PRODUCTION. Every number it produces is interpolation within the fit molecules (the
 pinned rule is off, `PURPOSE = fit`); it measures cost and weights, it does not judge
@@ -166,7 +166,7 @@ def main():
             b["L_E"], b["L_F"], b["L_H"], b["WF_LF"], b["HESSIAN_WEIGHT_BALANCED"]))
         balanced = b["HESSIAN_WEIGHT_BALANCED"]
         print("  (the rule is PHL's, the number is not: w_H = w_F L_F / L_H measured HERE, on the full"
-              " matrix and on this base model -- S0-C-64)")
+              " matrix and on this base model)")
 
     if "cost" in stages:
         print("\n--- the cost of a probe setting ({} epoch(s) each) ---".format(args.cost_epochs))

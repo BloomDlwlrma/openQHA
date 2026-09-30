@@ -14,7 +14,7 @@
 #                                                       #   (2026-09-13: the first complete chains
 #                                                       #   on a Tianhe card ran here, an113)
 #
-# WHY THIS IS TWO FILES AND NOT ONE (user ruling 2026-09-09)
+# WHY THIS IS TWO FILES AND NOT ONE
 # ----------------------------------------------------------
 # It used to submit ITSELF: one file carrying `#SBATCH` directives, re-invoked by the
 # scheduler. That failed on the machine in three ways at once, and all three are fixed by
@@ -43,7 +43,7 @@
 # arguments unchanged -- and the job sources it there. No `--export`: that would carry
 # the submitting shell's environment in, making the run depend on who submitted it.
 # =======================================================================================
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# `set -eo pipefail` is deliberately not used: a failing step must not end the job.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -131,14 +131,14 @@ if [ "$KIND" = "gpu" ]; then
             echo "  openqha-gpu contains neither crest nor xtb. Use deimos or debug." >&2
             exit 2 ;;
         levels)
-            echo "CHAIN=levels is ORCA RI-MP2: no GPU path here, and D0-75 puts" >&2
-            echo "  production quantum chemistry on deimos. Use deimos." >&2
+            echo "CHAIN=levels is ORCA RI-MP2: no GPU path here; production quantum" >&2
+            echo "  chemistry runs on deimos. Use deimos." >&2
             exit 2 ;;
     esac
 fi
 
 # Does step 1 exist? Branch A's product is
-# <root>/<tag>/<range>/<chunk>/<species>/mace/basin00/basin.extxyz (ADR 0001), FOUND by
+# <root>/<tag>/<range>/<chunk>/<species>/mace/basin00/basin.extxyz, FOUND by
 # hpc/env/root.sh with `find` rather than composed here, so the shard rule is spelled in
 # one place (openqha/store/layout.py). A login node can `conda activate openqha` and run
 # python just as well; the shell form was accepted by the user on 2026-09-14 as part of

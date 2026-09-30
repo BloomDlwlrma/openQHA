@@ -1,12 +1,12 @@
-"""The progress of a Hessian-learning campaign, from disk, in one table (ticket 08).
+"""The progress of a Hessian-learning campaign, from disk, in one table.
 
 TOOLING. For every molecule of the draw (`draw.dat`; else `select.dat`; else every
 molecule under the tag with branch A) it reads what is on disk -- branch A done
-(`basins.done`), branch A's failure marker (`_records/branchA.failed`, ticket 26: ran, no
+(`basins.done`), branch A's failure marker (`_records/branchA.failed`: ran, no
 ensemble, not rerun), a Frame set Record (`frames/frames.toml`, its kept frames), the frames
 whose ORCA job at `--level` is finished (`frame_labels.finished` on the file group in
 `frames/`), the frames whose ORCA ran and FAILED (a `.out` without the terminal line;
-not rerun, a human's `--retry` -- ticket 24), the frames another job holds (`.running`
+not rerun, a human's `--retry`), the frames another job holds (`.running`
 lock: its job alive by `squeue`, its heartbeat fresh) -- and prints one row per structure
 class and the total: molecules drawn / branch A / Frame sets, frames total / labelled /
 failed / unlabelled / running. `squeue` is asked only about the job named in a lock; what
@@ -66,7 +66,7 @@ def molecule_progress(qid, tag, mol, level, root):
     """One molecule's counters (COLUMNS without `drawn`), from disk."""
     row = dict(branchA=0, A_failed=0, frame_sets=0, frames=0, labelled=0, failed=0, unlabelled=0, running=0)
     if not basins.done(qid, tag, root=root):
-        row["A_failed"] = int(basins.failed(qid, tag, root=root))      # branch A ran and left its marker (ticket 26)
+        row["A_failed"] = int(basins.failed(qid, tag, root=root))      # branch A ran and left its marker
         return row
     row["branchA"] = 1
     rec = layout.frames_dir(mol) / (frames_mod.STEP + ".toml")

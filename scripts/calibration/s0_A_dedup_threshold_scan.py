@@ -6,7 +6,7 @@ criterion should be; it produces nothing that enters a deliverable.
 Why this exists
 ---------------
 On `OCCC(=O)CO` the pipeline merged two structures **0.279 Å apart** whose energies
-differ by **0.377 kcal/mol** (branch A checkpoint 4). The declared threshold is 0.30 Å,
+differ by **0.377 kcal/mol**. The declared threshold is 0.30 Å,
 so the merge followed the rule — but whether the rule is right was never measured, and
 RMSD alone cannot answer it.
 

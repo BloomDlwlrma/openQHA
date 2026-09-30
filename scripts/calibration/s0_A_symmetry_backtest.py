@@ -5,7 +5,7 @@ pymsym may be trusted; it produces nothing that enters a deliverable.
 
 Why this exists
 ---------------
-D0-9 forbids deriving the external rotational symmetry number sigma from the
+Do not derive the external rotational symmetry number sigma from the
 molecular GRAPH: graph automorphism counts internal-rotor and H-permutation
 symmetry, which are not external symmetry, and overcounts badly for flexible
 molecules (ethane 18 against a true sigma of 6, worth kT ln 3 = 0.651 kcal/mol --
@@ -13,10 +13,10 @@ the same order as the 1.0 kcal/mol target, and it does not cancel between isomer
 
 pymsym detects the point group from 3D COORDINATES (it is the Python binding of
 libmsym), so it does not have that failure mode. That is why it is allowed where
-`GetSubstructMatches(mol, uniquify=False)` is not. See plan_A section 2.5.
+`GetSubstructMatches(mol, uniquify=False)` is not.
 
 But an automatic detector can still be wrong: ORCA calls acetone `C1, Symmetry
-Number: 1` when the correct value is 2 (D0-P2-15), costing RT ln 2 = 0.411
+Number: 1` when the correct value is 2, costing RT ln 2 = 0.411
 kcal/mol. So pymsym has to earn trust on the seven species whose sigma we declared
 by hand -- those are the only answers we know independently.
 
@@ -77,8 +77,8 @@ from ase.io import read  # noqa: E402
 #: `tolerance=` anyway, caught the resulting TypeError, and reported the arm as
 #: "no result" -- which the summary line then filtered out, so the output LOOKED
 #: like a sweep that agreed at every tolerance. It had checked nothing.
-#: That is exactly the failure mode of defects 4 and 8 (skills section 2.4(a):
-#: a new criterion must first be shown an example it should fail).
+#: That is exactly the failure mode this guards against: a new criterion
+#: must first be shown an example it should fail.
 #:
 #: Perturbing the geometry measures the same thing from the other side: how far
 #: this structure is from the point where the detector changes its mind.
@@ -199,8 +199,7 @@ def main():
         "n_match": n_match,
         "verdict_pass": verdict,
         "criterion": ("Every species with a hand-declared sigma must be reproduced. "
-                      "These seven are the only independently known answers we have "
-                      "(D0-9, plan_A section 2.5.3)."),
+                      "These seven are the only independently known answers we have."),
         "rows": rows,
     }
     out.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")

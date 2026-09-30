@@ -1,4 +1,4 @@
-"""The Replay draw: one seed, one file, from SPICE's TRAIN split (ticket 19; S0-C-56).
+"""The Replay draw: one seed, one file, from SPICE's TRAIN split.
 
 TOOLING. Produces no scientific number of its own; it selects frames, once, by seed, and
 writes the list of ids beside them so that the same draw can be made again anywhere.
@@ -21,7 +21,7 @@ set, the same for every row (mace would otherwise take `--valid_fraction` of the
 file itself). `<out>.toml`: the Record (`[Replay]`: DOI, SPLIT, SEED, N, WEIGHT,
 N_MOLECULES, FRAMES_PER_MOLECULE_MAX, the exclusions).
 
-WHAT IT EXCLUDES, AND THE TWO ASSERTIONS (S0-C-56). The Replay must share no molecule
+WHAT IT EXCLUDES, AND THE TWO ASSERTIONS. The Replay must share no molecule
 with the forgetting draw (`s0_spice_test_draw.py`'s `<file>.ids.dat`, `--forgetting-ids`)
 and none of the in_distribution molecules (`judge.IN_DISTRIBUTION`, the four shipped
 molecules MACE-OFF23 was trained on). SPICE's test split is BY FRAME (15,542 of the
@@ -180,7 +180,7 @@ def in_distribution_molecules(cache, membership=None, ids=judge.IN_DISTRIBUTION)
 
 
 def check_disjoint(drawn_keys, forgetting_keys, in_distribution_keys):
-    """The two assertions of S0-C-56 on the molecule keys about to be written: (a) none
+    """The two assertions on the molecule keys about to be written: (a) none
     shared with the forgetting draw, (b) none in_distribution. Raises AssertionError
     naming the offending molecules."""
     frags = set()

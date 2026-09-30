@@ -13,7 +13,8 @@
 #
 # NOT A PACKAGE AT ALL:
 #   MACE-OFF weights. install_dependency.sh downloads them and openqha/engine.py
-#   recomputes their SHA-256 on every load, so a truncated or swapped file fails loudly.
+#   resolves them by name at load; a missing file raises (nothing inspects what
+#   is inside it).
 
 # ---- reproducibility: lower bounds are not pins ----------------------------------------
 # The bounds below say what the code REQUIRES. They do not make two machines agree to the
@@ -28,7 +29,7 @@
 #     G - Eel                35.5091567 vs 35.5089401 kcal/mol  (2.2e-04)
 #
 # 2.2e-04 kcal/mol is 230x below the CREGEN energy condition (0.05) and ~450x below this
-# branch's target precision. Nothing here changes a basin, a sigma or a ruling.
+# branch's target precision. Nothing here changes a basin or a sigma.
 #
 # AND THE CAUSE IS NOT THE BLAS. Isolated separately, so neither could hide behind the
 # other:

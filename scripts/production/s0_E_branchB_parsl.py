@@ -9,7 +9,7 @@ keep it true is to keep this file free of chemistry.
 
 WHERE BRANCH B RUNS, SINCE 2026-09-07
 --------------------------------------
-User ruling: the trajectories are a GPU job.
+The trajectories are a GPU job.
 
     trajectories   TianheXY-A, `--resource tianhe_a --route openmm --platform CUDA`
                    ONE TRAJECTORY PER CARD, 8 cards per allocation, 5 allocations =
@@ -22,7 +22,7 @@ tianhe_cpu` is the independent implementation pair that makes the OpenMM numbers
 checkable. It is simply no longer the production route.
 
     CAVEAT, stated rather than buried: this repository's only GPU measurement of branch B
-    is D0-C-5, where the same trajectory ran 3.5x SLOWER on the GPU than on the CPU. That
+    is the one where the same trajectory ran 3.5x SLOWER on the GPU than on the CPU. That
     was a T400 -- a 2 GB entry-level card -- against 80 GB HBM2e on TianheXY-A, so the
     number does not transfer. It has also not been replaced. **Take seconds-per-ps off a
     `--debug` run before sizing a campaign**, and do not assume the card is faster
@@ -80,7 +80,7 @@ def _hpc_root(repo):
     name would have had to be edited twice.
 
     This is the same failure as the `scripts/` reorganisation and the `source-code/`
-    move (S0-G-30): `_repo_root()` fixed the package import, and every path written as
+    move: `_repo_root()` fixed the package import, and every path written as
     a literal string stayed behind. **A name written into a string does not move with
     the thing it names.**
     """
@@ -149,7 +149,7 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
     A subprocess rather than an import, for the same three reasons branch A uses one:
     a crash or an out-of-memory kill takes down one task and not the worker's whole queue;
     the driver's stdout is captured verbatim per trajectory; and the command line that
-    produced a result is recorded literally, which is what defect 57 was missing.
+    produced a result is recorded literally, which is what was missing.
 
     `route` picks which of the two production drivers runs. They write the same Record
     (md.out + md.toml beside their engine files), so the analysis reads either without
@@ -195,7 +195,7 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
            "--seed0", str(seed0),
            "--prod-ps", str(prod_ps), "--equil-ps", str(equil_ps)]
     # <route>/basinNN/ under the molecule directory, the setting in the file names
-    # (ADR 0001, 2026-09-14); both drivers take it.
+    # (2026-09-14); both drivers take it.
     cmd += ["--setting", str(setting)]
     # The sampling interval is a science setting and normally comes from
     # `configs/branchB_protocol.yaml`. It is overridable here because the two products
@@ -226,7 +226,7 @@ def run_one_trajectory(species, basin, seed_index, seed0, repo_root, tag, prod_p
                    seconds=_time.time() - started)
 
     # driver.log beside the trajectory's Record: _records/md_<route>/basinNN/, the setting
-    # in the stem (driver_s2.log), no setting level (records redesign, 2026-09-15, Q5).
+    # in the stem (driver_s2.log), no setting level (records redesign, 2026-09-15).
     from openqha.quasi_harmonic import md_record as _md
     out = _layout.basin_records_dir(_layout.molecule_dir(runs_root, basin_tag or tag, species), route, basin)
     out.mkdir(parents=True, exist_ok=True)
@@ -312,8 +312,8 @@ def main():
                     help="the trajectory setting (the file stem in md_<route>/basinNN/ of the molecule "
                          "directory); `default` for the chains, the row name for 02d-2")
     ap.add_argument("--seeds", type=int, default=1,
-                    help="trajectories per basin. ONE is the production setting (ruling "
-                         "2026-09-13); 2 or more gives the blank control of criterion 5")
+                    help="trajectories per basin. ONE is the production setting; "
+                         "2 or more gives the blank control of criterion 5")
     ap.add_argument("--seed0", type=int, default=0,
                     help="0 (default): each trajectory draws its velocity seed at run time "
                          "and records it (OpenMM's randomNumberSeed=0 convention); "
@@ -383,7 +383,7 @@ def main():
     basins_for, missing = {}, []
     basin_tag = args.basin_tag or args.tag
     for s in species:
-        # The count is the number of mace/basinNN/basin.extxyz files (ADR 0001); the
+        # The count is the number of mace/basinNN/basin.extxyz files; the
         # task is told `auto` and reads the same files itself.
         n = len(basin_reader.basin_files(basin_reader.molecule_for(s, basin_tag)))
         if n:
@@ -430,9 +430,9 @@ def main():
         cost_note=("96.1 s/ps (ASE) and 100 s/ps (OpenMM) measured on this project's "
                    "workstation for a 10-atom molecule at 1 CPU thread. NEITHER is a "
                    "GPU number, and neither may be divided by a worker count to produce "
-                   "a cluster estimate (D0-P1-12, defects 34 and 56)."),
+                   "a cluster estimate."),
         gpu_cost_status=("UNMEASURED on TianheXY-A. The only GPU figure this repository "
-                         "has is D0-C-5, 3.5x SLOWER than CPU on a T400. Measure with "
+                         "has is 3.5x SLOWER than CPU on a T400. Measure with "
                          "--debug before sizing a campaign."),
         estimated_single_task_seconds=round(96.1 * args.prod_ps, 1),
     )
@@ -622,9 +622,9 @@ def main():
               "campaign with, measured on THIS machine".format(
                   sorted(per_ps)[len(per_ps) // 2]))
     print("slot_extrapolation                NOT COMPUTED -- the per-task cost under "
-          "contention has not been measured (D0-P1-12, defects 34 and 56)")
+          "contention has not been measured")
 
-    # A Batch leaves no record of its own (user ruling 2026-09-15, Q4 (b)): the table above,
+    # A Batch leaves no record of its own: the table above,
     # in the Slurm log, is its report. The summary JSON of 2026-09-14 is gone.
     ok = [r for r in results if not r.get("error")]
     print()

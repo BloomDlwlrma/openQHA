@@ -1,6 +1,6 @@
 # openQHA -- Hessian screen, RRHO tolerances and the electronic reference ladder. Branch A reads fmax_hessian_eV_A on every run.
 #
-# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# Split out of configs/openqha.yaml on 2026-09-04: that file
 # now holds ONLY global configuration and the `include:` index. This is a
 # MOVE, not a copy -- openqha/config.py raises if two files define the same
 # key -- and it was moved by byte range, so every comment and every measured
@@ -25,7 +25,7 @@
 package2:
   fmax_hessian_eV_A: 0.0001          # numerical_tolerance: residual force contaminates
                                      # the curvature
-  ithr_cm: -50.0                     # frequency floor of the census screen (ticket 37):
+  ithr_cm: -50.0                     # frequency floor of the census screen:
                                      # CREST's `-ithr` default, mirroring
                                      # MSRRHO_PRESETS["crest"].ithr_cm -- a unit test in
                                      # t_msrrho_presets holds the two equal. A candidate
@@ -33,7 +33,7 @@ package2:
                                      # an inversion window and inverted by the
                                      # thermochemistry; a lowest mode below ithr is a
                                      # saddle and is ejected.
-  finite_difference_delta_A: 0.01    # modifiable_convention; convergence measured (D0-34)
+  finite_difference_delta_A: 0.01    # modifiable_convention; convergence measured
   delta_scan_A: [0.005, 0.010, 0.020, 0.040]
   delta_scan_species: "dsgdb9nsd_000048"   # oxetane -- it has the softest ring-fold mode
   rigid_singular_tol: 1.0e-8         # numerical_tolerance: rank criterion for the set
@@ -41,13 +41,13 @@ package2:
   rigid_overlap_threshold: 0.5       # derived_criterion: the fraction of an eigenvector
                                      # lying in the rigid-body subspace
   qrrho_nu0_cm: 100.0                # literature_value: Grimme, Chem. Eur. J. 2012, 18, 9955
-  # ---- Reference level (user ruling 2026-08-29: use the full composite, and stop
-  # ---- computing CCSD(T)/cc-pVTZ directly) ---------------------------------------------
+  # ---- Reference level (the full composite; CCSD(T)/cc-pVTZ is not computed
+  # ---- directly) -----------------------------------------------------------------------
   # Following Allen et al., "Reactive Chemistry at Unrestricted Coupled Cluster Level"
   # (equations 1 and 2). The paper gives composite expressions for BOTH the energy and the
   # forces; numerical frequencies come from finite differences of the forces, so a
   # composite force expression gives a composite Hessian directly.
-  # Measured (acetone, 10 atoms, ORCA 6.0.1, 8 cores, one analytic gradient; see D0-73):
+  # Measured (acetone, 10 atoms, ORCA 6.0.1, 8 cores, one analytic gradient):
   #   MP2/DZ 5 s | MP2/TZ 30 s | MP2/QZ 321 s | CCSD/DZ 65 s | CCSD(T)/DZ 326 s | CCSD/TZ 435 s
   #   for comparison CCSD(T)/TZ did not finish in > 7200 s; the six components' scratch
   #   files come to 17 MB in total, against 144 GB for a single CCSD(T)/TZ.
@@ -90,7 +90,7 @@ package2:
         - [1, "MP2", "cc-pVQZ"]
         - [-1, "MP2", "cc-pVTZ"]
       seconds_per_gradient_8core: 1177
-    # ---- User ruling 2026-08-29, the accuracy of E2: "MP2 DZ* -> QZ*" ---------------
+    # ---- The accuracy of E2: "MP2 DZ* -> QZ*" -----------------------------------------
     # A basis-set ladder using **MP2 increments only**, on a CCSD(T)/cc-pVDZ base, with
     # all three rungs assembled from ONE pool of terms:
     #   DZ      = CCSD(T)/DZ
@@ -134,11 +134,10 @@ package2:
       pool_seconds_per_structure_8core: 682   # 326 + 5 + 30 + 321
   reference_level_rejected:
     - level: "r2SCAN-3c"
-      reason: "excluded by user ruling 2026-08-28"
+      reason: "excluded from selection"
     - level: "CCSD(T)/cc-pVTZ computed directly"
       reason: >
         Measured as unaffordable: a single analytic gradient did not finish in > 7200
         seconds and used 144 GB of scratch; 61 of them x 7 species >= 36 days.
-        See D0-66, D0-69, D0-73.
 
 

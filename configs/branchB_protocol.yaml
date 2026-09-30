@@ -82,14 +82,14 @@
 # =======================================================================================
 branch_b:
   _source: "Rinaldo & Field, Biophysical Journal 2003 (10.1016/S0006-3495(03)70023-0)"
-  _status: "published protocol, adopted 2026-09-07 by user ruling"
+  _status: "published protocol, adopted 2026-09-07"
 
   # ---- integration -------------------------------------------------------------------
-  timestep_fs: 1.0                 # literature_value: paper p2; also D0-C-30
+  timestep_fs: 1.0                 # literature_value: paper p2
   temperature_K: null              # null -> thermodynamics.temperature_K (298.15)
 
   # ---- length ------------------------------------------------------------------------
-  # **CORRECTED 2026-09-07, second ruling.** The paper's 520 + 1500 ps was adopted
+  # **CORRECTED 2026-09-07.** The paper's 520 + 1500 ps was adopted
   # wholesale on the first pass; that was wrong, and the reason is in section 2 below.
   # A solvated protein at 300 K barely explores its basin in 1.5 ns. A 10-atom molecule
   # crosses its methyl barrier (~0.8 kcal/mol against kT = 0.59) constantly, and a
@@ -159,7 +159,7 @@ branch_b:
   # stretches). It is that the atoms it drops are exactly the ones a freely rotating
   # methyl sweeps around a circle -- the dominant source of non-Gaussian variance in
   # these molecules. See section 2.
-  # One trajectory per (molecule, basin) -- user ruling 2026-09-13, after the campaign
+  # One trajectory per (molecule, basin), after the campaign
   # arithmetic in docs/branchB_seeds_and_length.md (3 seeds = 1.1 M card-hours for QM9).
   # The velocity seed is drawn at run time and recorded in meta.json (seed0 = 0, the
   # convention OpenMM itself uses for randomNumberSeed=0). Criterion 5 (blank control)

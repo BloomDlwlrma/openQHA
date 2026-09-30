@@ -7,7 +7,7 @@
 # with the protocol's own row first. 9 rows -> 2 array tasks of 5 and 4 cards.
 #
 # NAME          EQUIL_PS  PROD_PS  SAMPLE_EVERY  SEEDS  NU_CUT
-# SEEDS is 1 everywhere since the 2026-09-13 ruling; the grid measures
+# SEEDS is 1 everywhere since 2026-09-13; the grid measures
 # length x sampling through saturation (criterion 1), not the seed spread.
 p500_s2         50        500      2             1      25,50,100,150
 p500_s1         50        500      1             1      25,50,100,150

@@ -3,7 +3,7 @@
 PRODUCTION. The batch CREST census, one worker process per molecule.
 
 --------------------------------------------------------------------------------------
-Architecture (rewritten after the user ruling of 2026-08-31)
+Architecture
 --------------------------------------------------------------------------------------
 The user: "one worker per molecule, each loading CREST and the GFN-FF conformer search on its own,
 **loading the MACE model serially**, with as many molecules at once as there are CPUs, or as maximum memory / the memory one MACE load needs".
@@ -101,7 +101,7 @@ CB = P1["crest_batch"]
 C = CFG["crest"]
 T_REF = config.temperature(CFG)
 
-#: The frequency floor the batch screen applies (ticket 41): the configured value,
+#: The frequency floor the batch screen applies: the configured value,
 #: `package2.ithr_cm` -- the same number `MSRRHO_PRESETS["crest"].ithr_cm` carries
 #: (a unit test holds them equal), so the screen and the thermochemistry cannot drift.
 ITHR_CM = float(P2["ithr_cm"])
@@ -111,7 +111,7 @@ CHUNK = (FULL_RANGE[0], FULL_RANGE[0] + int(P1["chunk_size"]) - 1)
 DEDUP_A = float(P1["dedup_rmsd_A"])
 # These three keys live outside `crest_batch` since the configuration split (it carries
 # only the batch's own settings -- scratch, timeout, parallelism), and these reads named
-# the pre-split layout: the module could not even be imported until ticket 41 fixed them.
+# the pre-split layout: the module could not even be imported until the screen fixed them.
 FMAX_COARSE = float(P1["etkdg_retired"]["fmax_census_eV_A"])
 FMAX_TIGHT = float(P1["tighten_fmax_eV_A"])
 ORDER_SEED = int(P1["order_seed"])
@@ -335,7 +335,7 @@ def _load_crest_stage(qid, args):
 
 
 def _crest_stage(qid, smiles, wd, calc, args):
-    """Prepare the starting point and run CREST. Reuses a working directory only if it **finished and its settings match** (defect 57)."""
+    """Prepare the starting point and run CREST. Reuses a working directory only if it **finished and its settings match**."""
     if wd.exists() and not args["redo_crest"] and (wd / "crest.out").exists():
         try:
             r = crest.record_from_dir(wd)

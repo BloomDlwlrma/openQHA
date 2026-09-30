@@ -9,7 +9,7 @@ The diagnostics are the deliverable too
 Quasi-harmonic entropy rises monotonically with sampling time and saturates slowly, so a
 trajectory that has not run long enough returns a number that looks perfectly stable and
 is too low. The density-of-states route this branch replaced was killed by exactly one
-missing experiment -- a blank control -- and the lesson recorded from that (D0-P2-13) was
+missing experiment -- a blank control -- and the lesson recorded from that was
 that without a blank control you can only guess. So this script always runs:
 
   * the SATURATION CURVE on leading prefixes, and reports the increment over the last
@@ -63,7 +63,7 @@ GMX_BUDGET_KCAL = 0.05
 #: Below this production length, criteria 1 and 5 are reported as SMOKE rather than
 #: passed. Not a scientific threshold -- it is the line under which a pass is meaningless,
 #: because quasi-harmonic entropy rises monotonically and a trajectory that has barely
-#: started has barely started rising. plan_B section 3.1 sets the real length from the
+#: started has barely started rising. The real length is set from the
 #: saturation curve, and 20 ps is simply far short of any answer that curve could give.
 SMOKE_LENGTH_PS = 20.0
 
@@ -72,8 +72,8 @@ def discover(molecule, setting, route="auto"):
     """Every trajectory of one setting: (basin label, seed label, engine_dir, records_dir).
 
     The labels are directory names, as before (`basin00`, and `seed00` for the one
-    trajectory per basin the 2026-09-13 ruling allows), because collect's tables and the
-    ensemble report key on them. The trajectory itself is `traj.dcd` (ADR 0001).
+    trajectory per basin), because collect's tables and the
+    ensemble report key on them. The trajectory itself is `traj.dcd`.
     """
     from openqha.quasi_harmonic import trajectory_reader
     return [("basin{:02d}".format(b), "seed00", eng, rec)
@@ -266,7 +266,7 @@ def main():
             standard_error_kcal=(float(ts.std(ddof=1) / np.sqrt(len(ts)))
                                  if len(ts) > 1 else None),
             values_kcal=[float(x) for x in ts],
-            note=("one seed per basin (ruling 2026-09-13): no noise floor is measured "
+            note=("one seed per basin: no noise floor is measured "
                   "here; --seeds 2 or more would give one" if len(ts) < 2 else None)))
 
     # ---- the assembly, per basin, on the seed-averaged spectrum ----------------------
@@ -363,7 +363,7 @@ def main():
     identity_ok = all(t["analysis"]["identity_check"] is not None for t in per_traj)
     assembly_ok = all(a["consistency"]["all_identical"] for a in assembly)
     noise_floor = max((b["TS_QH_rms_about_mean_kcal"] for b in blank), default=0.0)
-    # One trajectory per basin is the production setting (ruling 2026-09-13). Criterion
+    # One trajectory per basin is the production setting. Criterion
     # 5 then has nothing to measure and says so; it must not read as a failure, or every
     # production molecule would stop at collect by construction.
     single_seed = bool(blank) and all(b["n_seeds"] == 1 for b in blank)
@@ -408,7 +408,7 @@ def main():
          bool(rigid_ok and rigid_ratio > 1e6)),
         ("5  the blank control (same potential, same basin, different seed) gives a "
          "noise floor smaller than the 1.0 kcal/mol target accuracy",
-         ("NOT APPLICABLE: one seed per basin (ruling 2026-09-13), no noise floor "
+         ("NOT APPLICABLE: one seed per basin, no noise floor "
           "measured here; see docs/branchB_seeds_and_length.md" if single_seed else
           "{:.4f} kcal/mol RMS between seeds, longest trajectory {:.2f} ps{}".format(
               noise_floor, longest_ps,
@@ -498,7 +498,7 @@ def main():
                     t["basin"], t["seed"], t["saturation"]["monotonic"]))
 
     r.section("Blank control -- the noise floor (criterion 5)")
-    r.note("Same potential, same basin, different seed. D0-P2-13: the density-of-states "
+    r.note("Same potential, same basin, different seed. The density-of-states "
            "route was abandoned because this experiment showed its noise floor exceeded "
            "its signal. If that happens here it is reported in the same words.")
     r.table(["basin", "seeds", "T*S mean", "spread", "RMS", "standard error"],
@@ -556,8 +556,8 @@ def main():
 
     # The dump holds what nothing else holds: the per-trajectory analysis, saturation and
     # mode batches, the declaration and the cross-checks. The blank control, the assembly
-    # and the criteria are in collect.dat and the Criteria section above (user ruling
-    # 2026-09-16); repeating them here made a 400-column table nobody could read.
+    # and the criteria are in collect.dat and the Criteria section above (2026-09-16);
+    # repeating them here made a 400-column table nobody could read.
     r.json_dump(dict(
         species=args.species, tag=args.tag, temperature_K=temperature,
         declaration=spec,

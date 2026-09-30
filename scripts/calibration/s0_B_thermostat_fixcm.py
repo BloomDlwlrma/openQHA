@@ -217,7 +217,7 @@ def main():
             "reported FixCom as 10 per cent cold; it was not, 298.15 x 27/30 = 268.3 is "
             "exactly what 3N gives for a correct trajectory. The estimator was wrong, not "
             "the run.")
-    rp.section("Ruling")
+    rp.section("The choice")
     rp.note("Branch B uses fixcm=False and adds NO constraint. FixCom is equally correct "
             "on the numbers above and is what upstream suggests, so the choice is not "
             "made on accuracy: FixCom is an ASE constraint, and branch B's first "
@@ -227,7 +227,7 @@ def main():
             "centre of mass random-walks, and the superposition in openqha/qha.py removes "
             "that before the covariance is taken.")
     rp.note("qha.assert_trajectory_identity refuses any trajectory whose metadata does "
-            "not record thermostat_fixcm = False, so this ruling is enforced rather than "
+            "not record thermostat_fixcm = False, so this choice is enforced rather than "
             "documented.")
     rp.json_dump(dict(species=args.species, engine=engine_label, steps=args.steps,
                       target_K=TARGET_K, variants=rows))

@@ -88,7 +88,7 @@ def basin_geometries(species, tag):
             basin_reader.missing_message(species, tag)
             + "\n  This example starts from the basins branch A found; to make them:\n"
             "  bash examples/run_chain.sh examples/02d_qha_frequency_identity/branchA.conf deimos")
-    # The geometries are the engine files mace/basinNN/basin.extxyz (ADR 0001), located
+    # The geometries are the engine files mace/basinNN/basin.extxyz, located
     # by the layout, never by a path inside the record: the record was written on the
     # CPU cluster and read on the GPU one (an113, 2026-09-13).
     out = [(list(a.get_chemical_symbols()), np.asarray(a.get_positions(), dtype=float))

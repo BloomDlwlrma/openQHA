@@ -5,7 +5,7 @@ for; it produces nothing that enters a deliverable.
 
 The debt this pays
 ------------------
-The choice of `refine="opt"` rests on a user ruling. The measurement that had argued
+The choice of `refine="opt"` rests on a judgement. The measurement that had argued
 *against* it was taken with the **GFNFF** workhorse
 (`scripts/_superseded/one-off/s0_crest_refine_compare.py`):
 
@@ -25,7 +25,7 @@ On those numbers `sp` was both faster and more complete, with no trade-off.
 re-optimises and merges the ensemble BEFORE cregen deduplicates, and how much it merges
 depends on how far the workhorse geometries sit from the MACE minimum. GFN2 geometries
 are far closer than GFNFF ones, so the size of the effect is unmeasured under the
-workhorse actually in use. **The ruling stands whatever this shows; the measured miss
+workhorse actually in use. **The choice stands whatever this shows; the measured miss
 rate is a deliverable either way.**
 
 What is compared
@@ -211,7 +211,7 @@ def main():
     # the same basins, every basin is counted twice and -RT ln(sum exp) gains exactly
     # RT ln 2 = 0.4107 kcal/mol. The first run of this script reported that number as
     # the "error" of BOTH settings, which is how the defect was noticed: a value equal
-    # to something structural is usually measuring the structure (D0-81).
+    # to something structural is usually measuring the structure.
     pooled = []
     for level in LEVELS:
         pooled.extend(results[level]["basins"])

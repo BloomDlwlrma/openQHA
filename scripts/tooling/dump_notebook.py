@@ -1,4 +1,4 @@
-"""Per skills section 2.4(c): whether nbconvert succeeded can be judged only by the notebook itself.
+"""Whether nbconvert succeeded can be judged only by the notebook itself.
 
 TOOLING. Renders a notebook and judges the run by the notebook's own counters.
 Produces no science.

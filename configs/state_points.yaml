@@ -1,6 +1,6 @@
 # openQHA -- Package 3: near-critical gas state points. RECORD ONLY -- no code reads this section.
 #
-# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# Split out of configs/openqha.yaml on 2026-09-04: that file
 # now holds ONLY global configuration and the `include:` index. This is a
 # MOVE, not a copy -- openqha/config.py raises if two files define the same
 # key -- and it was moved by byte range, so every comment and every measured

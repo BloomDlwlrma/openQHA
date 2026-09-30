@@ -16,7 +16,7 @@ It is the ONLY structure source for the other two branches -- branch B starts it
 unbiased trajectories from these geometries, and branch C computes its
 RI-MP2/RIJK/cc-pVTZ reference labels on them.
 
-The six steps (plan_A section 3)
+The six steps
 --------------------------------
   1. gates F0-F7                       -> is this molecule in scope at all
   2. CREST iMTD-GC, gfn2 workhorse     -> raw ensemble
@@ -27,7 +27,7 @@ The six steps (plan_A section 3)
   6. analytic Hessian                  -> frequency-floor screen, sigma, RRHO, weights
 
 Steps 4-6 exist because CREST's conformer count is NOT a basin count. Measured
-(defect 54): acetone, CREST reports 2 conformers 0.8118 kcal/mol apart; tightened
+on acetone, CREST reports 2 conformers 0.8118 kcal/mol apart; tightened
 to fmax = 1e-4 they are identical to the last digit. That 0.8118 was CREST's
 convergence residual, not an energy difference.
 
@@ -85,7 +85,7 @@ EV_TO_KCAL = conformers.EV_TO_KCAL
 def machine_load():
     """Load average and core count. A cost number without these is not reportable.
 
-    D0-P3-6: two earlier benchmarks that differed by 4.5x were both contaminated by
+    Two earlier benchmarks that differed by 4.5x were both contaminated by
     a competing job nobody had recorded.
     """
     try:
@@ -145,21 +145,21 @@ def seed_geometry_from_smiles(smiles, calc, dest, seed=20260903, fmax=1e-3):
     ############################################################################
     # Read this before assuming ETKDG has been un-retired. It has not.         #
     ############################################################################
-    The 2026-09-03 ruling retired ETKDG as a CONFORMER SEARCH METHOD -- as the thing
+    ETKDG is retired as a CONFORMER SEARCH METHOD -- as the thing
     that produces the ensemble whose members become basins. That is not what happens
     here. Here it produces ONE structure, which is then thrown at CREST, and **every
     conformer in the result comes from CREST's metadynamics**, not from this seed.
     Upstream's own example is `crest struc.xyz --gfn2`; `struc.xyz` has to come from
     somewhere, and for a molecule with no deposited geometry this is where.
 
-    Concretely, what would break the ruling and is NOT done: embedding many
+    Concretely, what would break that retirement and is NOT done: embedding many
     conformers and letting them into the basin list, or pooling extra embeddings
     alongside the CREST ensemble. `n_embed=1`.
 
     **What is genuinely lost, and must be said rather than hidden.** For the seven
     shipped species, step 3 pools the deposited QM9 geometry as an INDEPENDENT
     starting point, which is the only thing left that can bound the systematic error
-    plan_A section 1.2 records (CREST-only conformational correction: mean +0.1209,
+    the CREST-only route records (mean +0.1209,
     max +0.5824 kcal/mol). A SMILES-specified molecule has no such independent
     geometry, so for it that error is **unbounded**, and acceptance criterion 6 is
     reported as not-applicable rather than passed.
@@ -191,7 +191,7 @@ def seed_geometry_from_smiles(smiles, calc, dest, seed=20260903, fmax=1e-3):
 # Step 2 -- CREST
 # ======================================================================================
 def crest_scratch_dir(name):
-    """Where CREST RUNS: node-local, never the shared filesystem (ADR 0002, Q20).
+    """Where CREST RUNS: node-local, never the shared filesystem.
 
     `$S0_SCRATCH/openqha_crest/<name>/` -- hpc/env/tianhe.sh sets S0_SCRATCH to
     /tmp/<user>/<jobid>; off-cluster the system temp directory, per process. CREST
@@ -228,9 +228,9 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
     built one (see `seed_geometry_from_smiles`). Either way it is a STARTING point,
     not a conformer -- CREST's metadynamics produces the conformers.
 
-    `workdir` is the FINAL directory, `<molecule>/crest/` (ADR 0001). CREST itself runs
+    `workdir` is the FINAL directory, `<molecule>/crest/`. CREST itself runs
     in `crest_scratch_dir(name)` and the finished directory is moved here once, the
-    SHAKE fallback's into `crest_shake<N>/` beside it (ticket 06, 2026-09-14). A CREST
+    SHAKE fallback's into `crest_shake<N>/` beside it. A CREST
     that fails is moved too, so its crest.out is where a reader looks.
     """
     c = cfg["crest"]
@@ -249,7 +249,7 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
         if ok and not args.force_crest:
             rec = crest.record_from_dir(workdir, settings=wanted)
             rec["reused_scratch"] = True
-            # D0-P1-12: a reused directory yields no cost measurement for THIS run.
+            # A reused directory yields no cost measurement for THIS run.
             # CREST's own printed wall-time is carried across so the number is not
             # lost, but it is flagged as not a cost of this invocation.
             rec["wall_is_valid_cost"] = False
@@ -257,7 +257,7 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
             rec["shake_used"] = c["shake"]
             rec["used_shake_fallback"] = False
             # A retry directory beside it without an ensemble: the fallback ran and
-            # failed in an earlier invocation (ticket 26); say so, read off the disk.
+            # failed in an earlier invocation; say so, read off the disk.
             fb_to = int((c.get("shake_fallback") or {}).get("to", 1))
             retry_dir = Path("{}_shake{}".format(workdir, fb_to))
             if retry_dir.is_dir() and not (retry_dir / "crest_conformers.xyz").is_file():
@@ -273,7 +273,7 @@ def run_crest(qid, workdir, cfg, args, start_xyz=None):
             raise RuntimeError(
                 "scratch directory {} was made under different settings ({}). "
                 "Refusing to reuse it: mixing two sampling conditions into one "
-                "dataset is defect 57, and it is not visible in the products. "
+                "dataset is the failure, and it is not visible in the products. "
                 "Delete it or pass --force-crest.".format(workdir, why))
 
     fb = c.get("shake_fallback") or {}
@@ -324,7 +324,7 @@ def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=Non
                molecule_dir=None):
     """Tighten, dedup, Hessian-screen, and label. Returns (record, basins, mol).
 
-    `molecule_dir`: where MACE's engine files go (`mace/confNN`, `mace/basinNN`; ADR 0001).
+    `molecule_dir`: where MACE's engine files go (`mace/confNN`, `mace/basinNN`).
     """
     pkg1, pkg2 = cfg["package1"], cfg["package2"]
     fmax = float(pkg2["fmax_hessian_eV_A"])
@@ -337,10 +337,10 @@ def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=Non
 
     # ---- step 3: the reference geometry is pooled in as an independent start --------
     #
-    # With ETKDG retired (user ruling 2026-09-03) this is the ONLY starting point that
+    # With ETKDG retired this is the ONLY starting point that
     # does not come from CREST. Without it there is nothing left that could bound the
-    # systematic error plan_A section 1.2 records (+0.1209 mean, +0.5824 max kcal/mol
-    # for CREST-only), so it is not optional.
+    # systematic error the CREST-only route records (+0.1209 mean, +0.5824 max
+    # kcal/mol), so it is not optional.
     if reference_xyz is not None and Path(reference_xyz).exists():
         # config.read_qm9_xyz, not ase.io.read: QM9 files carry frequency, SMILES and
         # InChI lines after the atoms, and ASE reads those as a malformed second frame.
@@ -350,7 +350,7 @@ def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=Non
     n_reference_added = len(frames) - n_from_crest
 
     spec = cfg["species"].get(qid)
-    # CREGEN three-fold criterion (plan_A section 9). `rmsd_only` restores the pre
+    # CREGEN three-fold criterion. `rmsd_only` restores the pre
     # 2026-09-04 behaviour, which is kept reproducible rather than deleted.
     three_fold = pkg1.get("dedup_criterion", "cregen_three_fold") == "cregen_three_fold"
     ethr = float(pkg1["dedup_ethr_kcal"]) if three_fold else None
@@ -378,7 +378,7 @@ def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=Non
     # where CREST had reported 2.
     #
     # That is precisely the confusion acceptance criterion 7 exists to prevent
-    # (D0-P1-1, D0-95: CREST's conformer count is not the basin count), arriving
+    # (CREST's conformer count is not the basin count), arriving
     # from the opposite direction -- not the basin count borrowing CREST's number,
     # but CREST's number quietly absorbing ours. The three counts are now separate
     # and none of them is inferred from another.
@@ -390,7 +390,7 @@ def basin_list(qid, smiles, frames, comments, calc, cfg, args, reference_xyz=Non
                             - cv["n_basins_by_repo_criteria"])
 
     # ---- which basin did the reference geometry land in ----------------------------
-    # plan_A acceptance criterion 6. Reported as a basin index, or None if the
+    # Acceptance criterion 6. Reported as a basin index, or None if the
     # reference collapsed into something else during tightening.
     if n_reference_added:
         rec["reference_geometry_basin"] = _locate_reference(mol, rec, n_from_crest)
@@ -463,7 +463,7 @@ def label_basins(qid, basins, rec, cfg, args):
             thermo={k: v for k, v in g.items()},
             lowest_frequency_cm_inv=hrec["lowest_frequency_cm_inv"],
             n_imaginary=int(hrec["n_imaginary"]),
-            # The inversion window the census admitted this basin with (ticket 37):
+            # The inversion window the census admitted this basin with:
             # modes in [ithr, 0), inverted by `g_minus_eel` above, and never a mode
             # below ithr (that would be a saddle and would not be here).
             n_below_ithr=int(hrec["n_below_ithr"]),
@@ -482,7 +482,7 @@ def label_basins(qid, basins, rec, cfg, args):
 # Acceptance criteria, evaluated on the product itself
 # ======================================================================================
 def check_criteria(record, cfg_shake_fallback=None):
-    """plan_A section 4. Every one of these can fail, and says so if it does."""
+    """Every one of these can fail, and says so if it does."""
     c = record["crest"]
     rec = record["census"]
     basins = record["basins"]
@@ -544,7 +544,7 @@ def check_criteria(record, cfg_shake_fallback=None):
     # Passing does NOT mean "this was fast". It means the record says either "this
     # is a measured cost of this run" or "this reused a directory, so it is not a
     # cost of this run" -- and never leaves a reader to guess which. A wall clock
-    # with no such flag beside it is the thing defect 34 was made of.
+    # with no such flag beside it is the failure this flag exists to prevent.
     # Two ways to be unambiguous, and BOTH pass:
     #   valid is True  -> the number is a cost of this run, so the number must be there
     #   valid is False -> this reused a directory, so there is no cost to state, and a
@@ -564,7 +564,7 @@ def check_criteria(record, cfg_shake_fallback=None):
     # 4 -- no mode below ithr; the window modes are counted; exactly 6 rigid modes
     # removed, clean gap.
     #
-    # The screen admits what the frequency floor allows (ticket 37): a basin's lowest
+    # The screen admits what the frequency floor allows: a basin's lowest
     # mode may sit in the inversion window [ithr, 0) and the thermochemistry inverts it,
     # so `n_imaginary` alone is no longer a failure. What fails is a mode below ithr (a
     # saddle, which the screen must have ejected) or an unclean projection -- the rigid
@@ -627,7 +627,7 @@ def check_criteria(record, cfg_shake_fallback=None):
     #
     # NOT "constant across the whole sweep". The loose end of the sweep exists to
     # show where the method breaks, and on acetone it does: sigma goes 2 -> 14 at
-    # 0.40 A as the methyl rotor starts being admitted -- the D0-9 failure mode
+    # 0.40 A as the methyl rotor starts being admitted -- the graph-count failure mode
     # appearing exactly where it should. Demanding a flat sweep would report that
     # evidence as a failure. What is required is a plateau containing the working
     # tolerance, plus a positive margin below the nearest rejected operation.
@@ -691,7 +691,7 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
                     note="molecule rejected by the filters; nothing downstream ran")
 
     name = label or qid
-    # THE MOLECULE DIRECTORY (ADR 0001, 2026-09-14): one per (tag, molecule) under the
+    # THE MOLECULE DIRECTORY (2026-09-14): one per (tag, molecule) under the
     # root, one folder per engine inside it, this repository's records in _records/.
     # CREST's finished directory is <molecule>/crest/ (it RUNS node-local; see run_crest).
     from openqha.store import layout
@@ -754,7 +754,7 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
         msg = ("CREST produced no ensemble at {}. Its own report: terminated_normally="
                "{}, terminated EARLY={}".format(ens, crest_rec.get("terminated_normally"),
                                                 crest_rec.get("n_terminated_early")))
-        # One attempt per molecule (ticket 26, the frames' rule of ticket 24): the marker
+        # One attempt per molecule: the marker
         # keeps this molecule out of the next round's list; a human reads it and reruns.
         from openqha.store import basins as _basins
         first = crest_rec.get("first_attempt") or {}
@@ -798,8 +798,8 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
         census["reference_geometry_note"] = (
             "No deposited geometry exists for a SMILES-specified molecule, so step 3 "
             "pooled nothing and every structure below descends from CREST. The "
-            "systematic error plan_A section 1.2 records for a CREST-only ensemble "
-            "(mean +0.1209, max +0.5824 kcal/mol) is therefore UNBOUNDED here.")
+            "The CREST-only route's systematic error (mean +0.1209, max +0.5824 "
+            "kcal/mol) is therefore UNBOUNDED here.")
     labelled = label_basins(qid, basins, census, cfg, args)
 
     record = dict(
@@ -836,7 +836,7 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
     record["criteria"] = check_criteria(record, cfg["crest"].get("shake_fallback"))
     record["all_criteria_passed"] = all(c["passed"] for c in record["criteria"])
 
-    # ---- where the record goes (ADR 0001, 2026-09-14) --------------------------------
+    # ---- where the record goes (2026-09-14) ------------------------------------------
     # The engine files are already in place: mace/confNN and mace/basinNN under the
     # molecule directory, written by the census. This record -- everything this
     # repository has to say about the run -- goes to _records/ beside them, with the
@@ -855,7 +855,7 @@ def run_species(qid, cfg, args, calc, prov, smiles=None, label=None):
                   for i in range(len(basins))])
     record["output_dir"] = str(outdir)
     record["tag"] = args.tag
-    # The Record of this Calculation (records redesign, user ruling 2026-09-15):
+    # The Record of this Calculation (records redesign, 2026-09-15):
     # branchA.out is the Report a person reads, everything above expanded, last line the
     # terminal line; branchA.toml is the Property file a program reads, ORCA's
     # .property.txt shape (status, inputs, the result blocks a later step reads) and
@@ -988,12 +988,12 @@ def _basins_xyz_text(basins, labelled, qid, record):
 
 
 # ======================================================================================
-# A molecule that crashes leaves the marker too (ticket 26's rule, every crash)
+# A molecule that crashes leaves the marker too (every crash)
 # ======================================================================================
 def crash_marker_text(qid, tag, exc, when=None):
     """The text `_records/branchA.failed` carries when a molecule's pipeline raised.
 
-    Ticket 26 gave the missing-ensemble case a marker so a molecule is attempted once and
+    The missing-ensemble case has a marker so a molecule is attempted once and
     a human decides. Every other crash raised straight out of `main()` and left NOTHING:
     the molecule stayed in the pending list and every round ran it again. Measured
     2026-09-24 on Tianhe: three molecules whose archive groups were damaged (rc=1 in 21 s
@@ -1126,7 +1126,7 @@ def main():
         record = run_species(args.species, cfg, args, calc, prov,
                          smiles=args.smiles, label=label)
     except Exception as exc:                                                # noqa: BLE001
-        # Attempted once, decided by a human (ticket 26's rule, now for every crash --
+        # Attempted once, decided by a human (now for every crash --
         # see `crash_marker_text` for what ignoring this cost on 2026-09-24; a CREST
         # timeout is the one exception, see `crash_marker_applies`). Re-raised either
         # way: the traceback stays in the job's log and the worker exits non-zero.

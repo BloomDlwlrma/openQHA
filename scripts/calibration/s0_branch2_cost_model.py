@@ -83,7 +83,7 @@ def load_probes(paths):
                                 error=o.get("error")))
                 continue
             si = r.get("simple_input", "")
-            # **The level must travel with every point.** Defect 52 (2026-09-02): the first version
+            # **The level must travel with every point.** An earlier version
             # did not record the level, so it fitted 10-atom RIJK together with 15-atom RIJCOSX,
             # and RIJCOSX is about 3 times faster -- the scaling exponent was flattened to 1.06 and
             # the total cost underestimated more than twofold.
@@ -131,7 +131,7 @@ def main():
                 p["n_atoms"], p["qm9_index"], p["method"], p["n_basis"],
                 p["wall"]))
 
-    # **Fit only within one level.** A mixed-level exponent is meaningless (defect 52).
+    # **Fit only within one level.** A mixed-level exponent is meaningless.
     by_method = {}
     for r in good:
         by_method.setdefault(r["method"], []).append(r)
@@ -224,7 +224,7 @@ def main():
         projections=rows,
         by_size=json.loads(by.reset_index().to_json(orient="records")),
         note=("Model: wall = 6N * t0 * (N_basis/N0)^p. "
-              "**Fitted within one level only** -- mixing RIJK and RIJCOSX flattens the exponent (defect 52). "
+              "**Fitted within one level only** -- mixing RIJK and RIJCOSX flattens the exponent. "
               "**Two points fixing an exponent is thin**, so the sensitivity at p=3.0/3.5/4.0 is given as well. "
               "Basis functions are counted as spherical-harmonic cc-pVTZ, H=14 and C/N/O/F=30, "
               "checked against the probe molecule OC(C=O)C=O as 236, matching the ORCA output.")),

@@ -1,6 +1,6 @@
 # openQHA -- Tianhe site facts, recorded. RECORD ONLY -- no code reads this section; branch E's live settings are in hpc/.
 #
-# Split out of configs/openqha.yaml on 2026-09-04 (user ruling): that file
+# Split out of configs/openqha.yaml on 2026-09-04: that file
 # now holds ONLY global configuration and the `include:` index. This is a
 # MOVE, not a copy -- openqha/config.py raises if two files define the same
 # key -- and it was moved by byte range, so every comment and every measured
@@ -23,7 +23,7 @@
 # Cluster (Tianhe TianheXY-AI) -- site information supplied by the user on 2026-08-31
 # --------------------------------------------------------------------------------------
 # **This section RECORDS known site facts; it is not something the repository consults
-# automatically.** The job scripts are in .mem/plan/plan_pkg1-cluster-tianhe.md and are
+# automatically.** The job scripts live outside this repository and are
 # submitted by hand.
 cluster:
   name: "TianheXY-AI"
@@ -34,7 +34,7 @@ cluster:
     examples:
       - "yhrun -p <partition> -G 1 hostname"
       - "yhbatch -p <partition> -G <number of GPUs> <script>"
-    max_walltime_per_job_days: 7      # user, 2026-08-31: any single job under 7 days is fine
+    max_walltime_per_job_days: 7      # any single job under 7 days is fine
     note: >
       The site announcement says the hx/h100x/a100x/a800x/v100x partitions allocate at
       **GPU card** granularity, and the scheduler hands out that many cards per -G.
@@ -44,7 +44,7 @@ cluster:
   partitions:
     - name: "h100x"
       kind: "gpu"
-      note: "H100 80 GB; 1 GPU / 14 CPUs / 240 GB (D0-56). **Billed per GPU**"
+      note: "H100 80 GB; 1 GPU / 14 CPUs / 240 GB. **Billed per GPU**"
     - name: "a100x"
       kind: "gpu"
     - name: "a800x"
@@ -63,8 +63,8 @@ cluster:
       with conda/pip is workable and an Apptainer image is not needed. This settles the
       "software environment" item the plan had left open.
   scratch:
-    # The form the user specified on 2026-08-31 (copied from the ORCA_SCR pattern they
-    # gave): prefer $TMPDIR (node-local NVMe/SSD), fall back to /tmp, and
+    # Copied from the site's ORCA_SCR pattern: prefer $TMPDIR (node-local NVMe/SSD),
+    # fall back to /tmp, and
     # **never write temporary files on Lustre**.
     prefer: "$TMPDIR"
     fallback: "/tmp"
@@ -77,7 +77,7 @@ cluster:
     - "ulimit -l unlimited  -- the site script notes that the parallel run fails without it"
     - "export GLEX_USE_ZC_RNDV=0  -- present in the site script; related to the GLEX network"
     - "CUDA 11.8 and gcc 11.4 are already available (conda environment cuda11) and can be used for building directly"
-  # ---- Staging (user ruling 2026-08-31) ------------------------------------------------
+  # ---- Staging -------------------------------------------------------------------------
   # Stage one puts CREST sampling on a pure CPU partition; stage two (tightening +
   # Hessian) is where it is worth asking whether a GPU pays for itself.
   # The products of the two stages land in **different subdirectories of the same result

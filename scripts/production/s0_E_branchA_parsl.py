@@ -9,7 +9,7 @@ keep this file free of chemistry.
 
 Step 0 before anything else
 ---------------------------
-plan_E section 7: "step 0 comes before any action on a cluster". So the default
+The rule is "step 0 comes before any action on a cluster", so the default
 resource configuration is `local`, and moving to a cluster changes one argument:
 
     python scripts/production/s0_E_branchA_parsl.py --species dsgdb9nsd_000018
@@ -28,7 +28,7 @@ Two ways to look before you leap, and only one of them is the gate
 `--dry-run` prints the plan and touches nothing. It is useful for reading what would be
 submitted, and it is NOT the gate before production.
 
-**The gate is `--debug`** (user ruling 2026-09-07): the same command, on the site's short
+**The gate is `--debug`**: the same command, on the site's short
 partition, at a 30-minute walltime, capped at one allocation.
 
     --debug on tianhe_cpu   partition debug, 00:30:00, 1 node   (production: deimos, 3 days)
@@ -72,7 +72,7 @@ def _hpc_root(repo):
     name would have had to be edited twice.
 
     This is the same failure as the `scripts/` reorganisation and the `source-code/`
-    move (S0-G-30): `_repo_root()` fixed the package import, and every path written as
+    move: `_repo_root()` fixed the package import, and every path written as
     a literal string stayed behind. **A name written into a string does not move with
     the thing it names.**
     """
@@ -115,7 +115,7 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
       * the driver's own stdout is captured verbatim per molecule, so a failure can
         be read without reconstructing it;
       * the command line that produced a result is recorded literally, which is the
-        thing that was missing in defect 57.
+        thing that was missing then.
 
     The Record is written by the driver itself into the molecule directory (_records/).
     What comes back here is only enough to build the summary table.
@@ -217,7 +217,7 @@ def run_one_molecule(qm9_index, repo_root, tag, threads, timeout_s, hessian_mode
         summary["stdout_tail"] = "\n".join(proc.stdout.splitlines()[-25:])
         summary["stderr_tail"] = "\n".join(proc.stderr.splitlines()[-25:])
     # The Calculation's stdout, beside its Record: _records/driver.log next to branchA.out
-    # (user ruling 2026-09-15, ticket 21). Until then it went into the repository
+    # Until then it went into the repository
     # checkout, analysis/branchA/<tag>/<qid>/driver.log, a Batch writing where no run
     # output belongs.
     log = out.parent / "driver.log"
@@ -451,12 +451,12 @@ def main():
     _bt.print_table(results, extra=(("n_basins", 6, ">"), ("CREST", 5, ">"), ("fallback", 8, ">"), ("verdict", 7, "<")))
 
     ok = [r for r in results if r.get("all_criteria_passed")]
-    # THREE cost numbers, kept apart on purpose (D0-P1-12; defects 34 and 56): the batch
+    # THREE cost numbers, kept apart on purpose: the batch
     # wall (footer), each task's seconds (the table), and a slot extrapolation that is NOT
     # computed: dividing the batch wall by the worker count describes neither one
     # molecule nor the batch.
 
-    # A Batch leaves no record of its own (user ruling 2026-09-15, Q4 (b)): the table above,
+    # A Batch leaves no record of its own: the table above,
     # in the Slurm log, is its report. analysis/branchE/<tag>/batch.json is gone.
     print()
     for l in _bt.footer(wall, len(ok), len(results)):

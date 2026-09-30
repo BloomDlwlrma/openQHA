@@ -4,7 +4,7 @@
  ! if 'fname' contains the wildcard '*', the remove is ignored
  !--------------------------------------------------------------
    subroutine remove(fname)
-+!>--- P2 (stage 0 patch, D0-49): deleting something that is not there must be
++!>--- P2 (stage 0 patch): deleting something that is not there must be
 +!>    a no-op, not a crash.  Upstream opened the file with no iostat, so a
 +!>    missing PARENT DIRECTORY produced
 +!>      Fortran runtime error: Cannot open file ...
@@ -29,7 +29,7 @@
  ! make a directory via iso_c_binding
  !-------------------------------------------------------------------------
    function makedir(str)
-+!>--- P1 (stage 0 patch, D0-49): create the directory RECURSIVELY and return a
++!>--- P1 (stage 0 patch): create the directory RECURSIVELY and return a
 +!>    status that callers can actually check.
 +!>    Upstream called the C mkdir() exactly once, non-recursively, and every
 +!>    call site threw the return value away.  A nested calculation space such

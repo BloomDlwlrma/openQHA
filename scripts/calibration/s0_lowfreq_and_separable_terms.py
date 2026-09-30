@@ -5,10 +5,10 @@ low-frequency mode. Its output is the size of a contribution to the error bar.
 
 It answers two questions:
 
-  Question 1  Delta G must carry all four of translation / rotation / vibration / electronic. Do the lecture notes s0-1 have only vibration?
-          -> No. Rotation is computed in s0-1 section 6.6 (rigid rotor + an explicit external symmetry number);
+  Question 1  Delta G must carry all four of translation / rotation / vibration / electronic. Do the lecture notes have only vibration?
+          -> No. Rotation is computed in the lecture notes section 6.6 (rigid rotor + an explicit external symmetry number);
              translation and electronic degeneracy are *claimed* in section 2.1 to "cancel exactly", but that is only a **claim in prose**.
-             Skills section 2.1 requires "it must be asserted explicitly, not merely stated in a comment" --
+             The standing rule is "it must be asserted explicitly, not merely stated in a comment" --
              part A of this script turns those two claims into assertions that can fail.
 
   Question 2  A low-frequency mode weighs about 4 times a high-frequency one. How is the low-frequency end solved?
@@ -23,7 +23,7 @@ Products:
     analysis/lowfreq_and_separable_terms.json
     analysis/lowfreq_hindered_rotor.png
 
-The parameter classes (skills section 1.4) are in PARAMETER_TABLE at the end of this file.
+The parameter classes are in PARAMETER_TABLE at the end of this file.
 This script calls no potential, so it is not blocked by Egret-1 being absent.
 """
 import json
@@ -66,7 +66,7 @@ ROT_CONST_AMU_A2 = 16.857629046     # = h / (8 pi^2 c), converted to amu*A^2 and
 EDGE = "C2H5O1N1_19_36"
 SPECIES = {"acetamide": "CC(N)=O", "N-methylformamide": "CNC=O"}
 
-# External symmetry number: declared explicitly, never derived automatically (skills section 2.2)
+# External symmetry number: declared explicitly, never derived automatically
 SYMMETRY_NUMBER = {"acetamide": 1, "N-methylformamide": 1}
 
 # Electronic degeneracy g0 = the spin multiplicity. Same principle as the symmetry number: declared explicitly; a missing one refuses to run.
@@ -168,14 +168,14 @@ def part_a():
     assert d_elec == 0.0, "Delta A_elec is non-zero: {!r}".format(d_elec)
     print("       assertion passed: both are closed-shell singlets -> g0 = 1 -> the term is identically 0")
     print()
-    print("  3) rotation: does not cancel; already computed in lecture notes s0-1 section 6.6 as a rigid rotor with an explicit sigma")
+    print("  3) rotation: does not cancel; already computed in the lecture notes section 6.6 as a rigid rotor with an explicit sigma")
     print("  4) vibration/conformers: does not cancel, and is exactly what stage 0 computes (section 6.5, density-of-states weighted)")
     print()
 
-    # --- an example this assertion ought to fail on (skills section 2.4(a)) --------------
+    # --- an example this assertion ought to fail on ---------------------------------------
     #
     # The first version of this check used an invented threshold |Delta| > 0.1 kcal/mol and fired at once.
-    # Traced per skills section 2.4(b): what fired was not a real error but **the aperture of the criterion itself** --
+    # Traced down: what fired was not a real error but **the aperture of the criterion itself** --
     # the translational term depends on mass only as -(3/2) kT ln(m'/m), and 1 amu is worth just 0.0149 kcal/mol.
     # Changed to compare against the analytic form: the counter-example must (i) be non-zero, since the
     # assertion above is digit-for-digit equality, and (ii) equal -(3/2) kT ln(m'/m) exactly. That is a derived criterion, not an invented threshold.
@@ -212,7 +212,7 @@ def part_a():
 # ================================================================================
 
 def embed(smiles, seed=0xC0FFEE):
-    """The same recipe as lecture notes s0-1: ETKDGv3 + MMFF94. Used only to obtain a geometry; it produces no energy."""
+    """The same recipe as the lecture notes: ETKDGv3 + MMFF94. Used only to obtain a geometry; it produces no energy."""
     from rdkit import Chem
     from rdkit.Chem import AllChem
     mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
@@ -572,7 +572,7 @@ PARAMETER_TABLE = [
     dict(name="P_STD", value=1.0e5, unit="Pa", classification="literature value",
          note="the IUPAC 1 bar standard state; it enters only the translational term, which is identically 0 on this edge"),
     dict(name="SIGMA_INTERNAL_METHYL", value=3, unit="1", classification="derived criterion",
-         note="the three-fold axis of the methyl top itself; counted separately from the external symmetry number, see skills section 2.2"),
+         note="the three-fold axis of the methyl top itself; counted separately from the external symmetry number, "),
     dict(name="ELECTRONIC_DEGENERACY", value="declared explicitly", unit="1",
          classification="modifiable convention",
          note="the spin multiplicity. A missing one refuses to run and there is no default -- the same principle as the external symmetry number"),

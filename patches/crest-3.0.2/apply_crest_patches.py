@@ -1,6 +1,6 @@
-"""把 D0-49 的 P1/P2/P3 施加到 CREST 的**构建副本**上。
+"""把 P1/P2/P3 施加到 CREST 的**构建副本**上。
 
-vendored 源码 (`../source-code/crest-master`) 一个字都不改 —— 这是 D0-49 的约束。
+vendored 源码 (`../source-code/crest-master`) 一个字都不改 —— 这是这套补丁的约束。
 本脚本只动 ~/crest_build/crest-patched。
 """
 import sys
@@ -21,7 +21,7 @@ OLD_MAKEDIR = """  function makedir(str)
   end function makedir"""
 
 NEW_MAKEDIR = """  function makedir(str)
-!>--- P1 (stage 0 patch, D0-49): create the directory RECURSIVELY and return a
+!>--- P1 (stage 0 patch): create the directory RECURSIVELY and return a
 !>    status that callers can actually check.
 !>    Upstream called the C mkdir() exactly once, non-recursively, and every
 !>    call site threw the return value away.  A nested calculation space such
@@ -69,7 +69,7 @@ OLD_REMOVE = """  subroutine remove(fname)
   end subroutine remove"""
 
 NEW_REMOVE = """  subroutine remove(fname)
-!>--- P2 (stage 0 patch, D0-49): deleting something that is not there must be
+!>--- P2 (stage 0 patch): deleting something that is not there must be
 !>    a no-op, not a crash.  Upstream opened the file with no iostat, so a
 !>    missing PARENT DIRECTORY produced
 !>      Fortran runtime error: Cannot open file ...

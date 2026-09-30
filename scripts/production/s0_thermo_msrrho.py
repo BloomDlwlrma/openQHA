@@ -1,26 +1,25 @@
 """msRRHO free energy of one molecule: the MACE level, the reference level, the comparison.
 
-PRODUCTION. One Calculation per invocation, on one molecule directory (ADR 0001) found
+PRODUCTION. One Calculation per invocation, on one molecule directory, found
 from --species and --tag; records go to the molecule's thermo folder `msrrho/thermo/`
-(ADR 0004, flat since 2026-09-20: `<level>.<step>.<ext>`). Three steps, each a separate
+(flat since 2026-09-20: `<level>.<step>.<ext>`). Three steps, each a separate
 --step so a Batch can run them on different machines (the reference level needs ORCA; the
 other two need nothing but the files):
 
-    mace             msrrho/thermo/mace-off23_medium.{degeneracy,thermo_msrrho}.*       (ticket 24)
+    mace             msrrho/thermo/mace-off23_medium.{degeneracy,thermo_msrrho}.*
     reference        msrrho/orca.<level>.basinNN.*  msrrho/thermo/<level>.{thermo_msrrho.*,merge_map.dat}
-                                                                                (ticket 26)
     hessian_compare  mace/basinNN/{hessian,forces}_at_<level>.npy  msrrho/thermo/hessian_compare.*
-                     (the MACE Hessian at the reference geometry, ticket 27; needs MACE)
-    compare          msrrho/thermo/level_compare.*                               (ticket 26/27)
+                     (the MACE Hessian at the reference geometry; needs MACE)
+    compare          msrrho/thermo/level_compare.*
     mode_curvature   msrrho/orca.<level>.basinNN.modeII_k*.*  msrrho/thermo/<level>.mode_curvature_dryrun.*
                      (the higher level's curvature along the wB97M modes from energies,
-                     the dry run before a numerical Hessian; ticket 32)
+                     the dry run before a numerical Hessian)
     write_jobs       <jobs-dir>/<species>_<level>/{*.inp,worker.sh,run.sbatch,README.md}
                      (the hkuhpc bundle of a numerical reference level; not submitted here)
 
 The reference level is `wb97m-d3bj_def2-tzvppd` (`! wB97M-D3BJ def2-TZVPPD TightOpt Freq
 TightSCF`, the analytic Hessian; ORCA 6.0.1 measured 226 s for propanal basin 0 on 8
-cores). Production reference calculations run on deimos with ORCA 6.1.1 (D0-75); a
+cores). Production reference calculations run on deimos with ORCA 6.1.1; a
 local run is a dry run and says so through the ORCA version in the record. A finished
 basin is never recomputed, so a killed Batch resumes where it stopped.
 
@@ -54,7 +53,7 @@ def main():
     ap.add_argument("--step", required=True,
                     choices=("mace", "reference", "hessian_compare", "compare", "mode_curvature", "write_jobs"))
     ap.add_argument("--level", default=None,
-                    help="level name (CONTEXT.md spelling). For reference / hessian_compare / compare: the reference "
+                    help="level name. For reference / hessian_compare / compare: the reference "
                          "level (default {}); for mode_curvature / write_jobs: the HIGHER level probed at the "
                          "reference geometry (default dlpno-ccsdt_cc-pvtz)".format(engine.REFERENCE_LEVEL))
     ap.add_argument("--keywords", default=None,

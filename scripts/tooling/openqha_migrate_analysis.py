@@ -1,6 +1,6 @@
 """Move superseded artifacts under analysis/_superseded/. Move-only, and reversible.
 
-TOOLING. Branch D, plan_D section 8.6 step 3. Produces no science.
+TOOLING. Produces no science.
 
 What it moves, and what it deliberately does not
 ------------------------------------------------
@@ -11,14 +11,14 @@ That restraint is the point. Filing the live artifacts into production/ and
 calibration/ subdirectories would break the scripts that write them, and those
 scripts would simply re-scatter new files across the top level on their next run.
 Tidying without the write-time rule recreates the mess; the write-time rule is
-`openqha/artifacts.py::write_artifact` (plan_D section 8.4) and it is not written yet.
+`openqha/artifacts.py::write_artifact` and it is not written yet.
 So: move what is finished, leave what is live, and say so.
 
 Reversibility
 -------------
 Every move is appended to `analysis/MIGRATION_MANIFEST.csv` (old path, new path,
 timestamp). `--undo` replays that file backwards. Nothing is ever deleted; this
-repository is not under git (S0-G-9), so move-and-manifest is the only rollback there is.
+repository is not under git, so move-and-manifest is the only rollback there is.
 
 Usage
 -----
@@ -175,20 +175,20 @@ def main():
     (dest_root / "README.md").write_text(
         "# `analysis/_superseded/`\n\n"
         "Artifacts of routes that have been ruled out. **Kept, never deleted** --\n"
-        "`memory-discard.md` section 7: a refuted result is written down so it is not\n"
+        "A refuted result is written down so it is not\n"
         "re-cited as live. Nothing here may be quoted as a current number.\n\n"
         "| route | why it was ruled out |\n|---|---|\n"
         "| `engine_MACE-OFF23-SC_basins` | Basins are minima on MACE-OFF23-SC; the engine "
-        "changed to MACE-OFF23_medium (S0-A-16), so they are no longer stationary points. |\n"
-        "| `etkdg_census` | ETKDG conformer generation retired (S0-A-3). |\n"
-        "| `near_critical_gas_box` | Multi-molecule near-critical route withdrawn in full "
-        "(D0-P3-19): two amides required 642-674 K and mode-resolved temperatures were "
+        "changed to MACE-OFF23_medium, so they are no longer stationary points. |\n"
+        "| `etkdg_census` | ETKDG conformer generation retired. |\n"
+        "| `near_critical_gas_box` | Multi-molecule near-critical route withdrawn in full: "
+        "two amides required 642-674 K and mode-resolved temperatures were "
         "587-849 K against a 450 K target. |\n"
         "| `option_b_dos_perturbation` | VDOS route refuted by its own null control "
-        "(D0-P2-13): noise floor 10.04 / 16.74 kcal/mol, larger than the signal. |\n"
-        "| `branch1_metadynamics` | Branch 1 archived (D0-C-38). |\n"
-        "| `first_edge_assembly` | First assembled edge (D0-25); electronic term SUPERSEDED "
-        "by D0-26. |\n\n"
+        "the noise floor 10.04 / 16.74 kcal/mol, larger than the signal. |\n"
+        "| `branch1_metadynamics` | Branch 1 archived. |\n"
+        "| `first_edge_assembly` | First assembled edge; its electronic term is "
+        "SUPERSEDED. |\n\n"
         "Moves are recorded in `../MIGRATION_MANIFEST.csv` and reversible with\n"
         "`python scripts/tooling/openqha_migrate_analysis.py --undo`.\n",
         encoding="utf-8")

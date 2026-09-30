@@ -11,14 +11,14 @@ The scope was ruled on twice, the second revising the first. Both are recorded h
     restores the capability: central differences of the **composite forces** give a composite Hessian, which then goes through the same Eckart projection and diagonalisation as package 2.
     **Off by default**; when switched on it first shows you the cost of `6N x (pool size)`
     single points, and without `--hessian-confirm-cost` it reports that cost and runs nothing.
-    The "too expensive" ruling was about **treating frequencies as a production reference quantity**, not about forbidding the capability.
+    The "too expensive" argument was about **treating frequencies as a production reference quantity**, not about forbidding the capability.
 
 Two measures, on different terms, which must be kept apart:
 
 * **Forces** -- compared component by component, in eV/Angstrom, on the same terms as Allen et al.
     (their 0.073 eV/Angstrom is "the root-mean-square error of each force component").
     **They can only be read on structures away from a minimum** -- at a MACE minimum the MACE force
-    is about zero by construction, the "deviation" is identically the reference force, and what is measured is the geometric difference of two minima, not force accuracy (`D0-81`).
+    is about zero by construction, the "deviation" is identically the reference force, and what is measured is the geometric difference of two minima, not force accuracy.
 * **Energies** -- **only relative quantities are comparable**. The absolute energy of MACE and of
     coupled cluster have different zeros, so subtracting them is meaningless. What is comparable:
     **energy differences between conformers of one species**, **the energy of a thermally displaced structure relative to its own parent minimum**, and the reaction energy between two species of the same formula.

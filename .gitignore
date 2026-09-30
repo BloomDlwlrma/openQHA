@@ -1,7 +1,7 @@
 # openQHA — what does not go into version control
 
 # ---- the decision log --------------------------------------------------------------
-# .mem/ is this project's working memory: plans, checkpoints, the decision log. 
+# the project's working memory is kept out of version control.
 .mem/
 # docs/*.md
 !docs/cite/
@@ -28,7 +28,7 @@ source-code/
 analysis/
 runs/
 *.parquet
-# the training-set membership index (ticket 30) ships with the repository whatever its
+# the training-set membership index ships with the repository whatever its
 # format: it is what answers "is this molecule in MACE-OFF23's training set" without
 # the 5.2 GB source files
 !data/training_sets/*.parquet

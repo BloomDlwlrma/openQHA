@@ -19,7 +19,7 @@
 # PARTITION and KIND come from the `.slurm` that launched this (they are properties of
 # the job, not of the science), and fall back to the conf when run locally.
 # =======================================================================================
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# `set -eo pipefail` is deliberately not used: a failing step must not end the job.
 # NOT `set -u`: the conda GROMACS activation hook fails under it and leaves the
 # environment half-built while the script carries on. Measured 2026-09-03.
 
@@ -31,8 +31,8 @@ fi
 cd "$ROOT" || { echo "openQHA: cannot cd to $ROOT" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------------------
-# `set -e` was removed project-wide on 2026-09-13 (user ruling, after an optional lookup
-# ended a job silently). The other half of that ruling is this: a step whose PRODUCT the
+# `set -e` is deliberately not used project-wide: an optional lookup once ended a job
+# silently. The other half of the rule is this: a step whose PRODUCT the
 # next step consumes must still stop the chain when it fails -- explicitly, by name, with
 # its exit code -- or `collect` runs on a half-written store and the job ends "successfully".
 # Everything that is not such a step (a diagnostic, a lookup, a copy-back) is allowed to
@@ -57,7 +57,7 @@ source "$CONF"
 
 SPECIES="${SPECIES:?the conf must set SPECIES}"
 TAG="${TAG:-chain}"
-SEEDS="${SEEDS:-1}"          # one trajectory per (molecule, basin): ruling 2026-09-13
+SEEDS="${SEEDS:-1}"          # one trajectory per (molecule, basin)
 THREADS="${THREADS:-4}"
 CHAIN="${CHAIN:-qha}"
 
@@ -231,8 +231,8 @@ fi
 source hpc/env/require.sh
 
 # parsl's run directory: a record about the job, not about a molecule, so it goes with
-# the tag's other per-tag records, <root>/<tag>/_records/parsl/<job>.<pid>/ (user ruling
-# 2026-09-14 on per-tag leftovers), one per process. NOT under the checkout: parsl chmods
+# the tag's other per-tag records, <root>/<tag>/_records/parsl/<job>.<pid>/,
+# one per process. NOT under the checkout: parsl chmods
 # its certificates directory to 0700, which a Windows drive under WSL refuses (measured
 # 2026-09-15), and the root is on a filesystem that honours modes on every site.
 export S0_PARSL_RUN_DIR="${S0_PARSL_RUN_DIR:-${S0_RUNS_ROOT:-$HOME/runs/openQHA}/$TAG/_records/parsl/${SLURM_JOB_ID:-pid$$}.$$}"
@@ -245,7 +245,7 @@ openqha_require_modules numpy || {
 }
 
 # ---------------------------------------------------------------------------------------
-# NO COPY-BACK (ADR 0002, 2026-09-14). The molecule tree is written once, on the shared
+# NO COPY-BACK (2026-09-14). The molecule tree is written once, on the shared
 # filesystem, at $S0_RUNS_ROOT (hpc/env/root.sh derives it from the partition). Until
 # 2026-09-14 this block installed an EXIT/TERM/INT trap that copied the whole per-job
 # scratch into logs/node_local/<jobid>/ with a MANIFEST.txt; the scratch existed for

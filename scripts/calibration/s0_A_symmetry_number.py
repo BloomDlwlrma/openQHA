@@ -1,6 +1,6 @@
 """Validate openqha/symmetry.py -- the geometry-derived symmetry number.
 
-CALIBRATION. Branch A, plan_A section 2.5. It produces the numbers used to decide
+CALIBRATION. Branch A. It produces the numbers used to decide
 whether the module may be trusted in production; it produces nothing that enters a
 deliverable.
 
@@ -9,13 +9,13 @@ Three parts, and the second one is the point
 1. AGREEMENT  -- the seven species whose sigma we declared by hand are the only
    answers we know independently. The detector must reproduce all seven.
 
-2. EXAMPLES IT MUST FAIL -- skills section 2.4(a): a new criterion that has only
+2. EXAMPLES IT MUST FAIL: a new criterion that has only
    ever passed has not been tested. So this script also runs cases where a WRONG
    implementation would give a specific, known-wrong answer:
 
      * ethane      graph automorphism = 18, correct sigma = 6.  A module that
                    counted automorphisms would print 18 here. This is the exact
-                   failure D0-9 was written about.
+                   failure this check exists to catch.
      * methane     graph automorphism = 24, correct sigma = 12 (Td has 12 proper
                    rotations; the other 12 operations are improper).
      * benzene     graph automorphism = 24, correct sigma = 12 (D6h).
@@ -71,16 +71,16 @@ DISPLACEMENTS_A = (0.0, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20)
 #: `forbidden_answer` what a graph-automorphism count prints instead, MEASURED by
 #:                    this script on 2026-09-03, not quoted from anywhere.
 #:
-#: A note on D0-9's "ethane 18": that figure counts only the cyclic rotations of
+#: A note on the "ethane 18" figure: it counts only the cyclic rotations of
 #: the two methyls times the C2 (3 x 3 x 2). The FULL automorphism group of the
 #: ethane graph is 3! x 3! x 2 = 72, which is what an implementation calling
 #: `GetSubstructMatches(mol, uniquify=False)` actually returns and what this
-#: script measures. D0-9's conclusion is unchanged and its size estimate is if
+#: script measures. The conclusion is unchanged and the size estimate is if
 #: anything understated: the error is a factor 12, not 3.
 KNOWN_CASES = (
     dict(name="C2H6",  label="ethane",   point_group="D3d", expected_sigma=6,
          forbidden_answer=72,
-         note="D0-9's own example. The rigid subgroup is D3d (12 ops, 6 proper); "
+         note="The reference example. The rigid subgroup is D3d (12 ops, 6 proper); "
               "the other 60 automorphisms are internal-rotor and H-permutation "
               "symmetry and are not external symmetry."),
     dict(name="CH4",   label="methane",  point_group="Td",  expected_sigma=12,
@@ -91,7 +91,7 @@ KNOWN_CASES = (
     dict(name="C6H6",  label="benzene",  point_group="D6h", expected_sigma=12,
          forbidden_answer=12,
          note="Automorphism count happens to equal sigma here, so this is NOT a "
-              "discriminating case for D0-9. It is in the list because it is "
+              "discriminating case for the automorphism count. It is in the list because it is "
               "planar: it is one of the cases that caught the degenerate-"
               "determinant defect on 2026-09-03 (it printed 2)."),
     dict(name="H2O",   label="water",    point_group="C2v", expected_sigma=2,

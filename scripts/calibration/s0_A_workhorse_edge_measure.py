@@ -3,8 +3,7 @@
 CALIBRATION. Branch A, step 1: the cost of one edge under a given workhorse. It
 produces a number used to choose settings, and nothing that enters a deliverable.
 
-Branch A, step 1. User ruling 2026-09-03: "start measure GFN2-XTB and mace opt in
-one edge".
+Branch A, step 1: measure GFN2-xTB and the MACE refinement on one edge.
 
 What this measures, and what it deliberately does NOT
 -----------------------------------------------------
@@ -18,10 +17,10 @@ It runs CREST `imtd-gc` on both species of a single edge, under a chosen workhor
 
 and nothing else. It does not run the downstream tighten/dedup/Hessian stage --
 that is `openqha/crest_census.py` and it is a separate, separately-measured cost
-(D0-P1-24: after the switch to refine=sp the analysis stage became the bottleneck,
+(after the switch to refine=sp the analysis stage became the bottleneck,
 78% of one molecule's total).
 
-Cost numbers are bound to their measurement conditions, per D0-P1-12 and defect 34:
+Cost numbers are bound to their measurement conditions:
 the record carries the machine load, the thread count and whether any scratch
 directory was reused. Do NOT divide a serial number by a process count.
 
@@ -77,14 +76,14 @@ def edge_species(edge_id):
 def load_start_geometry(qm9_index, dest):
     """Copy the reference geometry for one species into `dest` as `<index>.xyz`.
 
-    The repo ships the 7 target species' reference geometries (D0-41), so this
+    The repo ships the 7 target species' reference geometries, so this
     needs no external data.
     """
     src = S0_ROOT / "data" / "reference-geometries" / "{}.xyz".format(qm9_index)
     if not src.exists():
         raise FileNotFoundError(
             "reference geometry not found: {}\n"
-            "The repo ships only the 7 stage-0 species (D0-41); for anything else "
+            "The repo ships only the 7 stage-0 species; for anything else "
             "run scripts/tooling/s0_prepare_data.py first.".format(src))
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -95,7 +94,7 @@ def load_start_geometry(qm9_index, dest):
 def machine_load():
     """1-minute load average and core count -- the measurement conditions.
 
-    A cost number without these is not reportable (D0-P3-6: two earlier benchmarks
+    A cost number without these is not reportable (two earlier benchmarks
     differing by 4.5x were both contaminated by an unrecorded competing job).
     """
     try:
@@ -164,7 +163,7 @@ def run_one(qm9_index, outdir, cfg, args):
     record["relative_energies_kcal"] = relative_energies_kcal(
         workdir / "crest_conformers.xyz")
     record["n_conformers_crest_reports"] = len(record["relative_energies_kcal"])
-    # D0-P1-1 / D0-95: CREST's conformer count is NOT the basin count. What
+    # CREST's conformer count is NOT the basin count. What
     # survives cregen includes unconverged duplicates. The basin count only exists
     # after openqha/crest_census.py tightens to fmax=1e-4 and dedups. Naming the field
     # this way is the whole point.
@@ -252,7 +251,7 @@ def main():
         "identity": (
             "Cost measurement only. The downstream tighten/dedup/Hessian stage "
             "(openqha/crest_census.py) is NOT included and is a separate cost. "
-            "CREST's conformer count is not the basin count (D0-P1-1, D0-95)."
+            "CREST's conformer count is not the basin count."
         ),
     }
     out = outdir / "measurement.json"

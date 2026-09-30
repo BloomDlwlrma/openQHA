@@ -1,11 +1,11 @@
 """Pack the curated QM9 directory (133 661 xyz files) into ONE HDF5, one group per
-molecule (ticket 17; layout ruled 2026-09-21, `curated_qm9` module docstring).
+molecule (layout fixed 2026-09-21, `curated_qm9` module docstring).
 
 TOOLING. For every file (the repairs winning over the originals exactly as the directory
 lookup decides) the group `dsgdb9nsd_%06d` gets the parsed geometry (`species`,
 `positions` in A, the Mulliken `charges` -- NaN for a repaired file, which carries none),
 the `frequencies`, the two SMILES and two InChI as attributes, `repaired` and the
-archive's own `source_file` name. Not stored (rulings 2026-09-21): the property row
+archive's own `source_file` name. Not stored: the property row
 (line 2; nothing reads it) and the file's text (it doubled the size: the parsed form is
 what `curated_qm9.find()` renders back into a QM9 file for the readers). File attributes:
 the source, N, the census per naming pattern, a sha256 of all the source text, the date.

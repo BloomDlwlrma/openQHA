@@ -3,7 +3,7 @@
 TOOLING. Reads every curated QM9 xyz (133,660 files; the relaxed SMILES line), classifies
 it with `configs/structure_classes.yaml`, prints one row per class (census, quoted, ratio)
 and flags a class more than 10 % off its quoted count as SUSPECT -- the check of the
-SMARTS before any draw (ticket 05; round 5, Q2 (a)). `--membership` runs the same census
+SMARTS before any draw. `--membership` runs the same census
 over the gated-target table instead (119,450 rows, seconds).
 
     python scripts/tooling/s0_structure_census.py                 # all curated QM9 (minutes)
@@ -12,7 +12,7 @@ over the gated-target table instead (119,450 rows, seconds).
     python scripts/tooling/s0_structure_census.py --write         # + the per-molecule table (below)
 
 `--write` also writes the per-molecule table `data/training_sets/qm9_structure_classes.dat`
-(the repository's .dat form, ADR 0003; a `.csv` twin beside it): one row per curated QM9
+(the repository's .dat form; a `.csv` twin beside it): one row per curated QM9
 file -- qm9_index, gdb17_smiles, relaxed_smiles, n_heavy, target (passes the branch A
 gates: a row of qm9_targets_membership.dat), in_training (SPICE, for targets), classes
 (';'-joined). 133,660 rows, ~15 MB; the answer to "which QM9 molecules does each class

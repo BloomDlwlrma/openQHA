@@ -27,7 +27,7 @@
 # =====================================================================================
 # NETWORK ON TIANHE: THE PROXY IS THE ONLY THING THIS SCRIPT SETS
 # =====================================================================================
-# USER RULING 2026-09-08: conda goes through the TUNA mirror, and ~/.condarc is not this
+# Conda goes through the TUNA mirror, and ~/.condarc is not this
 # script's to rewrite. The same file is in place on all three clusters (TianheXY-CN, -A,
 # -AI) and maps `conda-forge` to <TUNA>/anaconda/cloud. With `nodefaults` in the
 # environment files, that TUNA path is the only channel a solve here touches.
@@ -97,7 +97,7 @@
 # and let hpc/env/tianhe.sh do the activation -- it also unwinds a stacked activation,
 # which is the one way to get both BLAS libraries onto a single loader path.
 #
-# NOT A CONTRADICTION OF THE 2026-09-05 "one environment" RULING. That ruling was about
+# NOT A CONTRADICTION OF THE "one environment" SETUP: it was about
 # the WORKSTATION, where there is no CUDA torch and (b) never bites, and it stands:
 # environment.yml still holds CREST, xtb, MACE and the OpenMM route together, and the
 # bit-identical fingerprint that justified it is still in
@@ -137,7 +137,7 @@
 # NOTE: no `set -u`. The conda GROMACS activation hook fails under it
 # ("GMXRC: line 10: shell: unbound variable") and the environment is then only half
 # built while the script carries on. Measured 2026-09-03.
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# `set -eo pipefail` is deliberately not used: a failing step must not end the job.
 
 MODE="local"
 PY_ENV="${OPENQHA_ENV:-openqha}"
@@ -163,7 +163,7 @@ for arg in "$@"; do
                          PY_ENV="${OPENQHA_ENV:-openqha}" ;;
         --cuda)          ENV_FILE="environment-cuda.yml"
                          PY_ENV="${OPENQHA_ENV:-openqha-cuda}" ;;
-        # BOTH GPU clusters build the SAME environment file (user ruling 2026-09-07).
+        # BOTH GPU clusters build the SAME environment file.
         # 12.3 is the version both module trees carry, and no MPI is loaded because
         # nothing openQHA runs on a card needs collectives -- which is exactly what let
         # the two files become one. See environment-tianhe-gpu.yml.
@@ -390,7 +390,7 @@ unset _mamba
 # -------------------------------------------------------------------------------------
 if [ "$MODE" = "tianhe" ]; then
     say "Tianhe preparation"
-    # Required by the site and harmless anywhere else (D0-C-24). Without them the
+    # Required by the site and harmless anywhere else. Without them the
     # parallel run fails.
     ulimit -l unlimited 2>/dev/null || warn "could not raise the locked-memory limit"
     export GLEX_USE_ZC_RNDV=0
@@ -434,7 +434,7 @@ if [ "$MODE" = "tianhe" ]; then
     fi
 
     # ---- channels: THE TUNA MIRROR IN YOUR ~/.condarc, USED AS IT STANDS --------------
-    # USER RULING 2026-09-08: on Tianhe, conda goes through the TUNA mirror, and
+    # On Tianhe, conda goes through the TUNA mirror, and
     # ~/.condarc is not this script's to rewrite. The same file is in place on all three
     # clusters -- TianheXY-CN, -A and -AI -- and it reads:
     #
@@ -473,7 +473,7 @@ if [ "$MODE" = "tianhe" ]; then
     export CONDA_REMOTE_MAX_RETRIES="${CONDA_REMOTE_MAX_RETRIES:-2}"
     export CONDA_REMOTE_BACKOFF_FACTOR="${CONDA_REMOTE_BACKOFF_FACTOR:-1}"
 
-    # ---- pip: the TUNA PyPI index, to match (user ruling 2026-09-08) -----------------
+    # ---- pip: the TUNA PyPI index, to match ------------------------------------------
     # conda covers everything except mace (the fork, by git URL), pymsym and parsl,
     # which have no conda-forge package and come from pip. Left alone they cross the
     # proxy one wheel at a time; mace's dependency set makes that the slowest part of
@@ -613,13 +613,13 @@ print(r.status)' 2>/dev/null || echo 000)"
     echo "     A wrong SUBMIT command fails loudly. A wrong STATUS command does not:"
     echo "     Parsl believes every job is pending and the queue silently stops."
     echo "  3. run the 30-minute smoke job BEFORE production. That -- not a dry run --"
-    echo "     is the gate (user ruling 2026-09-07):"
+    echo "     is the gate:"
     echo "       CPU  yhbatch hpc/slurm/branchA_debug.slurm     # debug partition, 00:30:00"
     echo "       GPU  bash hpc/slurm/submit_branchB_tianhe_a.sh a_debug temp"
     echo "  4. THREE CLUSTERS, three sets of rules:"
     echo "       TianheXY-C   CPU, whole-node --exclusive, partitions debug + deimos"
     echo "       TianheXY-AI  GPU per card, --gpus MANDATORY, --exclusive BANNED"
-    echo "       TianheXY-A   GPU, 8 cards/node, -AI rules by the 2026-09-05 ruling"
+    echo "       TianheXY-A   GPU, 8 cards/node, -AI rules"
     echo "     parsl defaults exclusive=True, so a stock SlurmProvider is refused by both"
     echo "     GPU clusters. hpc/resource_configs/ already handles this."
 fi

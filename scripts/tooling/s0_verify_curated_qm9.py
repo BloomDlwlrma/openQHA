@@ -1,7 +1,7 @@
 """Read the packed curated QM9 archive back, group by group, and report the ones that
 cannot be read.
 
-TOOLING. The archive is ONE 400 MB file (ticket 17) and a campaign asks it for
+TOOLING. The archive is ONE 400 MB file and a campaign asks it for
 6 458 molecules a day from every node; a copy that lost a few blocks -- an
 interrupted `scp`, a bad block on the target pool -- damages a FEW of the
 133 661 groups and nothing says so until a molecule that lives in one of them

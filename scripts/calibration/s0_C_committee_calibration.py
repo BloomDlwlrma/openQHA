@@ -1,7 +1,7 @@
 """Does a MACE committee's disagreement predict its error against RI-MP2?
 
 CALIBRATION. Branch C, step 1 -- the gate that decides whether the ALF active-learning
-scheme can work at all (S0-C-10, S0-C-13). Nothing here enters a deliverable.
+scheme can work at all. Nothing here enters a deliverable.
 
 Why this runs before anything else
 ----------------------------------
@@ -13,7 +13,7 @@ error and active learning will skip exactly the blind spots it is meant to find.
 
 This script tests the premise using published MACE-OFF models -- no training, no new
 quantum chemistry -- against the RI-MP2/RIJK/cc-pVTZ (E, F, H) triples already sitting
-on disk from the branch-2 production runs (S0-C-5).
+on disk from the branch-2 production runs.
 
 WHAT A PASS AND A FAIL MEAN -- these are not symmetric
 -----------------------------------------------------
@@ -36,12 +36,12 @@ Forces and Hessians are derivatives, so MACE and RI-MP2 values are directly comp
 Total energies are not: every model carries its own atomic reference, so absolute
 energies sit on unrelated scales. Energies are therefore compared as RELATIVE energies
 within one molecule, across its basins -- which is also the physically meaningful
-quantity (D0-P2-11 measured exactly this) and needs a molecule with >= 2 basins.
+quantity (the package-2 benchmark measured exactly this) and needs a molecule with >= 2 basins.
 
 The curvature probe
 -------------------
 Curvature disagreement is measured as the committee spread of the Hessian-vector
-product H@v, using the corrected probe v = M^-1/2 P v0 (plan_C section 3, corrections 1
+product H@v, using the corrected probe v = M^-1/2 P v0 (corrections 1
 and 2): mass-weighted and projected out of the rigid-body subspace. With an isotropic
 probe most of what you measure is rigid-body and mass-weighting difference rather than
 curvature disagreement -- for an 8-atom molecule 6 of 24 directions are pure
@@ -108,7 +108,7 @@ def harvest_reference(runs_root, limit=None):
     """Read (geometry, E, F, H) from every completed branch-2 ORCA work directory.
 
     Zero recomputation: the branch-2 driver wrote optfreq.hess and optfreq.engrad and
-    then parsed only the frequencies out of the .out file (S0-C-5).
+    then parsed only the frequencies out of the .out file.
     """
     runs_root = Path(runs_root)
     records = []
@@ -391,10 +391,10 @@ def main():
         "generated_by": "scripts/calibration/s0_C_committee_calibration.py",
         "committee": [n for n, _ in members],
         "n_probes": args.n_probes,
-        "probe": "v = M^-1/2 P v0, normalised (plan_C section 3, corrections 1 and 2)",
+        "probe": "v = M^-1/2 P v0, normalised (corrections 1 and 2)",
         "probe_seed": PROBE_SEED,
         "reference_level": "RI-MP2/cc-pVTZ + cc-pVTZ/C + cc-pVTZ/JK RIJK, TightOpt NumFreq TightSCF",
-        "reference_provenance_status": "test (local ORCA 6.0.1; D0-75 reserves production for deimos 6.1.1)",
+        "reference_provenance_status": "test (local ORCA 6.0.1; production numbers come only from deimos 6.1.1)",
         "worst_hess_roundtrip_cm_inv": worst_check,
         "results": res,
         "passed": passed,

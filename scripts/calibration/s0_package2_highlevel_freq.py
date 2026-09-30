@@ -2,7 +2,7 @@
 
 CALIBRATION. The reference side of the error bar.
 
-The reference level is set by `D0-55`. **Why numerical frequencies are affordable**: ORCA 6.0.1
+The reference level is **`CCSD(T)/cc-pVTZ` numerical frequencies**. **Why numerical frequencies are affordable**: ORCA 6.0.1
 on this machine prints `CARTESIAN GRADIENT (ANALYTIC)` for `CCSD(T)`, so the gradient is
 **analytic** and numerical frequencies need only **6N+1 gradients** (55 for 9 atoms, 61 for 10),
 not the `(3N)^2`-scale single points an energy difference would need.
@@ -66,7 +66,7 @@ NPROCS = int(os.environ.get("S0_ORCA_NPROCS", "8"))
 MAXCORE_MB = int(os.environ.get("S0_ORCA_MAXCORE", "4000"))
 
 TEMPLATE = """! CCSD(T) cc-pVTZ {task} TightSCF
-# stage 0 package 2 high-level reference frequencies. The level is set by D0-55.
+# stage 0 package 2 high-level reference frequencies.
 # Geometry convention: {geometry_note}
 %maxcore {maxcore}
 %pal nprocs {nprocs} end
@@ -125,7 +125,7 @@ def parse_hess(path):
 
 
 def terminated_normally(out_path):
-    """Judge success **from the output file itself**, not from the exit code (skills section 2.4(c))."""
+    """Judge success **from the output file itself**, not from the exit code."""
     txt = Path(out_path).read_text(encoding="utf-8", errors="replace")
     return "****ORCA TERMINATED NORMALLY****" in txt
 
@@ -255,7 +255,7 @@ def main():
         results[qid] = rec
 
     payload = dict(generated_by="scripts/calibration/s0_package2_highlevel_freq.py",
-                   reference_level="CCSD(T)/cc-pVTZ numerical frequencies (D0-55)",
+                   reference_level="CCSD(T)/cc-pVTZ numerical frequencies",
                    geometry_convention=args.geometry,
                    orca_binary=ORCA, nprocs=NPROCS, temperature_K=T_REF,
                    species=results)

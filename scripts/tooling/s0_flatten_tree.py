@@ -1,9 +1,9 @@
-"""Move a tag's molecule tree to the flat form of ADR 0001 amendment 3 (tickets 09 and
-09b, rulings 2026-09-20), in three stages that are each idempotent.
+"""Move a tag's molecule tree to the flat form, in three stages that are each
+idempotent.
 
 TOOLING. Stage 1, the shard layers: `<tag>/<range>/<chunk>/<qid>/` -> `<tag>/<qid>/` and
 `<tag>/_label/<label>/` -> `<tag>/<label>/`. Stage 2, the frame labels: every
-`<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.<ext>` (or the ticket-09 interim
+`<molecule>/orca/<level>/frames/<generator>_bBB_kK/job.<ext>` (or the earlier interim
 form `<molecule>/orca.<level>.<frame>.<ext>`) becomes `frames/orca.<level>.<generator>_bBB_kK<ext>`;
 a `running` claim becomes `<stem>.running`. Stage 3, the msRRHO study into `msrrho/`:
 `orca/<level>/basinNN/job.<ext>` -> `msrrho/orca.<level>.basinNN<ext>` (a probe sub-folder
@@ -92,7 +92,7 @@ def plan_frames(molecule):
             folders.append(frames)
             folders.append(level_dir)
         folders.append(orca)
-    # the ticket-09 interim form: file groups directly in the molecule directory
+    # the earlier interim form: file groups directly in the molecule directory
     for f in sorted(molecule.glob("orca.*")):
         if f.is_file() and FRAME_DIR.match(f.name.split(".")[-2]):
             moves.append((f, layout.frames_dir(molecule) / f.name))

@@ -7,8 +7,7 @@
 # it was copied under `provenance`, plus a checksum, so that later drift is detected
 # rather than inherited.
 #
-# Parameters carry the same five classes as stage 1 / stage 2
-# (see .mem/skills/skill_stage0-standards.md section 1.4):
+# Parameters carry the same five classes as stage 1 / stage 2:
 #   physical_constant | derived_criterion | literature_value | modifiable_convention
 #   | numerical_tolerance | resource_budget
 
@@ -32,7 +31,7 @@ meta:
 # --------------------------------------------------------------------------------------
 # Where a run lands -- **the one root this repository writes under on any machine**
 # --------------------------------------------------------------------------------------
-# User ruling 2026-08-31, verbatim: "do not put things directly under ~, there are too
+# Verbatim: "do not put things directly under ~, there are too
 # many files in /home; move it to \wsl.localhost\Ubuntu-24.04\home\ubuntu\runs\openQHA"
 # (that is, /home/ubuntu/runs/openQHA).
 #
@@ -71,7 +70,7 @@ thermodynamics:
 # --------------------------------------------------------------------------------------
 engine:
   # ALIGNED 2026-09-09. This said "MACE-OFF23-SC" while DEFAULT_ENGINE in
-  # openqha/potentials/engine.py has been MACE-OFF23_medium since 2026-09-03 (S0-A-16).
+  # openqha/potentials/engine.py has been MACE-OFF23_medium since 2026-09-03.
   # **They disagreed, and the code won**: no code reads this `name` field, it is a
   # record. So the potential this file claimed was not the potential being run, and
   # anyone reproducing from the config would have reported the wrong level. It now
@@ -80,7 +79,7 @@ engine:
   # PATH IS NOT AUTHORITATIVE HERE. openqha/potentials/engine.py resolves
   # `model_root()/<filename>` and nothing else. This line records WHICH weights, not where.
   # Weights go FLAT in data/potentials/, keeping their own filename, with NO
-  # subdirectory (ruling 2026-09-09). S0_MACE_ROOT moves the whole directory;
+  # subdirectory. S0_MACE_ROOT moves the whole directory;
   # S0_MACE_MODEL overrides one file.
   weights: "data/potentials/MACE-OFF23_medium.model"
   dtype: "float64"                  # numerical_tolerance: geometry optimisation and finite-difference Hessians both need it
@@ -89,8 +88,8 @@ engine:
   # A missing weight file **raises; it never falls back to another potential**.
   # That is about the file being absent -- nothing inspects what is inside it.
   fallback_allowed: false
-  # Still selectable, and must stay: every package-1 basin and every number in
-  # D0-P2-11/12/14 lives on that surface and cannot be reproduced without it.
+  # Still selectable, and must stay: every package-1 basin and every package-2
+  # number was measured on that surface and cannot be reproduced without it.
   # Select it back with S0_ENGINE=MACE-OFF23-SC.
   #   superseded_default: "MACE-OFF23-SC"  (arXiv 2405.18171)
 
@@ -116,13 +115,13 @@ data:
   #     dsgdb9_XXXXXX_new.xyz         1 573   repaired, short tag
   # A lookup assuming one pattern would silently miss most of the repairs.
   curated_qm9_dir: "133660_curatedQM9_outof_133885"
-  # The same archive as ONE file (ticket 17): scripts/tooling/s0_pack_curated_qm9.py writes
+  # The same archive as ONE file: scripts/tooling/s0_pack_curated_qm9.py writes
   # one group per molecule (geometry, charges, frequencies, SMILES, InChI, the file's text)
   # into data/qm9/curated_qm9.h5; a molecule is extracted on demand when the directory is
   # absent (a cluster). S0_CURATED_QM9_H5 overrides.
   curated_qm9_h5: "curated_qm9.h5"
   vendored_reference_geometries: "data/reference-geometries"   # the 7 distributed with the repository
-  # The released MACE-OFF23 training data (ticket 30): is a molecule in the potential's
+  # The released MACE-OFF23 training data: is a molecule in the potential's
   # training set? The two SPICE-derived extxyz files (5.2 GB) are NOT in git; declare
   # where they are (or set S0_TRAINING_SETS_ROOT). The index built from them
   # (data/training_sets/mace-off23_spice_index.dat, ~3 MB) is in the repository, so the

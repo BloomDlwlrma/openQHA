@@ -112,7 +112,7 @@ def collect_trajectories(species, tag, setting="default", root=None, route="auto
 
 def collect_verdict(species, tag, setting="default", root=None, route="auto"):
     """(passed, total) from `[Criteria]` in collect's Property file, `collect.toml` --
-    the file a later step reads back (CONTEXT.md). (None, None) when there is no
+    the file a later step reads back. (None, None) when there is no
     Property file or no `[Criteria]` block: "no verdict", never zero."""
     from openqha.quasi_harmonic import chain_records
     from openqha.store import property as prop
@@ -129,7 +129,7 @@ def collect_verdict(species, tag, setting="default", root=None, route="auto"):
 def crossings_per_basin(species, tag, cfg, setting="default", root=None, route="auto"):
     """Basin residence from the frames -- the one thing collect's table does not carry.
 
-    The frames are read from the engine folder (traj.dcd, ADR 0001); returns
+    The frames are read from the engine folder (traj.dcd); returns
     (per-basin dict, the openmm/<setting> folder it read)."""
     from openqha.quasi_harmonic import trajectory_reader
     molecule = basin_reader.molecule_for(species, tag, cfg, root=root)
@@ -222,7 +222,7 @@ def basin_index(label):
 def _msrrho_comparison(molecule, rec_a, report, temperature):
     """Lines comparing the msRRHO Calculation's per-basin T*S_vib and S_abs with the
     trajectory route's T*S, or [] when no thermo_msrrho record exists at the potential's
-    level. Reads `msrrho/thermo/<level>.thermo_msrrho.toml` (ADR 0004)."""
+    level. Reads `msrrho/thermo/<level>.thermo_msrrho.toml`."""
     from openqha.potentials import engine
     from openqha.store import layout, property as prop
     engine_name = (rec_a.get("Calculation_Info") or {}).get("ENGINE")
@@ -367,7 +367,7 @@ def main():
                      [[b, "{:.4f}".format(d["TS_kcal"]) if d else "-", (d or {}).get("n_frames", "-"),
                        (d or {}).get("source", "-"), (d or {}).get("distinct_crossings", "-"),
                        (d or {}).get("symmetry_crossings", "-")] for b, d in sorted(pb.items())])
-    # The Hessian route beside the trajectory route (ticket 24): when the thermo_msrrho
+    # The Hessian route beside the trajectory route: when the thermo_msrrho
     # Calculation has run for this molecule at the potential's level, its per-basin
     # msRRHO T*S_vib and its S_abs are printed next to the trajectory T*S -- one line of
     # comparison, never merged into F_conf.

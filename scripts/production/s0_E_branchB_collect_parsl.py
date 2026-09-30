@@ -8,7 +8,7 @@ not change one of them.
 
 WHY THIS IS A SEPARATE DRIVER FROM THE TRAJECTORIES
 ---------------------------------------------------
-Since the 2026-09-07 ruling the two halves of branch B run on different machines, for
+The two halves of branch B run on different machines, for
 different reasons:
 
     trajectories  TianheXY-A, GPU, one trajectory per card, 8 per allocation
@@ -131,7 +131,7 @@ def collect_one(species, repo_root, tag, extra_args=(), env=None, basin_tag=None
     proc = _sp.run(cmd, cwd=str(repo_root), env=e, text=True,
                    stdout=_sp.PIPE, stderr=_sp.PIPE)
 
-    # This driver's own log and marker beside collect's tables (ADR 0001).
+    # This driver's own log and marker beside collect's tables.
     _sys.path.insert(0, str(repo_root))
     from openqha.store import basins as _basins, layout as _layout
     from openqha.quasi_harmonic import trajectory_reader as _tr
@@ -422,9 +422,9 @@ def main():
     print("single_task_seconds_median        {:.1f}".format(
         sorted(single)[len(single) // 2] if single else float("nan")))
     print("slot_extrapolation                NOT COMPUTED -- the per-task cost under "
-          "contention has not been measured (D0-P1-12, defects 34 and 56)")
+          "contention has not been measured")
 
-    # A Batch leaves no record of its own (user ruling 2026-09-15, Q4 (b)): the table above,
+    # A Batch leaves no record of its own: the table above,
     # in the Slurm log, is its report. collect_batch.json is gone.
     print()
     for l in _bt.footer(wall, len(ok), len(results)):

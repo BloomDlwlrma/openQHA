@@ -1,7 +1,7 @@
 """Branch B production trajectories, the OpenMM way: MACE + Nose-Hoover chain.
 
 PRODUCTION. It writes OpenMM's own files into `md_openmm/basinNN/` and the record
-`md.toml` + `md.out` beside them (ADR 0001; step 2, 2026-09-15); `s0_B_qha_analyse.py`
+`md.toml` + `md.out` beside them (step 2, 2026-09-15); `s0_B_qha_analyse.py`
 reads this route and the ASE route (`s0_B_qha_trajectory.py`) through one reader. That
 is the point: the two routes are an INDEPENDENT IMPLEMENTATION PAIR of the same protocol,
 and their disagreement is a measurement rather than a mystery.
@@ -18,10 +18,9 @@ One (basin, seed) at a time, which is what the execution layer fans out
 ------------------------------------------------------------------------
     --basins <qid>.basins.xyz   the basin list branch A wrote
     --basin K --seed-index S    ONE task; the velocity seed is DRAWN at run time and
-                                recorded in meta.json (seed0=0, the default since the
-                                2026-09-13 ruling), or seed0 + 1000*K + S if seed0 != 0
+                                recorded in meta.json (seed0=0, the default), or seed0 + 1000*K + S if seed0 != 0
     --wall-budget-s N           stop and flush before the queue kills the job
-    --platform CUDA             one trajectory per card (TianheXY-A, ruling 2026-09-07)
+    --platform CUDA             one trajectory per card (TianheXY-A)
 
 Without --basin/--seed-index it still runs every basin and every seed in one process,
 which is what you want on a workstation.
@@ -30,7 +29,7 @@ Run this one as:
 
     /home/ubuntu/anaconda3/envs/qm9fe/bin/python \\
         scripts/production/s0_B_qha_trajectory_openmm.py --species dsgdb9nsd_000018 \\
-        --tag omm01 --prod-ps 25             # one trajectory per basin (ruling 2026-09-13)
+        --tag omm01 --prod-ps 25             # one trajectory per basin
 
 Note the second line of that table. In `qm9fe`, `import mace` resolves to the develop tree
 whose neighbour list is NOT translation invariant. This driver does not care, and not by
@@ -201,7 +200,7 @@ def _fmt(x, spec):
 def choose_seed(seed0, basin, seed_index):
     """(seed, how it was chosen) for one trajectory.
 
-    seed0 == 0 (the default, ruling 2026-09-13): a fresh 31-bit seed from the OS entropy
+    seed0 == 0 (the default): a fresh 31-bit seed from the OS entropy
     source, the way OpenMM itself treats randomNumberSeed=0 -- but returned, so that the
     caller records it. seed0 != 0: the pure function seed0 + 1000*basin + seed_index, so
     a task fanned out by the execution layer and the same task run by hand coincide.
@@ -240,7 +239,7 @@ def segments_record(prev_meta, seed, prod_record):
 def run_one(species, positions_A, numbers, masses, model_path, engine_dir, records_dir,
             temperature_K, seed, equil_ps, prod_ps, args, prev_meta=None):
     """One trajectory. Engine files to `engine_dir`, this driver's record beside them
-    in `records_dir` (ADR 0001).
+    in `records_dir`.
 
     A partial trajectory -- state files present, fewer frames than the target -- is
     RESUMED from its state: same velocities, same thermostat variables, no second
@@ -444,7 +443,7 @@ def main():
     ap.add_argument("--tag", default="omm")
     ap.add_argument("--basins", default=None,
                     help="`auto`: branch A's basins under --basin-tag, read from "
-                         "<molecule>/mace/basinNN/basin.extxyz (ADR 0001); a path: a "
+                         "<molecule>/mace/basinNN/basin.extxyz; a path: a "
                          "multi-frame xyz to use instead. Without it there is ONE "
                          "geometry -- the QM9 reference -- and it is not a basin list; "
                          "the record says so.")
@@ -455,7 +454,7 @@ def main():
                          "make one (basin, seed) addressable by the execution layer.")
     ap.add_argument("--seed-index", type=int, default=None,
                     help="run only this seed index")
-    # ONE trajectory per (molecule, basin) -- user ruling 2026-09-13, after the campaign
+    # ONE trajectory per (molecule, basin), after the campaign
     # arithmetic in docs/branchB_seeds_and_length.md. --seeds 2+ is still accepted (the
     # blank control, criterion 5, needs it) but is no longer the default anywhere.
     ap.add_argument("--seeds", type=int, default=1)
@@ -485,7 +484,7 @@ def main():
     ap.add_argument("--num-mts", type=int, default=NUM_MTS)
     ap.add_argument("--num-ys", type=int, default=NUM_YOSHIDA_SUZUKI)
     ap.add_argument("--platform", default="CPU")
-    # WHERE (ADR 0001, 2026-09-14): engine files under
+    # WHERE (2026-09-14): engine files under
     #   <root>/<tag>/<range>/<chunk>/<qid>/md_openmm/basinNN/  (the setting in the file names)
     # and this driver's record under <...>/<qid>/_records/md_openmm/basinNN/ (same rule).
     # The setting is `default` for the chains and the row name for examples/02d-2.
@@ -534,12 +533,12 @@ def main():
     # to put job output.
     # The molecule directory is the BASIN TAG's (the branch A product's); a run under
     # another --tag is a different SETTING inside it, not a second molecule directory
-    # (ruling Q8, 2026-09-14: one search, one set of basins, many samplings).
+    # (one search, one set of basins, many samplings).
     molecule = (Path(args.molecule_dir) if args.molecule_dir
                 else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
                                          args.species))
     # Records: _records/md_openmm/basinNN/, the setting in the file stem (md_s2.toml);
-    # no setting level (user ruling 2026-09-15, records redesign).
+    # no setting level (records redesign, 2026-09-15).
     records_root = layout.md_records_dir(molecule, "openmm")
     outroot = records_root
     basins = ([(args.basin, frames_in[args.basin])] if args.basin is not None

@@ -70,7 +70,7 @@ shake-tol                = 1e-07         ; CREST src/dynamics/shake_module.f90:8
 ; KNOWN FAILURE MODE, and the fallback it needs. On strained rings the SHAKE iteration
 ; (250 iterations max, shake_module.f90:80) does not converge, do_shake returns non-zero,
 ; the MD is judged failed, and CREST prints `terminated EARLY` -- WITHOUT printing any
-; reason. Measured (D0-P1-34):
+; reason. Measured:
 ;
 ;     dsgdb9nsd_000607  O[C@H]1C[C@H]1C#N    all-bonds -> 31 aborts | h-bonds -> 0
 ;     dsgdb9nsd_003163  O[C@H]1CC[C@]21CO2   all-bonds -> 24 aborts | h-bonds -> 0

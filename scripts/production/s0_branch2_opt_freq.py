@@ -17,7 +17,7 @@ correlation fitting through `cc-pVTZ/C`. **This is a resolution-of-the-identity 
 the reference paper (J. Chem. Theory Comput. 2020, 16, 196-210) reports in section 3.1 that the
 RI-versus-canonical gradient difference is of order 1e-4 au, **but that sentence must appear in the deliverable** so no reader takes it for canonical MP2.
 
-**Three traps this repository has measured, each handled below** (2026-09-01, checkpoint 10):
+**Three traps this repository has measured, each handled below** (2026-09-01):
 
 1. **Never take ORCA `Final Gibbs free energy` as given.** Its automatic symmetry number gets it
    wrong -- measured, it calls acetone `C1, sigma = 1` while the correct external symmetry number
@@ -25,14 +25,14 @@ RI-versus-canonical gradient difference is of order 1e-4 au, **but that sentence
    symmetry number ORCA chose, verbatim and in its own column**, with the correction given by `RT ln(sigma_declared / sigma_orca)`;
    **any molecule whose symmetry number is not independently declared is marked provisional and does not enter a final number.**
 2. **Quasi-RRHO is on by default in ORCA 6** (measured output: `Quasi RRHO ... True`).
-   Measured on acetone, the two differ by 0.466 kcal/mol. Following `D0-61`, both are reported.
+   Measured on acetone, the two differ by 0.466 kcal/mol. Both are reported.
    **But ORCA runs only once** -- the pure-harmonic value is computed here by `openqha.thermo` from the same frequencies.
    Running ORCA again just to turn off one switch wastes twice the machine time; and computing it
    here also turns "can our partition function reproduce ORCA number" into a **per-conformer assertion**
    (`crosscheck_vs_orca_kcal`; plan acceptance 1 requires < 0.01 kcal/mol).
 3. **An imaginary frequency is rejected explicitly**, never "made positive" -- that is not a minimum.
 
-**The identity of where it ran**: by `D0-75`, quantum chemistry producing a production number runs only on deimos with ORCA 6.1.1.
+**The identity of where it ran**: quantum chemistry producing a production number runs only on deimos with ORCA 6.1.1.
 **The ORCA 6.0.1 in local WSL is for testing only**, and its products always carry `provenance.status` = `test`.
 The user asked on 2026-09-02 for it to "run on this machine", so this script may run locally,
 **but the product identity is labelled honestly and never passed off as production.**
@@ -152,7 +152,7 @@ def parse_out(text):
             rec[k] = float(m.group(1))
     # **The basis-function count comes from `Dimension of the orbital basis`, not `Number of basis functions`.**
     #
-    # Defect 49, which took two attempts on 2026-09-02:
+    # This took two attempts on 2026-09-02:
     #   the first version took the **first** `Number of basis functions` match -> 272 (too large);
     #   the second took the **last** -> **also wrong**, because that line alternates between the SHARK
     #     and MP2 blocks (measured sequence 272,236,272,236,...), so either end depends on where the output stopped.
@@ -206,7 +206,7 @@ def own_thermochemistry(sub, temperature_K=298.15, pressure_Pa=1.0e5):
 
     **Two purposes**: (a) it saves a second ORCA run; (b) it turns "can our partition function
     reproduce ORCA number" into a **per-conformer assertion** -- plan acceptance 1 requires the two to differ by < 0.01 kcal/mol.
-    **The symmetry number is passed in explicitly here and never derived automatically** (`D0-9`).
+    **The symmetry number is passed in explicitly here and never derived automatically**.
     """
     from openqha import thermo as T
     import numpy as np
@@ -355,7 +355,7 @@ def main():
     print("conformers: {}   processes {}   memory per core {} MB".format(
         len(tbl), args.nprocs, args.maxcore))
     print("output: {}   incremental: {}".format(out, jsonl))
-    print("**identity**: ORCA 6.0.1 in local WSL -> provenance.status = test (D0-75)")
+    print("**identity**: ORCA 6.0.1 in local WSL -> provenance.status = test")
     print("=" * 96, flush=True)
 
     t_all = time.time()
@@ -375,7 +375,7 @@ def main():
         rec.update(smiles=row.smiles, n_atoms=int(row.n_atoms),
                    provenance=dict(status="test", orca_bin=ORCA,
                                    host=os.uname().nodename,
-                                   note="D0-75: production numbers come only from ORCA 6.1.1 on deimos"))
+                                   note="production numbers come only from ORCA 6.1.1 on deimos"))
         with open(str(jsonl), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
         q = rec.get("orca", {})

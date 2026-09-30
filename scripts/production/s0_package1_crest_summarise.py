@@ -15,7 +15,7 @@ a mean over n = 12 is not quoted as if it were a mean over n = 3819.
 --------------------------------------------------------------------------------------
 The three questions it answers
 --------------------------------------------------------------------------------------
-1. **CREST's reported conformer count vs the basin count under this repository's criteria** -- how far apart they are (the batch version of defect 54).
+1. **CREST's reported conformer count vs the basin count under this repository's criteria** -- how far apart they are.
 2. **Which route misses basins, and what a missed basin is worth in kcal/mol** --
    the only meaningful question once the two routes are pooled.
 3. **Cost** -- the distribution of measured per-molecule time, and the extrapolation for what is left.
@@ -108,7 +108,7 @@ def main():
     w0 = np.array([r["populations"]["weight_of_lowest"] for r in ok])
     sec = np.array([r.get("total_seconds") or np.nan for r in ok], dtype=float)
     sad = np.array([r["n_saddles_rejected"] for r in ok])
-    # Basins admitted with an inversion window (ticket 41): the lowest mode lies in
+    # Basins admitted with an inversion window: the lowest mode lies in
     # [ithr, 0) and the thermochemistry inverts it -- production's new class. Absent on
     # records written before 2026-09-25, which admitted no window basins.
     nwin = np.array([sum(int(h.get("n_inversion_window") or 0)
@@ -248,7 +248,7 @@ def main():
 
 
 def _plot(nc, nb, co, eo, ec, ee, args):
-    # **Do not call matplotlib.use("Agg")** -- the lecture notes lost figures twice that way (defect 1, defect 53).
+    # **Do not call matplotlib.use("Agg")** -- figures were silently lost that way twice.
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 3, figsize=(15, 4.2))
     m = max(nc.max(), nb.max())

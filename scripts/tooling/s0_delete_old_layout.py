@@ -6,8 +6,8 @@ TOOLING. Standard library only; runs on a login node.
     python scripts/tooling/s0_delete_old_layout.py            # --plan: list, remove nothing
     python scripts/tooling/s0_delete_old_layout.py --delete   # remove exactly what --plan listed
 
-The ruling (user, 2026-09-14): the old layout -- three trees per run plus a per-job
-scratch and its copy-back -- is not migrated into the molecule tree (ADR 0001); it is
+The old layout -- three trees per run plus a per-job
+scratch and its copy-back -- is not migrated into the molecule tree; it is
 deleted and the examples are re-run. This script is the only thing that deletes it, and
 it deletes only what it has listed.
 
@@ -22,7 +22,7 @@ Anything under the NEW root (S0_RUNS_ROOT, or --new-root) is never listed as an 
 whatever it is called: a directory named `analysis` inside the molecule tree is not the
 old layout. Slurm output beside `logs/node_local` stays.
 
-Step-2 leftovers INSIDE the new root (records redesign, user ruling 2026-09-15): the
+Step-2 leftovers INSIDE the new root (records redesign, 2026-09-15): the
 records of 2026-09-15 morning, which the redesign replaced, are listed by name and
 nothing else under the root is:
 

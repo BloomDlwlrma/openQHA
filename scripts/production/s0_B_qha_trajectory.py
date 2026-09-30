@@ -21,12 +21,12 @@ They are prohibitions, not settings, and they are written into the metadata so t
 Branch A's CREST runs use exactly the opposite of all three (SHAKE on every bond, 5 fs,
 m_H = 2 amu), because that is the published iMTD-GC protocol and it is right for finding
 conformers. The handover between the branches is a list of GEOMETRIES. Not one CREST frame
-is ever reused (S0-B-3, user ruling 2026-09-03).
+is ever reused.
 
 Equilibration length is measured, not assumed
 ---------------------------------------------
 Rinaldo & Field began with 20 ps of equilibration and found in the end that 520 ps were
-needed -- a factor of 26. So `--equil-ps` has a literature default (50 ps, D0-C-30) and
+needed -- a factor of 26. So `--equil-ps` has a literature default (50 ps) and
 the driver measures the potential-energy and radius-of-gyration relaxation over that
 window and reports it, rather than declaring the system equilibrated because the timer
 expired.
@@ -74,10 +74,10 @@ CHUNK_FRAMES = 500
 #: Protocol constants. Each carries its source; changing one invalidates the numbers that
 #: were measured under it, which is why they are named here rather than left as defaults
 #: scattered through the argument parser.
-TIMESTEP_FS = 1.0          # D0-C-30 (Moore/Cole/Csanyi, JACS 2026, 148, 4928) and
+TIMESTEP_FS = 1.0          # (Moore/Cole/Csanyi, JACS 2026, 148, 4928) and
                            # Rinaldo & Field independently. The repo's old 0.5 fs was an
                            # unsourced guess that doubled the cost for nothing.
-FRICTION_PER_PS = 1.0      # D0-C-30, the MACE authors' own value.
+FRICTION_PER_PS = 1.0      # the MACE authors' own value.
 SAMPLE_EVERY_STEPS = 500   # 0.5 ps, the published interval (configs/branchB_protocol.yaml).
                            # Was 8 fs. The covariance is an EQUAL-TIME average, so a
                            # shorter interval aliases nothing -- it just stores frames
@@ -389,7 +389,7 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
     `outdir` is the RECORDS folder (frames.npy, progress.json); `engine_dir` the ASE
     engine folder `md_ase/basinNN/` that gets `md.traj` (ASE Trajectory: positions, momenta,
     energy, forces per sampled frame) and `md.log` (ASE MDLogger), the two files ASE
-    writes by itself (ADR 0001, ticket 10). A resume continues from the last frame of
+    writes by itself. A resume continues from the last frame of
     `md.traj`, which carries the momenta; `state.npz` is gone.
     """
     from ase import units
@@ -510,7 +510,7 @@ def produce(atoms, calc, outdir, temperature_K, seed, prod_ps, timestep_fs,
         n_frames_generated_this_run=generated,
         wall_seconds=float(wall),
         # Wall clock divided by what THIS run produced. Not divided by anything else:
-        # a serial number divided by a process count is not a cost (D0-P1-12, defect 34).
+        # a serial number divided by a process count is not a cost.
         seconds_per_frame_this_run=(float(wall / generated) if generated else None),
         seconds_per_ps_this_run=(
             float(wall / (generated * sample_every * timestep_fs / 1000.0))
@@ -636,7 +636,7 @@ def run_one(atoms, calc, outdir, args, cfg, basin_index, seed, geometry_source,
         relaxation=(previous.get("relaxation", relax_rec) if resuming else relax_rec),
         equilibration=equil, production=prod,
         segments=segments, n_runs=len(segments),
-        protocol_source=("plan_B section 3; dt and friction from D0-C-30, "
+        protocol_source=("dt and friction from the published protocol, "
                          "equilibration length measured (Rinaldo & Field needed 26x "
                          "their first guess)"),
         prohibitions_note=("no bias, no constraints, real hydrogen mass -- see the "
@@ -660,7 +660,7 @@ def main():
     ap.add_argument("--species", default=None, help="QM9 index, e.g. dsgdb9nsd_000018")
     ap.add_argument("--basins", default=None,
                     help="`auto`: branch A's basins under --basin-tag, read from "
-                         "<molecule>/mace/basinNN/basin.extxyz (ADR 0001); a path: a "
+                         "<molecule>/mace/basinNN/basin.extxyz; a path: a "
                          "multi-frame xyz. Either overrides --species for geometry; "
                          "--species still names the record")
     ap.add_argument("--basin-tag", default=None,
@@ -668,7 +668,7 @@ def main():
     ap.add_argument("--tag", default="prod")
     ap.add_argument("--setting", default="default",
                     help="the trajectory setting: md_ase/basinNN/*_<setting>.* in the molecule "
-                         "directory of --basin-tag (ADR 0001, ticket 10)")
+                         "directory of --basin-tag")
     ap.add_argument("--molecule-dir", default=None,
                     help="override the molecule directory (default: from S0_RUNS_ROOT, "
                          "--basin-tag or --tag, --species through openqha.store.layout)")
@@ -722,7 +722,7 @@ def main():
     frames_in, geometry_source = load_atoms(args, cfg)
     from openqha.store import layout
     # The molecule directory is the BASIN TAG's; a run under another --tag is a SETTING
-    # inside it (ruling Q8, 2026-09-14). Engine files: md_ase/basinNN/; records:
+    # inside it. Engine files: md_ase/basinNN/; records:
     # _records/md_ase/basinNN/, the setting in the file stem (records redesign, 2026-09-15).
     molecule = (Path(args.molecule_dir) if args.molecule_dir
                 else layout.molecule_dir(config.runs_root(cfg), args.basin_tag or args.tag,
@@ -774,7 +774,7 @@ def main():
             # out by the execution layer and the same task run by hand produce the same
             # trajectory. Nothing about placement may enter it.
             seed = args.seed0 + 1000 * k + s
-            # No seed level (ruling S0-B-59): one folder per basin. A second seed index,
+            # No seed level: one folder per basin. A second seed index,
             # if ever asked for, is a different setting and says so in its file names.
             out = layout.basin_records_dir(molecule, "ase", k)
             eng = layout.ase_dir(molecule, args.setting, k)

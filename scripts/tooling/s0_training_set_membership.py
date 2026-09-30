@@ -1,11 +1,11 @@
 """Is the molecule in MACE-OFF23's training set? The table for the SI.
 
 TOOLING. Builds (once) the index of the released MACE-OFF23 training and test files
-(ticket 30, `openqha.data.training_set`) and answers for a set of molecules:
+(`openqha.data.training_set`) and answers for a set of molecules:
 
     --set shipped      every species declared in configs/edges_testset.yaml
                        -> data/training_sets/shipped_species_membership.dat
-    --set qm9-targets  every curated QM9 molecule passing the branch A gate (ticket 31)
+    --set qm9-targets  every curated QM9 molecule passing the branch A gate
                        -> data/training_sets/qm9_targets_membership.{dat,toml}
     --smiles S [S...]  ad hoc SMILES, printed
     --build-index      (re)build the index and stop

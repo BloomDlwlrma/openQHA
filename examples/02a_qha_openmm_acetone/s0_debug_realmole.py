@@ -128,8 +128,8 @@ def branch_a_basins(species, tag, threads=4, force=False):
     one basin cannot show the thing this file exists to show -- that a setting which
     moves T*S may move every basin together and change F_conf by nothing.
     """
-    # Branch A's product is mace/basinNN/basin.extxyz in the molecule directory (ADR
-    # 0001); the trajectory driver is told `auto` and reads the same files.
+    # Branch A's product is mace/basinNN/basin.extxyz in the molecule directory;
+    # the trajectory driver is told `auto` and reads the same files.
     if force or not basin_reader.exists(species, tag=tag):
         print("-- branch A: {} (tag {})".format(species, tag))
         cmd = [sys.executable, "-u",
@@ -150,7 +150,7 @@ def basin_energies_and_sigma(rec, species, cfg):
     """(relative electronic energy kcal, sigma, degeneracy) per basin, from branch A.
 
     A basin with no symmetry number is not silently given one: `config.species` raises
-    if the molecule has none declared, and that refusal is deliberate (`D0-9`).
+    if the molecule has none declared, and that refusal is deliberate.
     """
     spec = config.species(species, cfg)
     out = []

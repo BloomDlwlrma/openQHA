@@ -18,7 +18,7 @@
 #     row   = (task_id * G + k) * R + j       k = card in task, j = slot on that card
 #
 # Until 2026-09-13 a row WAS a card (SEEDS=3 -> 3 workers, 9 CPUs idle). With one
-# trajectory per basin (ruling S0-B-59) a 12-CPU card takes twelve single-basin rows,
+# trajectory per basin a 12-CPU card takes twelve single-basin rows,
 # so the 9-row grid is ONE job on ONE card -- the user's question on an113, and the
 # answer. Every array task is one Slurm job with `--gpus=G --cpus-per-task=<CPUs> x G`
 # (per-card allocation on both GPU clusters; -G mandatory; --mem forbidden). Inside it,
@@ -31,7 +31,7 @@
 # something you can diff -- the same rule as every other conf here. generated/manifest
 # lists them in row order and is the only thing the job reads to find its work.
 # =======================================================================================
-# `set -eo pipefail` removed 2026-09-13 (user ruling: a failing step must not end the job; .mem/notes/notes_2026-09-13_no-errexit-anywhere.md)
+# `set -eo pipefail` is deliberately not used: a failing step must not end the job.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -59,7 +59,7 @@ SUBMIT="${OPENQHA_SUBMIT:-yhbatch}"
 
 # ---- the basins must exist, once, before N jobs go looking for them --------------------
 # Branch A's product is <root>/<BASIN_TAG>/<range>/<chunk>/<SPECIES>/mace/basinNN/
-# basin.extxyz (ADR 0001); hpc/env/root.sh FINDS it and counts the basins (a `find`,
+# basin.extxyz; hpc/env/root.sh FINDS it and counts the basins (a `find`,
 # so the shard rule stays spelled only in openqha/store/layout.py). A login node can
 # activate the environment and run python; the shell form was accepted by the user on
 # 2026-09-14 as part of the work. The root is derived from the partition.

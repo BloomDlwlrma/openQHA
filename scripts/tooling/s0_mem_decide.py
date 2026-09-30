@@ -3,9 +3,9 @@
 TOOLING. Allocates decision identifiers per branch and appends the decision line.
 Produces no science.
 
-**The problem**: this repository decision log used to be one flat sequence `D0-1 ... D0-N`,
-so two sessions writing at once were handed the same number. **This session collided twice**
-(first `D0-58`, then `D0-76`/`D0-77`/`D0-78`), and each time the numbers had to be changed afterwards.
+**The problem**: a single flat sequence `D0-1 ... D0-N` hands two sessions writing at
+once the same number, and each insert in the middle forces the numbers after it to be
+changed.
 
 **Why "remember to check first next time" is not a cure**: there is a window between the
 check and the write, and another session writing inside that window collides anyway. This
@@ -33,13 +33,13 @@ Branch prefixes::
 **The trunk `D0-1 ... D0-85` is frozen**: it no longer grows and is **not renumbered** --
 26 files cite those numbers, renumbering would only create broken links, and **renumbering
 does not reduce collisions anyway** (a collision happens only at allocation). Which branch a
-historical row belongs to is recorded in the index of `.mem/decisions/README-decisions.md`.
+historical row belongs to is recorded in the decision log.
 
 Usage::
 
     python scripts/tooling/s0_mem_decide.py --branch P2 \
         --decision "package 2 E2 uses the MP2 increment ladder ..." \
-        --basis "user ruling; measured pool of 4 single points ..."
+        --basis "a measured pool of 4 single points ..."
 
     python scripts/tooling/s0_mem_decide.py --list P2        # show the numbers a branch already has
     python scripts/tooling/s0_mem_decide.py --next P2        # show the next number only; write nothing
@@ -75,7 +75,7 @@ LOCK_STALE_SECONDS = 300        # past this the holder is assumed to have crashe
 
 # Each entry is (identifier prefix, file stem, description).
 #
-# 2026-09-03 (S0-G-2): the rewrite introduced a second identifier space. The old
+# A second identifier space was introduced on 2026-09-03. The old
 # `D0-*` branches are FROZEN -- they are listed here so `--all` can still report
 # them, but nothing new is ever appended to them. New decisions go to the `S0-*`
 # branches below.
@@ -193,7 +193,7 @@ def append(branch, decision, basis, date=None):
     MEM.mkdir(parents=True, exist_ok=True)
     if branch in FROZEN:
         raise ValueError(
-            "branch {!r} is frozen (S0-G-2): its identifier space no longer grows.\n"
+            "branch {!r} is frozen: its identifier space no longer grows.\n"
             "Its rows live in the archive under _to_delete/stage0-discard/decisions/.\n"
             "Append to one of the active branches instead: {}".format(
                 branch, sorted(b for b in BRANCHES if b not in FROZEN)))
@@ -223,8 +223,8 @@ def header(branch):
         "> **Append only with `scripts/tooling/s0_mem_decide.py --branch {b}`; do not hand-write a row** -- "
         "hand-writing bypasses the lock and the collisions come back.\n"
         ">\n"
-        "> The old `D0-1 ... D0-85` and `D0-C/L/P1...P5` are frozen (`S0-G-2`), "
-        "no longer growing and not renumbered; the index is in `../memory-discard.md`.\n\n"
+        "> The old `D0-1 ... D0-85` and `D0-C/L/P1...P5` are frozen, "
+        "no longer growing and not renumbered.\n\n"
         "| identifier | date | decision | basis / where it lands |\n"
         "|---|---|---|---|\n".format(ident=ident, b=branch, desc=desc))
 

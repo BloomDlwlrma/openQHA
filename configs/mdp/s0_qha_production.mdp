@@ -6,15 +6,15 @@
 ;   (scripts/production/s0_B_qha_trajectory.py). This file exists so every parameter is
 ;   written down once in a form that can be compared line-by-line with the
 ;   reference literature, and so GROMACS can read the SAME settings when it is
-;   used as the independent cross-check of our S_QH / S_Schlitter (plan_B section 2).
+;   used as the independent cross-check of our S_QH / S_Schlitter.
 ;
 ; REFERENCE: Rinaldo & Field, Biophys. J. 2003, 85, 3485-3501.
 ;            Andricioaei & Karplus, J. Chem. Phys. 2001, 115, 6289 (the omega formula).
 ;
 ; *** THE THREE LINES THAT MATTER MOST ARE PROHIBITIONS, NOT SETTINGS ***
 ;
-; A CREST metadynamics trajectory CANNOT be used here (S0-B-3, user ruling
-; 2026-09-03). Three independent reasons, each fatal on its own:
+; A CREST metadynamics trajectory CANNOT be used here.
+; Three independent reasons, each fatal on its own:
 ;
 ;   (1) BIAS POTENTIAL. Metadynamics does not sample the Boltzmann distribution of
 ;       the true surface. The covariance eigenvalues lambda_i come out too large,
@@ -36,7 +36,7 @@
 ; s0tf/crest_census.py. Not one CREST frame is reused.
 ;
 ; Superseded specs for the abandoned multi-molecule near-critical gas box route
-; (D0-P3-19) are in _superseded/. Do not copy parameters from them.
+; are in _superseded/. Do not copy parameters from them.
 ; =====================================================================================
 title                    = stage0-branchB-qha-production
 cpp                      = cpp
@@ -45,8 +45,8 @@ define                   =
 
 ; ---- Integrator ---------------------------------------------------------------------
 ; dt = 1 fs: the value used by Rinaldo & Field, and independently the value the MACE
-; authors use (D0-C-30, Moore/Cole/Csanyi JACS 2026, 148, 4928). The repo's old 0.5 fs
-; was an unsourced guess that doubled the cost for nothing (AUDIT section 0 item 3).
+; authors use (Moore/Cole/Csanyi JACS 2026, 148, 4928). The repo's old 0.5 fs
+; was an unsourced guess that doubled the cost for nothing.
 ; md-vv, NOT md. This is not a preference: GROMACS 2026.3 with the leap-frog `md`
 ; integrator SILENTLY reduces a Nose-Hoover chain to length 1 --
 ;     "leapfrog does not yet support Nose-Hoover chains, nhchainlength reset to 1"
@@ -83,7 +83,7 @@ orire                    = no
 
 ; ---- Thermostat ----------------------------------------------------------------------
 ; Canonical ensemble: quasi-harmonic analysis assumes a multivariate Gaussian drawn
-; from the canonical distribution (Rinaldo & Field eq. 5). D0-C-36: the criterion is
+; from the canonical distribution (Rinaldo & Field eq. 5). The criterion is
 ; "what are you measuring", and here it is positional fluctuation, not velocity
 ; autocorrelation -- so a thermostat is required, not forbidden.
 ; Nose-Hoover, on instruction (2026-09-04). THE COUPLING TIME IS THE WHOLE DECISION.
@@ -118,7 +118,7 @@ gen-temp                 = 298.15
 gen-seed                 = 20260903
 
 ; ---- Isolated molecule: no box, no pressure coupling ---------------------------------
-; The multi-molecule near-critical gas box is retired (D0-P3-19). One molecule,
+; The multi-molecule near-critical gas box is retired. One molecule,
 ; in vacuum, no periodicity.
 pbc                      = no
 Pcoupl                   = no
@@ -146,4 +146,4 @@ nstenergy                = 100
 ; ---- Equilibration is measured, not assumed ------------------------------------------
 ; Rinaldo & Field started with 20 ps and found in the end that 520 ps were needed --
 ; a factor of 26. The equilibration length for this branch comes from the measured
-; relaxation, not from this file. See plan_B section 3.1.
+; relaxation, not from this file.

@@ -1,4 +1,4 @@
-"""A fixed draw of SPICE test frames: the forgetting line's yardstick (ticket 14).
+"""A fixed draw of SPICE test frames: the forgetting line's yardstick.
 
 TOOLING. Produces no scientific number of its own; it selects frames, once, by seed, and
 writes the list of ids beside them so that the same draw can be made again anywhere.
@@ -6,7 +6,7 @@ writes the list of ids beside them so that the same draw can be made again anywh
     python scripts/tooling/s0_spice_test_draw.py --n 5000
     python scripts/tooling/s0_spice_test_draw.py --n 50 --source tests/data/spice_tiny/test_large_neut_all.xyz --out /tmp/x.xyz
 
-Round-2 Q7 judges forgetting as the E/F error on MACE-OFF23's own test split, engine
+Forgetting is judged as the E/F error on MACE-OFF23's own test split, engine
 against base. That comparison only means something if BOTH models see the same frames,
 so the draw is made once and committed as a file of ids (`<out>.ids.dat`): the frames
 themselves are large and belong to the SPICE release, the ids are ours.
