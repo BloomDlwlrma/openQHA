@@ -1,4 +1,4 @@
-"""Ticket 17: the curated QM9 archive as one HDF5 (one group per molecule, parsed form
+"""The curated QM9 archive as one HDF5 (one group per molecule, parsed form
 only), and the on-demand rendering of a molecule back into a QM9 file.
 
 A tiny directory in the archive's three naming patterns (the seven shipped geometries

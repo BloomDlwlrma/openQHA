@@ -1,4 +1,4 @@
-"""Ticket 08 of the Hessian-learning set: the campaign page and the progress table.
+"""The campaign page and the progress table.
 
 `s0_hl_progress.progress` on a fake tree -- a draw of three molecules: one with branch A,
 a Frame set and some finished ORCA file groups plus a fresh `.running` claim, one with
@@ -83,11 +83,11 @@ def main():
                 dict(qm9_index="dsgdb9nsd_000036", smiles="CCC=O", n_heavy=4, classes="aldehyde;ketone", in_training=False, pinned=False),
                 dict(qm9_index="dsgdb9nsd_000100", smiles="C1COC1", n_heavy=4, classes="small_ring", in_training=False, pinned=False)]
         dat.write_table(d / "draw.dat", rows, list(sc.ROW_SCHEMA), sc.ROW_SCHEMA)
-        # the third molecule ran branch A and failed: the marker, no Property file (ticket 26)
+        # the third molecule ran branch A and failed: the marker, no Property file
         basins.write_failed(layout.records_dir(layout.molecule_dir(root, TAG, "dsgdb9nsd_000100")), "branch A failed: no ensemble")
         fresh = hp.progress(root, [TAG], "p", LEVEL)
         t = fresh["total"]
-        check("ticket 26: a molecule with _records/branchA.failed counts as A failed 1, branch A 0 (small_ring)",
+        check("a molecule with _records/branchA.failed counts as A failed 1, branch A 0 (small_ring)",
               t["A_failed"] == 1 and fresh["classes"]["small_ring"]["A_failed"] == 1 and fresh["classes"]["small_ring"]["branchA"] == 0
               and fresh["classes"]["aldehyde"]["A_failed"] == 0, (t["A_failed"], fresh["classes"].get("small_ring")))
         check("a fresh draw: 3 drawn, 2 with branch A, 1 Frame set of 15 frames, none labelled, none running; per class from the draw's classes",
@@ -104,12 +104,12 @@ def main():
         check("after four finished file groups, one fresh claim and one .out without the terminal line: labelled 4, failed 1 (that .out), unlabelled 10, running 1 (the claim only)",
               (t["frames"], t["labelled"], t["failed"], t["unlabelled"], t["running"]) == (15, 4, 1, 10, 1)
               and later["classes"]["aldehyde"]["labelled"] == 4 and later["classes"]["ketone"]["labelled"] == 0, t)
-        # ticket 02: the retry archive sits beside the file group and is inert -- every parser
+        # the retry archive sits beside the file group and is inert -- every parser
         # reads the exact <stem>.out, so a `<stem>.failed.out` changes no counter
         frame_labels.failed_archive(layout.frames_dir(mol_a),
                                     layout.orca_frame_stem(LEVEL, "displaced", 2, 0)).write_text("older failure\n", encoding="utf-8")
         archived = hp.progress(root, [TAG], "p", LEVEL)
-        check("ticket 02: a <stem>.failed.out archive beside the failed .out changes no progress counter (failed stays failed; no parser reads the archive; no schema change)",
+        check("a <stem>.failed.out archive beside the failed .out changes no progress counter (failed stays failed; no parser reads the archive; no schema change)",
               archived["total"] == later["total"] and archived["classes"] == later["classes"], (archived["total"], later["total"]))
         threaded = hp.progress(root, [TAG], "p", LEVEL, workers=4)
         check("the threaded walk (workers=4) returns the same counters as the single-threaded one -- threading is an implementation detail",
@@ -140,10 +140,10 @@ def main():
           not missing and not foreign and len(page) >= 6, (missing, foreign, len(page)))
     text = PAGE.read_text(encoding="utf-8")
     check("the page names the progress script, the exit-code signal, the resubmit-as-is rule, TIMEOUT_S = 28800, "
-          "the failed state, --retry (ticket 24), the one-shot retry's sequencing and ticket 06's wording -- the retry "
+          "the failed state, --retry, the one-shot retry's sequencing and the retry wording -- the retry "
           "rides every round by default, the sweep is RETRY_ONLY=1, the sequencing ends at **any round** (a round burns "
           "the shots it touches) and the log-line table describes the rule / retry-only / per-task retry slice -- "
-          "with ticket 04's command lines and the 2026-09-25 scope ruling (basin frames only, GENERATORS=basin on both "
+          "with the production command lines and the basin-frames-only scope (GENERATORS=basin on both "
           "commands); the old flag, its round and the old not-rerun claim are gone",
           all(s in text for s in ("s0_hl_progress.py --tag draw300", "assemble exits 0", "resubmitted **as it is**",
                                   "3-00:00:00", "TIMEOUT_S=28800", "**failed**", "--retry", "touched within 30 min",
@@ -160,7 +160,7 @@ def main():
           [s for s in ("**any round**", "rides every round by default", "re-attempted ONCE in this round", "retries    R in this task") if s not in text])
     doc_readme = (ROOT / "workflows" / "hessian_learning" / "README.md").read_text(encoding="utf-8")
     context_doc = (ROOT / "CONTEXT.md").read_text(encoding="utf-8")
-    check("ticket 06: the workflow README and CONTEXT.md carry the new retry contract -- every round carries the unarchived "
+    check("the workflow README and CONTEXT.md carry the new retry contract -- every round carries the unarchived "
           "failures by default and RETRY_ONLY=1 is the failures-only round; the next round re-attempts a failed frame once "
           "with the archive as the durable marker; no RETRY_FAILED, no 'no ordinary round reruns', no 'until a human asks (--retry)'",
           "RETRY_FAILED" not in doc_readme and "--retry-failed" not in doc_readme
@@ -181,7 +181,7 @@ def main():
                 "03_labels.py --tag draw300 --resource tianhe_cpu",
                 "--max-blocks 12 --walltime 3-00:00:00",
                 "04_dataset.py --tag draw300 --split-by molecule")
-    check("ticket 25: the page carries the six-command production sequence (A array, 02 on two nodes, 01, tmux, the parsl driver "
+    check("the page carries the six-command production sequence (A array, 02 on two nodes, 01, tmux, the parsl driver "
           "with 12 blocks of 3 days, 04), the quota (32 submissions, every array task counted), the tmux gate and its "
           "three outcomes, the sbatch rounds as the fallback",
           all(s in text for s in sequence) and "| tenant `hku2021_fos4`" in text and "every array task as a submission" in text

@@ -1,16 +1,16 @@
 """Unit test: `openqha/artifacts.py` refuses to file an artifact without an identity.
 
-UNIT. Branch D, plan_D section 8.4. Seconds; touches no engine and no network.
+UNIT. Seconds; touches no engine and no network.
 
 The point of `write_artifact` is that it can REFUSE. A filing helper that accepts
 everything would leave `analysis/` exactly where it was, so most of the cases below
-are cases that MUST raise -- skills section 2.4(a): a criterion nobody has built a
+are cases that MUST raise -- a criterion nobody has built a
 failing example for has not been shown to be able to fail.
 
 The write cases are redirected into a temporary directory by rebinding
 `artifacts.ANALYSIS`. That is the one seam this test needs, and it is deliberate:
 the module chooses destinations from that constant precisely so that the choice is
-in one place (D0-C-8).
+in one place.
 
 Run::  python tests/unit/t_artifacts_identity.py
 """

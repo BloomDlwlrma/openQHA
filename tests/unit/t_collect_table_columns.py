@@ -1,8 +1,8 @@
-"""Collect's Table explains every column it writes (ticket 02, collect-one-table, 2026-09-16).
+"""Collect's Table explains every column it writes.
 
 UNIT. No engine; under a second.
 
-The ruling (user, 2026-09-16, ADR 0003 amendment): collect leaves one `collect.dat` with
+Collect leaves one `collect.dat` with
 the sections `trajectories`, `blank`, `assembly`, always all three, and above each header
 one comment per column from `chain_records.COLUMNS`. The seam: the rows collect builds
 (`table_sections` in the analyse driver, fed the dict shapes `analyse_one`, the blank

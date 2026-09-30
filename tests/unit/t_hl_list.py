@@ -62,7 +62,7 @@ def main():
         root, _a = place(tmp, "dsgdb9nsd_000035")                   # done, with a Frame set
         _r, _b = place(tmp, "dsgdb9nsd_000036", with_frames=False)  # done, without one
         basins.write_failed(layout.records_dir(layout.molecule_dir(root, TAG, "dsgdb9nsd_000100")),
-                            "branch A failed: no ensemble")          # ticket 26's marker
+                            "branch A failed: no ensemble")          # the failure marker
         d = dataset.datasets_dir(root, TAG, "p")
         d.mkdir(parents=True, exist_ok=True)
         dat.write_table(d / "draw.dat",

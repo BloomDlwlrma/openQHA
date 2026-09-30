@@ -1,4 +1,4 @@
-"""Ticket 32 of the Hessian-learning set (S0-C-65): `scripts/tooling/s0_probe_calibration.py`,
+"""`scripts/tooling/s0_probe_calibration.py`,
 the fixed-probe calibration, on the stored fixture pair (propanal: the ORCA Hessian and the
 MACE-OFF23_medium Hessian at the same basin) and on the 2-methyloxirane frames.
 
@@ -9,8 +9,8 @@ deterministic limit holds (K = 3N unit probes would be exact; the Rademacher spr
 1/sqrt(K), checked as a ratio between K = 1 and K = 16); the predicted per-frame sd (eq. 2.3)
 agrees with the measured spread of many sets within 15 %; `summarise` computes OFFSET and
 SEED_SPREAD in units of the exact mean and draws no verdict (the `ENOUGH` column and the
-`--project-n` extrapolation were voided on 2026-09-23: whether K is enough is measured on a real
-run by ticket 34, not extrapolated here); the mean's spread
+`--project-n` extrapolation are gone: whether K is enough is measured on a real
+run, not extrapolated here); the mean's spread
 falls as 1/sqrt(n_frames) when the same frame is repeated; the reader takes a glob of labelled
 extxyz and skips frames without a Hessian; a molecule whose branch A finished but whose Frame set
 is missing is skipped rather than raised on (the tianhe crash of 2026-09-23) and the funnel says so;
@@ -67,8 +67,8 @@ def main():
     ks = [1, 2, 4, 16]
     n_at = n3 // 3
     prod_v, sets_v = tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 0), n_at, max(ks), seed_sets=200)
-    check("the production set is [k_max, 3N] ~ N(0, I) (PHL's Algorithm 1, S0-C-68), drawn from the "
-          "frame's IDENTITY and nothing else (S0-C-67): the same call twice gives the same set, another "
+    check("the production set is [k_max, 3N] ~ N(0, I) (PHL's Algorithm 1), drawn from the "
+          "frame's IDENTITY and nothing else: the same call twice gives the same set, another "
           "frame's differs, and a rewritten Label does not enter it",
           prod_v.shape == (max(ks), n3) and abs(float(np.std(prod_v)) - 1.0) < 0.15
           and np.array_equal(prod_v, tool.frame_probes("dsgdb9nsd_000035", ("basin", 0, 0), n_at, max(ks), 1)[0])
@@ -139,7 +139,7 @@ def main():
     r1 = next(r for r in rows if r["K"] == 1)
     check("SEED_SPREAD falls as 1/sqrt(K) across the rows (K = 1 vs 4: ratio 2 within 25 %)",
           abs(r1["SEED_SPREAD"] / r4["SEED_SPREAD"] - 2.0) < 0.5, (r1["SEED_SPREAD"], r4["SEED_SPREAD"]))
-    check("no row claims a verdict (ENOUGH / SPREAD_AT_N were voided 2026-09-23)",
+    check("no row claims a verdict (ENOUGH / SPREAD_AT_N are gone)",
           "ENOUGH" not in r4 and "SPREAD_AT_N" not in r4 and not hasattr(tool, "DEFAULT_TARGET"), sorted(r4))
 
     # the mean's spread falls as 1/sqrt(n_frames): the same frame repeated 9 times

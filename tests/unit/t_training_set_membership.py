@@ -1,4 +1,4 @@
-"""Ticket 30: is the molecule in MACE-OFF23's training set? (step 1, the shipped species)
+"""Is the molecule in MACE-OFF23's training set? (step 1, the shipped species)
 
 UNIT. RDKit only, no engine, seconds. tests/data/spice_tiny holds two SPICE-format files
 (atom-mapped explicit-H SMILES in extxyz headers, as the released MACE-OFF23 data carries

@@ -1,12 +1,12 @@
-"""Branch A's basins are read from the molecule directory, not from a store (ticket 07).
+"""Branch A's basins are read from the molecule directory, not from a store.
 
 UNIT. Builds a molecule directory by hand in a temporary root (two `mace/basinNN/
 basin.extxyz` files and a `_records/basins.json`), then reads it back through
 `openqha.store.basins`; under a second.
 
-The decision (ADR 0001, user 2026-09-14, Q6): branch B reads
-`<molecule>/mace/basinNN/basin.extxyz`; `data/basins/<tag>/<range>/<chunk>/` was a
-byte-identical second copy of the record and is retired. What every reader needs from
+Branch B reads
+`<molecule>/mace/basinNN/basin.extxyz`; the byte-identical second copy under
+`data/basins/<tag>/<range>/<chunk>/` is retired. What every reader needs from
 the module: does the product exist, how many basins, their geometries in branch A's
 atom order, the record, a message naming the folder when it is absent, and the set of
 finished molecules under a tag (what a resume subtracts from its worklist).
@@ -52,7 +52,7 @@ def main():
             d.mkdir(parents=True)
             (d / "basin.extxyz").write_text(EXTXYZ.format(c=b, b=b, e=-10.0 - b), encoding="utf-8")
         layout.records_dir(mol).mkdir()
-        # The Property file, branchA.toml (records redesign, 2026-09-15): the status
+        # The Property file, branchA.toml: the status
         # block first, then the blocks a later step reads.
         from openqha.store import property as prop
         prop.write(layout.records_dir(mol) / "branchA.toml",

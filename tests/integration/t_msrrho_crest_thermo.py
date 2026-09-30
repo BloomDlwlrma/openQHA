@@ -1,4 +1,4 @@
-"""Ticket 22, the third-party seam: our `crest` preset against the real `crest --thermo`.
+"""The third-party seam: our `crest` preset against the real `crest --thermo`.
 
 INTEGRATION. Needs the crest executable (environment `s0crest`, or S0_CREST_BIN); a few
 seconds. Skips when crest is absent.
@@ -11,7 +11,7 @@ acetone.xyz --thermo vibspectrum --sthr 25 --ithr -50 --fscal 1.0` is run, and t
 row at 298.15 K is compared term by term: entropy (cal/mol/K), thermal enthalpy
 (cal/mol) and heat capacity (cal/mol/K). The ROT and TR rows are not compared: CREST's
 translational term is at 1 atm with historical constants and this repository's is at
-1 bar, a 0.04 cal/mol/K convention difference that is not this ticket's seam.
+1 bar, a 0.04 cal/mol/K convention difference that is not this seam's.
 """
 import os
 import shutil

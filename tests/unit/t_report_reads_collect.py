@@ -1,6 +1,6 @@
 """report_ensemble sums the entropies collect judged; it does not analyse frames itself.
 
-UNIT. No engine, no pandas (since 2026-09-16 collect leaves one Table, collect.dat); under a second.
+UNIT. No engine, no pandas (collect leaves one Table, collect.dat); under a second.
 
 The defect (an113, 2026-09-13)
 ------------------------------
@@ -13,8 +13,7 @@ printed ten seconds earlier -- reported
 
 because `entropy_per_basin` re-ran `qha.analyse` on the raw frames and skipped, without
 a word, every trajectory shorter than 3N frames. Its own docstring says "It assembles, it
-does not compute". Now it reads the `trajectories` section of `collect.dat` (since 2026-09-16;
-parquet before), the rows collect judged, and carries the verdict of `collect.toml` into its exit code.
+does not compute". It reads the `trajectories` section of `collect.dat`, the rows collect judged, and carries the verdict of `collect.toml` into its exit code.
 
 What is asserted
 ----------------
@@ -62,7 +61,7 @@ def main():
     cfg = config.load()
 
     with tempfile.TemporaryDirectory() as tmp:
-        # Since 2026-09-14 (ADR 0001) collect's Record sits in the molecule directory:
+        # collect's Record sits in the molecule directory:
         # <root>/<tag>/<range>/<chunk>/<species>/_records/md_openmm/collect.{out,toml,dat}
         stem = drv.collect_stem(SPECIES, TAG, root=tmp)
         stem.parent.mkdir(parents=True)
@@ -100,7 +99,7 @@ def main():
                      TS_QH_kcal=ts, TS_Schlitter_kcal=ts + 0.1)
                 for b, s, ts in [(0, 0, 10.0), (0, 1, 10.2), (0, 2, 10.4),
                                  (1, 0, 12.0), (1, 1, 12.0), (1, 2, 12.0)]]
-        # One Table (2026-09-16): the trajectories section beside empty blank and assembly.
+        # One Table: the trajectories section beside empty blank and assembly.
         chain_records.write_collect_table(stem, dict(trajectories=rows, blank=[], assembly=[]))
         verdicts = [("{}  criterion {}".format(i, i), "x", i < 5) for i in range(10)]
         chain_records.write_collect(stem, dict(species=SPECIES, tag=TAG, basin_tag=TAG,
@@ -139,7 +138,7 @@ def main():
         if not ok:
             FAIL.append("a Property file without [Criteria] did not give (None, None)")
 
-    # D. (records redesign, ticket 17) the electronic energies come from branchA.toml's
+    # D. the electronic energies come from branchA.toml's
     #    [[Basin]] blocks, RELATIVE by name; a basin without it raises, never zero.
     doc = {"Calculation_Status": {"STATUS": "NORMAL TERMINATION"},
            "Basin": [{"INDEX": 1, "RELATIVE": 0.836}, {"INDEX": 0, "RELATIVE": 0.0}]}

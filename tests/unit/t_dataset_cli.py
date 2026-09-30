@@ -1,15 +1,14 @@
-"""Ticket 08 of hessian-learn-framework (round-1 xyz): the 04_dataset.py CLI contract.
+"""The 04_dataset.py CLI contract.
 
-Two things the CLI must promise (both were broken on 2026-09-26): a real run reaches
-`build` at all -- the call carried `resplit=args.resplit` while the parser never grew a
-`--resplit`, so every invocation raised AttributeError before the build and
-`hl_labels.slurm`'s tail call hid it (its exit code is not captured) -- and `--split-by`
-defaults to `molecule`, S0-C-65's production granularity (the script said `frame`, the
-smoke / fit mode, with its help text describing the two modes backwards).
+Two things the CLI must promise: a real run reaches
+`build` at all -- the call passes only keywords the parser defines, so no invocation
+raises AttributeError before the build -- and `--split-by`
+defaults to `molecule`, the production granularity (the other mode is `frame`, the
+smoke / fit mode).
 
 The script is loaded as a module (`__main__` guard keeps it inert); `openqha.config` is
 stubbed and `dataset.build` records its keywords and stops `main()` before anything
-prints. `--tag draw300` is the ticket's own invocation.
+prints. `--tag draw300` is the production invocation.
 """
 import importlib.util
 import sys
@@ -70,7 +69,7 @@ def _run_cli(argv):
 
 def main():
     calls = _run_cli(["--tag", "draw300"])
-    check("ticket 08: a bare CLI run reaches the build (no AttributeError) with --split-by molecule "
+    check("a bare CLI run reaches the build (no AttributeError) with --split-by molecule "
           "and no resplit keyword, and the Dataset name defaults to the first tag",
           calls.get("split_by") == "molecule" and "resplit" not in calls and calls.get("name") == "draw300"
           and calls.get("tags") == ["draw300"],

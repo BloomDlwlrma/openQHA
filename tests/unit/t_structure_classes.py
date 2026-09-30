@@ -1,4 +1,4 @@
-"""Ticket 05 of the Hessian-learning set: structure classes and the draw.
+"""Structure classes and the draw.
 
 Asserted: `classify` on known SMILES gives the expected class sets (oxetane, 2-methyl-
 oxirane, cyclopropanol, acetamide, propanal, acetone, benzene, cyclooctane,

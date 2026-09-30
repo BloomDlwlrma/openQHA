@@ -1,9 +1,9 @@
-"""The delete-old-layout script lists before it removes, and never touches the new root (ticket 08).
+"""The delete-old-layout script lists before it removes, and never touches the new root.
 
 UNIT. Builds a throwaway copy of the OLD layout (repository trees and the runs roots of
 every period) inside a temporary directory, then runs the script on it; under a second.
 
-The ruling (user, 2026-09-14): the old trees are not migrated, they are deleted -- after
+The old trees are not migrated, they are deleted -- after
 a plan that lists exactly what will go. So `--plan` (the default) must list every old
 tree with its size and file count and remove nothing; `--delete` must remove those trees
 and nothing else; and a directory under the NEW root is never listed even when it is
@@ -57,7 +57,7 @@ def build(tmp):
     touch(home / "HDD_POOL" / "runs" / "openQHA" / "logs" / "b.log", 3)
     touch(new / "02d_prod" / "1_16000" / "1_1000" / "m" / "crest" / "crest.out", 4)
     touch(new / "analysis" / "trap.txt", 4)                          # under the new root: stays
-    # Step-2 leftovers inside the new root (records redesign, 2026-09-15): listed by name.
+    # Step-2 leftovers inside the new root: listed by name.
     mol = new / "02d_prod" / "1_16000" / "1_1000" / "dsgdb9nsd_000018"
     touch(mol / "_records" / "basins.toml", 6)
     touch(mol / "_records" / "branchA.toml", 6)                      # the replacement: stays

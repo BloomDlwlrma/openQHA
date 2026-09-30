@@ -1,10 +1,10 @@
-"""The trajectory driver leaves exactly OpenMM's seven files in the engine folder (ticket 03).
+"""The trajectory driver leaves exactly OpenMM's seven files in the engine folder.
 
 INTEGRATION. Runs the real driver three times on the CPU platform with a protocol of a
 few hundred steps on a shipped molecule; each run traces the MACE model, so it is a
 minute or two, not a second. Skips with a message when OpenMM or MACE is absent.
 
-The decision (ADR 0001, user 2026-09-14): `openmm/<setting>/basinNN/` under the molecule
+The layout: `openmm/<setting>/basinNN/` under the molecule
 directory holds `start.pdb system.xml integrator.xml traj.dcd state.csv state.xml
 state.chk` and nothing else; the DCD and the CSV are written at the sampling interval so
 frames and rows align; state XML and checkpoint at every flush; a partial trajectory is
@@ -101,7 +101,7 @@ def main():
               t.n_frames if t is not None else "no dcd/pdb")
         check("no seed level, no setting level: md_openmm/basin00",
               eng.parent.name == "md_openmm" and eng.name == "basin00")
-        # The Record (records redesign, 2026-09-15): _records/md_openmm/basin00/md.out + md.toml,
+        # The Record: _records/md_openmm/basin00/md.out + md.toml,
         # no setting level; the .toml starts with the status block; STATUS is the marker.
         from openqha.store import report as _report, property as _prop
         from openqha.quasi_harmonic import md_record as _md

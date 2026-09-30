@@ -1,10 +1,10 @@
-"""CREST runs node-local and its finished directory is moved once into crest/ (ticket 06).
+"""CREST runs node-local and its finished directory is moved once into crest/.
 
 INTEGRATION. Runs the branch A pipeline with a STAND-IN crest binary (a shell script that
 writes the known file set) and the real MACE for the tightening and Hessian that follow;
 tens of seconds. Skips when MACE is absent or the platform has no bash.
 
-The decision (ADR 0002 + Q20, user 2026-09-14): CREST writes dozens of small files and
+CREST writes dozens of small files and
 must not do so on Lustre, so it runs under the node-local scratch
 (`$S0_SCRATCH/openqha_crest/<qid>/`) and, when it returns, that directory is copied ONCE
 into `<molecule>/crest/`; the SHAKE fallback's into `crest_shake1/`; the node-local copy
@@ -127,7 +127,7 @@ def main():
         names = crest_set(crest)
         check("pipeline ran to its record (exit {})".format(rc),
               (layout.records_dir(mol) / "branchA.toml").exists(), out[-1500:])
-        # The Record (records redesign, 2026-09-15): branchA.out (the Report) and
+        # The Record: branchA.out (the Report) and
         # branchA.toml (the Property file), nothing else; the .toml starts with the status
         # block and STATUS is the marker; the .out ends with the terminal line.
         from openqha.store import report as _report, property as _prop, branch_a_property as _bap

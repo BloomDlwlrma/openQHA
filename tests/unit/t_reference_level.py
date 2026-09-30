@@ -1,4 +1,4 @@
-"""Ticket 26: the reference level (wb97m-d3bj_def2-tzvppd) and level_compare.
+"""The reference level (wb97m-d3bj_def2-tzvppd) and level_compare.
 
 UNIT. No engine: tests/data/propanal_molecule carries the ORCA 6.0.1 engine files of the
 propanal dry run (`! wB97M-D3BJ def2-TZVPPD TightOpt Freq TightSCF`, 8 cores, basin 0 in
@@ -8,11 +8,11 @@ so `optimise_and_hessian` finds finished jobs and runs nothing.
 Asserted: the .hess passes the frequency round-trip; the merge map lists every requested
 MACE basin exactly once with its status and displacement; the Hessian route is recorded
 (analytic here); the level's thermo_msrrho record lands in msrrho/thermo/<level>.* with the
-ticket-24 blocks; level_compare states an absent level as PRESENT = false and computes the
+thermo_msrrho blocks; level_compare states an absent level as PRESENT = false and computes the
 tiers only where both sides exist; on the basins the fixture holds, S_abs at the reference
 level is compared with the declared experiment.
 
-Ticket 39 adds: `relaxation_verdict` on the shared floor classifier (minimum / below-floor
+Further: `relaxation_verdict` on the shared floor classifier (minimum / below-floor
 saddle / window soft saddle, the floor line itself in the window); `relax_with_retry`'s
 branches with a fake `run` (one job on a minimum and on a below-floor saddle; one retry
 from the ORCA-relaxed geometry with `rerun=True` into a minimum or another saddle; a
@@ -95,18 +95,18 @@ def main():
               sorted(int(r["mace_basin"]) for r in rows) == available)
         check("every row has a status in {kept, merged, saddle} and a displacement RMSD",
               all(r["status"] in ("kept", "merged", "saddle") and r["rmsd_displacement_A"] >= 0 for r in rows))
-        check("merge map rows carry soft_saddle (false here) and the lowest frequency (ticket 39)",
+        check("merge map rows carry soft_saddle (false here) and the lowest frequency",
               all(r["soft_saddle"] is False and r["lowest_frequency_cm"] > 0 for r in rows),
               [(r["mace_basin"], r["soft_saddle"], r["lowest_frequency_cm"]) for r in rows])
         check("the frequency round-trip on every .hess is below 0.5 cm^-1",
               all(r["roundtrip_cm"] < 0.5 for r in rows), [r["roundtrip_cm"] for r in rows])
         doc = prop.load(layout.level_file(mol, LEVEL, "thermo_msrrho.toml"))
-        check("msrrho/thermo/<level>.thermo_msrrho.toml has the ticket-24 blocks (no [Imaginary_Spread]) and LEVEL = " + LEVEL,
+        check("msrrho/thermo/<level>.thermo_msrrho.toml has the thermo_msrrho blocks (no [Imaginary_Spread]) and LEVEL = " + LEVEL,
               set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result"}
               and doc["Calculation_Info"]["LEVEL"] == LEVEL)
-        check("[Calculation_Info].ITHR_POLICY = invert_below at the reference level (tickets 35/39)",
+        check("[Calculation_Info].ITHR_POLICY = invert_below at the reference level",
               doc["Calculation_Info"]["ITHR_POLICY"] == "invert_below")
-        check("every [[Basin]] row carries SOFT_SADDLE = false on a clean molecule (ticket 39)",
+        check("every [[Basin]] row carries SOFT_SADDLE = false on a clean molecule",
               all(r["SOFT_SADDLE"] is False for r in doc["Basin"]))
         check("the Report ends with the terminal line",
               report.terminated_normally(layout.level_file(mol, LEVEL, "thermo_msrrho.out"), "thermo_msrrho"))
@@ -136,7 +136,7 @@ def main():
               abs(t["TOTAL_ERROR_S"] - (t["MODEL_ERROR_S"] + t["LEVEL_ERROR_S"])) < 1e-9)
         print("      tiers: model %+.3f  level %+.3f  total %+.3f cal/mol/K"
               % (t["MODEL_ERROR_S"], t["LEVEL_ERROR_S"], t["TOTAL_ERROR_S"]))
-        # ticket 27: every ensemble term per level, and a MODEL_ERROR_ line for each
+        # every ensemble term per level, and a MODEL_ERROR_ line for each
         for need in ("S_REF", "S_CONF_PRIME", "DS_BAR", "H_CONF", "CP_CONF", "G_TOTAL", "N_BASINS", "N_BASINS_90"):
             check("[[Level]] carries %s for every present level" % need,
                   all(need in r for r in cmp1["levels"] if r["PRESENT"]))
@@ -154,8 +154,8 @@ def main():
               next(iter(cdoc)) == "Calculation_Status"
               and report.terminated_normally(layout.thermo_file(mol, "level_compare.out"), "level_compare"))
 
-        # ---- ticket 39: the soft-saddle retry ---------------------------------------
-        print("      ticket 39: the retry is decided on the shared floor classifier")
+        # ---- the soft-saddle retry ---------------------------------------
+        print("      the retry is decided on the shared floor classifier")
         for lowest, want in ((131.14, "minimum"), (0.0, "minimum"), (-0.5, "soft_saddle"),
                              (-6.84, "soft_saddle"), (ITHIR, "soft_saddle"),
                              (ITHIR - 1e-9, "saddle"), (-195.79, "saddle")):

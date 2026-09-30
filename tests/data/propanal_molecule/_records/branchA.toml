@@ -9,7 +9,7 @@ NAME               = "propanal"                 # String: the molecule's name in
 SMILES             = "CCC=O"                    # String: declared in config
 TAG                = "propanal"                 # String: the tag this run was made under
 ENGINE             = "MACE-OFF23_medium"        # String: the potential
-MOLECULE_DIR       = "/home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035"  # String: the molecule directory (ADR 0001)
+MOLECULE_DIR       = "/home/ubuntu/runs/openQHA/propanal/1_16000/1_1000/dsgdb9nsd_000035"  # String: the molecule directory
 WORKHORSE          = "gfn2"                     # String: CREST sampling level
 REFINE             = "sp"                       # String: CREST refinement of the survivors
 RUNTYPE            = "imtd-gc"                  # String: CREST run type

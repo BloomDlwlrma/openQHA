@@ -1,4 +1,4 @@
-"""Ticket 20 of the Hessian-learning set (S0-C-54, ADR 0005): `dataset.build`'s
+"""`dataset.build`'s
 `train_generators` -- basin frames only in train and valid, every labelled frame of a
 held-out generator in test, whatever the draw or the previous index said.
 

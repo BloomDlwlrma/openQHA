@@ -1,9 +1,9 @@
 """Shared helpers for the repository-hygiene tests. Not a test itself.
 
-Two of the branch D checks scan source text for a forbidden pattern, and both hit the
-same trap on their first run: a docstring that EXPLAINS why a pattern was removed
-contains that pattern, so documenting a fix made the check fail. `code_only` is the
-answer both of them need, so it lives here once rather than twice.
+Two of the checks here scan source text for a forbidden pattern, and both meet the
+same trap: a docstring that EXPLAINS why a pattern was removed contains that pattern,
+so documenting a fix would make the check fail. `code_only` is the answer both of them
+need, so it lives here once rather than twice.
 
 Nothing in this file is imported by the package. It exists only for `tests/`.
 """
@@ -28,7 +28,7 @@ def code_only(text):
     function docstrings, and free-floating prose). NOT blanked: strings used as
     arguments, because those are code.
 
-    That distinction was learned the hard way. Blanking every string literal hid two
+    That distinction matters: blanking every string literal would hide two
     genuine occurrences of `sys.path.insert(0, ".")`, because the `"."` the pattern
     looks for is itself a string literal. Widening a filter until a check goes quiet
     is how a check stops being one.

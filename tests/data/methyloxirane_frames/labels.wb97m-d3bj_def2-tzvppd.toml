@@ -6,7 +6,7 @@ STATUS   = "NORMAL TERMINATION"    # String: the completion marker
 [Calculation_Info]
 MOLECULE_DIR       = "/home/ubuntu/runs/openQHA/rings/1_16000/1_1000/dsgdb9nsd_000044"  # String: the molecule directory
 QM9_INDEX          = "dsgdb9nsd_000044"         # String: the molecule
-LEVEL              = "wb97m-d3bj_def2-tzvppd"   # String: the reference level (CONTEXT.md spelling; the file suffix)
+LEVEL              = "wb97m-d3bj_def2-tzvppd"   # String: the reference level (the file suffix)
 KEYWORDS           = "wB97M-D3BJ def2-TZVPPD TightSCF EnGrad Freq"  # String: ORCA's ! line: the level's single point + EnGrad + its Hessian route
 HESSIAN_ROUTE      = "analytic"                 # String: analytic / numerical, as the level declares it (orca.LEVELS)
 ORCA_VERSION       = "6.0.1"                    # String: Program Version of the .out files (the set of versions, if a rerun mixed them)

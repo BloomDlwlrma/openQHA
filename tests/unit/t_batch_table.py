@@ -1,8 +1,8 @@
-"""The Batch table: one shape for the three parsl drivers (records redesign, ticket 20).
+"""The Batch table: one shape for the three parsl drivers.
 
 UNIT. No engine; under a second.
 
-The ruling (user, 2026-09-15, Q4 (b) and Q7): a Batch writes nothing about itself; the
+A Batch writes nothing about itself; the
 Slurm log is its report, and it lists every Calculation on one aligned line with the
 common columns first (species basin seed rc seconds STATUS record), the driver's own
 after. `openqha.store.batch_table` is that shape, so the branch A, branch B and collect

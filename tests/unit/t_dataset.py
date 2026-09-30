@@ -1,4 +1,4 @@
-"""Ticket 04 of the Hessian-learning set: the Dataset -- selection, split, files, index,
+"""The Dataset -- selection, split, files, index,
 OpenREACT export -- on two fake molecules made from the propanal fixture (harmonic
 surrogate frames, fake reference labels written straight into the level files; no
 engine, no ORCA).
@@ -14,15 +14,16 @@ differs with another; `index.dat` round-trips through `dat.read_table` and every
 coordinates / energies / forces / hessian / species in A, Eh, Eh/A, Eh/A^2 that read
 back to the extxyz within 1e-10; `stratum_keys` on known SMILES.
 
-Ticket 07 (the production split, classes, the MACE form): a third, non-pinned molecule
-whose displaced frames carry no Hessian; `split_by="frame"` puts the pinned molecule's
-frames all in test and draws every other labelled frame on its own at 90/5/5 (a
-binomial tolerance on 30 frames), a frame's split is unchanged when other frames are
-added or the previous index is dropped, a rebuild keeps every decision; the `[[Class]]`
-rows add up and `classes` round-trips; the merged `mace_<name>.<level>.extxyz` reads back
-with ASE with REF_energy == energy, REF_forces == forces, REF_hessian == hessian where
-`has_hessian`, `split` in {train, valid, test}, frame count = the three files' sum; a
-hand-written `draw.dat` makes `select` list a molecule branch A never ran for.
+Also asserted -- the production split, the classes and the MACE form: a third,
+non-pinned molecule whose displaced frames carry no Hessian; `split_by="frame"` puts
+the pinned molecule's frames all in test and draws every other labelled frame on its
+own at 90/5/5 (a binomial tolerance on 30 frames), a frame's split is unchanged when
+other frames are added or the previous index is dropped, a rebuild keeps every
+decision; the `[[Class]]` rows add up and `classes` round-trips; the merged
+`mace_<name>.<level>.extxyz` reads back with ASE with REF_energy == energy,
+REF_forces == forces, REF_hessian == hessian where `has_hessian`, `split` in
+{train, valid, test}, frame count = the three files' sum; a hand-written `draw.dat`
+makes `select` list a molecule branch A never ran for.
 """
 import shutil
 import sys
@@ -67,7 +68,7 @@ def place(tmp, qid):
 def _fake_hessian(a):
     """A reference-level Hessian for the fixture: the engine's own scaled where the frame
     carries one (basin / merged / saddle), else a deterministic surrogate of the right shape
-    -- a displaced frame has no engine Hessian since ticket 29, and this fixture is about
+    -- a displaced frame has no engine Hessian, and this fixture is about
     what the Dataset does with a LABEL Hessian, not where it came from."""
     h = a.info.get("hessian")
     if h is not None:
@@ -78,7 +79,7 @@ def _fake_hessian(a):
 
 def fake_labels(mol, generators, mace_level, only_basin_frames=False, gradient_only=()):
     """Reference-level files written from the engine frames with shifted values; the
-    generators in `gradient_only` get no Hessian (round 5 Q7 (b): the displaced frames)."""
+    generators in `gradient_only` get no Hessian (the displaced frames)."""
     for g in generators:
         src = layout.frames_file(mol, g, mace_level)
         if not src.is_file():
@@ -106,9 +107,9 @@ def main():
         root, mol_a = place(tmp, "dsgdb9nsd_000035")           # pinned: propanal
         _root, mol_b = place(tmp, "dsgdb9nsd_000036")          # the fixture again, under another index (N-methylformamide's)
         mace_level = prop.load(layout.frames_dir(mol_a) / "frames.toml")["Calculation_Info"]["LEVEL"]
-        # mol_b keeps ONE engine frame as the pre-2026-09-27 fixtures have it (the attribute
+        # mol_b keeps ONE engine frame as the old fixtures have it (the attribute
         # `engine_params_sha256`, no `engine`): old frames are data and are never rewritten, so
-        # the build must still work and read that frame's engine as '-' (decision 04, ticket 04a)
+        # the build must still work and read that frame's engine as '-'
         p_old = layout.frames_file(mol_b, "basin", mace_level)
         old_text = p_old.read_text(encoding="utf-8")
         check("the old-attribute fixture rewrite applies (the engine frame carries engine=<name>)",
@@ -167,7 +168,7 @@ def main():
         same, diff = key(again["index"]) == key(idx), key(other["index"]) != key(idx)
         check("the split is identical on a rebuild with the same seed and differs with another seed (previous index not kept)",
               same and diff and again["info"]["KEPT_PREVIOUS"], (same, diff))
-        # a rebuild after MORE frames get labelled keeps every earlier decision (review 2026-09-18)
+        # a rebuild after MORE frames get labelled keeps every earlier decision
         before = dataset.build(root, [TAG], "t", level=LEVEL, split_by="molecule", valid_fraction=0.2, test_fraction=0.0, seed=7, pinned=pinned, train_generators=frames.GENERATORS,
                                keep_previous=False)
         prev = {(r["qm9_index"], r["generator"], r["basin"], r["k"]): r["split"] for r in before["index"] if r["split"] != "pool"}
@@ -211,7 +212,7 @@ def main():
                     and int(a.info["basin"]) == r["basin"] and int(a.info["k"]) == r["k"]
                     and a.info["level"] == (LEVEL if r["split"] != "pool" else mace_level)
                     # a labelled frame carries its Label Hessian; a pool frame carries the engine's,
-                    # which a displaced frame has not had since ticket 29
+                    # which a displaced frame has not had
                     and (np.shape(a.info["hessian"]) == (30, 30)
                          if a.info.get("has_hessian", "hessian" in a.info) else "hessian" not in a.info))
             if not good:
@@ -220,7 +221,7 @@ def main():
             ok = ok and good
         check("index.dat round-trips and every row's (file, row) is the frame it names, at the split's level", ok,
               (len(back), bad[:2]))
-        # --- S0-C-67: the valid split carries its own fixed probes ------------------------
+        # --- the valid split carries its own fixed probes ------------------------
         valid_name = "valid.{}.extxyz".format(LEVEL)
         valid_frames = files.get(valid_name) or (frames.read_frames(d / valid_name)
                                                  if (d / valid_name).is_file() else [])
@@ -231,7 +232,7 @@ def main():
             and np.all(np.isfinite(np.asarray(a.info["valid_probes"], dtype=float)))
             and bool(a.info["has_valid_probes"]) for a in labelled_valid)
         check("every labelled valid frame carries [VALID_PROBE_KMAX, 3N] standard-normal probes "
-              "(PHL's Algorithm 1, S0-C-68), and REF_valid_probes beside them",
+              "(PHL's Algorithm 1), and REF_valid_probes beside them",
               probe_ok and all("REF_valid_probes" in a.info for a in labelled_valid),
               [len(labelled_valid), n_at])
         rec_seed = prop.load(d / "dataset.toml")["Calculation_Info"]["SEED"]
@@ -251,7 +252,7 @@ def main():
             check("the stored set is the draw from the frame's IDENTITY and the Record's SEED -- "
                   "reproducible from the Record alone, and independent of the Label's bytes",
                   np.allclose(np.asarray(a0.info["valid_probes"], dtype=float), drawn.reshape(-1), atol=1e-8))
-            check("it is PHL's standard normal, not a sign pattern (S0-C-68): the stored numbers have "
+            check("it is PHL's standard normal, not a sign pattern: the stored numbers have "
                   "unit variance and are not all +-1",
                   abs(float(np.std(drawn)) - 1.0) < 0.15 and not np.all(np.isin(drawn, (-1.0, 1.0))),
                   float(np.std(drawn)))
@@ -308,7 +309,7 @@ def main():
               and np.abs(x_back - a0.get_positions()).max() == 0.0 and sorted(set(splits)) == ["train", "valid"],
               (e_back - a0.get_potential_energy(), np.abs(h_back - a0.info["hessian"]).max(), set(splits)))
 
-    # ================================================================== ticket 07
+    # ================================================================== the production split
     with tempfile.TemporaryDirectory(prefix="dataset07_") as tmp:
         root, mol_a = place(tmp, "dsgdb9nsd_000035")           # pinned: propanal
         _r, mol_b = place(tmp, "dsgdb9nsd_000036")
@@ -398,7 +399,7 @@ def main():
         pool_ok = True
         if (d / "pool.{}.extxyz".format(LEVEL)).is_file():
             pool_ok = all("REF_energy" not in a.info for a in read(str(d / "pool.{}.extxyz".format(LEVEL)), index=":", format="extxyz"))
-        # S0-C-65: the mode is part of the Dataset's identity -- changing it needs --resplit
+        # the mode is part of the Dataset's identity -- changing it needs a resplit
         try:
             dataset.build(root, [TAG], "p", level=LEVEL, split_by="molecule", test_fraction=0.0, valid_fraction=0.2,
                           seed=3, pinned=pinned, train_generators=frames.GENERATORS)
@@ -419,13 +420,13 @@ def main():
                                 valid_fraction=0.2, seed=3, pinned=pinned,
                                 train_generators=frames.GENERATORS)["info"]["RESPLIT"] is False,
               by_mol["info"].get("RESPLIT"))
-        check("the production default is by molecule at 5 % / 5 % (S0-C-65, MACE-OFF's granularity)",
+        check("the production default is by molecule at 5 % / 5 % (MACE-OFF's granularity)",
               dataset.DEFAULT_SPLIT_MODE == "molecule" and dataset.TEST_FRACTION == 0.05
               and dataset.VALID_FRACTION == 0.05,
               (dataset.DEFAULT_SPLIT_MODE, dataset.TEST_FRACTION, dataset.VALID_FRACTION))
         # the judge reads a whole test molecule as out_of_molecule, not interpolation
         from openqha_hessian import judge as judge_mod
-        check("a non-pinned molecule whose molecule_split is test reads out_of_molecule (S0-C-65); "
+        check("a non-pinned molecule whose molecule_split is test reads out_of_molecule; "
               "with no molecule_split it is interpolation",
               judge_mod.distribution_of("dsgdb9nsd_099999", molecule_split="test") == "out_of_molecule"
               and judge_mod.distribution_of("dsgdb9nsd_099999") == "interpolation"

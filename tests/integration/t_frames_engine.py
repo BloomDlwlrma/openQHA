@@ -1,15 +1,13 @@
 """Integration (needs the MACE weights and a molecule directory with basins): the Frame
 set built by `frames.generate` reuses the basin's stored Hessian to 0, and a displaced
 frame carries energy and forces only -- no engine Hessian, `has_hessian = False`
-(S0-C-66, ticket 29) -- with the registered engine's NAME beside it: the identity since
-2026-09-27 is the engine name + the resolved weight file (decision 04; no fingerprint,
-no pin).
+-- with the registered engine's NAME beside it: the identity is the engine name +
+the resolved weight file (no fingerprint, no pin).
 
     python tests/integration/t_frames_engine.py <molecule dir>
 
 The molecule directory is copied to a temporary directory first and the check runs
-there: the source -- the tests/data fixture by default -- is never written to (this test
-used to rewrite the fixture in place; fixed 2026-09-29).
+there: the source -- the tests/data fixture by default -- is never written to.
 """
 import shutil
 import sys
@@ -48,14 +46,14 @@ def _check(molecule):
     d_basin = float(np.abs(fb[0].info["hessian"] - h0).max())
     calc, name, prov = engine.calculator()
     a = frames.read_frames(layout.frames_file(molecule, "displaced", lvl))[0]
-    # S0-C-66 (ticket 29): a displaced frame is energy + forces only -- the file has no
+    # a displaced frame is energy + forces only -- the file has no
     # `hessian` key and `has_hessian = False`; the registered engine's name is recorded
-    # per frame, and the Record names the resolved weight file (2026-09-27, decision 04).
+    # per frame, and the Record names the resolved weight file.
     no_disp_hessian = a.info.get("has_hessian") is False and "hessian" not in a.info
     rec_info = prop.load(layout.frames_dir(molecule) / "frames.toml")["Calculation_Info"]
     ok = (d_basin == 0.0 and no_disp_hessian and a.info["engine"] == name
           and rec_info["WEIGHTS_FILE"] == prov["weights_path"])
-    print("basin frame vs hessian.npy max|dH| = {}   displaced frame carries no engine Hessian (S0-C-66)   "
+    print("basin frame vs hessian.npy max|dH| = {}   displaced frame carries no engine Hessian   "
           "engine in frame {}   weights in Record {}".format(
               d_basin, name if a.info["engine"] == name else "DIFFERS", rec_info["WEIGHTS_FILE"]))
     print("PASS" if ok else "FAIL")

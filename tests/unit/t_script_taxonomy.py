@@ -1,10 +1,10 @@
 """Unit test: every script declares its category, and the declaration matches its directory.
 
-UNIT. Branch D, plan_D section 2.1 / acceptance criterion 3. Seconds; reads files only.
+UNIT. Seconds; reads files only.
 
 Why a declaration AND a directory, when either alone would place the script
 --------------------------------------------------------------------------
-Because classification is a JUDGEMENT, not a fact (plan_D section 2.1), and a
+Because classification is a JUDGEMENT, not a fact, and a
 judgement that lives in only one place cannot be checked. A script that says
 CALIBRATION while sitting in `production/` is a disagreement between two people --
 or between the same person three weeks apart -- and this test is what makes that
@@ -19,10 +19,9 @@ The categories, and the test each one has to pass:
     tooling/      it manages the repository itself (identifiers, format conversion,
                   notebook checks, migration) and produces no science
 
-`diagnostics/` is currently EMPTY, and that is not an oversight. The user's ruling
-S0-D-2 moved the closed-defect probes into `scripts/_superseded/closed-defects/`
-instead, and plan_D section 2.3 is how they stop being needed at all: each becomes a
-named regression test under `tests/regression/`. This test therefore accepts an
+`diagnostics/` is currently EMPTY, and that is not an oversight: the closed-defect
+probes live in `scripts/_superseded/closed-defects/` instead, on their way to being
+recovered as named regression tests under `tests/regression/`. This test therefore accepts an
 absent `diagnostics/` but rejects a script inside one that is not declared.
 
 Run::  python tests/unit/t_script_taxonomy.py

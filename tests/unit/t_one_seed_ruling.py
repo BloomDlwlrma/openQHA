@@ -2,8 +2,8 @@
 
 UNIT. Imports the trajectory driver (torch, openmm); a few seconds.
 
-The ruling (user, 2026-09-13)
------------------------------
+The seeding rule
+----------------
 After the campaign arithmetic in docs/branchB_seeds_and_length.md: production runs ONE
 trajectory per (molecule, basin), and the seed follows OpenMM's own convention for
 randomNumberSeed=0 -- a fresh one per run -- with one addition: the number drawn is
@@ -18,7 +18,7 @@ What is asserted
      folded in as the first segment. (A resume restarts from the relaxed geometry with
      new velocities and appends, so the file holds two independently started segments;
      the record has to say so.)
-  C. The defaults are the ruling: --seeds 1 and --seed0 0 in both drivers, SEEDS=1 in
+  C. The defaults: --seeds 1 and --seed0 0 in both drivers, SEEDS=1 in
      chain_body, trajectories_per_basin 1 in the protocol file.
 """
 import importlib.util
@@ -88,7 +88,7 @@ def check_segments(drv):
 
 
 def check_defaults():
-    print("\nC. the defaults are the ruling")
+    print("\nC. the defaults")
     checks = [
         ("scripts/production/s0_B_qha_trajectory_openmm.py",
          r'add_argument\("--seeds", type=int, default=1\)', "--seeds default 1"),

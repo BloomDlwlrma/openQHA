@@ -1,9 +1,9 @@
-"""The package-1 batch screen applies the frequency floor (ticket 41).
+"""The package-1 batch screen applies the frequency floor.
 
 UNIT. No CREST, no engine: `hessian_screen` is run on synthetic spectra through a
 stubbed Hessian/projection pair; under a second.
 
-The rule is ticket 37's, lifted into the batch path -- not a second rule: a candidate
+The rule is the census floor rule, lifted into the batch path -- not a second rule: a candidate
 whose lowest projected mode lies in the inversion window [ithr, 0) is a Basin, kept and
 carrying its lowest frequency and its window count; only a lowest mode strictly below
 ithr is a saddle, rejected and listed with its below-floor count and lowest frequency
@@ -12,7 +12,7 @@ ithr is a saddle, rejected and listed with its below-floor count and lowest freq
 The floor reaches the screen from the caller: the batch driver passes the configured
 `package2.ithr_cm`; the parameter's default is the `crest` preset's own value. The old
 `reject_imaginary` switch (any non-zero imaginary count threw the candidate out) is
-deleted with the wiring on both screens (ruling Q1 of 2026-09-25).
+deleted with the wiring on both screens.
 
 Held here:
 
@@ -137,7 +137,7 @@ def main():
           (keep_d, crest_census.ITHR_CM_DEFAULT))
 
     # C -- one rule, one source: the wired verdict is census_verdict's on the same
-    # spectrum (ticket 37's helper, built on floor_verdict / n_below_ithr / n_in_window)
+    # spectrum (the census helper, built on floor_verdict / n_below_ithr / n_in_window)
     nu = [-30.0, 100.0, 640.0]
     v = crest_census.census_verdict(nu, -50.0)
     recs_c, keep_c, _ = run_screen([nu])
@@ -149,8 +149,8 @@ def main():
           and r0["lowest_frequency_cm_inv"] == v["lowest_frequency_cm_inv"],
           (r0, v))
 
-    # D -- the switch is deleted with the wiring (both screens, ruling Q1's landing of
-    # ticket 37's review row 7); the floor parameter is named
+    # D -- the switch is deleted with the wiring (both screens); the floor parameter is
+    # named
     sig = inspect.signature(crest_census.hessian_screen)
     sig_c = inspect.signature(crest_census.census_from_frames)
     check("D: reject_imaginary is gone from both screens' signatures; ithr_cm is the "
@@ -161,7 +161,7 @@ def main():
 
     # E -- old-record readability: a record written before the floor rule renders and
     # reads. Its saddle keeps the imaginary wording -- its lowest mode need not lie
-    # below ithr, because the 2026-09-25 rule is what made that distinction -- and the
+    # below ithr, because the floor rule is what made that distinction -- and the
     # new fields read as absent ('-'), never as a zero verdict.
     import tempfile as _tempfile
     from openqha.store import record as _record

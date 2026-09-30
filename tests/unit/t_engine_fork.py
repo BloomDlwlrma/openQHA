@@ -1,6 +1,6 @@
-"""Ticket 10 of the Hessian-learning set: `engine.mace_fork_info` names the mace
+"""`engine.mace_fork_info` names the mace
 checkout that is imported, or says "unknown"; `engine.checkout_commit` is the shared
-rule behind it (decision 06), and the same cases run on the `openqha_hessian` package's
+rule behind it, and the same cases run on the `openqha_hessian` package's
 module file -- the commit its Records name.
 
 Asserted on a temporary directory tree with an injected git runner (no real git, no
@@ -99,8 +99,8 @@ def main():
         info = engine.mace_fork_info(module_file="", run=run)
         check("no module file -> unknown", info["mace_fork_commit"] == "unknown")
 
-        # the same rules on the openqha_hessian package's module file (decision 06): the
-        # commit `package_identity` records; no dirty question is asked here
+        # the same rules on the openqha_hessian package's module file: the commit
+        # `package_identity` records; no dirty question is asked here
         pkg = checkout / "openqha_hessian"
         pkg.mkdir()
         (pkg / "__init__.py").write_text("")

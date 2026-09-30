@@ -1,4 +1,4 @@
-"""Unit test: the ORCA child environment is Slurm-blind (orca-slurm ticket 01, ADR 0008).
+"""Unit test: the ORCA child environment is Slurm-blind.
 
 UNIT. Fabricates one environment dict and statically scans the tree; no ORCA, no
 scheduler, seconds.
@@ -28,7 +28,7 @@ B. No ORCA launch bypasses the seam: every spawn call in the live tree whose com
    as _sp`, `from subprocess import run as ...`) are resolved; detection is textual on
    the command expression, so a binary resolved at runtime (`shutil.which`) cannot be
    seen -- the one such site today (`capabilities._binary_runs("orca")`, a `--version`
-   probe) is listed in the ticket for disposition. (The hkuhpc bundle's generated shell
+   probe) is a known exception, listed for disposition. (The hkuhpc bundle's generated shell
    worker is not a Python subprocess: it already carries its own full `^(PMI|SLURM)`
    unset; its undocumented `ORCA_SKIP_CPU_BIND` is a separate, planned cleanup.)
 
@@ -88,7 +88,7 @@ def check(label, ok, detail=""):
 
 
 def test_child_environment():
-    """Seam A: a fabricated scheduler environment comes back stripped."""
+    """A: a fabricated scheduler environment comes back stripped."""
     keep = dict(os.environ)
     try:
         os.environ.clear()
@@ -168,7 +168,7 @@ def _orca_spawns(path):
 
 
 def test_no_launch_bypasses_the_seam():
-    """Seam B: every ORCA spawn in the live tree passes subprocess_env()."""
+    """B: every ORCA spawn in the live tree passes subprocess_env()."""
     seen, bypass, scan_errors = {}, [], []
     for root in SCAN_ROOTS:
         for p in sorted((ROOT / root).rglob("*.py")):

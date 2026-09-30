@@ -1,9 +1,9 @@
-"""Ticket 29: continuous chirality for g' with the `procrustes` library.
+"""Continuous chirality for g' with the `procrustes` library.
 
 UNIT. No engine. Fixtures: the library's own CHFClBr enantiomer pair
 (tests/data/procrustes_chirality, from theochem/procrustes doc/notebooks), the propanal
-CREST folder of ticket 23 (tests/data/propanal_crest), the two real `crest --entropy` runs
-of ticket 25 (tests/data/propanal_crest_entropy) and the propanal molecule directory.
+CREST folder in tests/data/propanal_crest, the two real `crest --entropy` runs
+in tests/data/propanal_crest_entropy and the propanal molecule directory.
 
 Asserted:
   * the library's example reproduces its notebook: rotational error 26.09 and orthogonal
@@ -19,7 +19,7 @@ Asserted:
   * a structure with more than PERMUTATION_CAP equivalent-atom permutations gets
     `unresolved` and G_PRIME_SOURCE = label_fallback, never an exception.
   * degeneracy.toml carries CHIRALITY, MIRROR_SELF_RMSD, SYMMETRY_LABEL, the RMSD pair
-    and PROCRUSTES_VERSION; ticket 23's expectations are unchanged.
+    and PROCRUSTES_VERSION; the expectations are unchanged.
 """
 import shutil
 import sys
@@ -94,7 +94,7 @@ def main():
     check("gauche rotamer pair is a mirror pair: RMSD_ortho < threshold <= RMSD_rot, g' = 2",
           gauche["mirror_flag"] and gauche["mirror_rmsd_ortho"] < thr <= gauche["mirror_rmsd_rot"]
           and gauche["g_prime"] == 2 and gauche["g_prime_source"] == "mirror_pair")
-    check("ticket 23's expectations are unchanged: g' = (1, 2, 2), cre_degen2 (3, 6, 3)",
+    check("the expectations are unchanged: g' = (1, 2, 2), cre_degen2 (3, 6, 3)",
           [c["g_prime"] for c in confs] == [1, 2, 2]
           and [c["cre_degen2_equivalent"] for c in confs] == [3, 6, 3])
     check("the point-group label is still reported beside the number (diagnostic)",
@@ -142,7 +142,7 @@ def main():
         rows = {int(r["INDEX"]): r for r in doc["Basin"]}
         check("every [[Basin]] row carries CHIRALITY, MIRROR_SELF_RMSD and SYMMETRY_LABEL",
               all("CHIRALITY" in r and "MIRROR_SELF_RMSD" in r and "SYMMETRY_LABEL" in r for r in rows.values()))
-        check("real propanal: g' = (1, 1, 1) with the pair counted once, as in ticket 23",
+        check("real propanal: g' = (1, 1, 1) with the pair counted once",
               [rows[i]["G_PRIME"] for i in (0, 1, 2)] == [1, 1, 1]
               and rows[1]["G_PRIME_SOURCE"] == "mirror_is_basin" and rows[2]["G_PRIME_SOURCE"] == "mirror_is_basin")
         text = (layout.level_file(mol, "mace-off23_medium", "degeneracy.out")).read_text(encoding="utf-8")

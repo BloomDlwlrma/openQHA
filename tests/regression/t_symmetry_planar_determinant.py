@@ -1,6 +1,6 @@
 """Regression: the symmetry number must not collapse on planar or linear molecules.
 
-REGRESSION. Branch A, checkpoint 3 criterion 3. Seconds; no potential, no CREST.
+REGRESSION. Seconds; no potential, no CREST.
 
 The defect this pins down (2026-09-03)
 --------------------------------------
@@ -20,7 +20,7 @@ numpy's SVD picks one. Measured, first version:
 
 **And all seven production species passed on that same code.** Acetone, oxetane and
 the five C1 molecules were all correct, so the seven species alone would have shipped
-this. That is the whole argument of plan_A section 2.5.3 and skills section 2.4(a) --
+this. That is the whole argument --
 a criterion has to be shown an example it should fail -- and this test is that
 argument made permanent.
 
@@ -30,7 +30,7 @@ unconstrained fit happened to win.
 
 Why sigma being wrong matters: G_rot carries +RT ln(sigma). Water reported as
 sigma = 1 instead of 2 puts G low by RT ln 2 = 0.411 kcal/mol -- the same error and
-the same direction as the one ORCA makes on acetone (D0-P2-15), against a 1.0
+the same direction as the one ORCA makes on acetone, against a 1.0
 kcal/mol target, and it does not cancel between isomers.
 
 Run::  python tests/regression/t_symmetry_planar_determinant.py
@@ -57,7 +57,7 @@ CASES = (
     ("CO2", 2, "linear; printed 1 before the fix"),
     ("CH4", 12, "printed 4 before the fix; also separates the point group (24 ops) "
                 "from its rotational subgroup (12)"),
-    ("C2H6", 6, "printed 4 before the fix; D0-9's own example, 72 graph "
+    ("C2H6", 6, "printed 4 before the fix: 72 graph "
                "automorphisms against a true sigma of 6"),
     ("CH3CHO", 1, "methyl rotor: 6 graph automorphisms, sigma = 1"),
 )

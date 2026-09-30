@@ -1,4 +1,4 @@
-"""Ticket 32, the arithmetic of the along-mode curvature (no ORCA, no engine).
+"""The arithmetic of the along-mode curvature (no ORCA, no engine).
 
 On the propanal fixture: the displaced line along a reference mode, with energies taken
 from the quadratic form of the reference Hessian, gives back omega_r (self-check 1) to

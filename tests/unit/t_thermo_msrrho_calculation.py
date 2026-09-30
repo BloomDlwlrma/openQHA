@@ -1,10 +1,10 @@
-"""Ticket 24: the thermo_msrrho Calculation at MACE, its records, the experimental comparison.
+"""The thermo_msrrho Calculation at MACE, its records, the experimental comparison.
 
 UNIT. NumPy + RDKit, no engine; a few seconds. Runs on the real branch A product of
 propanal (tests/data/propanal_molecule: branchA.toml, three basins with their MACE
 Hessians, CREST's rotamer file), so the numbers are the chain's own.
 
-Seams (spec, Testing Decisions): the Property file the Calculation leaves; the three
+Seams: the Property file the Calculation leaves; the three
 algebraic guards (one-basin molecule -> zero ensemble terms; G_total from the partition
 function equals the Gibbs-Shannon route; an enantiomer pair as two basins with g' = 1
 equals one basin with g' = 2); the frequency floor (a window mode inverted, a below-floor
@@ -80,7 +80,7 @@ def main():
               and doc["Calculation_Status"]["STATUS"] == "NORMAL TERMINATION")
         check("the Report ends with the terminal line",
               report.terminated_normally(layout.level_file(mol, LEVEL, "thermo_msrrho.out"), "thermo_msrrho"))
-        check("only the spec's blocks are in the file (no [Imaginary_Spread] since ticket 35)",
+        check("only the spec's blocks are in the file (no [Imaginary_Spread])",
               set(doc) == {"Calculation_Status", "Calculation_Info", "Basin", "Ensemble", "Result"}, set(doc))
         check("nothing was written under _records/ by this Calculation",
               set(p.name for p in (mol / "_records").iterdir()) == {"branchA.toml"})
@@ -189,12 +189,12 @@ def main():
               sub[1]["excluded"] is False and sub[1]["n_below_floor"] == 1
               and sub[1]["dropped_frequencies_cm"] == [-0.5])
         check("every [[Basin]] row carries N_IMAGINARY / N_INVERTED / N_KEPT_NEGATIVE / "
-              "N_BELOW_FLOOR = 0 and SOFT_SADDLE = false on a clean molecule (ticket 39)",
+              "N_BELOW_FLOOR = 0 and SOFT_SADDLE = false on a clean molecule",
               all(r["N_IMAGINARY"] == 0 and r["N_INVERTED"] == 0 and r["N_KEPT_NEGATIVE"] == 0
                   and r["N_BELOW_FLOOR"] == 0 and r["SOFT_SADDLE"] is False for r in doc["Basin"]))
         check("... and no clean row carries INVERTED_CM / DROPPED_CM (empty lists are absent)",
               all("INVERTED_CM" not in r and "DROPPED_CM" not in r for r in doc["Basin"]))
-        # a record written before 2026-09-25 carries the removed policy name: data, not code
+        # a record written under the removed policy name: data, not code
         rec_path = layout.level_file(mol, LEVEL, "thermo_msrrho.toml")
         text = rec_path.read_text(encoding="utf-8")
         rec_path.write_text(text.replace('"invert_below"', '"refuse"'), encoding="utf-8")
@@ -202,7 +202,7 @@ def main():
               prop.load(rec_path)["Calculation_Info"]["ITHR_POLICY"] == "refuse")
         rec_path.write_text(text, encoding="utf-8")
 
-        # ---------------------------------------------------------------- ticket 35: crest_native, the seam's policy
+        # ---------------------------------------------------------------- crest_native, the seam's policy
         deep = copy.deepcopy(basins)
         deep[1]["frequencies_cm"] = [-61.68] + list(deep[1]["frequencies_cm"][1:])
         deep[1]["n_imaginary"] = 1

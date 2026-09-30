@@ -1,6 +1,6 @@
 """Unit test: a CREST scratch directory is never reused under different settings.
 
-UNIT. Branch A, plan_A section 7.5. Milliseconds; writes to a temporary directory,
+UNIT. Milliseconds; writes to a temporary directory,
 runs no CREST and loads no potential.
 
 What this pins down
@@ -10,7 +10,7 @@ conditions into one dataset, and **nothing in the products shows it**. The guard
 `crest.settings_match`, which compares only the keys that change the RESULT --
 thread count is excluded because it changes speed alone.
 
-`tstep` was missing from that list until 2026-09-03. It is not cosmetic: with the
+`tstep` is in that list for a reason: with the
 same workhorse, 5.0 fs aborted 29 metadynamics runs and 2.0 fs aborted none. A 2 fs
 scratch directory silently reused as a 5 fs result is exactly defect 57 again.
 

@@ -119,7 +119,7 @@ def main():
                   and "1 of 3 frame(s) did not reach fmax" in msg
                   and "max residual 3.30e-04" in msg, msg)
 
-            # D -- the census verdict, pure: the frequency floor decides (ticket 37).
+            # D -- the census verdict, pure: the frequency floor decides.
             # The two real spectra: dsgdb9nsd_052993's -6.84 cm^-1 candidate (Tianhe
             # 2026-09-24; admitted and inverted by the thermochemistry) and the -195.79
             # cm^-1 cyclopropanol saddle that motivated the screen (ejected).

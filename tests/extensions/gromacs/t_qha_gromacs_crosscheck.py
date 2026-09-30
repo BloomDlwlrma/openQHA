@@ -7,7 +7,7 @@ known in closed form.
 What is being cross-checked, and what is not
 --------------------------------------------
 `gmx anaeig -entropy` was meant to be the independent implementation of the whole chain
-(plan_B revision C). It cannot be. Measured on 2026-09-03 and confirmed against upstream
+It cannot be. Measured on 2026-09-03 and confirmed against upstream
 source, it refuses mass-weighted eigenvalues, uses a formula that expects them anyway, and
 drops the six SOFTEST modes rather than the six rigid ones -- a factor of 452 on a case
 whose answer is known. `openqha/gmx_io.py:anaeig` carries the three findings.
@@ -146,9 +146,9 @@ def main():
         ("gmx anaeig -entropy is recorded as evidence and NOT as a reference value",
          "is_reference = {}".format(ev["is_reference"]),
          ev["is_reference"] is False),
-        ("the precision of both sides is reported, so ruling E1 (measure the mixed vs "
-         "float64 difference rather than building a double-precision GROMACS) has "
-         "something to stand on",
+        ("the precision of both sides is reported, so the mixed vs float64 difference "
+         "is measured rather than built (a double-precision GROMACS) -- the comparison "
+         "has something to stand on",
          "{} vs {}".format(out["gmx_version"].get("precision"), out["our_precision"]),
          bool(out["gmx_version"].get("precision") and out["our_precision"])),
     ]

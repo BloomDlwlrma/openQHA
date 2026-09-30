@@ -91,7 +91,7 @@ input and a definite expected output.
 
 ## The checks that guard the restructure itself
 
-These are what make branch D's acceptance criteria executable rather than aspirational:
+These are what make the restructure's acceptance criteria executable rather than aspirational:
 
 | Test | The criterion it enforces |
 |---|---|
@@ -101,7 +101,7 @@ These are what make branch D's acceptance criteria executable rather than aspira
 
 ### Retired 2026-09-09 — the migration is finished, so its gates are gone
 
-Four of these were **one-off gates for the branch D migration**, not standing checks.
+Four of these were **one-off gates for the restructure**, not standing checks.
 The migration they policed is complete, so keeping them would mean maintaining a stale
 baseline snapshot and a scan that can only ever report "still nothing to do":
 

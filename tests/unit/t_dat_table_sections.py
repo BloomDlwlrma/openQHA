@@ -1,9 +1,8 @@
-"""A Table holds named sections with a comment per column, and reads back (ticket 01,
-collect-one-table, 2026-09-16).
+"""A Table holds named sections with a comment per column, and reads back.
 
 UNIT. No engine; under a second.
 
-The ruling (user, 2026-09-16, ADR 0003 amendment): collect leaves ONE `.dat` with a
+Collect leaves ONE `.dat` with a
 `[section]` line before each of its tables and, above each header, one comment line per
 column in the Property file's form (`Type, unit: doc`). `openqha.store.dat` writes and
 reads it. The rules checked here: `read_tables(write_tables(sections)) == sections` with

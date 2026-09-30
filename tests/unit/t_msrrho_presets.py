@@ -1,4 +1,4 @@
-"""Ticket 22: msRRHO presets and the per-basin term; level names and composite_notation.
+"""msRRHO presets and the per-basin term; level names and composite_notation.
 
 UNIT. Pure Python, no engine, under a second.
 
@@ -97,7 +97,7 @@ def main():
     check(abs(sp["max_minus_min_kcal"] - (EXPECTED_TS["HO"] - EXPECTED_TS["grimme2012"]))
           < 2 * TOL_TS, "preset spread = %.4f kcal/mol on T*S" % sp["max_minus_min_kcal"])
 
-    # --- the floor, the drop rule and the one production policy (ticket 35) ----------
+    # --- the floor, the drop rule and the one production policy ----------
     # The sub-1 cm^-1 rule is ORCA-style: one or two modes inside +-1 cm^-1 are dropped
     # from every sum and counted; three or more are the signature of an unprojected
     # spectrum and raise. The default policy is invert_below with the crest floor.
@@ -156,7 +156,7 @@ def main():
           and thermo.n_in_window([-50.0, -35.74, 120.0], -50.0) == 2,
           "n_in_window counts the modes in [ithr, 0)")
 
-    # --- one floor number: the configuration and the preset cannot drift (ticket 37) --
+    # --- one floor number: the configuration and the preset cannot drift --
     # The census screen reads `cfg["package2"]["ithr_cm"]`; the thermochemistry uses
     # MSRRHO_PRESETS["crest"]["ithr_cm"]. One value, two seams.
     from openqha import config as _config
@@ -194,7 +194,7 @@ def main():
         check("-61.68" in str(exc),
               "g_minus_eel says a below-floor spectrum has no thermochemistry")
 
-    # --- crest_native (ticket 28): CREST 3.0.2's third regime ------------------------
+    # --- crest_native: CREST 3.0.2's third regime ------------------------
     # thermocalc.f90:209 inverts only modes in (ithr, 0); a mode below ithr stays
     # negative, gets S = 0 (thermo.f90:135-138) and still enters ZPE, H(T)-H(0), Cp.
     base = thermo.msrrho(ACETONE_OMEGA_CM, preset="crest", **kw)

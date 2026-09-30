@@ -1,4 +1,4 @@
-"""Ticket 39: the reference level retries a soft saddle before any verdict.
+"""The reference level retries a soft saddle before any verdict.
 
 INTEGRATION fixture run. No real ORCA: a fake binary answers `S0_ORCA_BIN`, so
 `orca.optimise_and_hessian` -> `_run_job` -> the published file group -> `parse_hess` ->
@@ -7,8 +7,8 @@ propanal fixture's basin-00 reference file group is removed from a copy and the 
 plays two attempts:
 
   attempt 1  a WINDOW saddle: the fixture's own basin-00 Hessian with its lowest
-             eigenvalue shifted so the lowest mode is -6.84 cm^-1 (the Tianhe number of
-             ticket 34), `$vibrational_frequencies` rewritten to match;
+             eigenvalue shifted so the lowest mode is -6.84 cm^-1 (measured on Tianhe),
+             `$vibrational_frequencies` rewritten to match;
   attempt 2  either the fixture's real minimum job (A: the retry resolves it), the
              saddle again (B: it stays a soft saddle), or a saddle below the floor
              (C: a plain saddle whose reason says it was retried).

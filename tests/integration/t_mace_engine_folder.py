@@ -1,10 +1,10 @@
-"""The census leaves MACE's relax and Hessian in `mace/` as ASE's own files (ticket 05).
+"""The census leaves MACE's relax and Hessian in `mace/` as ASE's own files.
 
 INTEGRATION. Runs `census_from_frames` with the real MACE calculator on a prepared
 two-frame ensemble of a shipped molecule (no CREST binary involved); tens of seconds.
 Skips with a message when MACE is absent.
 
-The decision (ADR 0001, user 2026-09-14):
+The layout:
 
     mace/confNN/   opt.traj  opt.log  conf.extxyz     every tightened conformer
     mace/basinNN/  basin.extxyz  hessian.npy          every surviving basin
@@ -124,7 +124,7 @@ def main():
         extra = sorted(p.name for p in mace.iterdir() if not (p.name.startswith("conf") or p.name.startswith("basin")))
         check("no other entries", extra == [], extra)
 
-        print("D. the census screen used the frequency floor (ticket 37)")
+        print("D. the census screen used the frequency floor")
         from openqha.thermochem import thermo
         check("the record names the floor it applied",
               rec.get("ithr_cm") == thermo.MSRRHO_PRESETS["crest"]["ithr_cm"],
@@ -135,7 +135,7 @@ def main():
               and h0.get("n_inversion_window") == 0
               and h0.get("lowest_frequency_cm_inv") == min(h0["frequencies_cm_inv"]), h0)
 
-        print("E. the census certified the tighten (ticket 38)")
+        print("E. the census certified the tighten")
         classes = (rec.get("n_converged", 0) + rec.get("n_converged_orca_default", 0)
                    + rec.get("n_converged_second_pass", 0) + rec.get("n_not_certified", 0))
         check("the summary counts every class and rejects none",

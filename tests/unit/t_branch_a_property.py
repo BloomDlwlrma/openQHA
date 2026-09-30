@@ -1,4 +1,4 @@
-"""branchA.toml: branch A's Property file from the pipeline's record (records redesign, ticket 17).
+"""branchA.toml: branch A's Property file from the pipeline's record.
 
 UNIT. No engine; under a second. Needs Python 3.11 (tomllib).
 
@@ -133,11 +133,11 @@ def main():
                      "input.toml records", "crest_conformers.xyz", "loadavg", "basin.extxyz",
                      "protocol_source", "composite_notation"):
             check("not in branchA.toml: {}".format(word), word not in text)
-        # the dedup map + saddle ids (2) of the Hessian-learning ticket 02 joined what was
-        # here; the engine fingerprint and its pin status left on 2026-09-27 (decision 04),
+        # the dedup map + saddle ids (2) joined what was
+        # here; the engine fingerprint and its pin status are gone,
         # so the bound guards against the provenance sprawl of the old basins.toml, not a key
         check("key count is small (about 80 for 3 basins)", 45 <= text.count(" = ") <= 95, text.count(" = "))
-        check("the engine identity is the name alone: no fingerprint, no pin (2026-09-27)",
+        check("the engine identity is the name alone: no fingerprint, no pin",
               "ENGINE_PARAMS_SHA256" not in text and "ENGINE_PIN_STATUS" not in text)
 
         print("D. no silent zero:")

@@ -1,8 +1,8 @@
-"""A finished trajectory is recognised from its record md.toml and its DCD (ticket 12).
+"""A finished trajectory is recognised from its record md.toml and its DCD.
 
 UNIT. numpy, a temporary directory and the OpenMM driver's `already_complete`; under a
-second. Replaces t_frames_flush.py (2026-09-13), whose subject -- the atomic flush of
-`frames.npy` -- no longer exists: since 2026-09-15 the trajectory is `traj.dcd` and the
+second. It replaces the retired `t_frames_flush.py`, whose subject -- the atomic flush of
+`frames.npy` -- no longer exists: the trajectory is `traj.dcd` and the
 record is `md.toml`, and nothing is written twice.
 
 The rule `already_complete` holds (an113, 2026-09-13, the resume path that had never
@@ -87,7 +87,7 @@ def main():
         if not (meta and meta["production"]["temperature_mean_K"] == 298.0 and meta["seed"] == 7):
             FAIL.append("already_complete did not return the md.toml content")
         print("   {}  the record it returns is md.toml's own".format("ok  " if meta and meta["seed"] == 7 else "FAIL"))
-        # STATUS (records redesign, ticket 18): RUNNING after equilibration, NORMAL TERMINATION at the end;
+        # STATUS: RUNNING after equilibration, NORMAL TERMINATION at the end;
         # a RUNNING record is not complete whatever its production block says; the setting is in the stem.
         rec_r = tmp / "running" / "_records" / "md_openmm" / "basin00"
         ok = md_record.status(rec_r) == prop.RUNNING and md_record.status(rec) == prop.NORMAL_TERMINATION

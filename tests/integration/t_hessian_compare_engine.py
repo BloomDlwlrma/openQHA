@@ -1,4 +1,4 @@
-"""Ticket 27, the engine seam: the MACE Hessian at a reference geometry today equals
+"""The engine seam: the MACE Hessian at a reference geometry today equals
 the stored fixture.
 
 INTEGRATION. Loads the real MACE-OFF23_medium calculator, evaluates the analytic Hessian

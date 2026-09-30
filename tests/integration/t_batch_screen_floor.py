@@ -1,4 +1,4 @@
-"""The package-1 batch screen uses the frequency floor (ticket 41).
+"""The package-1 batch screen uses the frequency floor.
 
 INTEGRATION. Runs the batch screen's own path -- `s0_package1_crest_census.analyse_one`
 -- on the propanal CREST fixture with the real MACE calculator (no CREST binary
@@ -13,7 +13,7 @@ fixture's own basins come through as basins against the real spectra.
 
 The window and below-floor decisions themselves are pinned on synthetic spectra by the
 unit test `t_hessian_screen_floor.py`, and the rule's single definition by
-`census_verdict` (ticket 37).
+`census_verdict`.
 """
 import sys
 import tempfile

@@ -50,14 +50,14 @@ per frame (eV; dE in kcal/mol above the basin; eV/A; A; cm^-1)
   * a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term
     included -- the Hessian-learning target, not a frequency. The basin frame reuses the basin's
     stored hessian.npy; merged and saddle frames get one from the engine; a DISPLACED frame gets
-    none (ticket 29: 3N backward passes nothing downstream reads) and its 'lowest' is blank. dE
+    none (3N backward passes nothing downstream reads) and its 'lowest' is blank. dE
     of a displaced frame is the ENGINE's energy at the drawn geometry; what the draw put in is
     the harmonic part of it -- normal-mode sampling bounds that at (3/2) N_a k_B T with mean
     (3/4) N_a k_B T (9.4 kcal/mol mean, 18.7 max for 14 atoms at 450 K). The only filter is the
     energy window (275 kcal/mol; SPICE cuts at 2390), as the published sets do; 'bonds' reports
     a broken or formed bond at perception tolerances (RDKit 1.3 / Open Babel ~1.4) and never
     drops a frame. Hot-MD, cooled and hot normal-mode frames (SPICE, OpenREACT) were considered
-    and not built (rulings 2026-09-18).
+    and not built.
 
 ------------------------------------------------------------------------------------------------
 generated 2026-09-25 21:30:02 by openqha.report  (stage 0)

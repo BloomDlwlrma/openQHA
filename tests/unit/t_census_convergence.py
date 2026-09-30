@@ -1,4 +1,4 @@
-"""Ticket 38: the census certifies the tighten against ORCA's default line.
+"""The census certifies the tighten against ORCA's default line.
 
 UNIT. No engine, no CREST, no MACE: `conformers.optimise` is stubbed with a scripted
 list of (energy, residual, steps) per call and `thermochem.hessian.hessian` with a
@@ -10,7 +10,7 @@ Held:
 
     A. `crest_census.convergence_class`: the four outcomes and the transient that
        triggers the single second pass (pure; the prototype's `convergenceClass`,
-       amended by the 2026-09-25 ruling -- the class that stays above the line is
+       with the stricter rule -- the class that stays above the line is
        REJECTED where the prototype admitted it with a flag).
     B. `census_from_frames` with the stubbed optimiser: a frame above the line receives
        exactly one second pass; `converged_orca_default` is admitted and carries
@@ -26,7 +26,7 @@ Held:
        no new engine-file name is born.
 
 The frames are propanal's real CREST ensemble (tests/data/propanal_crest); the
-scripted residuals are the ticket's own numbers: 5e-5 is at or below the repository
+scripted residuals: 5e-5 is at or below the repository
 target (1e-4 eV/A), 3e-3 is inside ORCA's default line (TolMaxG = 3e-4 Eh/bohr =
 1.543e-2 eV/A), 2e-2 is above it.
 """
@@ -126,7 +126,7 @@ SCRIPT_TWO = [(-100.00, 5e-5, 10), (-99.50, 2e-2, 30), (-99.45, 5e-3, 40)]
 
 
 def main():
-    # A -- the pure certification (ticket 38, prototype `convergenceClass`)
+    # A -- the pure certification (prototype `convergenceClass`)
     c = crest_census.convergence_class
     check("A: at or below the target -> converged; inside ORCA's line -> "
           "converged_orca_default (the line itself is inside); above the line with no "
@@ -136,7 +136,7 @@ def main():
           and c(2e-2) == "needs_second_pass",
           (c(5e-5), c(1e-4), c(3e-3), c(1.543e-2), c(2e-2)))
     check("A2: the second pass admits -> converged_second_pass; still above the line -> "
-          "not_certified (the ruling: the prototype's admitted_flagged is superseded)",
+          "not_certified (the prototype's admitted_flagged is superseded)",
           c(2e-2, second_pass=True) == "converged_second_pass"
           and c(2e-2, second_pass=False) == "not_certified",
           (c(2e-2, second_pass=True), c(2e-2, second_pass=False)))
@@ -205,7 +205,7 @@ def main():
               and "below ithr" not in msg, msg)
 
     # F -- with a molecule directory, the second pass appends to the SAME engine files:
-    # no `opt2.traj`/`opt2.log` is born (ADR 0001's confNN file list stays true).
+    # no `opt2.traj`/`opt2.log` is born (the confNN file list stays true).
     with tempfile.TemporaryDirectory(prefix="t38_files_") as td:
         td = Path(td)
         _rec, _basins, calls_f = run_census(SCRIPT_TWO, n_frames=2, molecule_dir=td)

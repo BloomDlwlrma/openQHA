@@ -1,6 +1,6 @@
 """Unit test: no file reaches the repository root by counting directory levels.
 
-UNIT. Branch D. Seconds; reads files and resolves paths, runs nothing.
+UNIT. Seconds; reads files and resolves paths, runs nothing.
 
 The defect this test exists for
 -------------------------------
@@ -16,7 +16,7 @@ the same move was about to be repeated for the live scripts.
 
 That is the shape of defect this repository keeps meeting: a value that is right
 under the conditions it was written for and wrong under the conditions it is used
-in (D0-79: an interface counts as verified only under the caller's real invocation).
+in (an interface counts as verified only under the caller's real invocation).
 
 The replacement walks up until it finds the directory that CONTAINS the package:
 
@@ -66,10 +66,10 @@ def python_files():
 
     This test necessarily CONTAINS both forbidden patterns, as regular expressions
     and as prose in the docstring. Scanning itself would make it fail forever, which
-    is not a finding about the repository. The first run did exactly that and also
-    flagged two files whose docstrings merely QUOTE the old idiom while explaining
-    why it was removed -- skills section 2.4(b): when a new criterion fires for the
-    first time, check its aperture before believing it. Hence `_code_only` below.
+    is not a finding about the repository. It also once flagged two files whose
+    docstrings merely QUOTE the old idiom while explaining why it was removed: when a
+    new criterion fires for the first time, check its aperture before believing it.
+    Hence `_code_only` below.
     """
     for top in SEARCH:
         d = ROOT / top

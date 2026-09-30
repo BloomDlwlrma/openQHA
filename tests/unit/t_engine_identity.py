@@ -1,5 +1,5 @@
-"""Decision 04 of the Hessian-learning effort (ticket 04a): the identity of a potential
-is the REGISTERED NAME and the RESOLVED PATH. Nothing reads the file's bytes.
+"""The identity of a potential is the REGISTERED NAME and the RESOLVED PATH.
+Nothing reads the file's bytes.
 
 The successor of the engine-fingerprint test, at the same seam (the engine's public API),
 with the opposite contract. Asserted without any real weights -- the files under the
@@ -7,8 +7,8 @@ temporary root hold plain text, and nothing ever opens them:
 
   * a registered name resolves to `<root>/<filename>`;
   * a registry `filename` may be a relative sub-path
-    (`mace_off23_<campaign>/<run>+<YYYYMMDD-HHMMSS>.model`, the 2026-09-27 storage
-    convention for self-trained revisions);
+    (`mace_off23_<campaign>/<run>+<YYYYMMDD-HHMMSS>.model`, the storage convention
+    for self-trained revisions);
   * `S0_MACE_MODEL` still overrides one file, and a non-file there raises naming it;
   * the missing-file error names the expected path and says what the root holds --
     top-level `*.model` files AND sub-directory names, so "wrong directory", "wrong
@@ -42,7 +42,7 @@ FAIL = []
 CLI = ROOT / "scripts" / "tooling" / "s0_check_weights.py"
 
 #: The kept provenance keys, spelled out: a new one is a deliberate act that updates this
-#: list, and the retired four (below) must not creep back -- decision 04, 2026-09-27.
+#: list, and the retired four (below) must not creep back.
 KEPT_KEYS = {"engine", "source", "note", "weights_path", "bytes", "interface",
              "mace_torch_version", "mace_module_path", "mace_fork_commit", "mace_fork_dirty",
              "mace_fork_path", "torch_version", "dtype", "neighbour_list_patch"}

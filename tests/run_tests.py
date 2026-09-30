@@ -1,18 +1,16 @@
 """Run the test suite. Each test is a program that exits non-zero when it fails.
 
-TOOLING. Branch D, plan_D section 2.
+TOOLING.
 
 Why subprocesses rather than a framework
 ----------------------------------------
 Every test here is already a standalone program with a `main()` returning an exit
-code, and several must be run that way to mean anything: D0-79 is a defect in which a
-script behaved differently when executed than when imported, and importing tests into
-one process would erase the distinction this suite is partly about. So each is launched
-exactly as a person would launch it. (`t_defect46_shebang`, the test for D0-79, is
-planned rather than written -- plan_D section 2.3. This docstring used to name it as
-though it existed; corrected 2026-09-09.)
+code, and several must be run that way to mean anything: a script can behave
+differently when executed than when imported, and importing tests into one process
+would erase the distinction this suite is partly about. So each is launched
+exactly as a person would launch it.
 
-Layout (plan_D section 2):
+Layout:
 
     unit/         pure functions and file-level checks; seconds, no engine
     integration/  needs an engine, CREST or ORCA; slow

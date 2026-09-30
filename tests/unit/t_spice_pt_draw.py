@@ -1,4 +1,4 @@
-"""Ticket 19 of the Hessian-learning set (S0-C-56): `scripts/tooling/s0_spice_pt_draw.py`,
+"""`scripts/tooling/s0_spice_pt_draw.py`,
 the Replay draw, on `tests/data/spice_tiny` (7 train frames: propanal x3, acetone x2, a
 propanal-water dimer, 2-methyloxirane).
 

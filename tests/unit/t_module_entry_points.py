@@ -2,7 +2,7 @@
 
 WHY THIS EXISTS
 ---------------
-On 2026-09-07 `openqha/` was split into subpackages and `mace_server` moved to
+`openqha/` is split into subpackages; `mace_server` lives in
 `openqha/potentials/`. `openqha/__init__.py` carries a lazy PEP 562 `__getattr__` so that
 every old top-level name keeps working -- and it does, for `from openqha import X`,
 `import openqha.X` and `from openqha.X import Y`.

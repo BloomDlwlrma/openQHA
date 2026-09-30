@@ -1,10 +1,10 @@
-"""Ticket 03 of the Hessian-learning set: reference E-F-H labels per frame, on the
+"""Reference E-F-H labels per frame, on the
 propanal fixture with a FAKE ORCA (no binary): the runner copies the fixture's
 wB97M-D3BJ/def2-TZVPPd `job.hess` / `job.out` (ORCA 6.0.1, basin 0's own minimum) into
 the frame's run directory, and the basin frame of the Frame set is placed at exactly the
 .hess geometry so the round trip can be checked against ORCA's own frequencies. The
 frame's files land as `<molecule>/orca.<level>.<gen>_bBB_kK.{inp,out,hess,engrad}`
-(ticket 09: a file group of the molecule directory, no per-frame directory).
+(a file group of the molecule directory, no per-frame directory).
 
 Asserted: the keyword line is the level's single point + EnGrad + Freq (analytic) or
 NumFreq (numerical); the labelled extxyz holds the MACE file's positions verbatim, the
@@ -13,19 +13,19 @@ projected frequencies reproduce the .hess file's own to < 0.5 cm^-1; the noise f
 read before projection and is a few cm^-1 for the analytic matrix; a frame whose .hess
 geometry is 1e-6 A off the MACE file is refused and not written; a finished job is reused
 (the runner is not called again), a FAILED one (a .out without the terminal line) is not
-rerun unless `retry=True` (one attempt per frame, round 11 Q3), a frame with no .out is;
-the one-shot retry (ticket 02, seam B): a retry archives the failed .out as
+rerun unless `retry=True` (one attempt per frame), a frame with no .out is;
+the one-shot retry: a retry archives the failed .out as
 <stem>.failed.out BEFORE ORCA runs (the archive is on disk, and the .out is gone, WHILE
 the runner runs), a retry whose archive already exists is refused without running, a
 failed retry keeps the archive and stays failed, a finished frame + retry is skipped with
 no archive, `--force` re-runs a finished frame and still archives a failed one first; the
-round's selection (ticket 04, seam C, `03_labels.py`): the default round carries the
+round's selection (`03_labels.py`): the default round carries the
 failed frames without an archive alongside the never-run frames, marking them `retry` in
 the task list's 5th column; `--retry-only` takes exactly those and nothing else;
 the counts are the disk's either way, and neither the round driver nor the worker ever
 passes `--force`; the printed round carries no full frame list and no per-molecule walk
-lines, and each task's log prints its own retry slice (ticket 05, seam C);
-the lock (ticket 24): held only while Slurm does not call its job dead AND its heartbeat
+lines, and each task's log prints its own retry slice;
+the lock: held only while Slurm does not call its job dead AND its heartbeat
 is fresh (a fake `squeue` on PATH answers RUNNING / COMPLETING / exit 1; without `squeue`
 the heartbeat alone), the holder touches it every HEARTBEAT_S, a SIGTERM during ORCA
 releases it and leaves no .out (a cut, `SystemExit(143)`), a `timeout_s` kill leaves a
@@ -88,7 +88,7 @@ class FakeOrca:
             return 1
         shutil.copy2(FIX / (FIX_STEM + ".out"), out)
         if "Freq" not in Path(inp).read_text(encoding="utf-8").split("\n")[0]:
-            # a GRADIENT job (displaced frame, round 5 Q7 (b)): an .engrad at the input's own
+            # a GRADIENT job (displaced frame): an .engrad at the input's own
             # geometry -- energy and gradient from the fixture .out, coordinates from the .inp
             lines = [l for l in Path(inp).read_text(encoding="utf-8").split("\n")]
             i0 = next(i for i, l in enumerate(lines) if l.startswith("* xyz"))
@@ -130,7 +130,7 @@ def _raises(fn):
 def _load_driver():
     """`workflows/hessian_learning/03_labels.py` as a module (its name is not an
     identifier): the round's default selection, its `--retry-only` sweep and its task
-    list are exercised through it (ticket 04, seam C)."""
+    list are exercised through it."""
     path = ROOT / "workflows" / "hessian_learning" / "03_labels.py"
     spec = importlib.util.spec_from_file_location("hl_03_labels", path)
     mod = importlib.util.module_from_spec(spec)
@@ -247,7 +247,7 @@ def main():
         out4 = frame_labels.run(mol, LEVEL, generators=("basin",), runner=fake4)
         r4 = {(r["BASIN"], r["K"]): r for r in out4["frames"]}
         check("an ORCA that does not terminate raises (the .out stays) and the frame is FAILED: run() does not rerun it (runner called once), "
-              "the Record counts N_FAILED 1 / N_UNLABELLED 0 with the reason naming the .out and the retry the next round carries (ticket 06)",
+              "the Record counts N_FAILED 1 / N_UNLABELLED 0 with the reason naming the .out and the retry the next round carries",
               raised and fake4.calls == 1 and not out4["failures"] and out4["info"]["N_FAILED"] == 1
               and out4["info"]["N_UNLABELLED"] == 0 and out4["info"]["N_REUSED"] == 1
               and r4[(2, 0)]["STATUS"] == "failed" and "carried once by the next round" in r4[(2, 0)]["REASON"]
@@ -259,7 +259,7 @@ def main():
         arc4 = frame_labels.failed_archive(layout.frames_dir(mol), layout.orca_frame_stem(LEVEL, "basin", 2, 0))
         lab4c = frame_labels.label_one(mol, LEVEL, "basin", 2, 0, runner=fake4c, mace_level_name=mlevel, retry=True)
         check("label_one on a failed frame returns status failed without running; retry=True reruns it (the fixture .hess is basin 0's geometry, so basin 2 is refused -- it ran) "
-              "and the failed .out survives the retry as its archive (.failed.out, ticket 02)",
+              "and the failed .out survives the retry as its archive (.failed.out)",
               lab4b["status"] == "failed" and fake4.calls == 1 and lab4c["status"] == "refused" and fake4c.calls == 1
               and arc4.read_text(encoding="utf-8") == "ORCA started\nsomething went wrong\n",
               (lab4b["status"], fake4.calls, lab4c["status"], fake4c.calls, arc4.read_text(encoding="utf-8") if arc4.is_file() else None))
@@ -414,7 +414,7 @@ def main():
               "orca" not in n_dirs and not f_dirs and layout.orca_frame_file(mol, LEVEL, "displaced", 0, 0, ".out").parent == layout.frames_dir(mol)
               and _raises(lambda: layout.orca_frame_stem("WB97M/tz", "basin", 0, 0)), (n_dirs, f_dirs))
 
-        # --- Q7 (b): a displaced frame is a gradient job; the mixed file and Record --------
+        # --- a displaced frame is a gradient job; the mixed file and Record --------
         kw_d = frame_labels.keyword_line(LEVEL, hessian=frame_labels.wants_hessian("displaced"))
         check("a displaced frame's keyword line is the single point + EnGrad only (route gradient); basin / merged / saddle keep Freq",
               kw_d[0] == "wB97M-D3BJ def2-TZVPPD TightSCF EnGrad" and kw_d[2] == "gradient"
@@ -431,7 +431,7 @@ def main():
               and r7[("displaced", 0, 0)]["HAS_HESSIAN"] is False and r7[("basin", 0, 0)]["HAS_HESSIAN"] is True,
               (len(fd), out7["info"]["N_GRADIENT_FRAMES"], out7["info"]["N_HESSIAN_FRAMES"]))
 
-        # --- tickets 09 / 09b: the flatten script moves the pre-2026-09-20 folder forms to the file groups
+        # --- the flatten script moves the pre-2026-09-20 folder forms to the file groups
         before = {g: layout.frames_file(mol, g, LEVEL).read_bytes() for g in ("basin", "displaced")}
         moved_back = 0
         for f in sorted(layout.frames_dir(mol).glob("orca.{}.*".format(LEVEL))):
@@ -489,7 +489,7 @@ def main():
               n3 == 9 and c3 == 0 and got == want and not m3b and layout.levels_present(mol) == [LEVEL]
               and left == ["_records", "frames", "mace", "msrrho"], (n3, c3, r3, left, {str(k.relative_to(mol)): v for k, v in got.items() if v != want[k]}))
 
-        # --- ticket 02, seam B: the one-shot retry and the archive ---------------------
+        # --- the one-shot retry and the archive ---------------------
         folder = layout.frames_dir(mol)
         stem_r = layout.orca_frame_stem(LEVEL, "displaced", 2, 0)    # failed: the TIMEOUT_S trailer
         arc_r = frame_labels.failed_archive(folder, stem_r)
@@ -561,7 +561,7 @@ def main():
               and raised_w and fake_w2.calls == 1 and arc_f.read_text(encoding="utf-8") == pre_force,
               (lab_w["status"], fake_w.calls, raised_w, arc_f.read_text(encoding="utf-8")[:40] if arc_f.is_file() else None))
 
-        # --- ticket 04, seam C: the round carries the retry; --retry-only sweeps it -------
+        # --- the round carries the retry; --retry-only sweeps it -------
         root_c = Path(tmp) / "retry_root"
         mol_c, basins_c = make_molecule(Path(tmp) / "retry_src", with_merged=False)
         dest_c = layout.molecule_dir(root_c, "fake", "dsgdb9nsd_000042")
@@ -583,8 +583,8 @@ def main():
         put_c("basin", 2, 0, "ORCA started\ncrashed\n")                         # failed, archived
         frame_labels.failed_archive(folder_c, layout.orca_frame_stem(LEVEL, "basin", 2, 0)).write_text("older failure\n", encoding="utf-8")
 
-        # ticket 05: a second molecule, every frame finished -- its walk line ("all N frames
-        # finished") used to be the only thing a round's log said about it
+        # a second molecule, every frame finished -- its walk line ("all N frames
+        # finished") must not appear in a round's log
         mol_e, basins_e = make_molecule(Path(tmp) / "retry_src2", with_merged=False)
         dest_e = layout.molecule_dir(root_c, "fake", "dsgdb9nsd_000043")
         shutil.move(str(mol_e), str(dest_e))
@@ -602,7 +602,7 @@ def main():
         todo_only, counts_only = ld.pending([dest_c], LEVEL, None, retry_only=True)
         default_ids = [(g, b, k, r) for _m, g, b, k, r in todo_default]
         only_ids = [(g, b, k, r) for _m, g, b, k, r in todo_only]
-        check("seam C, pending(): the default round lists the never-run frames AND the failed frame WITHOUT an archive (retry True); --retry-only lists exactly that failure -- "
+        check("pending(): the default round lists the never-run frames AND the failed frame WITHOUT an archive (retry True); --retry-only lists exactly that failure -- "
               "the archived failure, the finished and the never-run frames stay unqueued; the counts are the disk's either way",
               sorted(default_ids) == sorted([("basin", 1, 0, True), ("displaced", 0, 0, False), ("displaced", 2, 0, False)])
               and sorted(only_ids) == [("basin", 1, 0, True)]
@@ -629,9 +629,9 @@ def main():
         want_d = sorted(["{} basin 1 0 retry".format(dest_c),
                          "{} displaced 0 0 -".format(dest_c),
                          "{} displaced 2 0 -".format(dest_c)])
-        check("seam C, --list: a flagless round's task list carries the failed frame without an archive with `retry` in the 5th column and the never-run frames with `-`; "
+        check("--list: a flagless round's task list carries the failed frame without an archive with `retry` in the 5th column and the never-run frames with `-`; "
               "--retry-only's list holds exactly the failure and nothing else; the summary states the retry rule and the retry count; "
-              "ticket 05: the printed round holds NO full frame list and NO per-molecule walk lines -- no frame tag, no `(retry)` marker, "
+              "the printed round holds NO full frame list and NO per-molecule walk lines -- no frame tag, no `(retry)` marker, "
               "no `frames finished` line, and the all-finished molecule is never named",
               rc_d == 0 and rc_o == 0
               and sorted(listing_d.splitlines()) == want_d
@@ -656,7 +656,7 @@ def main():
         dbg_t = (ROOT / "hpc" / "slurm" / "hl_pipeline_debug.slurm").read_text(encoding="utf-8")
         check("--force lives only on the frame CLI (the deliberate full relabel): the round driver and the worker never pass it; the worker maps the 5th column to --retry; "
               "hl_labels.slurm takes RETRY_ONLY (any non-empty value) into `--retry-only`, used exactly once, on the LIST call only; RETRY_FAILED / --retry-failed are gone from the driver, the script, the worker and the frame CLI; "
-              "the old ordinary-round claims ('not rerun') are gone from the driver, the round script, the frame CLI and the debug script -- which says a killed frame is re-attempted once by the next round (ticket 06); both arrays carry the column through their awk and dispatch 6 fields",
+              "the old ordinary-round claims ('not rerun') are gone from the driver, the round script, the frame CLI and the debug script -- which says a killed frame is re-attempted once by the next round; both arrays carry the column through their awk and dispatch 6 fields",
               "--force" not in drv_t and "--force" not in wk_t and "--force" in fl_t
               and '[ "$retry" = "retry" ] && cmd+=(--retry)' in wk_t
               and "-n 6" in sl_t and "$5, s, e" in sl_t
@@ -671,17 +671,17 @@ def main():
               and '-n 6' in dbg_t and "$4, $5, s, s + np - 1" in dbg_t,
               ("--force" in drv_t, "--force" in wk_t, "-n 6" in sl_t, "$5, s, e" in sl_t, "$4, $5, s, s + np - 1" in dbg_t,
                "not rerun" in fl_t, "not rerun" in dbg_t))
-        check("the scope ruling rides the round: hl_labels.slurm takes GENERATORS into BOTH the task list and the assemble, so task 0's exit 0 means every IN-SCOPE frame is labelled",
+        check("the scope rides the round: hl_labels.slurm takes GENERATORS into BOTH the task list and the assemble, so task 0's exit 0 means every IN-SCOPE frame is labelled",
               'GENERATORS="${GENERATORS:-}"' in sl_t and 'GENERATORS_FLAG="--generators $GENERATORS"' in sl_t
               and sl_t.count("$GENERATORS_FLAG") == 2 and "$GENERATORS_FLAG --assemble" in sl_t
               and "GENERATORS=basin" in sl_t and "GENERATORS=basin RETRY_ONLY=1" in sl_t and "--generators" in drv_t,
               (sl_t.count("$GENERATORS_FLAG"), "$GENERATORS_FLAG --assemble" in sl_t, "GENERATORS=basin" in sl_t))
-        check("ticket 05: each task's log prints its own retry slice after the echoes -- the count line `retries    R in this task` and one line per retry frame (molecule name + generator_bBB_kK, like the old list)",
+        check("each task's log prints its own retry slice after the echoes -- the count line `retries    R in this task` and one line per retry frame (molecule name + generator_bBB_kK)",
               'echo "retries    $N_RETRY_TASK in this task"' in sl_t
               and '$5 == "retry"' in sl_t and 'n = split($1, p, "/")' in sl_t and '%s_b%02d_k%d' in sl_t,
               ('echo "retries' in sl_t, '$5 == "retry"' in sl_t, 'n = split($1' in sl_t, "%s_b%02d_k%d" in sl_t))
 
-    # --- ticket 09 A: one campaign, one tag, one Dataset -------------------------------
+    # --- one campaign, one tag, one Dataset -------------------------------
     heads = "".join((ROOT / "hpc" / "slurm" / f).read_text(encoding="utf-8") for f in
                     ("hl_branchA.slurm", "hl_frames.slurm", "hl_labels.slurm", "hl_pipeline_debug.slurm"))
     readme = (ROOT / "workflows" / "hessian_learning" / "README.md").read_text(encoding="utf-8")
@@ -721,7 +721,7 @@ def main():
           env["PATH"].startswith("/x/bin" + os.pathsep) and env["LD_LIBRARY_PATH"].startswith("/x/lib")
           and not os.environ.get("PATH", "").startswith("/x/bin"))
 
-    # --- ticket 07: the assemble walk goes quiet ---------------------------------------
+    # --- the assemble walk goes quiet ---------------------------------------
     with tempfile.TemporaryDirectory(prefix="quiet_") as tmp:
         root_q = Path(tmp) / "root"
         mol_u, basins_u = make_molecule(Path(tmp) / "quiet_src_u", with_merged=False)
@@ -746,13 +746,13 @@ def main():
 
         out_u = frame_labels.assemble(dest_u, LEVEL, generators=("basin",))
         after_u = sorted(p.name for p in folder_u.iterdir())
-        check("ticket 07: assemble leaves an untouched molecule alone -- nothing written, no Record, no report; the counts still say every frame is unlabelled",
+        check("assemble leaves an untouched molecule alone -- nothing written, no Record, no report; the counts still say every frame is unlabelled",
               after_u == before_u and not rec_u.exists()
               and out_u["info"]["N_FRAMES"] == 3 and out_u["info"]["N_LABELLED"] == 0 and out_u["info"]["N_UNLABELLED"] == 3,
               (before_u, after_u, out_u["info"]["N_UNLABELLED"]))
 
         ld = _load_driver()
-        check("ticket 07: the assemble line renders NaN statistics as '-'",
+        check("the assemble line renders NaN statistics as '-'",
               ld._dash(float("nan"), ".0f") == "-" and ld._dash(float("nan"), ".2f") == "-" and ld._dash(12.3, ".0f") == "12",
               (ld._dash(float("nan"), ".0f"), ld._dash(12.3, ".0f")))
 
@@ -768,7 +768,7 @@ def main():
             else:
                 os.environ["S0_RUNS_ROOT"] = old_root
         text_q = cap_q.getvalue()
-        check("ticket 07: the driver's assemble lists only molecules with labels or failures, tallies the rest, reports its own wall, and the empty-Batch block is gone; the exit-code gate is unchanged",
+        check("the driver's assemble lists only molecules with labels or failures, tallies the rest, reports its own wall, and the empty-Batch block is gone; the exit-code gate is unchanged",
               rc_q == 1
               and "labelled 1/3" in text_q and str(rec_l) in text_q
               and str(rec_u) not in text_q and not rec_u.exists()

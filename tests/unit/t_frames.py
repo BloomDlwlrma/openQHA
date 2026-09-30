@@ -1,4 +1,4 @@
-"""Ticket 02 of the Hessian-learning set: the Frame set of one molecule at the engine
+"""The Frame set of one molecule at the engine
 level, on the propanal fixture with a harmonic surrogate calculator (no MACE weights,
 no engine): E = E_b + 1/2 dx^T H_b dx, F = -H_b dx, Hessian = H_b of the nearest basin.
 
@@ -8,8 +8,7 @@ zero; the displaced frames stay within the RMS ceiling and the same seed reprodu
 the same positions to 1e-12 while another seed does not; `merged` and `saddle` frames
 come from `DUPLICATE_MAP` / `SADDLE_CONFORMER_IDS` and `mace/confNN/conf.extxyz`; a frame
 with a broken bond is kept and reported (no bond-graph filter: the energy window is the
-only filter, ruling
-2026-09-18), the energy window is the only filter and names the frame's dE; the extxyz
+only filter), the energy window is the only filter and names the frame's dE; the extxyz
 files read back with a (3N, 3N) Hessian and the Record's counts add up.
 """
 import shutil
@@ -144,7 +143,7 @@ def main():
         check("an explicit --max-rms is still honoured (0.05 A: every draw under it) and an unreachable one raises after 50 draws",
               max(tight_rms) <= 0.05 + 1e-12 and raised, (max(tight_rms), raised))
 
-        # --- ticket 28: normal-mode sampling bounds the harmonic energy at (3/2) N_a k_B T ---
+        # --- normal-mode sampling bounds the harmonic energy at (3/2) N_a k_B T ---
         a00 = read(str(mol / "mace" / "basin00" / "basin.extxyz"), format="extxyz")
         KB_J, NA, CAL = 1.380649e-23, 6.02214076e23, 4184.0
         cap = 1.5 * len(a00) * KB_J * frames.TEMPERATURE_K * NA / CAL         # kcal/mol
@@ -180,14 +179,14 @@ def main():
               and same < 1e-12 and diff > 1e-3
               and np.isnan(grec["c_sum"][0]) and arec["distribution"] == "nms",
               (arec["harmonic_energy_cap_kcal"], cap, max(e_harm), mean_e, rho[:3], same, diff))
-        # --- ticket 29: no engine Hessian at a displaced frame -------------------------------
+        # --- no engine Hessian at a displaced frame -------------------------------
         fb_h = frames.read_frames(layout.frames_file(mol, "basin", level))
         disp_rows = [r for r in out["frames"] if r["GENERATOR"] == "displaced" and r["STATUS"] == "kept"]
         stat_rows = [r for r in out["frames"] if r["GENERATOR"] in ("basin", "merged", "saddle") and r["STATUS"] == "kept"]
         with_h = frames.generate(mol, calc=calc, engine_name="MACE-OFF23_medium", n_displaced=1,
                                  displaced_hessian=True)
         fd_h = frames.read_frames(layout.frames_file(mol, "displaced", level))
-        check("ticket 29: a displaced frame carries NO engine Hessian (has_hessian false, no hessian key, LOWEST_FREQ nan) while "
+        check("a displaced frame carries NO engine Hessian (has_hessian false, no hessian key, LOWEST_FREQ nan) while "
               "basin / merged / saddle do; the Record counts them (N_ENGINE_HESSIAN, DISPLACED_HESSIAN false); "
               "--displaced-hessian brings them back",
               all("hessian" not in a.info and a.info["has_hessian"] is False for a in fd)
@@ -208,7 +207,7 @@ def main():
         # reproducibility: redraw basin 0's displacements from the recorded seeds
         seeds = [a.info["seed"] for a in fd if a.info["basin"] == 0]
         a0 = read(str(mol / "mace" / "basin00" / "basin.extxyz"), format="extxyz")
-        # the draw the Record declares (round-2 Q14: classical by default), not thermal_displacements' own default
+        # the draw the Record declares (classical by default), not thermal_displacements' own default
         dist = out["info"]["DISTRIBUTION"]
         temp = float(out["info"]["TEMPERATURE"])                 # the Record's own temperature, not the function's default
         again, _ = hessian_mod.thermal_displacements(a0, None, temperature_K=temp, n_samples=4, hessian=h0, seeds=seeds,

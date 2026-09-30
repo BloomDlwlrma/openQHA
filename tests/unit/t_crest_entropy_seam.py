@@ -1,21 +1,21 @@
-"""Ticket 25: the GFN2 seam -- CREST --entropy's own inputs through our assembly.
+"""The GFN2 seam -- CREST --entropy's own inputs through our assembly.
 
 UNIT. No engine: tests/data/propanal_crest_entropy holds two real `crest --entropy --gfn2`
 runs on propanal (2026-09-16, 40 s each, CREST 3.x in s0crest) as engine files, and the
 xtb --hess engine files at CREST's conformers and at the reference structure.
 
-What is asserted (spec, Testing Decisions; the ticket's criteria):
+What is asserted:
   * S'_conf, H_conf, Cp_conf recomputed from CREST's conformer energies and CREST's own
     degeneracies equal CREST's printout to 1e-4 cal/mol/K -- both runs, even though the
     runs disagree with each other (g' = (2,1,2) vs (2,1,1): a point-group label flip).
   * our cre_degen2 equivalents equal CREST's cre_degen2 (g_rot * cores).
   * S_ref from xtb's analytic Hessian at CREST's reference geometry is within 0.05 of
     CREST's numerical one (measured +0.011).
-  * ticket 28: under `crest_native` (CREST's own regime: a mode below ithr is kept with
+  * under `crest_native` (CREST's own regime: a mode below ithr is kept with
     zero entropy) the third conformer is kept and dS_bar closes to 0.03 (measured
     -0.002 / -0.022; it was +0.10 / +0.12 while the retired exclude-any-imaginary
     policy dropped that conformer).
-  * ticket 35: the record has no `[Imaginary_Spread]` block; the seam keeps its own
+  * the record has no `[Imaginary_Spread]` block; the seam keeps its own
     counters (N_KEPT_NEGATIVE / N_INVERTED), and `crest_native` is reachable only here.
   * two runs are recorded with their spread; a single run is refused.
   * the records live in msrrho/thermo/gfn2.* and nowhere else.
@@ -84,7 +84,7 @@ def main():
               abs(out["S_conf_spread"] - 0.4296) < 0.01, out["S_conf_spread"])
         check("our own g' is the same in both runs (geometric chirality class)",
               out["runs"][0]["seam"]["G_PRIME_OURS"] == out["runs"][1]["seam"]["G_PRIME_OURS"])
-        # ticket 28: the third conformer (-68.8 cm^-1 in xtb, -68.42 in CREST's own numerical
+        # the third conformer (-68.8 cm^-1 in xtb, -68.42 in CREST's own numerical
         # Hessian, below ithr = -50) is KEPT with zero entropy for that mode, as CREST keeps it
         third = [b for b in out["runs"][0]["basins"] if b["index"] == 2][0]
         check("the third conformer is kept negative under crest_native (0 excluded, 1 kept)",
@@ -95,7 +95,7 @@ def main():
               % (third["lowest_frequency_cm"], third["S_vib_cal_per_K"]))
         check("its S_vib reproduces CREST's --numhess printout (5.035 cal/mol/K) to 0.02",
               abs(third["S_vib_cal_per_K"] - 5.035) < 0.02, third["S_vib_cal_per_K"])
-        check("[Calculation_Info].ITHR_POLICY = crest_native; no [Imaginary_Spread] block since ticket 35",
+        check("[Calculation_Info].ITHR_POLICY = crest_native; no [Imaginary_Spread] block",
               doc["Calculation_Info"]["ITHR_POLICY"] == "crest_native"
               and "Imaginary_Spread" not in doc)
         row = next(r for r in doc["Basin"] if int(r["INDEX"]) == 2)

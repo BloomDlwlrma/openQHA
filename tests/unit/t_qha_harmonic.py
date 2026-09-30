@@ -13,7 +13,7 @@ subspace removal, diagonalisation, the entropy sum -- can be checked against it 
 single force evaluation.
 
 There is a precedent for the scale: the same style of check on the retired
-density-of-states chain came back at 0.0011 kcal/mol (D0-P2-5).
+density-of-states chain came back at 0.0011 kcal/mol.
 
 Two numbers, because they fail for different reasons
 ----------------------------------------------------

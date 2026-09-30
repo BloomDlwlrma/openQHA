@@ -1,4 +1,4 @@
-"""The census's one second optimisation pass really appends (ticket 38; closed by ticket 40).
+"""The census's one second optimisation pass really appends.
 
 INTEGRATION. Runs `census_from_frames` with the real MACE calculator on two prepared
 frames of the propanal fixture (no CREST binary involved); tens of seconds. Skips with a
@@ -21,13 +21,13 @@ above the line; the pass runs (once), the frame still fails, and is rejected as
   * `conf.extxyz` is the final geometry (the trajectory's last frame) and carries the
     same residual the record rejected the frame with;
   * `mace/confNN/` still holds exactly `layout.MACE_CONFORMER_FILES` -- no `opt2.*` was
-    born (ADR 0001).
+    born.
 
 The pair: the fixture's own MACE basin (`mace/basin00/basin.extxyz`, residual 6.7e-5 eV/A)
 certifies without a step, so the census returns a record; the same geometry displaced by a
 fixed +-0.05 A pattern (seed 7) is the frame that fails twice and is rejected.
 
-**The `converged_orca_default` section (ticket 41, Q4).** It was the one certification
+**The `converged_orca_default` section.** It was the one certification
 class with no real-calculator end-to-end run. The same displaced frame with a larger cap
 lands inside ORCA's line instead: measured on this fixture (real MACE-OFF23_medium), the
 first-pass residual against the cap is 1 -> 8.438, 2 -> 3.577, 4 -> 0.335, 12 -> 0.048,
@@ -157,7 +157,7 @@ def main():
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 
-    # E -- `converged_orca_default` (ticket 41, Q4): the cap chosen so the displaced
+    # E -- `converged_orca_default`: the cap chosen so the displaced
     # frame's FIRST-pass residual lands inside ORCA's line but above our target. The
     # frame is admitted with `tighten_converged = false`, no second pass runs, and the
     # run's engine files carry exactly the one pass.

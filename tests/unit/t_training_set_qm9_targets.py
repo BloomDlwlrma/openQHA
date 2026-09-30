@@ -1,4 +1,4 @@
-"""Ticket 31: training-set membership over the whole target QM9 set (the Dataset).
+"""Training-set membership over the whole target QM9 set (the Dataset).
 
 UNIT. No engine, seconds. A synthetic curated-QM9 directory (S0_CURATED_QM9) of six
 QM9-format files -- propanal, acetone, ethanol, benzene, a two-fragment SMILES (fails
@@ -9,7 +9,7 @@ Asserted: the target set is the gate's (the gate list and F7 mode are in the rec
 every target has one row and a failing molecule is counted by gate; the summary's
 counts, fraction and per-heavy-atom arrays follow; the SPICE provenance (files, sizes,
 frame counts, DOI) is in the record; the table round-trips through dat.read_table; the
-shipped species' answers agree with ticket 30's.
+shipped species' answers agree with the membership answer.
 """
 import os
 import shutil
@@ -102,7 +102,7 @@ def main():
               and next(r for r in rows if r["qm9_index"] == "dsgdb9nsd_000200")["match_level"] == "none")
         r35 = next(r for r in rows if r["qm9_index"] == "dsgdb9nsd_000035")
         m35 = ts.membership("CCC=O", cfg)
-        check("the shipped species' row agrees with ticket 30's answer",
+        check("the shipped species' row agrees with the membership answer",
               r35["n_train_frames"] == m35["N_TRAIN_FRAMES"] and r35["match_level"] == m35["MATCH_LEVEL"])
         out2 = ts.qm9_targets_membership(cfg, limit=2, out_dir=Path(tmp) / "out2")
         check("--limit considers only the first N molecules and records it",

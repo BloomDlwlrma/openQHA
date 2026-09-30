@@ -1,16 +1,16 @@
-"""Ticket 12 of the Hessian-learning set: the file `04_dataset` writes is what the fork's
-`config_from_atoms` reads, and the batch it makes is what ticket 11's loss slices.
+"""The file `04_dataset` writes is what the fork's
+`config_from_atoms` reads, and the batch it makes is what the loss slices.
 
 No engine. From the 2-methyloxirane frame fixture (basin + 4 displaced frames, E-F-H at
 both levels) a MACE-form file is written with `dataset._write_split` exactly as
 `mace_<name>.<level>.extxyz` is -- the displaced frames stripped of their Hessian, as
-round-5 Q7 (b) labels them -- then read back through mace: `config_from_atoms`
+the production labels them -- then read back through mace: `config_from_atoms`
 (default keyspec: `REF_energy` / `REF_forces` / `REF_hessian`), `AtomicData.from_config`,
 a `DataLoader` batch; `phl_loss.graph_labels` slices the batch and every Hessian equals
 the fixture's to 1e-10; `has_hessian` is T F F F F; `REF_energy` / `REF_forces` equal
 `energy` / `forces`; `sqrt_masses` are ASE's; and the loss's full-matrix term on that
 batch, fed the MACE-level Hessian of the basin frame as `pred["hessian"]`, equals
-`phl.loss_full` of the two fixture matrices (eq. 1', the one target since S0-C-64).
+`phl.loss_full` of the two fixture matrices (eq. 1', the one target).
 SKIPs if the fork's key is absent (a pip-installed mace).
 """
 import sys
@@ -62,7 +62,7 @@ def main():
     check("fixture: 1 basin + 4 displaced reference frames, all with a Hessian",
           len(ref_frames) == 5 and all(a.info["has_hessian"] for a in ref_frames))
     H_fix = [np.array(a.info["hessian"]) for a in ref_frames]
-    for a in ref_frames[1:]:                                    # round-5 Q7 (b): displaced frames are E-F only
+    for a in ref_frames[1:]:                                    # displaced frames are E-F only
         a.info.pop("hessian")
         a.info["has_hessian"] = False
 

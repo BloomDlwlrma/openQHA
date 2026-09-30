@@ -1,13 +1,13 @@
-"""The layout module answers every path question of the molecule tree (ticket 01).
+"""The layout module answers every path question of the molecule tree.
 
 UNIT. Pure path arithmetic; no filesystem, no configuration; under a second.
 
-The decision (ADR 0001, 2026-09-14)
------------------------------------
+The rule
+--------
 One molecule directory per (root, tag, qid), one folder per engine inside it, engine
 files only in those folders, this repository's records in `_records/`. The tree is
-sharded as range 16 000 / chunk 1 000 (user, 2026-09-14: chunk 1 000, not the retired
-store's 4 000). Every writer and reader asks `openqha.store.layout`; nothing else
+sharded as range 16 000 / chunk 1 000 (not the retired store's 4 000). Every writer
+and reader asks `openqha.store.layout`; nothing else
 composes these paths, which is what makes the tree shape a checked fact.
 
 Expected values below are literals worked out by hand from the rule, not recomputed
@@ -40,7 +40,7 @@ def check(label, got, want):
 
 
 def main():
-    print("A. the tag directory is flat (ADR 0001 amendment 3, 2026-09-20): no shard layers, no shard():")
+    print("A. the tag directory is flat: no shard layers, no shard():")
     for qid in ("dsgdb9nsd_000018", "dsgdb9nsd_001001", "dsgdb9nsd_133885"):
         check(qid, layout.molecule_dir(R, "t", qid), R / "t" / qid)
     check("no shard / CHUNK / RANGE any more", any(hasattr(layout, n) for n in ("shard", "CHUNK", "RANGE")), False)
@@ -56,10 +56,10 @@ def main():
     check("crest fallback", layout.crest_dir(m, fallback_shake=1), m / "crest_shake1")
     check("mace conformer 3", layout.mace_conformer_dir(m, 3), m / "mace/conf03")
     check("mace basin 0", layout.mace_basin_dir(m, 0), m / "mace/basin00")
-    # One md_openmm/basinNN per basin, every setting inside it (user ruling 2026-09-14, which
-    # replaced openmm/<setting>/basinNN); the setting is in the FILE NAME, and the
+    # One md_openmm/basinNN per basin, every setting inside it (not the retired
+    # openmm/<setting>/basinNN form); the setting is in the FILE NAME, and the
     # default setting keeps the bare names.
-    # Named by ROLE (user, 2026-09-15): md_openmm/ and md_ase/ are the two MD routes,
+    # Named by ROLE: md_openmm/ and md_ase/ are the two MD routes,
     # mace/ is the relax + Hessian; the route identifiers stay "openmm" / "ase".
     check("openmm default basin 1", layout.openmm_dir(m, "default", 1), m / "md_openmm/basin01")
     check("openmm row p1500_s5 basin 0", layout.openmm_dir(m, "p1500_s5", 0), m / "md_openmm/basin00")
@@ -67,7 +67,7 @@ def main():
     check("md_folder(openmm)", layout.md_folder("openmm"), "md_openmm")
     check("md_folder(ase)", layout.md_folder("ase"), "md_ase")
     check("route_of_folder(md_ase)", layout.route_of_folder("md_ase"), "ase")
-    # No setting level under _records (user ruling 2026-09-15): the setting is in the stem.
+    # No setting level under _records: the setting is in the stem.
     check("md_records_dir openmm", layout.md_records_dir(m, "openmm"), m / "_records/md_openmm")
     check("basin_records_dir ase 1", layout.basin_records_dir(m, "ase", 1), m / "_records/md_ase/basin01")
     check("record_file_name s2", layout.record_file_name("collect.out", "s2"), "collect_s2.out")
@@ -79,7 +79,7 @@ def main():
           m / "md_openmm/basin00/state_p1500_s5.csv")
     check("tag records dir", layout.tag_records_dir(R, "02d_prod"), R / "02d_prod/_records")
     check("xtb basin 2", layout.xtb_dir(m, 2), m / "xtb/basin02")
-    check("no orca_dir / orca_level_dir / level_dir / LEVELS any more (ticket 09b)",
+    check("no orca_dir / orca_level_dir / level_dir / LEVELS any more",
           any(hasattr(layout, n) for n in ("orca_dir", "orca_level_dir", "level_dir", "LEVELS")), False)
     check("msrrho basin job stem", layout.orca_level_stem("wb97m-d3bj_def2-tzvppd", 0), "orca.wb97m-d3bj_def2-tzvppd.basin00")
     check("msrrho basin job file", layout.orca_level_file(m, "wb97m-d3bj_def2-tzvppd", 2, ".hess"),
@@ -89,7 +89,7 @@ def main():
     check("thermo record of a level", layout.level_file(m, "mace-off23_medium", "thermo_msrrho.toml"),
           m / "msrrho/thermo/mace-off23_medium.thermo_msrrho.toml")
     check("thermo record across levels", layout.thermo_file(m, "level_compare.out"), m / "msrrho/thermo/level_compare.out")
-    check("frame label stem (ticket 09)", layout.orca_frame_stem("wb97m-d3bj_def2-tzvppd", "displaced", 0, 3),
+    check("frame label stem", layout.orca_frame_stem("wb97m-d3bj_def2-tzvppd", "displaced", 0, 3),
           "orca.wb97m-d3bj_def2-tzvppd.displaced_b00_k3")
     check("frame label file, in frames/", layout.orca_frame_file(m, "hf_cc-pvtz", "basin", 12, 0, ".engrad"),
           m / "frames/orca.hf_cc-pvtz.basin_b12_k0.engrad")

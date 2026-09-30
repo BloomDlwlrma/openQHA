@@ -1,6 +1,6 @@
 """A Batch leaves nothing but its table: the branch B parsl driver on the local resource config.
 
-INTEGRATION (OpenMM + MACE on CPU, parsl; a minute). Records redesign, ticket 20.
+INTEGRATION (OpenMM + MACE on CPU, parsl; a minute).
 
 Runs `s0_E_branchB_parsl.py --resource local` for one molecule (one basin: no branch A
 under this tag, so the trajectory starts from the QM9 reference geometry, which the
@@ -11,7 +11,7 @@ driver says loudly) at smoke length, and holds:
        STATUS NORMAL TERMINATION, and the footer with the batch wall and the Slurm job id
     B. under <root>/<tag>/_records/ there is nothing but parsl/ (no JSON summary), and the
        repository checkout gained no analysis/branchE/<tag>/
-    C. the Calculation's own Record is where ticket 18 put it: _records/md_openmm/basin00/
+    C. the Calculation's own Record is in _records/md_openmm/basin00/
        md.out, md.toml, driver.log
 """
 import os

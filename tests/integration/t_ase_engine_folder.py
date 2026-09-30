@@ -1,10 +1,10 @@
-"""The ASE-route driver leaves exactly ASE's three files in the engine folder (ticket 10).
+"""The ASE-route driver leaves exactly ASE's three files in the engine folder.
 
 INTEGRATION. Runs the real ASE driver (MACE on CPU) twice on a shipped molecule with a
 protocol of a few hundred steps, then collect on the result; a minute or two. Skips when
 MACE is absent.
 
-The decision (ADR 0001; ticket 10, 2026-09-15): `md_ase/basinNN/` holds `start.extxyz`,
+The layout: `md_ase/basinNN/` holds `start.extxyz`,
 `md.traj` (ASE Trajectory) and `md.log` (ASE MDLogger) and nothing else; a partial
 trajectory resumes from the last frame of `md.traj`; the driver's records go to
 `_records/md_ase/basinNN/`; the same reader reads it and collect finds it with
@@ -14,7 +14,7 @@ trajectory resumes from the last frame of `md.traj`; the driver's records go to
     run 2  prod 0.20 ps, same folder        -> resumes, 20 frames, record says resumed
     run 3  prod 0.20 ps again               -> nothing to run
     then   s0_B_qha_analyse.py --route auto -> finds md_ase/, leaves _records/md_ase/collect.{out,toml,dat}
-           (one Table, three sections, every column explained; 2026-09-16)
+           (one Table, three sections, every column explained)
     then   s0_B_report_ensemble.py --route ase -> ensemble.toml carries the verdict of collect.toml
 """
 import json
@@ -140,7 +140,7 @@ def main():
         _cstem = _cr.stem(mol, "ase", "default", _cr.COLLECT)
         _cpaths = _cr.collect_paths(_cstem)
         check("the Table collect.dat under _records/md_ase/", _cpaths["dat"].exists(), _cpaths["dat"])
-        check("no other .dat beside it (one Table since 2026-09-16)",
+        check("no other .dat beside it (one Table)",
               sorted(p.name for p in _cstem.parent.glob("*.dat")) == ["collect.dat"],
               sorted(p.name for p in _cstem.parent.glob("*.dat")))
         _tables = _cr.read_collect_table(_cstem)

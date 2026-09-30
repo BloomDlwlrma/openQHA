@@ -1,4 +1,4 @@
-"""Ticket 26: the SHAKE fallback keeps the published run's ensemble when the retry crashes,
+"""The SHAKE fallback keeps the published run's ensemble when the retry crashes,
 and branch A's failure marker.
 
 UNIT. No CREST: `crest.run` is replaced by a fake that writes (or does not write) a

@@ -1,4 +1,4 @@
-"""Ticket 27: `hessian_compare` -- the engine Hessian at the reference geometry.
+"""`hessian_compare` -- the engine Hessian at the reference geometry.
 
 UNIT. No engine: tests/data/propanal_molecule carries the ORCA `.hess` of the three
 reference basins and the MACE Hessian / forces evaluated at each reference geometry
@@ -71,7 +71,7 @@ def main():
     check("K_e = K_r: T*S / S_vib / ZPE curvature deltas are 0",
           abs(same["TS_LOW_DELTA"]) < 1e-12 and abs(same["S_VIB_CURVATURE_DELTA"]) < 1e-12
           and abs(same["ZPE_CURVATURE_DELTA"]) < 1e-12)
-    check("noise floors (ticket 32): the analytic propanal Hessian's rigid block sits at 5-40 cm^-1 (rotations feel the residual "
+    check("noise floors: the analytic propanal Hessian's rigid block sits at 5-40 cm^-1 (rotations feel the residual "
           "gradient; translations are ~0), read from the UNPROJECTED matrix, the same on both sides",
           5.0 < same["REF_NOISE_FLOOR_CM"] < 40.0 and same["REF_NOISE_FLOOR_CM"] == same["ENGINE_NOISE_FLOOR_CM"],
           (same["REF_NOISE_FLOOR_CM"], same["ENGINE_NOISE_FLOOR_CM"]))

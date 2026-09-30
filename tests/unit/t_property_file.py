@@ -1,8 +1,8 @@
-"""A Calculation's Property file: ORCA `.property.txt` carried into TOML (records redesign, ticket 16).
+"""A Calculation's Property file: ORCA `.property.txt` carried into TOML.
 
 UNIT. No engine; under a second. Needs Python 3.11 (tomllib).
 
-The ruling (user, 2026-09-15, grilling Q2 and Q3): the `.toml` beside a Report holds a
+The `.toml` beside a Report holds a
 `[Calculation_Status]` block first (PROGNAME, VERSION, STATUS), a `[Calculation_Info]`
 block with the inputs, and the result blocks a later step reads; nothing else. Keys are
 upper-case, each followed by a `# Type, unit: doc` comment taken from one schema table

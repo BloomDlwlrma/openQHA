@@ -1,4 +1,4 @@
-"""Ticket 23: enantiomer degeneracy g' by the port of CREST's intraconfRMSD.
+"""Enantiomer degeneracy g' by the port of CREST's intraconfRMSD.
 
 UNIT. Pure NumPy plus RDKit for the equivalence classes; no engine; a second.
 

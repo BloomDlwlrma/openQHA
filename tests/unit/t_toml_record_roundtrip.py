@@ -1,8 +1,8 @@
-"""Records are written as TOML and read back with the standard library (step 2, ticket 11).
+"""Records are written as TOML and read back with the standard library.
 
 UNIT. No engine; under a second. Needs Python 3.11 (tomllib).
 
-The ruling (user, 2026-09-15): the five records this repository writes about a run take
+The five records this repository writes about a run take
 CREST's own settings format, TOML, for the fields a program reads back, and a `.out`
 text report for a person. The standard library reads TOML but does not write it, so
 `openqha.store.toml_out.dumps` is the writer, and this test holds it to one rule: what

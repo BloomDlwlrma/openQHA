@@ -1,8 +1,8 @@
-"""Collect's tables are whitespace .dat files that read back as they were written (ticket 13).
+"""Collect's tables are whitespace .dat files that read back as they were written.
 
 UNIT. No engine; under a second.
 
-The ruling (user, 2026-09-15): the tables collect writes (per-trajectory entropies, the
+The tables collect writes (per-trajectory entropies, the
 criteria, the assembly, the blank control) take the form CREST's `crest.energies` has --
 whitespace-separated columns, one header line -- instead of parquet, and the ensemble
 report reads them with plain Python. `openqha.store.dat` is the writer and reader; the

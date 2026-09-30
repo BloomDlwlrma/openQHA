@@ -1,11 +1,11 @@
-"""One reader turns an OpenMM engine folder back into positions, symbols, masses (ticket 04).
+"""One reader turns an OpenMM engine folder back into positions, symbols, masses.
 
-UNIT. Writes a three-frame engine folder through `openmm_files.EngineFolder` (ticket 03's
-writer) with known float64 positions, then reads it back through
+UNIT. Writes a three-frame engine folder through `openmm_files.EngineFolder`
+with known float64 positions, then reads it back through
 `openqha.quasi_harmonic.trajectory_reader`; needs openmm and mdtraj, skips otherwise;
 seconds.
 
-The decision (ADR 0001, user 2026-09-14): collect, the ensemble report and 02d read the
+collect, the ensemble report and 02d read the
 trajectory from `traj.dcd` + `start.pdb` + `state.csv`, never from `frames.npy`. So:
 
     A. positions read back equal the ones written to float32 precision (DCD is float32);

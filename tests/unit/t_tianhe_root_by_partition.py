@@ -1,10 +1,10 @@
-"""The root of the molecule tree is derived from the partition and the account (ticket 02).
+"""The root of the molecule tree is derived from the partition and the account.
 
 UNIT. Runs bash on `hpc/env/root.sh` with a fake HOME, partition and mount base; under
 a second; skipped with a message where bash is absent.
 
-The decision (ADR 0002, user 2026-09-14)
-----------------------------------------
+The rule
+--------
     root = <prefix>/HDD_POOL/<acct>/<user>/sherwin/runs
     prefix /XYFS02  for partitions ai, temp, cn, deimos, debug (TianheXY-A, TianheXY-CN)
            /XYAIFS00 for a100x h100x hx a800x v100x (TianheXY-AI)
