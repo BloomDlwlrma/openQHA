@@ -14,8 +14,10 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 
 ## 前置
 
-- 09e 已绿:三个 checkout 在两侧(ZIP + 工作站 `.git`;ids 一致),acceptance 三条链绿,
-  数据集在 `$R/draw300/_datasets/draw300_r1/`,两枚 Replay 在 `$R/spice/`(09d 回执)。
+- 09e 已绿:三个 checkout 在两侧(ZIP + 工作站 `.git`;ids 一致),acceptance 三条链绿;
+  数据与产物同在 `/XYFS02`(下条的 `$S0_RUNS_ROOT`)—— 数据集在
+  `$S0_RUNS_ROOT/draw300/_datasets/draw300_r1/`,两枚 Replay 在 `$S0_RUNS_ROOT/spice/`
+  (09d 回执;执行一律用数据实际位置 `/XYFS02`)。
 - **本清单在 tianhexy-ai 侧执行**(`yhbatch -p a800x`,A800;登录 ln301):从 AI 侧的 `$R`
   checkout 提交(`R=~/HDD_POOL/sherwin` = `/XYAIFS00/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`);
   数据在 `/XYFS02`,`a800x` 计算节点直连可读写(09e 探针 259412 已验证),所以显式把 runs root
@@ -66,7 +68,7 @@ cap = min(60, floor(0.9 * 86400 / SECONDS_PER_EPOCH))
 头部,额外加在墙钟上(balance 是全矩阵一次过整个 train 文件)。cap 照 spec 的公式取,
 另用 timing run 自己的数字做一次墙钟检查:`cap × S/E + 固定头 ≤ 0.9 × 86400`
 (固定头 ≈ slurm 日志里 wrapper 的 `wall N s` − MAX_EPOCHS × S/E);超了就把 cap 下调到
-满足。数字贴回后由工作站复核。)
+满足。数字贴回后由工作站复核(2026-10-01 约定:复核确认的 `CAP=` 回发后才提交两臂)。)
 
 (评审批注 2026-09-30:spec 故事 13 钉的是公式本身;这条墙钟检查是批注加入的下限保护,
 只会在固定头会擑破 24 h 墙时下调 cap,两个数都贴回记录。)
@@ -190,6 +192,7 @@ PY
 # run the battery, once per arm (gpu env; from the checkout root)
 cd $R/openQHA-main
 export OPENQHA_PARTITION=a800x    # AI 侧;两挂载都在,登录节点必须显式设
+source ~/init_conda.sh            # AI 侧环境载入(user, 2026-10-01);下面 tianhe.sh 据此激活 openqha-gpu
 unset OPENQHA_ENV; export OPENQHA_ROLE=gpu
 source hpc/env/common.sh && source hpc/env/tianhe.sh
 export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs
