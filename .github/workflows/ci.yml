@@ -1,0 +1,38 @@
+# The smoke subset on a clean machine: numpy, ase and PyYAML only, then the eight
+# tests that need no engine, no weights and no network. The full suite stays local / Tianhe.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out openQHA
+        uses: actions/checkout@v7
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install the light dependencies (numpy, ase, PyYAML)
+        run: python -m pip install numpy ase pyyaml
+      - name: The depth-independent repository bootstrap (t_repo_bootstrap)
+        run: python tests/unit/t_repo_bootstrap.py
+      - name: The module entry points resolve (t_module_entry_points)
+        run: python tests/unit/t_module_entry_points.py
+      - name: Records round-trip through the store's TOML (t_toml_record_roundtrip)
+        run: python tests/unit/t_toml_record_roundtrip.py
+      - name: The QHA harmonic limit (t_qha_harmonic)
+        run: python tests/unit/t_qha_harmonic.py
+      - name: Mode matching on a degenerate block (t_mode_match)
+        run: python tests/unit/t_mode_match.py
+      - name: The msrrho presets (t_msrrho_presets)
+        run: python tests/unit/t_msrrho_presets.py
+      - name: The md record-resume read (t_md_record_resume)
+        run: python tests/unit/t_md_record_resume.py
+      - name: The Hessian screen floor (t_hessian_screen_floor)
+        run: python tests/unit/t_hessian_screen_floor.py
