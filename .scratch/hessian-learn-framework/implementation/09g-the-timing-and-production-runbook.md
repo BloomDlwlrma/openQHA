@@ -9,22 +9,22 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 > by the user; the workstation reconciles the paste-back into [09](../decisions/09-round-1-run.md)'s
 > Answer. 范围 = spec stories 12-14 (the timing job, the cap, the two production
 > submissions) + 15-17 (the done bar) + 18 (the evidence fetch-back).
-> 范围:**CN/A 侧**(A800)`yhbatch` 三条作业 -- timing(1 条)→ cap → 生产(2 条,一起交)。
+> 范围:**tianhexy-ai 侧**(a800x)`yhbatch` 三条作业 -- timing(1 条)→ cap → 生产(2 条,一起交)。
 > 不在本清单:**工作站侧**的数据集镜像/本地 gate(09f)、round 2、judge。
 
 ## 前置
 
 - 09e 已绿:三个 checkout 在两侧(ZIP + 工作站 `.git`;ids 一致),acceptance 三条链绿,
   数据集在 `$R/draw300/_datasets/draw300_r1/`,两枚 Replay 在 `$R/spice/`(09d 回执)。
-- **本清单在 CN/A 侧执行**(`yhbatch -p ai`,A800;ln2xx 登录):从 CN/A 侧的 `$R` checkout 提交
-  (`R=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`;三个 checkout 都在 `$R` 下);
-  `ai` 分区与 CN 共用 `/XYFS02`(站点文档 §0b:同一套文件,无需搬运),显式把 runs root 指到
-  数据所在侧:
+- **本清单在 tianhexy-ai 侧执行**(`yhbatch -p a800x`,A800;登录 ln301):从 AI 侧的 `$R`
+  checkout 提交(`R=~/HDD_POOL/sherwin` = `/XYAIFS00/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`);
+  数据在 `/XYFS02`,`a800x` 计算节点直连可读写(09e 探针 259412 已验证),所以显式把 runs root
+  指到数据所在侧:
   `export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs`。
-  (2026-10-01 修正:初稿误写 "AI 侧"(`~/HDD_POOL/sherwin` = `/XYAIFS00`)。按站点文档与
-  09e,`-p ai` 属 TianheXY-A、与 CN 同 FS;执行侧改为 CN/A。09e 的 "AI 侧作业显式 export
-  S0_RUNS_ROOT" 是回退政策,不适用于本清单。)
-- 登录节点先 `source /APP/u22/ai_x86/toolshs/set-XY-I.sh`(细粒度环境;`-G` 必需)。
+  (user, 2026-10-01:执行侧 = tianhexy-ai 的 `a800x`;它区别于 TianheXY-A 的 `ai` 分区。
+  初稿的 `-p ai`(属 TianheXY-A)与中途的 CN/A 读法均作废。)
+- 提交形式(AI 侧):`yhbatch -p a800x --gpus=1 ...`;`--gpus` 必需、`--exclusive` 禁用。
+  (`set-XY-I.sh` / `-G` 是 TianheXY-A `ai` 分区的入口,本侧不用。)
 - 顺手记录三个 id(回执第 1 项):`git -C $R/openQHA-main rev-parse HEAD`、同两条对
   `$R/openQHA-Hessian`、`$R/mace`。
 
@@ -40,7 +40,7 @@ EXTRA='--lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--w
 TAG=draw300 NAME=draw300_r1 RUN=timing1 MAX_EPOCHS=2 MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
-    yhbatch -p ai -G 1 -c 12 -t 12:00:00 hpc/slurm/hl_train.slurm
+    yhbatch -p a800x --gpus=1 -t 12:00:00 hpc/slurm/hl_train.slurm
 ```
 
 注意 EXTRA 的三个 mace 旋钮每个是**两个 token**(`--mace-arg=--clip_grad --mace-arg=1.0`):
@@ -86,11 +86,11 @@ CAP=<步骤 2 的数>
 TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
-    yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+    yhbatch -p a800x --gpus=1 -t 24:00:00 hpc/slurm/hl_train.slurm
 TAG=draw300 NAME=draw300_r1 RUN=replay30k_w10 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.valid.extxyz \
-    yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
+    yhbatch -p a800x --gpus=1 -t 24:00:00 hpc/slurm/hl_train.slurm
 ```
 
 **回执 4**:两个 job id + 提交行原文。
@@ -189,7 +189,7 @@ PY
 
 # run the battery, once per arm (gpu env; from the checkout root)
 cd $R/openQHA-main
-export OPENQHA_PARTITION=deimos    # CN/A 侧登录节点的解析令牌(09e);两挂载都在,必须显式设
+export OPENQHA_PARTITION=a800x    # AI 侧;两挂载都在,登录节点必须显式设
 unset OPENQHA_ENV; export OPENQHA_ROLE=gpu
 source hpc/env/common.sh && source hpc/env/tianhe.sh
 export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs
@@ -237,7 +237,7 @@ tar 三枚 + 模型 tar 走你的通道回工作站;工作站把它们解到镜�
 
 ## 回执清单(汇总)
 
-1. 三个 checkout id(CN/A 侧)。
+1. 三个 checkout id(AI 侧)。
 2. timing1:job id + 输出块 + `SECONDS_PER_EPOCH` + `HESSIAN_WEIGHT` + `HESSIAN_CURVE_MOVED`。
 3. cap 算式与结果。
 4. 两条生产 job id + 提交行。
