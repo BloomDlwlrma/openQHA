@@ -9,17 +9,21 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 > by the user; the workstation reconciles the paste-back into [09](../decisions/09-round-1-run.md)'s
 > Answer. 范围 = spec stories 12-14 (the timing job, the cap, the two production
 > submissions) + 15-17 (the done bar) + 18 (the evidence fetch-back).
-> 范围:**AI 侧**(A800)`yhbatch` 三条作业 -- timing(1 条)→ cap → 生产(2 条,一起交)。
+> 范围:**CN/A 侧**(A800)`yhbatch` 三条作业 -- timing(1 条)→ cap → 生产(2 条,一起交)。
 > 不在本清单:**工作站侧**的数据集镜像/本地 gate(09f)、round 2、judge。
 
 ## 前置
 
 - 09e 已绿:三个 checkout 在两侧(ZIP + 工作站 `.git`;ids 一致),acceptance 三条链绿,
   数据集在 `$R/draw300/_datasets/draw300_r1/`,两枚 Replay 在 `$R/spice/`(09d 回执)。
-- **本清单在 AI 侧执行**(`yhbatch -p ai`,A800):从 AI 侧的 `$R` checkout 提交
-  (`R=~/HDD_POOL/sherwin` = `/XYAIFS00/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`);
-  **AI 计算节点直连读写 `/XYFS02`(09e 探针 259412)**,所以显式把 runs root 指到数据所在侧:
+- **本清单在 CN/A 侧执行**(`yhbatch -p ai`,A800;ln2xx 登录):从 CN/A 侧的 `$R` checkout 提交
+  (`R=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`;三个 checkout 都在 `$R` 下);
+  `ai` 分区与 CN 共用 `/XYFS02`(站点文档 §0b:同一套文件,无需搬运),显式把 runs root 指到
+  数据所在侧:
   `export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs`。
+  (2026-10-01 修正:初稿误写 "AI 侧"(`~/HDD_POOL/sherwin` = `/XYAIFS00`)。按站点文档与
+  09e,`-p ai` 属 TianheXY-A、与 CN 同 FS;执行侧改为 CN/A。09e 的 "AI 侧作业显式 export
+  S0_RUNS_ROOT" 是回退政策,不适用于本清单。)
 - 登录节点先 `source /APP/u22/ai_x86/toolshs/set-XY-I.sh`(细粒度环境;`-G` 必需)。
 - 顺手记录三个 id(回执第 1 项):`git -C $R/openQHA-main rev-parse HEAD`、同两条对
   `$R/openQHA-Hessian`、`$R/mace`。
@@ -185,7 +189,7 @@ PY
 
 # run the battery, once per arm (gpu env; from the checkout root)
 cd $R/openQHA-main
-export OPENQHA_PARTITION=h100x
+export OPENQHA_PARTITION=deimos    # CN/A 侧登录节点的解析令牌(09e);两挂载都在,必须显式设
 unset OPENQHA_ENV; export OPENQHA_ROLE=gpu
 source hpc/env/common.sh && source hpc/env/tianhe.sh
 export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs
@@ -233,7 +237,7 @@ tar 三枚 + 模型 tar 走你的通道回工作站;工作站把它们解到镜�
 
 ## 回执清单(汇总)
 
-1. 三个 checkout id(AI 侧)。
+1. 三个 checkout id(CN/A 侧)。
 2. timing1:job id + 输出块 + `SECONDS_PER_EPOCH` + `HESSIAN_WEIGHT` + `HESSIAN_CURVE_MOVED`。
 3. cap 算式与结果。
 4. 两条生产 job id + 提交行。
