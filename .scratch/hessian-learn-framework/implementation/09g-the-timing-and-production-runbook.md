@@ -12,23 +12,26 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 > 范围:**tianhexy-ai 侧**(a800x)`yhbatch` 三条作业 -- timing(1 条)→ cap → 生产(2 条,一起交)。
 > 不在本清单:**工作站侧**的数据集镜像/本地 gate(09f)、round 2、judge。
 
-## 前置
+## 前置(登录 ln301;逐条执行,输出即回执 1)
 
-- 09e 已绿:三个 checkout 在两侧(ZIP + 工作站 `.git`;ids 一致),acceptance 三条链绿;
-  数据与产物同在 `/XYFS02`(下条的 `$S0_RUNS_ROOT`)—— 数据集在
-  `$S0_RUNS_ROOT/draw300/_datasets/draw300_r1/`,两枚 Replay 在 `$S0_RUNS_ROOT/spice/`
-  (09d 回执;执行一律用数据实际位置 `/XYFS02`)。
-- **本清单在 tianhexy-ai 侧执行**(`yhbatch -p a800x`,A800;登录 ln301):从 AI 侧的 `$R`
-  checkout 提交(`R=~/HDD_POOL/sherwin` = `/XYAIFS00/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`);
-  数据在 `/XYFS02`,`a800x` 计算节点直连可读写(09e 探针 259412 已验证),所以显式把 runs root
-  指到数据所在侧:
-  `export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs`。
-  (user, 2026-10-01:执行侧 = tianhexy-ai 的 `a800x`;它区别于 TianheXY-A 的 `ai` 分区。
-  初稿的 `-p ai`(属 TianheXY-A)与中途的 CN/A 读法均作废。)
-- 提交形式(AI 侧):`yhbatch -p a800x --gpus=1 ...`;`--gpus` 必需、`--exclusive` 禁用。
-  (`set-XY-I.sh` / `-G` 是 TianheXY-A `ai` 分区的入口,本侧不用。)
-- 顺手记录三个 id(回执第 1 项):`git -C $R/openQHA-main rev-parse HEAD`、同两条对
-  `$R/openQHA-Hessian`、`$R/mace`。
+09e 已绿(两侧 checkout ids 一致、验收三条链绿);数据集与两枚 Replay 在 `/XYFS02` 的 runs root 下(见下面的 export)。
+
+```bash
+export R=~/HDD_POOL/sherwin        # AI 侧 checkout 根 = /XYAIFS00/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin
+export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs    # 数据与产物都在 /XYFS02
+export OPENQHA_PARTITION=a800x     # 登录节点两挂载都在;不设则根解析失败
+
+# 三个 checkout 的 id(后两个的 .git 是训练记录身份行的来源)
+for d in openQHA-main openQHA-Hessian mace; do printf '%-18s ' "$d"; git -C "$R/$d" rev-parse HEAD; done
+git -C "$R/mace" branch --show-current        # 应为 openqha-hessian
+
+# 数据落点核对(必须看到正确的落点)
+ls "$S0_RUNS_ROOT/draw300/_datasets/draw300_r1/"   # 五个 canonical(dataset.out/.toml、index.dat、mace_*.extxyz、molecules-*.h5)+ train/
+ls "$S0_RUNS_ROOT/spice/"                          # spice_pt_replay30k_w{1,10}.extxyz + .ids.dat/.valid.extxyz/.toml
+```
+
+- **执行侧** = tianhexy-ai 的 `a800x`(≠ TianheXY-A 的 `ai`;user, 2026-10-01)。提交形式:`yhbatch -p a800x --gpus=1 ...`;`--gpus` 必需、`--exclusive` 禁用;`set-XY-I.sh`/`-G` 是 `ai` 分区的入口,本侧不用。
+- **三个 checkout** = `openQHA-main` / `openQHA-Hessian` / `mace` 的 git 工作树;两侧均有(`/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/` 与 AI 侧 `$R`)。默认用 **AI 侧那套**提交(mace 与包的身份行从环境 `openqha-gpu` 的安装读出;09e 验收也是在这一侧绿的)。要连日志/注册副本也落 `/XYFS02`:把 `R` 换成 `/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`(两树 id 相同;`openqha` 改从那棵树加载,包与 mace 仍来自环境)。
 
 ## 步骤 1 -- timing job(一次测量服务两臂)
 
