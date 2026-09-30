@@ -20,8 +20,8 @@ The categories, and the test each one has to pass:
                   notebook checks, migration) and produces no science
 
 `diagnostics/` is currently EMPTY, and that is not an oversight: the closed-defect
-probes live in `scripts/_superseded/closed-defects/` instead, on their way to being
-recovered as named regression tests under `tests/regression/`. This test therefore accepts an
+probes live in `scripts/_superseded/closed-defects/` instead; each is meant to end as a
+named regression test under `tests/regression/`. This test therefore accepts an
 absent `diagnostics/` but rejects a script inside one that is not declared.
 
 Run::  python tests/unit/t_script_taxonomy.py

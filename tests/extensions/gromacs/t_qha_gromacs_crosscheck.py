@@ -146,9 +146,9 @@ def main():
         ("gmx anaeig -entropy is recorded as evidence and NOT as a reference value",
          "is_reference = {}".format(ev["is_reference"]),
          ev["is_reference"] is False),
-        ("the precision of both sides is reported, so the mixed vs float64 difference "
-         "is measured rather than built (a double-precision GROMACS) -- the comparison "
-         "has something to stand on",
+        ("the precision of both sides is reported -- the mixed vs float64 difference "
+         "is measured rather than building a double-precision GROMACS -- so the "
+         "comparison has something to stand on",
          "{} vs {}".format(out["gmx_version"].get("precision"), out["our_precision"]),
          bool(out["gmx_version"].get("precision") and out["our_precision"])),
     ]

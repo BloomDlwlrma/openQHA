@@ -28,7 +28,7 @@ B. No ORCA launch bypasses the seam: every spawn call in the live tree whose com
    as _sp`, `from subprocess import run as ...`) are resolved; detection is textual on
    the command expression, so a binary resolved at runtime (`shutil.which`) cannot be
    seen -- the one such site today (`capabilities._binary_runs("orca")`, a `--version`
-   probe) is a known exception, listed for disposition. (The hkuhpc bundle's generated shell
+   probe) is a known exception, recorded as such. (The hkuhpc bundle's generated shell
    worker is not a Python subprocess: it already carries its own full `^(PMI|SLURM)`
    unset; its undocumented `ORCA_SKIP_CPU_BIND` is a separate, planned cleanup.)
 

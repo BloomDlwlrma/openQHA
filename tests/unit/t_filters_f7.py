@@ -25,10 +25,10 @@ Reading that column needs the QM9 index, which is 119 MB and **not shipped**. Wi
 `_identity_source` returns "" for every molecule and F7 drops them all -- the documented
 conservative direction, and identical in behaviour to `f7_scope="all"`.
 
-The scope behaviour cannot be asserted without the index: one case would fail (`000080`
-is expected to survive) and another would **pass for the wrong reason** -- `003838`
-dropped because its row is missing, not because its identity source is `gdb17`. Two
-assertions, neither testing what it names.
+Asserting the scope behaviour without the index would not test what it names: `000080`
+would fail (it is expected to survive) and the assertion that `003838` is dropped would
+**pass for the wrong reason** -- dropped because its row is missing, not because its
+identity source is `gdb17`. Two assertions, neither testing what it names.
 
 So the scope block now asks `filters.identity_source_available()` first. With the index
 present it tests the classification. Without it, it tests the FALLBACK -- that an

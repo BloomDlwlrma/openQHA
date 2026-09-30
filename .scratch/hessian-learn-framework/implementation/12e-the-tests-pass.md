@@ -46,3 +46,33 @@ refusal, the fork guard in `t_train_run`), which stay green here.
 **Reported, not acted on:** a stray untracked file in the repository root from a botched
 PowerShell redirect in a parallel slice (`ers10704AppDataLocalTemp12f_annot_commit2…`);
 left for the close-out.
+
+## Review record (2026-09-30, annotations)
+
+Two-axis review of `651a282` (range `82a5e1a..651a282`), per the `code-review` skill,
+run as two read-only sub-agents. Both agents confirmed no assertion, identifier, data
+value or control flow changed, and no scope creep beyond `tests/` + the ticket + the
+map line. Findings, all fixed in this commit:
+
+- **Standards.** One process token survived the pass — `frames.out`'s "the
+  Hessian-learning target" — while the same paragraph's other citations were stripped;
+  now "the learning target". The `t_qha_gromacs_crosscheck` label's rewrite left a
+  dangling parenthesis and slid the subject; now "the precision of both sides is
+  reported -- the mixed vs float64 difference is measured rather than building a
+  double-precision GROMACS -- so the comparison has something to stand on".
+- **Spec.** `t_filters_f7`'s scope paragraph recast retired failure modes as
+  hypotheticals the availability gate now prevents; reworded to say what asserting
+  without the index would fail to test. `t_script_taxonomy`'s "on their way to being
+  recovered" recast a plan as in-progress; now "each is meant to end as a named
+  regression test". `t_dataset_cli`'s "no invocation raises AttributeError" was broader
+  than the test pins; now "so it does not raise AttributeError before the build".
+  `t_orca_child_env`'s "listed for disposition" lost its referent; now "recorded as
+  such".
+
+Judgement calls recorded, not changed: the `t_orca_child_env` helper docstrings read
+"A:"/"B:" (the section letters; the design-term "seam" stays where it names the
+interface); date treatments differ by class deliberately — decision dates dropped
+("pre-2026-09-27" fixtures → "old fixtures"), data-epoch dates kept ("pre-2026-09-20"
+folder forms) and incident records kept ("Retired 2026-09-09", `an113`, `defect 57`).
+Re-verified after the fixes: `py_compile` 5/5 on the touched programs; both residual
+scans unchanged (`.py` 4 hits, all the kept classes/false positives; non-`.py` 0).

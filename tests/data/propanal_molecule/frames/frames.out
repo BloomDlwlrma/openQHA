@@ -48,7 +48,7 @@ per frame (eV; dE in kcal/mol above the basin; eV/A; A; cm^-1)
       basin      2  0       1  0.0000  -5259.152703   0.00  0.0001    74.0      -    kept  -
   displaced      2  0      -1  0.1275  -5258.611612  12.48  2.9266     nan      -    kept  -
   * a frame's Hessian is the engine's raw Cartesian matrix at that fixed geometry, gradient term
-    included -- the Hessian-learning target, not a frequency. The basin frame reuses the basin's
+    included -- the learning target, not a frequency. The basin frame reuses the basin's
     stored hessian.npy; merged and saddle frames get one from the engine; a DISPLACED frame gets
     none (3N backward passes nothing downstream reads) and its 'lowest' is blank. dE
     of a displaced frame is the ENGINE's energy at the drawn geometry; what the draw put in is

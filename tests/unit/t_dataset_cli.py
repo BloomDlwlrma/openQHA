@@ -1,8 +1,8 @@
 """The 04_dataset.py CLI contract.
 
 Two things the CLI must promise: a real run reaches
-`build` at all -- the call passes only keywords the parser defines, so no invocation
-raises AttributeError before the build -- and `--split-by`
+`build` at all -- the call passes only keywords the parser defines, so it does not
+raise AttributeError before the build -- and `--split-by`
 defaults to `molecule`, the production granularity (the other mode is `frame`, the
 smoke / fit mode).
 
