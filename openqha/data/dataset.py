@@ -142,7 +142,8 @@ REPLAY_N_FRAMES = 30000
 REPLAY_SEED = 0
 REPLAY_WEIGHTS = (1.0, 10.0)
 #: the S0 replay ladder's R4 scan row (2026-09-21/22; historical -- the production
-#: Replay is REPLAY_N_FRAMES above): Replay frames = this x the train frames with a Hessian
+#: Replay is REPLAY_N_FRAMES above): Replay frames = REPLAY_PER_HESSIAN_FRAME_R4 x the
+#: train frames with a Hessian, at REPLAY_CONFIG_WEIGHT_R4
 REPLAY_PER_HESSIAN_FRAME_R4 = 4
 REPLAY_CONFIG_WEIGHT_R4 = 10.0
 #: a label file whose positions differ from the engine file's by more than this is stale

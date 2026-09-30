@@ -41,11 +41,33 @@ class _Stop(Exception):
     pass
 
 
-def _run_cli(argv):
-    """Load `04_dataset.py`, run `main()` on `argv` against stubs, return build's keywords."""
+def _load():
+    """The script as a module (`__main__` guard keeps it inert)."""
     spec = importlib.util.spec_from_file_location("wf_04_dataset_cli", SCRIPT)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    return mod
+
+
+@contextlib.contextmanager
+def _stubbed(mod, tmp, build, argv):
+    """`openqha.config` and `dataset.build` stubbed and `sys.argv` set; all restored after."""
+    real_load, real_runs = mod.config.load, mod.config.runs_root
+    real_build, real_argv = mod.dataset.build, sys.argv
+    try:
+        mod.config.load = lambda: {}
+        mod.config.runs_root = lambda cfg: Path(tmp)
+        mod.dataset.build = build
+        sys.argv = ["04_dataset.py"] + list(argv)
+        yield
+    finally:
+        mod.config.load, mod.config.runs_root = real_load, real_runs
+        mod.dataset.build, sys.argv = real_build, real_argv
+
+
+def _run_cli(argv):
+    """Run `main()` on `argv` against stubs, return build's keywords."""
+    mod = _load()
     calls = {}
 
     def fake_build(root, tags, name, **kw):
@@ -53,23 +75,13 @@ def _run_cli(argv):
         calls["root"], calls["tags"], calls["name"] = root, tags, name
         raise _Stop
 
-    with tempfile.TemporaryDirectory(prefix="t_dataset_cli_") as tmp:
-        real_load, real_runs = mod.config.load, mod.config.runs_root
-        real_build, real_argv = mod.dataset.build, sys.argv
+    with tempfile.TemporaryDirectory(prefix="t_dataset_cli_") as tmp, _stubbed(mod, tmp, fake_build, argv):
         try:
-            mod.config.load = lambda: {}
-            mod.config.runs_root = lambda cfg: Path(tmp)
-            mod.dataset.build = fake_build
-            sys.argv = ["04_dataset.py"] + list(argv)
-            try:
-                mod.main()
-            except _Stop:
-                pass
-            else:
-                raise AssertionError("main() returned without calling build")
-        finally:
-            mod.config.load, mod.config.runs_root = real_load, real_runs
-            mod.dataset.build, sys.argv = real_build, real_argv
+            mod.main()
+        except _Stop:
+            pass
+        else:
+            raise AssertionError("main() returned without calling build")
     return calls
 
 
@@ -83,26 +95,14 @@ _INFO = dict(NAME="t", LEVEL="wb97m-d3bj_def2-tzvppd", SPLIT_BY="molecule",
 
 
 def _run_print(argv):
-    """Load `04_dataset.py`, stub `build` to return the minimal Record, run `main()` to
-    the end and capture its stdout; returns (the module, the printed text)."""
-    spec = importlib.util.spec_from_file_location("wf_04_dataset_print", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    """Run `main()` to the end on the minimal Record and capture its stdout; returns
+    (the module, the printed text)."""
+    mod = _load()
     out = {"info": dict(_INFO), "molecules": [], "classes": [], "dir": Path(".")}
     buf = io.StringIO()
-    with tempfile.TemporaryDirectory(prefix="t_dataset_cli_print_") as tmp:
-        real_load, real_runs = mod.config.load, mod.config.runs_root
-        real_build, real_argv = mod.dataset.build, sys.argv
-        try:
-            mod.config.load = lambda: {}
-            mod.config.runs_root = lambda cfg: Path(tmp)
-            mod.dataset.build = lambda *a, **kw: out
-            sys.argv = ["04_dataset.py"] + list(argv)
-            with contextlib.redirect_stdout(buf):
-                mod.main()
-        finally:
-            mod.config.load, mod.config.runs_root = real_load, real_runs
-            mod.dataset.build, sys.argv = real_build, real_argv
+    with tempfile.TemporaryDirectory(prefix="t_dataset_cli_print_") as tmp, _stubbed(mod, tmp, lambda *a, **kw: out, argv):
+        with contextlib.redirect_stdout(buf):
+            mod.main()
     return mod, buf.getvalue()
 
 

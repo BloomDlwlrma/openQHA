@@ -67,3 +67,31 @@ none of this slice's three files (`git log d155ad3..HEAD --` the three paths is 
 and the acceptance and the production runs belong to
 [09](../decisions/09-round-1-run.md)'s execution. The live documents are
 [09c](09c-the-live-documents-pass.md) — outside this slice by design.
+
+## Review record (2026-09-30, annotations -- the two-axis review of `98d649e`)
+
+Two read-only sub-agents over `ac99778..98d649e`, per the `code-review` skill. Both axes
+found no hard violations: the Spec axis verified the four checkboxes against the files
+(the printed commands byte-for-byte the ticket's literals; the draw tool's flags real;
+the suite log's "all 73 test(s) passed"), and the Standards axis checked the repo's
+documented standards (the ticket-record rule, `CONTEXT.md`'s vocabulary,
+`tests/README.md`) and raised judgement calls only. Annotations made in this commit:
+
+- The S0 comment block names both of the pair's constants (`REPLAY_PER_HESSIAN_FRAME_R4`
+  x ..., at `REPLAY_CONFIG_WEIGHT_R4`) — the weight was unlabelled.
+- The print header renders "30,000" (`{:,}`, the spec's spelling) and the R4 line
+  derives its "4 x" from `REPLAY_PER_HESSIAN_FRAME_R4` — no prose literal left for a
+  number the data layer defines.
+- `t_dataset_cli.py`: the two phases share `_load()` and a `_stubbed()` context manager —
+  the stub/restore skeleton was duplicated.
+
+Recorded, not changed: the `spice_pt_replay30k_w1` / `_w10` output names keep their
+settled "30k" spelling (an artifact name the spec and 09d pin, and the test pins the
+`--n 30000` literal beside the names, so a constant change fails the test before a
+mismatched instruction could print); "the same frame set" stays (the spec's own Q2
+wording, and the landed 09c pass's); the three flat constants stay one line each (this
+file's convention).
+
+The annotation commit re-ran the checks it touches: `py_compile` clean on the three
+files; `t_dataset_cli.py` PASS (5 checks); the unit group **all 60 test(s) passed**
+(`UNIT_RC=0`; log `C:\Users\10704\AppData\Local\Temp\oqt09b_annot.log`).
