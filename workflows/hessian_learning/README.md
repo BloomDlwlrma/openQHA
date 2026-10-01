@@ -213,8 +213,8 @@ python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out 
 # 3. the fine-tune (one A800 per arm, submitted together): w_H = balance is the default; round 1's
 #    re-selected knobs ride the same EXTRA line (explicit lr, no Stage Two, clip 1, wd 0, EMA 0.99999);
 #    two tokens per mace flag (`--mace-arg=--clip_grad --mace-arg=1.0`); a single `--key=value` token
-#    reaches mace and reads back correctly since the driver fix (2026-10-01, ticket 14) -- the two-token
-#    form stays pinned as round 1's flown shape
+#    reaches mace and reads back correctly since the driver fix (2026-10-01) -- the two-token
+#    form stays pinned
 EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
 TAG=draw300 DSET=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
