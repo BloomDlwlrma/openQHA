@@ -77,7 +77,7 @@ def main():
     ap.add_argument("--forces-weight", type=float, default=100.0)
     ap.add_argument("--hessian-weight", type=_weight, default="balance",
                     help="w_H: a number, or `balance` (default) = w_F L_F / L_H measured on the base model over the "
-                         "run's train file with the Cartesian target before the first step")
+                         "run's train file with the run's probe setting before the first step")
     ap.add_argument("--probe", choices=phl.PROBE_MODES, default="gaussian",
                     help="gaussian (PHL's draw, the default) / rademacher: k probes per structure (eq. 6'); "
                          "cartesian: the exact loss (3N probes)")
@@ -149,8 +149,8 @@ def main():
         info["ENERGY_WEIGHT"], info["FORCES_WEIGHT"], info["HESSIAN_WEIGHT"], info["HESSIAN_WEIGHT_RULE"], info["PROBE"],
         info["N_PROBES"], info["VALID_PROBES"]))
     if info["HESSIAN_WEIGHT_RULE"] == "balance":
-        print("  balance      base model on the train file: L_E {:.3e} L_F {:.3e} L_H {:.3e} -> w_H = w_F L_F / L_H".format(
-            info["BALANCE_L_E"], info["BALANCE_L_F"], info["BALANCE_L_H"]))
+        print("  balance      base model on the train file: L_E {:.3e} L_F {:.3e} L_H {:.3e} ({} k={}) -> w_H = w_F L_F / L_H".format(
+            info["BALANCE_L_E"], info["BALANCE_L_F"], info["BALANCE_L_H"], info["BALANCE_PROBE"], info["BALANCE_N_PROBES"]))
     print("  control      lr {} scheduler_patience {} patience {} eval_interval {} ema {} swa {} start_swa {} swa_lr {}".format(
         info["LR"], info["SCHEDULER_PATIENCE"], info["PATIENCE"], info["EVAL_INTERVAL"], info["EMA"], info["SWA"],
         info["START_SWA"], info["SWA_LR"]))
