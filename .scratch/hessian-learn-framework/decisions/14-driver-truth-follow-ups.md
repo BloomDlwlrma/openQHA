@@ -1,7 +1,7 @@
 # Driver truth follow-ups: the multihead control mirror and the `--key=value` extras form
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: None.
 Part of: [hessian-learn-framework](../map.md)
 
@@ -63,4 +63,27 @@ flag (`run.py:434`), and no multihead mirror or `EMA_DECAY` field exists yet.
 
 ## Answer
 
-<!-- resolver: fix, test, record -->
+Both items are closed -- the driver resolves one control and cannot misstate the run.
+
+**The mirror and the fold** (package `f8e6dea`, annotations `d4640d6`).
+`control_settings` folds the extras' controlled keys (argparse last-wins) and then
+mirrors the fork's multihead rule (`mace/mace/cli/run_train.py:204-210`: LR 0.0001, EMA
+True, decay 0.99999, unless `--force_mh_ft_lr`), warning what it replaced; `EMA_DECAY`
+is a first-class control (schema + `--ema_decay`, mace's 0.99 default); `argv_pairs`
+splits a single `--key=value` token at its first `=`; `run_training` refuses
+`--multiheads` without a Replay file; the extras' own force verdict wins over the driver
+flag (the review's catch -- a conflicting pair would otherwise have restated the lie
+class this ticket exists to kill). **The flags and the notes** (openQHA `e2f2be1`,
+annotations `e4b18b3`). `--ema-decay` / `--force-mh-ft-lr` on `05_train.py`; the three
+pinned surfaces and spec story 14 carry the dated fix note (the process tokens dropped
+in the annotation pass).
+
+Evidence: suites `--all` 9/9 + 73/73 (rc 0); the dbg dry-runs -- the forgotten-flags run
+shows the mirror warning and the mirrored argv / `config.yaml`, the forced run flips
+back to the request, the file-less multiheads run refuses; the fixture multihead Record
+carries (0.0001, True, 0.99999) against the fork's own log line; records
+[14a](../implementation/14a-the-mirror-and-the-fold.md),
+[14b](../implementation/14b-the-driver-flags-and-the-notes.md),
+[14c](../implementation/14c-the-close-out.md) with the two-axis review. Not verified
+here: the pushes (the user's) and the Tianhe deployment (rides the next sync; the arms'
+effective values are unchanged).
