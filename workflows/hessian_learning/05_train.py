@@ -96,6 +96,11 @@ def main():
                     help="early-stopping patience on the total validation loss (the base: 50)")
     ap.add_argument("--eval-interval", type=int, default=train_run.DEFAULT_EVAL_INTERVAL)
     ap.add_argument("--no-ema", action="store_true", help="no exponential moving average of the parameters")
+    ap.add_argument("--ema-decay", type=float, default=None,
+                    help="EMA decay (default mace's {}; multihead mode trains at the fork's {})".format(
+                        train_run.DEFAULT_EMA_DECAY, train_run.MULTIHEAD_FT_EMA_DECAY))
+    ap.add_argument("--force-mh-ft-lr", action="store_true",
+                    help="multihead mode: use the requested lr/EMA (mace's --force_mh_ft_lr; mace says not recommended)")
     ap.add_argument("--no-swa", action="store_true", help="no Stage Two")
     ap.add_argument("--start-swa", type=int, default=None, help="Stage Two start epoch (default 3/4 of --max-epochs)")
     ap.add_argument("--swa-lr", type=float, default=None, help="Stage Two learning rate (default lr / 40, the base's ratio)")
@@ -134,10 +139,11 @@ def main():
         max_epochs=args.max_epochs, batch_size=args.batch_size,
         valid_batch_size=args.valid_batch_size, lr=args.lr, seed=args.seed, device=args.device,
         scheduler_patience=args.scheduler_patience, patience=args.patience, eval_interval=args.eval_interval,
-        ema=not args.no_ema, swa=not args.no_swa, start_swa=args.start_swa, swa_lr=args.swa_lr,
+        ema=not args.no_ema, ema_decay=args.ema_decay, swa=not args.no_swa, start_swa=args.start_swa, swa_lr=args.swa_lr,
         swa_energy_weight=args.swa_energy_weight, swa_forces_weight=args.swa_forces_weight,
         swa_hessian_weight=args.swa_hessian_weight,
-        multiheads=args.multiheads, pt_train_file=args.pt_train_file, pt_valid_file=args.pt_valid_file,
+        multiheads=args.multiheads, force_mh_ft_lr=args.force_mh_ft_lr,
+        pt_train_file=args.pt_train_file, pt_valid_file=args.pt_valid_file,
         extra=args.mace_arg)
     info = out["info"]
 
