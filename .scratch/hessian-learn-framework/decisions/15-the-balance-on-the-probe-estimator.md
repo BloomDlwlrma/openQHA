@@ -1,7 +1,7 @@
 # The balance on the probe estimator: w_H without the full-matrix pass
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: None.
 Part of: [hessian-learn-framework](../map.md)
 
@@ -81,4 +81,10 @@ value to 0 ulp; the gate's seed-123 value (the 4th balance call in that process)
 both rc 0 (log `%TEMP%\oqt15d-suites.log`: `OQT15D-SUITES-RC pkge=0 oq=0`; the header
 names the two checkouts and `mace-torch 0.3.16+openqha`).
 
-<!-- 15e (the close-out) carries: the deployment list, the suites record, Status: resolved, the map lines -->
+**The close-out (15e, 2026-10-01).** The change landed and round 1 can resume: the tips
+recorded -- `openQHA-Hessian` @ `547c394` (`bf0abd6`/`05ac7b1`/`547c394`; pushed), openQHA
+@ `81e51e6` + the close-out commit (`c66833c`/`3551273`/`326dcc5`/`81e51e6`; pushed through
+`81e51e6`), the fork `mace` untouched @ `1110ffb`; suites at the close-out tree -- package
+`--all` 9/9, openQHA `--all` 73/73 (rc 0; `%TEMP%\oqt15e-suites.log`); the deployment list
+for both Tianhe checkout sides, the refresh route and the resume handoff in
+[15e](../implementation/15e-the-close-out.md).
