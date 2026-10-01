@@ -338,7 +338,7 @@ each needs from this page, are the block "The production arms, end to end" of
 `04_dataset` (prints `N_TRAIN_HESSIAN` and the two production draw commands) → the SPICE draws
 (`s0_spice_test_draw.py --n 5000`, then `s0_spice_pt_draw.py --n 30000 --seed 0 --weight 1`
 and `--weight 10`; the SPICE release is on tianhe, the draws are minutes on the login node) →
-`hl_train.slurm` with `TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1` / `RUN=replay30k_w10` on the A800
+`hl_train.slurm` with `TAG=draw300 DSET=draw300_r1 RUN=replay30k_w1` / `RUN=replay30k_w10` on the A800
 partition (one job per arm, submitted together) → `05_train.py` registration per arm
 (`--register --register-copy` ride the launch's `EXTRA`; the run prints its `ENGINES` entry),
 then branch A and the msRRHO `mace` / `compare` steps for the pinned seven with the registered

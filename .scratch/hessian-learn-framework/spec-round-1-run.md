@@ -110,6 +110,9 @@ from or consciously deviating from that standard, each deviation recorded:
     (Review amendment, 2026-09-30: the launch lines also NAME the Dataset — `NAME=draw300_r1` /
     `--name draw300_r1` — the default `NAME=$TAG` would address `_datasets/draw300`, not the
     canonical `draw300_r1`.)
+    (Amended 2026-10-01: the site's `yhbatch` wrapper on Tianhe injects `NAME=yhbatch` into every
+    job it submits, overwriting any `NAME` the caller passes; the launch lines carry the Dataset
+    as `DSET=draw300_r1` — `hl_train.slurm` reads `${DSET:-$TAG}`.)
 15. As the reviewer, I want the accepted-log evidence ("Multihead finetuning mode, setting learning
     rate to 0.0001 and EMA to True"; "Param group 0: lr = 0.0001"), so that the fork's silent
     override is *observed* rather than assumed.

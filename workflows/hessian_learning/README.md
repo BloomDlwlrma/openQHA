@@ -215,7 +215,7 @@ python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out 
 #    two tokens per mace flag (`--mace-arg=--clip_grad --mace-arg=1.0`) -- a single `--key=value` token
 #    reaches mace but the run's config.yaml can only read it as a bare flag
 EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
-TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 DSET=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
     yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
 # the w10 arm: the same line with RUN=replay30k_w10 and the _w10 paths (the weight lives in the file, nothing else differs)

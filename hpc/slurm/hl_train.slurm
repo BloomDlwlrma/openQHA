@@ -11,7 +11,7 @@
 #     # re-selected knobs on the same EXTRA line (two tokens per mace flag -- a single `--key=value`
 #     # token reaches mace but config.yaml can only read it as a bare flag)
 #     EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
-#     TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
+#     TAG=draw300 DSET=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=100 MULTIHEADS=1 EXTRA="$EXTRA" \
 #         PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
 #         PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
 #         yhbatch -p ai -G 1 -c 12 -t 24:00:00 hpc/slurm/hl_train.slurm
@@ -44,7 +44,9 @@
 # No `set -e`: a failing step must not take the job's reporting with it.
 
 TAG="${TAG:?TAG not set (the campaign tag; the Dataset lives under it)}"
-NAME="${NAME:-$TAG}"
+# DSET, not NAME: the site's yhbatch wrapper (TianheXY-AI/A) injects `NAME=yhbatch` into
+# every job it submits (measured 2026-10-01), overwriting any value the caller passes.
+NAME="${DSET:-$TAG}"
 RUN="${RUN:?RUN not set (the run name; the directory is <dataset>/train/<run>/)}"
 LEVEL="${LEVEL:-wb97m-d3bj_def2-tzvppd}"
 PROBE="${PROBE:-gaussian}"      # PHL's Algorithm 1

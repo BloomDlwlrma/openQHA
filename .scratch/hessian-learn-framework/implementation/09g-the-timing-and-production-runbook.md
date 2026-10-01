@@ -17,6 +17,11 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 > **timing 作业在改动部署到两侧 checkout 之前保持暂缓(held,user 裁定 2026-10-01)**;部署后按本
 > 清单原样提交(提交块不变)。被替换的原文以删除线保留(步骤 2);Record 与 balance 行新增
 > `BALANCE_PROBE` / `BALANCE_N_PROBES`,回执 2 一并读回。
+>
+> **修订 2026-10-01(二,yhbatch 的 NAME 注入)**:站点包装脚本 `/usr/bin/yhbatch` 把每个作业的
+> `NAME` 覆盖成 `yhbatch`(实测:显式导出也被覆盖;`TAG`/`RUN`/位置参数无恙;`--export=ALL,NAME=…`
+> 可夺回但生产不采用,user 2026-10-01)。提交行的 Dataset 名改用 **`DSET=draw300_r1`**
+> (`hl_train.slurm` 改读 `${DSET:-$TAG}`);本清单所有提交行不再出现 `NAME=`。
 
 ## 前置(登录 ln301;逐条执行,输出即回执 1)
 
@@ -48,7 +53,7 @@ ls "$S0_RUNS_ROOT/spice/"                          # spice_pt_replay30k_w{1,10}.
 cd $R/openQHA-main
 export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs
 EXTRA='--lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
-TAG=draw300 NAME=draw300_r1 RUN=timing1 MAX_EPOCHS=2 MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 DSET=draw300_r1 RUN=timing1 MAX_EPOCHS=2 MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
     yhbatch -p a800x --gpus=1 -t 12:00:00 hpc/slurm/hl_train.slurm
@@ -95,11 +100,11 @@ cd $R/openQHA-main
 export S0_RUNS_ROOT=/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/runs
 EXTRA='--register --register-copy --lr 0.0001 --no-swa --mace-arg=--clip_grad --mace-arg=1.0 --mace-arg=--weight_decay --mace-arg=0.0 --mace-arg=--ema_decay --mace-arg=0.99999'
 CAP=<步骤 2 的数>
-TAG=draw300 NAME=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 DSET=draw300_r1 RUN=replay30k_w1 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.valid.extxyz \
     yhbatch -p a800x --gpus=1 -t 24:00:00 hpc/slurm/hl_train.slurm
-TAG=draw300 NAME=draw300_r1 RUN=replay30k_w10 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
+TAG=draw300 DSET=draw300_r1 RUN=replay30k_w10 MAX_EPOCHS=$CAP MULTIHEADS=1 EXTRA="$EXTRA" \
     PT_TRAIN_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz \
     PT_VALID_FILE=$S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.valid.extxyz \
     yhbatch -p a800x --gpus=1 -t 24:00:00 hpc/slurm/hl_train.slurm
