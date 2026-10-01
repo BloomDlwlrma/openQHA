@@ -11,6 +11,12 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 > submissions) + 15-17 (the done bar) + 18 (the evidence fetch-back).
 > 范围:**tianhexy-ai 侧**(a800x)`yhbatch` 三条作业 -- timing(1 条)→ cap → 生产(2 条,一起交)。
 > 不在本清单:**工作站侧**的数据集镜像/本地 gate(09f)、round 2、judge。
+>
+> **修订 2026-10-01(ticket 15 -- the balance on the probe estimator):balance 改按运行的 probe
+> 设置估计** -- 不再是全矩阵一次过整个 train 文件;分钟级,固定头 = split + probe-balance + 两锚点。
+> **timing 作业在改动部署到两侧 checkout 之前保持暂缓(held,user 裁定 2026-10-01)**;部署后按本
+> 清单原样提交(提交块不变)。被替换的原文以删除线保留(步骤 2);Record 与 balance 行新增
+> `BALANCE_PROBE` / `BALANCE_N_PROBES`,回执 2 一并读回。
 
 ## 前置(登录 ln301;逐条执行,输出即回执 1)
 
@@ -56,10 +62,10 @@ TAG=draw300 NAME=draw300_r1 RUN=timing1 MAX_EPOCHS=2 MULTIHEADS=1 EXTRA="$EXTRA"
 
 作业结束后从 `logs/slurm/openqha_hl_train_<jobid>.out` 的收尾读:
 `epochs N in S s (S/E s per epoch)` 的 **SECONDS_PER_EPOCH**、`balance` 行
-(`BALANCE_L_E/F/H` + 解出的 `HESSIAN_WEIGHT`)、`HESSIAN_CURVE_MOVED`。
+(`BALANCE_L_E/F/H` + `({BALANCE_PROBE} k={BALANCE_N_PROBES})` + 解出的 `HESSIAN_WEIGHT`)、`HESSIAN_CURVE_MOVED`。
 
 **回执 2**:job id + 该输出块(从 `run timing1 ...` 到 epoch 表尾)+
-`SECONDS_PER_EPOCH` + `HESSIAN_WEIGHT` + `HESSIAN_CURVE_MOVED`。
+`SECONDS_PER_EPOCH` + `HESSIAN_WEIGHT` + `BALANCE_PROBE`/`BALANCE_N_PROBES` + `HESSIAN_CURVE_MOVED`。
 
 ## 步骤 2 -- cap
 
@@ -68,8 +74,9 @@ cap = min(60, floor(0.9 * 86400 / SECONDS_PER_EPOCH))
 ```
 
 (S/E 是 mace 训练循环自己的墙钟 ÷ epoch 数 -- balance 与两次锚点不在其中,它们是固定
-头部,额外加在墙钟上(balance 是全矩阵一次过整个 train 文件)。cap 照 spec 的公式取,
-另用 timing run 自己的数字做一次墙钟检查:`cap × S/E + 固定头 ≤ 0.9 × 86400`
+头部(split + probe-balance + 两锚点),额外加在墙钟上(~~balance 是全矩阵一次过整个 train 文件~~
+**2026-10-01 修订(ticket 15):balance 改按运行的 probe 设置估计 -- gaussian k=4、固定 seed,分钟级**)。
+cap 照 spec 的公式取,另用 timing run 自己的数字做一次墙钟检查:`cap × S/E + 固定头 ≤ 0.9 × 86400`
 (固定头 ≈ slurm 日志里 wrapper 的 `wall N s` − MAX_EPOCHS × S/E);超了就把 cap 下调到
 满足。数字贴回后由工作站复核(2026-10-01 约定:复核确认的 `CAP=` 回发后才提交两臂)。)
 
@@ -216,7 +223,7 @@ grep -h "Param group 0" $S0_RUNS_ROOT/draw300/_datasets/draw300_r1/train/replay3
 ## 步骤 5 -- 跨臂线(w1 vs w10:coverage vs pull)
 
 两条 Record 的同一批数并排贴回(工作站写成 09 的答案段):`HESSIAN_WEIGHT`(应两臂相同
--- 同一 train 文件)、`VALID_HESSIAN_EXACT_BEFORE/AFTER` 与 `VALID_PROBE_OFFSET_RUN`、
+-- 同一 train 文件、同一 probe/k/seed)、`VALID_HESSIAN_EXACT_BEFORE/AFTER` 与 `VALID_PROBE_OFFSET_RUN`、
 各自 `train.out` 的 valid 曲线尾行、`N_EPOCHS`/`SECONDS_PER_EPOCH`。一句话读法:哪条臂把
 目标(Hessian 项)压得更多 = coverage;哪条臂把 base 的 E/F 保持得更稳 = pull。
 
@@ -244,7 +251,7 @@ tar 三枚 + 模型 tar 走你的通道回工作站;工作站把它们解到镜�
 ## 回执清单(汇总)
 
 1. 三个 checkout id(AI 侧)。
-2. timing1:job id + 输出块 + `SECONDS_PER_EPOCH` + `HESSIAN_WEIGHT` + `HESSIAN_CURVE_MOVED`。
+2. timing1:job id + 输出块 + `SECONDS_PER_EPOCH` + `HESSIAN_WEIGHT` + `BALANCE_PROBE`/`BALANCE_N_PROBES` + `HESSIAN_CURVE_MOVED`。
 3. cap 算式与结果。
 4. 两条生产 job id + 提交行。
 5. 每臂 checker 输出 + 两行日志。

@@ -72,7 +72,7 @@ in which every column is a quantity the loss trains or the standard analysis com
 2. As the trainer, I want the probe the model sees to be the raw random draw and the reference side a matvec on the stored Label, so that no mass matrix, projector or mode basis sits between the label and the loss.
 3. As the trainer, I want the `mode_weighting` switch gone from the loss, the driver, the Slurm script, the fork's parser and the Record, so that no run can be configured onto a target that is not the ruling's.
 4. As the trainer, I want the `modes` probe gone (it needs the reference eigenvectors), leaving `gaussian` (PHL's Algorithm 1 and the default since S0-C-68) and `rademacher` (the smaller variance, kept as a choice), so that every probe set is a random draw or the deterministic unit set.
-5. As the trainer, I want `w_H` measured by the balance rule on the full Cartesian matrix only, so that the driver's default and the smoke fit's balance table are one number.
+5. As the trainer, I want `w_H` measured by the balance rule ~~on the full Cartesian matrix only~~ **with the run's probe setting (gaussian k=4 by default; the exact full-matrix reading remains the anchors' and the judge's job)**, so that ~~the driver's default and the smoke fit's balance table are one number~~ **the balance is measured under the trained term's own estimator** *(amended 2026-10-01 -- hessian-learn-framework ticket 15: the balance on the probe estimator)*.
 6. As the reader of a Record, I want `LOSS phl`, `PROBE`, `N_PROBES`, `VALID_PROBES`, `HESSIAN_WEIGHT`, `HESSIAN_WEIGHT_RULE`, `BALANCE_L_*` and no `MODE_WEIGHTING`, so that the Record names only quantities that exist.
 7. As the judge's reader, I want the gate row to be the target itself (the frame-weighted held-out `||dH||^2/(9N^2)`, engine over base) and the frequency rows to be stated as the standard vibrational analysis of the trained matrix, so that "projected" never appears in a training claim.
 8. As the judge's reader, I want the `LOSS_EXACT` column (the projected norm) gone, so that the judge table carries no quantity the loss does not train.
@@ -331,10 +331,19 @@ and data sets (PHL's $0.09/0.30$ would put the Hessian term at $10\times$ the fo
 fixture). The rule that does transfer sets the two terms to the same magnitude on the base model
 before the first step,
 $$w_H=\frac{w_F\,\mathcal L_F}{\mathcal L_H}\Big|_{\theta=\theta_{\rm base}},$$
-with $\mathcal L_H$ the *exact* full-matrix value on the train file's labelled frames (the estimator's
-noise must not enter a weight). It is a loss-magnitude balance, not a gradient-norm balance; the
+with $\mathcal L_H$ ~~the *exact* full-matrix value on the train file's labelled frames (the estimator's
+noise must not enter a weight)~~ **measured by the balance rule with the run's probe setting (gaussian
+$k=4$ by default), drawn per frame from a dedicated generator seeded by the run's `SEED`; the exact
+full-matrix reading remains the anchors' and the judge's job. A fixed-seed $k=4$ estimate carries a
+$\approx$0.1--0.5 % offset on the full train file -- far below the $\approx$5--35 % per-step noise the
+loss itself trains through -- and the weight is thereby measured under the trained term's own
+estimator, with the Record keeping the evidence to re-identify it (`BALANCE_PROBE` /
+`BALANCE_N_PROBES`)** *(amended 2026-10-01 -- hessian-learn-framework ticket 15: the balance on the
+probe estimator)*.
+It is a loss-magnitude balance, not a gradient-norm balance; the
 Record keeps `HESSIAN_WEIGHT_RULE = balance` and the three terms so that the ratio actually run is
-on file. Measured: 2.948 on the fixture, the driver's rule against the stored values to 4 digits.
+on file. Measured (pre-amendment, the exact reading): 2.948 on the fixture, the driver's rule against
+the stored values to 4 digits.
 
 **Derivation 3.7 (Stage Two keeps the share).** When mace rebuilds the loss with the `swa_*`
 weights, $w_H^{\rm II}=w_H\,w_F^{\rm II}/w_F$ keeps $w_H\mathcal L_H/(w_F\mathcal L_F)$ unchanged at the
@@ -345,8 +354,11 @@ switch (with mace's defaults $w_F^{\rm II}=w_F=100$, so $w_H^{\rm II}=w_H$); bot
 name. Fork commit D removes `--hessian_mode_weighting` from the parser and `modes` from
 `--hessian_probe`; the fork's tests follow. The driver never emits the flag; `05_train.py` and
 `hl_train.slurm` lose `--mode-weighting` / `MODE_WEIGHTING`; the Record loses `MODE_WEIGHTING`
-and keeps `LOSS phl`. `epoch_zero_balance` computes the Cartesian value only; the smoke fit's
-balance table is one row and its ladder is probe kind x $K\in\{2,4\}$ on the target.
+and keeps `LOSS phl`. `epoch_zero_balance` ~~computes the Cartesian value only~~ **reads
+$\mathcal L_H$ with the run's probe setting beside the exact path (`cartesian` keeps the full-matrix
+reading; the balance uses the run's probe setting)** *(amended 2026-10-01 -- hessian-learn-framework
+ticket 15: the balance on the probe estimator)*; the smoke fit's balance table is one row and its
+ladder is probe kind x $K\in\{2,4\}$ on the target.
 
 ### Step 4 -- Algorithm 4: evaluation on fixed probes
 
@@ -607,9 +619,11 @@ of `lambda_H / lambda_F` are a length squared, so the same balance reads 0.30 in
 1.07 in Bohr). On our fixture, copied verbatim, it would put the Hessian term at 10.2x the force
 term at epoch 0, because the base model already fits E and F at its own level while its Hessians
 were never supervised (L_H / L_F ~ 34). We adopt the rule the sentence states, not the instance:
-`w_H = w_F L_F / L_H` measured on the base model over the run's own train file with the full
-matrix, recorded with its three terms (S0-C-60). The same reasoning voids any attempt to carry
-Rodriguez's `eta_H = 0.02`, which multiplies an RMSE rather than an MSE.
+`w_H = w_F L_F / L_H` measured on the base model over the run's own train file ~~with the full
+matrix~~ **with the run's probe setting (gaussian k=4 by default; `BALANCE_PROBE` /
+`BALANCE_N_PROBES` in the Record)** *(amended 2026-10-01 -- hessian-learn-framework ticket 15:
+the balance on the probe estimator)*, recorded with its three terms (S0-C-60). The same reasoning
+voids any attempt to carry Rodriguez's `eta_H = 0.02`, which multiplies an RMSE rather than an MSE.
 
 ## Tickets, in order (`issues/`; proposed, for `/to-tickets`)
 
