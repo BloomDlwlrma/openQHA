@@ -274,11 +274,9 @@ $M mdanalysis=2.10.0
 $M pip=26.2.1
 
 pip install pymsym==0.3.5 parsl==2026.9.7
-# the mace FORK, non-editable -- the same line the environment files carry; enough for eval
-pip install "git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian"
-# machines that TRAIN install the EDITABLE pair from the two checkouts beside this
-# repository (no GitHub needed); this replaces the non-editable fork -- run it last
-bash ../openQHA-Hessian/install.sh ../mace
+# the mace FORK and the training package, editable, from the two checkouts beside this
+# repository (mace/ and openQHA-Hessian/, carried by the transfer tool) -- run it last
+bash ../openQHA-Hessian/install.sh
 python -c "import mace; print(mace.__version__)"                 # 0.3.16+openqha
 ```
 
@@ -288,7 +286,7 @@ Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`
 > **The mace fork.** The fork is `BloomDlwlrma/mace` (branch
 > `openqha-hessian`, base tag `base-v0.3.16` = upstream v0.3.16 minus three bundled model
 > binaries), and the training side is the `openQHA-Hessian` package. The environment files
-> install the fork from its git URL, **non-editable** -- enough for eval, and what a machine
+> carry the fork **non-editable** -- enough for eval, and what a machine
 > that never trains should be. TRAINING needs the **editable** pair: the fork and the
 > package, from the two checkouts. Both travel with the repository --
 > `hpc/tools/xfer_tianhe_ai.sh push-repo` carries `mace/` and `openQHA-Hessian/` beside
@@ -300,11 +298,10 @@ Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`
 > a non-editable install (or a wheel) answers `unknown` and `05_train` refuses it.
 > `scripts/tooling/s0_check_weights.py` prints the two lines.
 >
-> **Offline, stated once.** The stack is installed where there is network -- a workstation,
-> or the Tianhe login side behind the site proxy (the git-URL line above needs GitHub).
-> Everything after that travels by the transfer tool: the AI side installs from the carried
-> checkouts and never fetches from GitHub. If GitHub is unreachable even at install time,
-> `install.sh`'s local-path mode does the same work from a checkout.
+> **Offline, stated once.** The conda/pip stack is installed where there is network -- a
+> workstation, or the Tianhe login side behind the site proxy. The mace fork and the
+> training package never need it: both travel by the transfer tool (the carried `mace/`
+> and `openQHA-Hessian/` checkouts) and `install.sh` installs them from disk, offline.
 >
 > The branch carries the fork's commits on top of the base tag: the version bump, **A** the
 > per-structure Hessian label (`--hessian_key`), **B** the external-loss hook (`--loss
@@ -344,11 +341,9 @@ $M xtb=6.7.1
 $M pip=26.2.1
 
 pip install pymsym==0.3.5 parsl==2026.9.7
-# the mace FORK, non-editable -- the same line the environment files carry; enough for eval
-pip install "git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian"
-# machines that TRAIN install the EDITABLE pair from the two checkouts beside this
-# repository (no GitHub needed); this replaces the non-editable fork -- run it last
-bash ../openQHA-Hessian/install.sh ../mace
+# the mace FORK and the training package, editable, from the two checkouts beside this
+# repository (mace/ and openQHA-Hessian/, carried by the transfer tool) -- run it last
+bash ../openQHA-Hessian/install.sh
 python -c "import mace; print(mace.__version__)"                 # 0.3.16+openqha
 ```
 
