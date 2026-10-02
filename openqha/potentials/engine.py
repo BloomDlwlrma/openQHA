@@ -295,7 +295,7 @@ def provenance(name=None):
         # answer 0.3.x and only one of them has a translation-invariant neighbour list;
         # recording only the version is what allowed a defect in the tree that does NOT
         # run to be attributed, in writing, to the tree that does. The path and the
-        # neighbour-list fingerprint in `neighbour_list_patch["installed"]` are the part
+        # neighbour-list probe in `neighbour_list_patch["installed"]` are the part
         # that can be checked.
         mace_module_path=str(getattr(mace, "__file__", "")),
         # Which mace: since 2026-09-20 the intended one is the fork
@@ -526,7 +526,8 @@ def translation_invariance(atoms, shifts_A=(0.0, 4.0, 8.0, 16.0, -4.0, -8.0, -16
 
     So this function returns zero here for two independent reasons, and that is exactly
     why it is kept: a pass is not evidence that the patch works. `mace_patch.state()`
-    carries `installed`, which says which variant is present, fingerprinted AND probed.
+    carries `installed`, whose behavioural probe says whether the variant present has
+    the defect.
 
     WHAT THIS DOES NOT EXPLAIN. The branch B trajectory blow-ups. They were blamed first
     on a short-range hole in the potential (refuted by measurement) and then on this

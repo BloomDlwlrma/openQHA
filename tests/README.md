@@ -38,9 +38,9 @@ in `GROUPS` and needs a `gmx` binary.
 | `unit/t_qha_identity_assertion.py` | **Criterion 11.** A bias potential, constraints, or repartitioned H mass do not raise, do not warn, and return a healthy entropy that is *systematically too high*. Feeds one violation at a time and demands a refusal each time |
 | `unit/t_mode_match.py` | A synthetic Hessian with a known spectrum and a deliberate four-fold degenerate block. Proves `projected_modes` and `project_and_diagonalise` are the same computation, and that per-mode overlap collapses in a degenerate block while **block** overlap does not — which is why the gate is on the block |
 | `unit/t_vdos_chain.py` | Synthetic velocities of known frequency content, judged by the spectral peaks and the sum rules |
-| `unit/t_filters_f7.py` | QM9's "uncharacterized" list: exactly **3054** entries with a pinned SHA-256; a two-fragment molecule rejected naming *both* SMILES; a normal molecule passing; and **enabling F7 without an identifier raises** |
+| `unit/t_filters_f7.py` | QM9's "uncharacterized" list: exactly **3054** entries with the provenance naming the file and counts (no digest, 2026-10-02); a two-fragment molecule rejected naming *both* SMILES; a normal molecule passing; and **enabling F7 without an identifier raises** |
 | `regression/t_symmetry_planar_determinant.py` | sigma must not collapse on planar or linear molecules |
-| `regression/t_mace_translation_invariance.py` | The patched neighbour-list path is exact **and the install is named**. Rewritten because the previous version asserted the wrong thing: the origin-anchored defect lives in the MACE *develop* tree under stage 2, not in the `mace_torch 0.3.16` openQHA imports, and provenance recorded only a version — both trees answer "0.3.x" |
+| `regression/t_mace_translation_invariance.py` | The patched neighbour-list path is exact **and the install is measured**. Rewritten because the previous version asserted the wrong thing: the origin-anchored defect lives in the MACE *develop* tree under stage 2, not in the `mace_torch 0.3.16` openQHA imports, and provenance recorded only a version — both trees answer "0.3.x" |
 
 ### B. The repository cannot rot
 

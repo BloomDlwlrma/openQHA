@@ -2,15 +2,13 @@
 
 Since 2026-08-28 stage 0 is an independent open framework. The edge set, species
 table, symmetry numbers, parameters and data paths all come from
-`configs/openqha.yaml`; anything copied from elsewhere records its source,
-the date it was copied, and a checksum, so that drift is discovered rather than
-inherited.
+`configs/openqha.yaml`; anything copied from elsewhere records its source and the
+date it was copied.
 
 Path resolution order (first match wins):
     1. environment variables (`S0_CONFIG`, `S0_QM9_ROOT`, `S0_MACE_MODEL`)
     2. relative paths in the configuration file, taken relative to **this repository's root**
 """
-import hashlib
 import os
 import sys
 from pathlib import Path
@@ -81,15 +79,6 @@ def edges(cfg=None):
     if len(set(e)) != len(e):
         raise ValueError("edges in the configuration has duplicates: {}".format(e))
     return list(e)
-
-
-def edge_list_sha256(cfg=None):
-    """Checksum of the edge set.
-
-    Once copied from stage 2, this file IS the source of truth; this number is what
-    reveals any later drift.
-    """
-    return hashlib.sha256("\n".join(edges(cfg)).encode("utf-8")).hexdigest()
 
 
 def edge_species(edge):

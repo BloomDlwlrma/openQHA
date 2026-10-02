@@ -8,7 +8,7 @@ the `frequencies`, the two SMILES and two InChI as attributes, `repaired` and th
 archive's own `source_file` name. Not stored: the property row
 (line 2; nothing reads it) and the file's text (it doubled the size: the parsed form is
 what `curated_qm9.find()` renders back into a QM9 file for the readers). File attributes:
-the source, N, the census per naming pattern, a sha256 of all the source text, the date.
+the source, N, the census per naming pattern, the date.
 After writing, N random molecules are read back through `curated_qm9.Archive` and their
 species, positions, charges, frequencies and SMILES compared with the files.
 
@@ -17,7 +17,6 @@ species, positions, charges, frequencies and SMILES compared with the files.
     scp data/qm9/curated_qm9.h5 tianhe:~/openQHA-main/data/qm9/                   # then the campaign runs there
 """
 import argparse
-import hashlib
 import sys
 import time
 from pathlib import Path
@@ -46,7 +45,6 @@ def pack(src_index, out, source="", only=None):
     `only`: a subset of indices. Writes `out`; returns the attrs written."""
     import h5py
     numbers = sorted(n for n in src_index if only is None or n in only)
-    sha = hashlib.sha256()
     counts = {name: 0 for name, _p in curated_qm9.PATTERNS}
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -58,10 +56,8 @@ def pack(src_index, out, source="", only=None):
     with h5py.File(str(tmp), "w", libver="latest") as f:
         for n in numbers:
             name, path = src_index[n]
-            raw = Path(path).read_bytes()
-            sha.update(raw)
             counts[name] += 1
-            text = raw.decode("utf-8")
+            text = Path(path).read_text(encoding="utf-8")
             d = curated_qm9.parse_qm9_text(text)
             g = f.create_group(curated_qm9.group_name(n))
             g.attrs["qm9_index"] = int(n)
@@ -74,7 +70,7 @@ def pack(src_index, out, source="", only=None):
             g.create_dataset("positions", data=d["positions"])
             g.create_dataset("charges", data=d["charges"])
             g.create_dataset("frequencies", data=d["frequencies"])
-        attrs = dict(source=str(source), n_molecules=len(numbers), sha256=sha.hexdigest(),
+        attrs = dict(source=str(source), n_molecules=len(numbers),
                      packed=time.strftime("%Y-%m-%dT%H:%M:%S"), layout=LAYOUT,
                      citation="Senthil, Chakraborty & Ramakrishnan, Chem. Sci. 2021, 12, 5566")
         attrs.update({"n_" + k: v for k, v in counts.items()})
@@ -124,7 +120,7 @@ def main():
     print("packing {} molecules from {}".format(len(only) if only else len(idx), r))
     attrs = pack(idx, out, source=str(r), only=only)
     print("wrote {}  {:.1f} MB ({:.1f} s)".format(out, out.stat().st_size / 1e6, time.time() - t0))
-    for k in ("n_molecules", "n_original", "n_repaired_qm9_tag", "n_repaired_short_tag", "sha256", "packed"):
+    for k in ("n_molecules", "n_original", "n_repaired_qm9_tag", "n_repaired_short_tag", "packed"):
         print("  {:22s} {}".format(k, attrs[k]))
     bad = verify(idx, out, args.verify, only=only)
     print("verify: {} molecules read back, {} mismatches".format(min(args.verify, attrs["n_molecules"]), len(bad)))

@@ -6,11 +6,12 @@ metadata was damaged for three molecules -- the file OPENS, most groups read fin
 the three die with "incorrect metadata checksum after all read attempts" (one at the
 link existence check, one at the object open). A truncated copy fails at open instead,
 so the tool must not confuse the two. Built here: a three-molecule archive from the
-shipped geometries; the healthy file verifies with no failure; single bytes flipped
-across the middle of a copy are caught (as an unreadable group, or -- when the flip
-lands in a dataset's raw bytes, which HDF5 does not checksum -- as a changed per-group
-digest against the healthy file); an index asked for with --only that the archive does
-not hold is reported ABSENT rather than passed.
+shipped geometries; the healthy file verifies with no failure; a copy with one group's
+object header damaged is caught as an unreadable group (the file still opens, and the
+error carries the Tianhe shape); an index asked for with --only that the archive does
+not hold is reported ABSENT rather than passed. The file hash and the per-group digest
+modes are gone (identity without checksums, 2026-10-02): `--sha` and `--digest` are
+asserted to no longer exist.
 """
 import os
 import shutil
@@ -54,6 +55,17 @@ def qm9_form(path, smiles):
     return "\n".join(body) + "\n"
 
 
+def flip_header_byte(src, dst, addr, delta=8):
+    """Copy `src` to `dst` with one byte flipped inside the object header at `addr`."""
+    shutil.copy(src, dst)
+    with open(dst, "r+b") as fh:
+        fh.seek(addr + delta)
+        b = fh.read(1)
+        fh.seek(addr + delta)
+        fh.write(bytes([b[0] ^ 0xFF]))
+    return Path(dst)
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="verify_h5_") as tmp:
         tmp = Path(tmp)
@@ -70,109 +82,72 @@ def main():
         del os.environ["S0_CURATED_QM9"]
         curated_qm9._INDEX_CACHE.clear()
 
-        n, bad, lines = vf.verify_archive(out)
-        check("healthy three-group archive: 3 groups checked, no failure, one digest line "
-              "per group (name + sha256)",
-              n == 3 and not bad and len(lines) == 3
-              and all(l.split()[0].startswith("dsgdb9nsd_") and len(l.split()) == 2
-                      for l in lines), (n, bad, lines))
+        n, bad = vf.verify_archive(out)
+        check("healthy three-group archive: 3 groups checked, no failure",
+              n == 3 and not bad, (n, bad))
 
-        n2, bad2, d2 = vf.verify_archive(out, only=[18, 999999])
+        n2, bad2 = vf.verify_archive(out, only=[18, 999999])
         check("--only: a present index checks and passes, an index the archive does not hold "
               "is a failure ('ABSENT'), not a silent pass",
               n2 == 1 and list(bad2) == [999999] and "ABSENT" in bad2[999999], (n2, bad2))
 
-        dg = tmp / "digests.txt"
-        vf.verify_archive(out, digest_path=dg)
-        check("--digest writes the same content the return value carries",
-              dg.read_text(encoding="utf-8").splitlines() == lines, dg.read_text(encoding="utf-8")[:120])
-
-        # --- a byte flipped in the middle: the file still opens, and the tool catches it --
-        size = out.stat().st_size
-        caught = None
-        for frac in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.97]:
-            cut = tmp / "flip.h5"
-            shutil.copy(out, cut)
-            with open(cut, "r+b") as fh:
-                off = int(size * frac)
-                fh.seek(off)
-                b = fh.read(1)
-                fh.seek(off)
-                fh.write(bytes([b[0] ^ 0xFF]))
-            nc, bc, dc = vf.verify_archive(cut)
-            import h5py
-            opens = True
+        codes = []
+        for argv in (["--h5", str(out), "--sha"],
+                     ["--h5", str(out), "--digest", str(tmp / "digests.txt")]):
             try:
-                h5py.File(cut, "r").close()
-            except Exception:                                               # noqa: BLE001
-                opens = False
-            if bc or dc != lines:
-                caught = dict(frac=frac, errors=bc, digest_changed=dc != lines, opens=opens)
-                break
-        check("a single byte flipped mid-file (file still opens) is caught: as an unreadable "
-              "group and/or as a digest that no longer matches the healthy file",
-              caught is not None and caught["opens"] and (caught["errors"] or caught["digest_changed"]),
-              caught)
+                vf.main(argv)
+                codes.append(0)
+            except SystemExit as e:
+                codes.append(e.code)
+        check("the hash modes are gone: --sha and --digest are unknown arguments (exit 2)",
+              codes == [2, 2], codes)
 
-        # --- the errors are the Tianhe shape, not "truncated file" ----------------------
-        if caught and caught["errors"]:
-            msg = " ".join(caught["errors"].values())
-            check("the caught error is a checksum/membership failure, not 'truncated file' "
-                  "(the two must not be confused: truncation fails at open)",
-                  ("checksum" in msg or "open object" in msg or "link" in msg)
-                  and "truncated file" not in msg, msg[:200])
+        # --- one group's object header damaged: the file still opens, the tool catches it --
+        import h5py
+        with h5py.File(str(out), "r") as f:
+            header_addr = int(h5py.h5o.get_info(f["dsgdb9nsd_000019"].id).addr)
+        size = out.stat().st_size
+        cut = flip_header_byte(out, tmp / "flip.h5", header_addr)
+        nc, bc = vf.verify_archive(cut)
+        opens = True
+        try:
+            h5py.File(cut, "r").close()
+        except Exception:                                                   # noqa: BLE001
+            opens = False
+        check("a byte flipped inside group 000019's object header (the file still opens) is "
+              "caught as an unreadable group",
+              nc == 3 and list(bc) == [19] and opens, (nc, bc, opens))
+        msg = (bc or {}).get(19, "")
+        check("the caught error is the Tianhe shape -- a metadata checksum failure, not "
+              "'truncated file' (the two must not be confused: truncation fails at open)",
+              "checksum" in msg and "truncated file" not in msg, msg[:200])
 
         # --- main(): exit codes ---------------------------------------------------------
         rc_ok = vf.main(["--h5", str(out), "--quiet"])
-        rc_bad = None
-        if caught:
-            shutil.copy(out, tmp / "bad2.h5")
-            with open(tmp / "bad2.h5", "r+b") as fh:
-                fh.seek(int(size * caught["frac"]))
-                b = fh.read(1)
-                fh.seek(int(size * caught["frac"]))
-                fh.write(bytes([b[0] ^ 0xFF]))
-            _ncc, bcc, _dcc = vf.verify_archive(tmp / "bad2.h5")
-            if bcc:
-                rc_bad = vf.main(["--h5", str(tmp / "bad2.h5"), "--quiet"])
+        rc_bad = vf.main(["--h5", str(cut), "--quiet"])
         check("main(): 0 on the healthy archive, 1 when a group is unreadable",
-              rc_ok == 0 and (rc_bad is None or rc_bad == 1), (rc_ok, rc_bad))
+              rc_ok == 0 and rc_bad == 1, (rc_ok, rc_bad))
 
         # --- curated_qm9.find() on the damaged copy: the error names the file and the fix --
         old_env = {k: os.environ.pop(k, None) for k in ("S0_CURATED_QM9", "S0_CURATED_QM9_H5")}
         try:
             cfg = config.load()
             cfg["data"]["curated_qm9_dir"] = "no_such_directory_for_the_test"
-            cfg["data"]["curated_qm9_h5"] = str(tmp / "find_cut.h5")
+            find_cut = flip_header_byte(out, tmp / "find_cut.h5", header_addr)
+            cfg["data"]["curated_qm9_h5"] = str(find_cut)
             curated_qm9._ARCHIVE_CACHE.clear()
             curated_qm9._INDEX_CACHE.clear()
-            found_k, found_frac, msg = None, None, ""
-            for frac in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.97]:
-                cut = tmp / "find_cut.h5"
-                shutil.copy(out, cut)
-                with open(cut, "r+b") as fh:
-                    off = int(size * frac)
-                    fh.seek(off)
-                    b = fh.read(1)
-                    fh.seek(off)
-                    fh.write(bytes([b[0] ^ 0xFF]))
-                for k in (18, 19, 35):
-                    curated_qm9._ARCHIVE_CACHE.clear()
-                    try:
-                        curated_qm9.find(k, cfg)
-                    except RuntimeError as e:
-                        if "s0_verify_curated_qm9.py" in str(e):
-                            found_k, found_frac, msg = k, frac, str(e)
-                            break
-                if found_k is not None:
-                    break
-            check("curated_qm9.find() on a damaged copy raises with the file, the group, "
-                  "the underlying error, the verify command and the re-copy advice (an "
-                  "unreadable group must not come back as (None, None))",
-                  found_k is not None and "could not be read for dsgdb9nsd_{:06d}".format(found_k) in msg
-                  and str(cut) in msg and "incorrect metadata checksum" in msg
-                  and "--only {}".format(found_k) in msg and "re-copy" in msg,
-                  (found_k, found_frac, (msg or "")[:300]))
+            try:
+                curated_qm9.find(19, cfg)
+                msg = ""
+            except RuntimeError as e:
+                msg = str(e)
+            check("curated_qm9.find() on a copy whose group 000019 header is damaged raises "
+                  "with the file, the group, the underlying error, the verify command and "
+                  "the re-copy advice (an unreadable group must not come back as (None, None))",
+                  "could not be read for dsgdb9nsd_000019" in msg
+                  and str(find_cut) in msg and "incorrect metadata checksum" in msg
+                  and "--only 19" in msg and "re-copy" in msg, msg[:300])
 
             # a truncated copy cannot be opened at all: the same remedy, and the two cases
             # stay named apart ('truncated file' vs 'metadata checksum')

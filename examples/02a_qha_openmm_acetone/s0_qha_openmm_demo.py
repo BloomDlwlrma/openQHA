@@ -301,8 +301,7 @@ def main():
     print("engine      {}".format(name))
     print("mace module {}".format(prov.get("mace_module_path")))
     patch = (prov.get("neighbour_list_patch") or {}).get("installed") or {}
-    print("neighbour   {}   defect present: {}".format(
-        patch.get("sizing"), patch.get("defect_present")))
+    print("neighbour-list defect present: {}".format(patch.get("defect_present")))
 
     exe, omm_version = openmm_python()
     print("openmm      {}".format(

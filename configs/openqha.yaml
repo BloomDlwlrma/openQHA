@@ -4,8 +4,7 @@
 # pushed to GitHub on its own. It therefore **reads nothing from stage 1 / stage 2 any
 # more**: the edge set, the species table, symmetry numbers, parameters and data paths
 # are all rewritten here. Anything copied from elsewhere records its origin and the date
-# it was copied under `provenance`, plus a checksum, so that later drift is detected
-# rather than inherited.
+# it was copied under `provenance`.
 #
 # Parameters carry the same five classes as stage 1 / stage 2:
 #   physical_constant | derived_criterion | literature_value | modifiable_convention

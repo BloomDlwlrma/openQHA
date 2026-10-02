@@ -45,7 +45,6 @@ edges_provenance:
   transcribed_from: "stage2-lambda-delta0-mace-learning/configs/r0_production.yaml"
   transcribed_on: "2026-08-28"
   ordering: "priority order, most informative first -- verbatim from the source"
-  sha256_of_edge_list: "3d3e56f94bea6fb00e018de842001c88e6c202ff9d2517d8b361849d48d3ecd5"   # computed and checked by scripts/s0_check_config.py
 
 
 edges:

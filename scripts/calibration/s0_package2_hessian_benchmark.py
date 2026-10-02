@@ -90,7 +90,7 @@ def load_qm9_row(qid):
 def load_edges():
     """The edge set comes from **this repository own configuration**. It used to be parsed verbatim
     from the stage 2 production configuration; when stage 0 became independent on 2026-08-28 it was
-    transcribed once into configs/openqha.yaml, and this repository is the source of truth from then on. The origin of the transcription and its checksum are both in the configuration."""
+    transcribed once into configs/openqha.yaml, and this repository is the source of truth from then on. The origin of the transcription is in the configuration."""
     return config.edges(CFG)
 
 
@@ -119,7 +119,7 @@ def main():
     print("package 2 -- Hessian side branch and frequency benchmark   engine {}   T = {} K".format(engine_name, T_REF))
     print("=" * 100)
     print("configuration {}".format(CFG["_path"]))
-    print("{} edge(s), checksum {}".format(len(edges), config.edge_list_sha256(CFG)[:16]))
+    print("{} edge(s)".format(len(edges)))
     print("species: {}".format(len(SPECIES)))
     print("weights {}".format(prov["weights_path"]))
     print()
@@ -513,7 +513,6 @@ def main():
         package="package 2 -- the Hessian side branch and the frequency benchmark",
         engine=prov, temperature_K=T_REF,
         config_path=CFG["_path"], edges=edges,
-        edges_sha256=config.edge_list_sha256(CFG),
         edges_provenance=CFG.get("edges_provenance"),
         n_species=len(results), species=results,
         delta_convergence=delta_scan,

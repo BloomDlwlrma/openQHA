@@ -73,9 +73,9 @@ def main():
         out = tmp / "curated_qm9.h5"
         attrs = pk.pack(idx, out, source=str(src))
         bad = pk.verify(idx, out, n=7)
-        check("pack: 7 molecules, 5 originals + 1 + 1 repaired (the repair wins over the original it shadows), no verify mismatch, sha256 attr",
+        check("pack: 7 molecules, 5 originals + 1 + 1 repaired (the repair wins over the original it shadows), no verify mismatch, no hash attr",
               attrs["n_molecules"] == 7 and attrs["n_original"] == 5 and attrs["n_repaired_qm9_tag"] == 1
-              and attrs["n_repaired_short_tag"] == 1 and not bad and len(attrs["sha256"]) == 64, (attrs, bad))
+              and attrs["n_repaired_short_tag"] == 1 and not bad and "sha256" not in attrs, (attrs, bad))
         del os.environ["S0_CURATED_QM9"]
         curated_qm9._INDEX_CACHE.clear()
         curated_qm9._ARCHIVE_CACHE.clear()

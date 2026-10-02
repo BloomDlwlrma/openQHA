@@ -66,8 +66,7 @@ WHAT THIS PACKAGE IS
 **Since 2026-08-28 openQHA is an independent framework**: it imports nothing from, and
 reads no file of, any other stage. The edge set, species table, symmetry numbers,
 parameters and data paths are all written out in `configs/openqha.yaml`, and anything
-copied from elsewhere records its source, the date it was copied, and a checksum, so that
-drift is discovered rather than inherited.
+copied from elsewhere records its source and the date it was copied.
 """
 __version__ = "0.3.0"
 

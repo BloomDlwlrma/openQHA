@@ -35,7 +35,6 @@ Usage
 """
 import argparse
 import csv
-import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -58,7 +57,6 @@ sys.path.insert(0, str(_repo_root()))
 from openqha import S0_ROOT  # noqa: E402
 
 ANALYSIS = S0_ROOT / "analysis"
-SHA_MAX_BYTES = 8 * 1024 * 1024      # only checksum small artifacts; big trees by size
 
 #: Explicit identity table. Keys are top-level names under analysis/.
 #:
@@ -221,12 +219,6 @@ UNKNOWN = {
 }
 
 
-def sha256_of(path):
-    if path.is_dir() or path.stat().st_size > SHA_MAX_BYTES:
-        return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def tree_stats(path):
     if path.is_file():
         return 1, path.stat().st_size
@@ -263,7 +255,6 @@ def scan(root):
             "one_line": one_line,
             "n_files": n_files,
             "bytes": size,
-            "sha256": sha256_of(entry) or "",
             "mtime": datetime.fromtimestamp(entry.stat().st_mtime, timezone.utc).isoformat(),
         })
     return rows

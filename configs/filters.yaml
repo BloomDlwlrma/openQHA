@@ -79,7 +79,7 @@ species_filter:
     the index still records the original SMILES. Upstream lists them separately in
     `uncharacterized.txt` (Ramakrishnan, Dral, Rupp & von Lilienfeld, Sci. Data 1,
     140022 (2014), supplementary), and this repository ships that file under
-    data/qm9-uncharacterized/ with its sha256 pinned in openqha/qm9_uncharacterized.py.
+    data/qm9-uncharacterized/ and reads it in openqha/qm9_uncharacterized.py.
 
     **This repository was caught by one of them.** dsgdb9nsd_003838: the index SMILES is
     `N=C1N=CON=N1` (a six-membered ring), while the deposited geometry measures as

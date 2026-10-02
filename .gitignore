@@ -13,7 +13,7 @@ data/qm9/
 data/basins/
 data/curated-qm9/
 !data/reference-geometries/          # 11 KB, and the core deliverable needs it
-!data/qm9-uncharacterized/           # the official list, small, and pinned by sha256
+!data/qm9-uncharacterized/           # the official list, small, read offline
 
 # ---- the potential -------------------------------------------------------------------
 # The weights are fetched by install_dependency.sh, not carried in the repository: they

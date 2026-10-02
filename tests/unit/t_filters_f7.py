@@ -4,8 +4,9 @@ UNIT. Seconds; reads files only.
 
 What is checked, one line each, and a failure is reported rather than raised:
 
-1. the list parses to **exactly 3054** entries, and the file's sha256 matches the pinned
-   value;
+1. the list parses to **exactly 3054** entries, and the provenance names the file and the
+   counts it read -- no digest and no match flag (identity without checksums,
+   2026-10-02);
 2. `dsgdb9nsd_003838` is on it, and the SMILES the list records for the deposited B3LYP
    geometry contains a dot (two fragments);
 3. that molecule is rejected by F7, and the reason names BOTH SMILES;
@@ -81,8 +82,11 @@ def main():
     rows, prov = qm9_uncharacterized.load()
     check("the list has 3054 entries", len(rows) == 3054,
           "measured {}".format(len(rows)))
-    check("sha256 matches the pinned value", prov["sha256_matches_recorded"],
-          prov["sha256"][:16] + "...")
+    check("the provenance names the file, the source and the counts -- no sha256 and no "
+          "match flag",
+          prov["path"].endswith("uncharacterized.txt") and prov["n_entries"] == 3054
+          and prov["source_url"].startswith("https://") and bool(prov["citation"])
+          and "sha256" not in prov and "sha256_matches_recorded" not in prov, str(prov))
     check("how many genuinely disagree has been counted",
           prov["n_deposited_geometry_disagrees_with_smiles"] > 0,
           "{} disagree / {} differ only in Corina's guess".format(

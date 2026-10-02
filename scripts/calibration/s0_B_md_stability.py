@@ -150,6 +150,8 @@ def run_one(species, seed, ps, timestep_fs, temperature_K, engine_name=None,
     wall = time.time() - t0
 
     d = pdist(atoms.get_positions())
+    patch = prov.get("neighbour_list_patch") or {}
+    installed = patch.get("installed") or {}
     return dict(
         species=species, seed=int(seed), timestep_fs=float(timestep_fs),
         temperature_K=float(temperature_K), engine=engine_name,
@@ -178,14 +180,8 @@ def run_one(species, seed, ps, timestep_fs, temperature_K, engine_name=None,
         friction_per_ps=1.0,
         mace_module_path=str(prov.get("mace_module_path", "")),
         mace_torch_version=str(prov.get("mace_torch_version", "")),
-        neighbour_list_patched=bool(
-            (prov.get("neighbour_list_patch") or {}).get("applied")),
-        neighbour_list_sizing=str(
-            ((prov.get("neighbour_list_patch") or {}).get("installed") or {})
-            .get("sizing", "")),
-        neighbour_list_defect_present=(
-            ((prov.get("neighbour_list_patch") or {}).get("installed") or {})
-            .get("defect_present")),
+        neighbour_list_patched=bool(patch.get("applied")),
+        neighbour_list_defect_present=installed.get("defect_present"),
         wall_seconds=float(wall),
         seconds_per_ps=float(wall / max(1e-9, done * timestep_fs / 1000.0)),
     )
@@ -311,9 +307,8 @@ def main():
     rp.kv("mace_torch_version", first.get("mace_torch_version"))
     rp.kv("mace_module_path", first.get("mace_module_path"))
     rp.kv("neighbour_list_patched", first.get("neighbour_list_patched"))
-    rp.kv("neighbour_list_sizing", first.get("neighbour_list_sizing"))
     rp.kv("neighbour_list_defect_present", first.get("neighbour_list_defect_present"))
-    rp.note("These eight lines exist because two runs of this script disagreed 3-of-8 "
+    rp.note("These lines exist because two runs of this script disagreed 3-of-8 "
             "against 0-of-8 on the same engine, species and seeds, and neither product "
             "recorded enough to say what differed. Four of the eight seeds were "
             "bit-identical across the two runs and four were not, which rules out a "

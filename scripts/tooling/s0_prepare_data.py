@@ -23,7 +23,6 @@ You can also skip this script entirely and set the environment variables:
     export S0_QM9_ROOT=/path/to/qm9
 """
 import argparse
-import hashlib
 import os
 import shutil
 import sys
@@ -45,14 +44,6 @@ def _repo_root():
 sys.path.insert(0, str(_repo_root()))
 
 from openqha import S0_ROOT, config
-
-
-def sha256_head(path, n_bytes=1 << 20):
-    """Digest of the first 1 MB -- digesting all 119 MB is too slow, and 1 MB is enough to notice that the file was swapped."""
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        h.update(fh.read(n_bytes))
-    return h.hexdigest()
 
 
 def main():
@@ -83,8 +74,7 @@ def main():
         xyz = root / xyz_name
         print("index table    {}  {}".format(idx, "present" if idx.exists() else "**MISSING**"))
         if idx.exists():
-            print("               {:.1f} MB, digest of the first 1 MB {}".format(
-                idx.stat().st_size / 1048576, sha256_head(idx)[:16]))
+            print("               {:.1f} MB".format(idx.stat().st_size / 1048576))
         print("geometry dir   {}  {}".format(xyz, "present" if xyz.exists() else "**MISSING**"))
         if xyz.exists():
             n = sum(1 for _ in xyz.glob("dsgdb9nsd_*.xyz"))
@@ -133,7 +123,6 @@ def main():
     print()
     print("provenance:")
     print("   source dir     {}".format(src.resolve()))
-    print("   index digest   {} (first 1 MB)".format(sha256_head(d_idx)[:32]))
     print("   dataset        {}".format(cfg["data"]["upstream"]["dataset"]))
     print()
     print("Done. `data/qm9/` is in `data/.gitignore` and will not enter version control.")

@@ -63,7 +63,7 @@ not a key):
 Not stored: the property row (line 2: A B C mu ... Cv -- nothing in
 the repository reads it) and the file's text (it doubled the size; the parsed form holds
 everything a reader uses). The file's attributes carry the source, the census per naming
-pattern, a sha256 of all the source text and the date. `find()` prefers the directory and,
+pattern and the date. `find()` prefers the directory and,
 when it is absent and the archive is present, RENDERS the one molecule asked for as a QM9
 file (`render_qm9_text`: N, a `gdb <n>` header, the atom lines with the charge column when
 there is one, the frequency line, the SMILES line, the InChI line -- the lines

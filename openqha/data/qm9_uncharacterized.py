@@ -50,7 +50,6 @@ because OpenBabel parsed Corina's initial guess as something else. This module
 This is a **stated-consequence convention that may be changed**, not a derived
 criterion.
 """
-import hashlib
 from pathlib import Path
 
 from .. import S0_ROOT
@@ -59,10 +58,8 @@ from .. import S0_ROOT
 #: product has to be reproducible offline.
 DEFAULT_PATH = S0_ROOT / "data" / "qm9-uncharacterized" / "uncharacterized.txt"
 
-#: Download source and checksum, written down here so that anyone can confirm this file
-#: has not been altered.
+#: Download source, written down here for provenance.
 SOURCE_URL = "https://ndownloader.figshare.com/files/3195404"
-SOURCE_SHA256 = "3aa5115d540b356de94791d4a74c3bf1ed91c469ecf52a4f5d7cc0506fe02e24"
 SOURCE_CITATION = ("Ramakrishnan, Dral, Rupp & von Lilienfeld, "
                    "Sci. Data 1, 140022 (2014), supplementary file uncharacterized.txt")
 
@@ -103,9 +100,8 @@ def load(path=None):
     if not path.exists():
         raise FileNotFoundError(
             "the QM9 uncharacterized list is not at {}.\n"
-            "It ships with the repository; if it really is missing, fetch it from {} "
-            "and check sha256 = {}".format(path, SOURCE_URL, SOURCE_SHA256))
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            "It ships with the repository; if it really is missing, fetch it from {}"
+            .format(path, SOURCE_URL))
     rows = _parse(path)
     if len(rows) != EXPECTED_COUNT:
         raise ValueError(
@@ -114,8 +110,7 @@ def load(path=None):
             .format(len(rows), EXPECTED_COUNT))
     n_geom_bad = sum(1 for r in rows if r["smiles_gdb17"] != r["smiles_b3lyp_xyz"])
     prov = dict(
-        path=str(path), sha256=digest,
-        sha256_matches_recorded=bool(digest == SOURCE_SHA256),
+        path=str(path),
         source_url=SOURCE_URL, citation=SOURCE_CITATION,
         n_entries=len(rows),
         n_deposited_geometry_disagrees_with_smiles=n_geom_bad,

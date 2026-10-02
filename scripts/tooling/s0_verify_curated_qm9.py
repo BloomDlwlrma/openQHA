@@ -17,25 +17,20 @@ while everything else read fine. **A truncated copy is NOT this**: truncation
 fails at `h5py.File(...)` with "truncated file", before any molecule is looked
 up. These checksums are HDF5 detecting damaged metadata for specific groups.
 
-    # the two numbers that decide "same copy?" -- run on both sides, compare
-    python scripts/tooling/s0_verify_curated_qm9.py --sha
     # every group, read back: exit 0 only when nothing is damaged
     python scripts/tooling/s0_verify_curated_qm9.py
     # just the molecules a campaign is failing on
     python scripts/tooling/s0_verify_curated_qm9.py --only 14156,65586,88898
-    # a content fingerprint per group, to diff a cluster copy against the workstation
-    python scripts/tooling/s0_verify_curated_qm9.py --digest /tmp/h5_digests.txt
 
-The digest is the sha256 of the molecule's rendered QM9 text (`Archive.text`),
-which covers every stored attribute and every stored array. HDF5 checksums
-metadata, not dataset bytes, so a `--digest` diff is the only way to catch a
-corruption that leaves the structure valid but the numbers wrong. Copy the
-archive in a way that cannot be watched mid-write (write a temporary name, move
-it into place) -- a reader that opens the file while `scp` is overwriting it in
-place sees exactly the errors above.
+The file hash and the per-group content digests (`--sha`, `--digest`) were retired
+2026-10-02 (identity without checksums: delete them, no size substitute); the tool
+reports which groups cannot be read and nothing else. HDF5 checksums metadata, not
+dataset bytes, so a corruption that leaves the structure valid but the values wrong
+is NOT detected here. Copy the archive in a way that cannot be watched mid-write
+(write a temporary name, move it into place) -- a reader that opens the file while
+`scp` is overwriting it in place sees exactly the errors above.
 """
 import argparse
-import hashlib
 import sys
 import time
 from pathlib import Path
@@ -53,45 +48,30 @@ from openqha import config                                      # noqa: E402
 from openqha.data import curated_qm9                            # noqa: E402
 
 
-def file_sha256(path, chunk=1 << 20):
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for block in iter(lambda: fh.read(chunk), b""):
-            h.update(block)
-    return h.hexdigest()
-
-
 def verify_group(arc, n):
     """Read molecule `n` back the way a campaign reads it.
 
-    Returns `(error, digest, n_chars)`: `error` is None or "Type: message"; `digest`
-    is the sha256 of the rendered QM9 text (None when the group could not be read).
-    The rendered text carries every stored attribute and every stored array, so the
-    digest is the group's content fingerprint.
+    Returns `error`: None, or "Type: message" when the group cannot be read.
     """
     try:
         arc.filename(n)                    # the attributes the archive names it by
         arc.pattern_name(n)                # ... and the pattern the name decides
         arc.repaired(n)
-        text = arc.text(n)                 # attrs + species + positions + charges +
-        return None, hashlib.sha256(text.encode("utf-8")).hexdigest(), len(text)
-        #   frequencies, rendered through render_qm9_text
+        arc.text(n)                        # attrs + species + positions + charges +
+        return None                        #   frequencies, rendered through render_qm9_text
     except Exception as e:                                                  # noqa: BLE001
-        return "{}: {}".format(type(e).__name__, e), None, None
+        return "{}: {}".format(type(e).__name__, e)
 
 
-def verify_archive(h5_path, only=None, digest_path=None, progress_every=10000,
-                   log=print):
-    """Read the archive at `h5_path` back. Returns (n_checked, failures, digest_lines).
+def verify_archive(h5_path, only=None, progress_every=10000, log=print):
+    """Read the archive at `h5_path` back. Returns (n_checked, failures).
 
-    `only`: QM9 indices to check (default: every group in the file). `digest_path`:
-    where to write one line per group, "dsgdb9nsd_%06d <sha256|ERROR ...>", for a
-    diff between two copies. A group listed by `only` but absent from the archive is
-    a failure; an absent index is NOT an error when scanning the whole file.
+    `only`: QM9 indices to check (default: every group in the file). A group listed
+    by `only` but absent from the archive is a failure; an absent index is NOT an
+    error when scanning the whole file.
     """
     arc = curated_qm9.Archive(h5_path)
     failures = {}
-    digest_lines = []
 
     if only is None:
         try:
@@ -116,30 +96,20 @@ def verify_archive(h5_path, only=None, digest_path=None, progress_every=10000,
             present = n in arc
         except Exception as e:                                              # noqa: BLE001
             failures[n] = "membership check failed: {}: {}".format(type(e).__name__, e)
-            digest_lines.append("{} ERROR {}".format(curated_qm9.group_name(n),
-                                                     failures[n]))
             continue
         if not present:
             if n in wanted:
                 failures[n] = "ABSENT from the archive"
-                digest_lines.append("{} ABSENT".format(curated_qm9.group_name(n)))
             continue
-        err, digest, _nchars = verify_group(arc, n)
+        err = verify_group(arc, n)
         checked += 1
         if err:
             failures[n] = err
-            digest_lines.append("{} ERROR {}".format(curated_qm9.group_name(n), err))
-        else:
-            digest_lines.append("{} {}".format(curated_qm9.group_name(n), digest))
         if progress_every and i % progress_every == 0:
             log("  ... {} looked up, {} checked, {} bad ({:.0f} s)".format(
                 i, checked, len(failures), time.time() - t0))
     arc.h5.close()
-
-    if digest_path:
-        Path(digest_path).write_text("\n".join(digest_lines) + "\n", encoding="utf-8")
-        log("digest of {} groups -> {}".format(len(digest_lines), digest_path))
-    return checked, failures, digest_lines
+    return checked, failures
 
 
 def main(argv=None):
@@ -151,10 +121,6 @@ def main(argv=None):
     ap.add_argument("--only", default=None,
                     help="comma-separated QM9 indices, `18` or `dsgdb9nsd_000018`; "
                          "default: every group")
-    ap.add_argument("--digest", default=None, metavar="FILE",
-                    help="write one line per group for a diff between two copies")
-    ap.add_argument("--sha", action="store_true",
-                    help="print the file's size and sha256, then stop (seconds)")
     ap.add_argument("--quiet", action="store_true", help="only the summary and the failures")
     args = ap.parse_args(argv)
 
@@ -168,13 +134,9 @@ def main(argv=None):
     log = (lambda *a: None) if args.quiet else print
     print("archive  {}".format(path))
     print("size     {} bytes".format(size))
-    if args.sha:
-        print("sha256   {}".format(file_sha256(path)))
-        return 0
 
     only = sorted(curated_qm9._to_int(x) for x in args.only.split(",")) if args.only else None
-    n, failures, _digest = verify_archive(path, only=only, digest_path=args.digest,
-                                          log=log)
+    n, failures = verify_archive(path, only=only, log=log)
     print("checked  {} group{}".format(n, "" if n == 1 else "s"))
     if failures:
         print("DAMAGED  {} group{}:".format(
@@ -183,8 +145,7 @@ def main(argv=None):
             print("  {}  {}".format(curated_qm9.group_name(m), failures[m]))
         print("This copy is damaged. Re-copy the archive written by "
               "scripts/tooling/s0_pack_curated_qm9.py (write a temporary name, move it "
-              "into place, then run this tool again on the other side of the copy and "
-              "diff the two --digest files).")
+              "into place, then run this tool again on the other side of the copy).")
         return 1
     print("no damage in the groups checked")
     return 0

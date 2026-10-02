@@ -1,4 +1,4 @@
-"""Translation invariance: the patched path must be exact, and the install must be named.
+"""Translation invariance: the patched path must be exact, and the install must be measured.
 
 REGRESSION. It needs an engine, so it is slow by this suite's standards (a few seconds).
 
@@ -11,18 +11,16 @@ the `mace_torch 0.3.16` that openQHA imports -- and nothing in the products coul
 caught the mix-up, because provenance recorded a VERSION and both trees answer 0.3.x.
 
 So the test no longer asserts which MACE is installed. It asserts something that is true
-either way and that fails if either half of the record is wrong:
+either way and that fails if the record is wrong:
 
   1. the patched path is exactly translation invariant, in the energy AND in the edge list
      -- this is what production runs on and it must never fail;
   2. the patch is bound at all three call sites, including `mace.data.atomic_data`, which
      holds its own reference and is the one that actually runs;
-  3. the SOURCE FINGERPRINT of the installed neighbour list agrees with a direct
-     MEASUREMENT of whether it is defective. Either alone can be wrong; disagreeing is the
-     signal that the record has drifted from the code.
-
-Point 3 is the one that would have caught the original error. It fails if the source says
-origin-anchored and the probe finds no defect, and it fails the other way too.
+  3. the provenance record carries the PROBED identity of the install: `defect_present`
+     is a measurement (the probe at -8 A against the origin), and the retired source
+     fingerprint (sha256, sizing) is not in the record. A version string could not tell
+     the two trees apart; the measurement is what can.
 
 The install is REPORTED rather than required, with the consequence spelled out: on a
 defective install the patch is load-bearing, on a clean one it is insurance against being
@@ -76,7 +74,6 @@ def main():
     print("patch applied {}   sites {}".format(patch.get("applied"),
                                                len(patch.get("sites") or [])))
     print("mace module   {}".format(installed.get("module_path")))
-    print("  sizing      {}".format(installed.get("sizing")))
     print("  probe at {:+.1f} A: defect present = {}   ({} edges)".format(
         installed.get("probe_shift_A", 0.0), installed.get("defect_present"),
         installed.get("n_edges")))
@@ -95,8 +92,6 @@ def main():
         edges["points"][0]["n_edges"], edges["invariant"]))
     print()
 
-    fingerprint_says_defective = "defective" in (installed.get("sizing") or "")
-    fingerprint_known = (installed.get("sizing") or "unknown") != "unknown"
     measured_defective = installed.get("defect_present")
 
     checks = [
@@ -114,13 +109,14 @@ def main():
          "applied = {}, {} sites".format(patch.get("applied"),
                                          len(patch.get("sites") or [])),
          bool(patch.get("applied")) and len(patch.get("sites") or []) >= 3),
-        ("the source fingerprint of the installed neighbour list AGREES with a direct "
-         "measurement of it. This is the check that would have caught the wrong claim "
-         "this test used to make",
-         "sizing = {!r}, measured defect = {}".format(installed.get("sizing"),
-                                                      measured_defective),
-         bool(fingerprint_known and measured_defective is not None
-              and fingerprint_says_defective == bool(measured_defective))),
+        ("the provenance record carries the PROBED identity of the install -- a measured "
+         "defect status and the probe's edge count, with the retired source fingerprint "
+         "gone",
+         "defect_present = {!r}, n_edges = {}, sha256/sizing present = {}/{}".format(
+             measured_defective, installed.get("n_edges"),
+             "sha256" in installed, "sizing" in installed),
+         isinstance(measured_defective, bool) and (installed.get("n_edges") or 0) > 0
+         and "sha256" not in installed and "sizing" not in installed),
     ]
 
     bad = 0

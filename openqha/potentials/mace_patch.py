@@ -40,9 +40,12 @@ model, shifts along x and along (1,1,1):
 
 So on the current install this module is INSURANCE, not a repair. It becomes a repair the
 moment openQHA is pointed at the develop tree -- which stage 2 uses -- and that is why it
-is kept rather than deleted. `installed_variant()` reports which of the two is present, by
-source fingerprint AND by measurement, and `state()` puts that in the provenance record so
-no future reader has to reconstruct it the way this one had to.
+is kept rather than deleted. `installed_variant()` reports which of the two is present BY
+MEASUREMENT, and `state()` puts the probe result in the provenance record so no future
+reader has to reconstruct it the way this one had to. (A source-text fingerprint -- the
+module's sha256 and a marker match -- sat beside the probe until 2026-10-02; the
+identity-without-checksums ruling removed it: a version string, a hash or a marker is not
+an implementation, and the probe is the part that says what the code does.)
 
 What this correction does NOT explain
 -------------------------------------
@@ -77,8 +80,6 @@ its own reference. Patching only `mace.data.neighborhood.get_neighborhood` would
 one that actually runs untouched -- and would look like it had worked. All three names are
 rebound and `verify()` proves it by measurement rather than by inspection.
 """
-import hashlib
-
 import numpy as np
 
 #: Set by `apply()`. A record, not a flag: products should carry what was done.
@@ -88,11 +89,6 @@ _STATE = dict(applied=False, sites=[], original=None, error=None)
 _SITES = (("mace.data.neighborhood", "get_neighborhood"),
           ("mace.data", "get_neighborhood"),
           ("mace.data.atomic_data", "get_neighborhood"))
-
-#: Source markers that tell the two sizings apart. Fingerprinting is a hint, not the
-#: verdict -- `installed_variant()` also calls the function and looks at what it returns.
-_MARKER_ORIGIN_ANCHORED = "extent + 2 * cutoff + 1"
-_MARKER_RADIAL = "max_positions * 5 * cutoff"
 
 
 def _wrap(original):
@@ -138,36 +134,25 @@ _PROBE = np.array([[0.0, 0.0, 0.0],
 
 
 def installed_variant(positions=None, cutoff=5.0, probe_shift_A=-8.0):
-    """Which `get_neighborhood` is installed -- fingerprinted AND measured.
+    """Which `get_neighborhood` is installed -- by MEASUREMENT.
 
     This exists because the earlier revision of this module named a defect that the
     installed MACE does not have, and nothing in the provenance record could have caught
     that: it stored `mace_torch_version`, and both trees answer 0.3.x. A version string is
-    not an implementation.
+    not an implementation, and neither is a source hash -- so probe it.
 
-    `defect_present` is a MEASUREMENT: the original function is called on a probe at the
-    origin and at `probe_shift_A`, and the two edge lists are compared. `sizing` is the
-    source fingerprint, and the two are reported side by side so that a disagreement
-    between them is visible rather than resolved silently.
+    `defect_present` is the MEASUREMENT: the original function is called on a probe at the
+    origin and at `probe_shift_A`, and the two edge lists are compared. `n_edges` is what
+    the probe saw at the origin. The module's sha256 and the source-marker sizing sat
+    beside this until 2026-10-02; the identity-without-checksums ruling removed them.
     """
     import importlib
-    import inspect
-    record = dict(module_path=None, sha256=None, sizing="unknown",
-                  defect_present=None, n_edges=None, error=None)
+    record = dict(module_path=None, defect_present=None, n_edges=None, error=None)
     try:
         module = importlib.import_module("mace.data.neighborhood")
         original = _STATE.get("original") or module.get_neighborhood
         original = getattr(original, "_openqha_original", original)
         record["module_path"] = getattr(module, "__file__", None)
-        try:
-            source = inspect.getsource(module)
-            record["sha256"] = hashlib.sha256(source.encode("utf-8")).hexdigest()
-            if _MARKER_ORIGIN_ANCHORED in source:
-                record["sizing"] = "origin-anchored extent (defective)"
-            elif _MARKER_RADIAL in source:
-                record["sizing"] = "radial max|positions| (translation invariant)"
-        except OSError:
-            pass
         probe = _PROBE if positions is None else np.asarray(positions, dtype=float)
         at_origin = _edge_list(original, probe, cutoff, 0.0)
         shifted = _edge_list(original, probe, cutoff, probe_shift_A)
