@@ -123,10 +123,10 @@ dependencies:
 
   - pip
   - pip:
-      # The potential: the mace FORK (branch `openqha-hessian`, version 0.3.16+openqha),
-      # by git URL. Non-editable by design: `import mace` is the fork for eval; machines
-      # that TRAIN run openQHA-Hessian/install.sh (editable) regardless.
-      - git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
+      # The potential: the mace FORK is not installed here -- it arrives as the sibling
+      # `mace/` checkout, and openQHA-Hessian/install.sh installs it (editable) beside
+      # the package; the checkout is the install path (2026-10-02 ruling: the fork-by-URL
+      # pin retired).
       # the chirality test of the enantiomer degeneracy (rotational vs orthogonal
       # Procrustes, Meng et al. CPC 2022); asserted equal to our Kabsch on every pair
       - qc-procrustes>=1.0

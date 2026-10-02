@@ -23,7 +23,8 @@ Settle at claim time:
   `~/.cache/mace` note).
 - **Release-note content**: Dataset index, `CONFIG_SHA256` prefix, `MACE_FORK_COMMIT`,
   file names/basenames, and the optional `sha256sum` listing (publisher-side integrity;
-  never a load-time gate).
+  never a load-time gate). *(2026-10-02 checksum ruling: the `CONFIG_SHA256` prefix is
+  out — the release note names the config file the Record carries.)*
 - **First release**: the round-1 model from ticket 09 (assembled via ticket 08), under the
   decided names (`mace_off23_<campaign>/<run>+<YYYYMMDD-HHMMSS>.model`).
 - **The Level question**: `level_name()` derives a revision-flavoured Level from a

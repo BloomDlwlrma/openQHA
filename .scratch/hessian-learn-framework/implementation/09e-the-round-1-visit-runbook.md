@@ -16,7 +16,8 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 
 - 步骤 0:**通过**(两侧)。三个 checkout 由 GitHub ZIP + 工作站打包的 `.git` 叠合;ids 逐字
   核对一致(mace `1110ffb…`、openQHA-Hessian `411abe1…`、openQHA-main `5b0b5b9…`),两侧
-  `status` 全净。
+  `status` 全净。(2026-10-02 注:两侧 id 一致不再是要求 -- decision 16;上面的 ids 保留为
+  执行回执,不是验收条件。)
 - 步骤 1:**通过**(CN/A 两个 env + AI `openqha-gpu`)。各:install.sh 结尾 `ok: …` +
   `check_fork(strict=True)` 绿(fork `1110ffb`,dirty False)+ 包 runner 9/9;CN cpu env 的
   numpy 被 install 升到 2.4.6、CN gpu 到 2.2.6,测试均绿。
@@ -232,10 +233,9 @@ PY
 python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 1  --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz
 python scripts/tooling/s0_spice_pt_draw.py --n 30000 --seed 0 --weight 10 --out $S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz
 
-# --- 3.2 产物(存在性 + 来源指纹;两份 extxyz/ids 的 sha256 必不相等,这不是相等证据)
+# --- 3.2 产物(存在性 + 大小;本步原含 sha256sum 收据,按 checksum 退役裁定删除 --
+#     执行于 2026-09-30,四值保留在 09d 号票(历史);不再补算)
 ls -lh $S0_RUNS_ROOT/spice/spice_pt_replay30k_w*
-sha256sum $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz $S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz \
-          $S0_RUNS_ROOT/spice/spice_pt_replay30k_w1.extxyz.ids.dat $S0_RUNS_ROOT/spice/spice_pt_replay30k_w10.extxyz.ids.dat
 
 # --- 3.3 验证(天河本地跑;30k 行不取回):Records 只差 {WEIGHT,FILE,IDS_FILE,VALID_FILE,SECONDS},
 #     ids 行逐行相等(整文件不等:header 有 `# weight` 行)

@@ -32,10 +32,17 @@ Serves: [09](../decisions/09-round-1-run.md) · spec: [spec-round-1-run.md](../s
 > 同步提交,各自 `-t 72:00:00` 干净收尾(每段都有完整产物与注册;judge 用最新)。**cap 口径**:用边际
 > S/E(mace 循环 ~6,981 s/v100x),不用记录里摊销的 `SECONDS_PER_EPOCH`(14,147 = mace 子进程/epoch,
 > 含载入+收尾评估+画图,不是每 epoch 成本)。
+>
+> **修订 2026-10-02(四,checksum 退役 -- identity without checksums)**:sha256 收据退役 --
+> 步骤 6 / 回执 7 / 回执清单的 sha256 字样删除,tar 的 `sha256sum` 行删除(路径 + 注册表 ls 即收据);
+> Record 的最后一枚散列 `CONFIG_SHA256` 同批退役(身份 = Record 指名的 config 文件;见 16a 与
+> 09 号票的 record-field 注)。**两侧 checkout id 一致不再是前置要求**:各树记录自己的
+> `git log -1` + 净 `git status --porcelain` 即可,不要求跨侧逐字等号(16e 是落地面)。其余提交行
+> 与回执不变。
 
 ## 前置(登录 ln301;逐条执行,输出即回执 1)
 
-09e 已绿(两侧 checkout ids 一致、验收三条链绿);数据集与两枚 Replay 在 `/XYFS02` 的 runs root 下(见下面的 export)。
+09e 已绿(两侧 checkout ids 一致、验收三条链绿;2026-10-02:**两侧 id 一致不再是要求** -- 各树记自身 id + clean,见修订四);数据集与两枚 Replay 在 `/XYFS02` 的 runs root 下(见下面的 export)。
 
 ```bash
 export R=~/HDD_POOL/sherwin        # AI 侧 checkout 根 = /XYAIFS00/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin
@@ -52,7 +59,7 @@ ls "$S0_RUNS_ROOT/spice/"                          # spice_pt_replay30k_w{1,10}.
 ```
 
 - **执行侧** = tianhexy-ai 的 `a800x`(≠ TianheXY-A 的 `ai`;user, 2026-10-01)。提交形式:`yhbatch -p a800x --gpus=1 ...`;`--gpus` 必需、`--exclusive` 禁用;`set-XY-I.sh`/`-G` 是 `ai` 分区的入口,本侧不用。
-- **三个 checkout** = `openQHA-main` / `openQHA-Hessian` / `mace` 的 git 工作树;两侧均有(`/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/` 与 AI 侧 `$R`)。默认用 **AI 侧那套**提交(mace 与包的身份行从环境 `openqha-gpu` 的安装读出;09e 验收也是在这一侧绿的)。要连日志/注册副本也落 `/XYFS02`:把 `R` 换成 `/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`(两树 id 相同;`openqha` 改从那棵树加载,包与 mace 仍来自环境)。
+- **三个 checkout** = `openQHA-main` / `openQHA-Hessian` / `mace` 的 git 工作树;两侧均有(`/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin/` 与 AI 侧 `$R`)。默认用 **AI 侧那套**提交(mace 与包的身份行从环境 `openqha-gpu` 的安装读出;09e 验收也是在这一侧绿的)。要连日志/注册副本也落 `/XYFS02`:把 `R` 换成 `/XYFS02/HDD_POOL/hku2021_fos4/hku2021_fos4xy_2/sherwin`(两侧 id 一致不再是要求,各树自记 -- 见修订四;现状两树 id 相同;`openqha` 改从那棵树加载,包与 mace 仍来自环境)。
 
 ## 步骤 1 -- timing job(一次测量服务两臂)
 
@@ -269,14 +276,13 @@ done
 # 两枚模型(注册形式,来自 --register-copy)
 ls -l $R/openQHA-main/data/potentials/mace_off23_draw300/
 tar -czf ~/09_models.tgz -C $R/openQHA-main/data/potentials mace_off23_draw300
-sha256sum ~/09_*_evidence.tgz ~/09_models.tgz
 ```
 
 tar 三枚 + 模型 tar 走你的通道回工作站;工作站把它们解到镜像
 `~/runs/openQHA/draw300/_datasets/draw300_r1/train/<run>/` 与本地注册表
 `openQHA/data/potentials/mace_off23_draw300/`,然后收尾 09 的 Answer、写跨臂段。
 
-**回执 7**:四枚 tar 的路径 + sha256 + 注册表 ls。
+**回执 7**:四枚 tar 的路径 + 注册表 ls(2026-10-02:sha256 收据退役,见修订四)。
 
 ## 回执清单(汇总)
 
@@ -286,6 +292,6 @@ tar 三枚 + 模型 tar 走你的通道回工作站;工作站把它们解到镜�
 4. 两条生产 job id + 提交行。
 5. 每臂 checker 输出 + 两行日志。
 6. 跨臂数字两列。
-7. 回传 tar 路径 + sha256 + 注册表 ls。
+7. 回传 tar 路径 + 注册表 ls。
 
 Fail / 拒绝一律原样贴回停下;不要自行改旋钮重交。

@@ -12,7 +12,7 @@ touches; the Slurm log is the Batch's report.
 | 02 | `02_frames.py` | `openqha.data.frames.generate` | `<molecule>/frames/<generator>.<mace level>.extxyz`, `frames/frames.{out,toml}` |
 | 03 | `03_labels.py` | `openqha.data.frame_labels.label_one` per frame, `assemble` per molecule | `<molecule>/frames/orca.<level>.<generator>_bBB_kK.{inp,out,hess,engrad}`, `frames/<generator>.<level>.extxyz`, `frames/labels.<level>.{out,toml}` |
 | 04 | `04_dataset.py` | `openqha.data.dataset.build` (+ `export_openreact`) | `<root>/<tag>/_datasets/<name>/{train,valid,test,pool}.<level>.extxyz` (REF_* keys), `mace_<name>.<level>.extxyz`, `index.dat` (classes), `dataset.{out,toml}` ([[Class]]), `molecules-<name>.h5` |
-| 05 | `05_train.py` | `openqha_hessian.run.run_training` → `mace.cli.run_train.run` (the fork) | `<root>/<tag>/_datasets/<name>/train/<run>/` — mace's own files (`<run>.model`, `checkpoints/`, `logs/`, `results/`) plus `config.yaml` and the Record `train.{out,toml,dat}` (settings, epoch table, the foundation and fine-tuned weight files, the config SHA, the mace fork's commit) |
+| 05 | `05_train.py` | `openqha_hessian.run.run_training` → `mace.cli.run_train.run` (the fork) | `<root>/<tag>/_datasets/<name>/train/<run>/` — mace's own files (`<run>.model`, `checkpoints/`, `logs/`, `results/`) plus `config.yaml` and the Record `train.toml` (the slim identity sheet — the foundation and fine-tuned weight files, the config file the Record names, the mace fork's commit — and one valid row per epoch; `train.out`/`train.dat` retired, and the config-SHA field retired, both 2026-10-02) |
 | 06 | `06_judge.py` | `openqha_hessian.judge.run` | `<root>/<tag>/_datasets/<name>/judge/<run>/judge.{out,toml,dat}` — per frame, per structure class and per distribution; the entropy tier read from the msRRHO Records; the forgetting line on a fixed SPICE draw; one PASS / FAIL line per threshold |
 
 `run.sh --tag T [--tag T2] [--name NAME] [--limit N] [--stratify] [--with-labels]` runs
@@ -309,7 +309,8 @@ is not an editable checkout of the fork, or one with uncommitted changes to trac
 files: a potential whose loss cannot be reproduced from a commit is not a product
 (`--no-strict-fork` overrides it for experiments, and the Record says so).
 `--register` prints the `ENGINES` entry for the fine-tuned model (the Dataset's
-`index.dat` plus the config SHA as its `source`); `--register-copy` also puts the file
+`index.dat` plus the config file the Record names as its `source` -- the config-SHA form
+retired with the checksum ruling, 2026-10-02); `--register-copy` also puts the file
 into `data/potentials/`.
 
 ## Step 04: the Dataset

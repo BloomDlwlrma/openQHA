@@ -26,13 +26,14 @@ their metadata (measured 2026-09-24: three of the draw's 6,458 died with `incorr
 metadata checksum after all read attempts`, rc=1 in 21 s each, while everything else read
 fine). `scp` overwrites the destination IN PLACE, so a reader that opens the file mid-copy
 sees the same errors: copy to a temporary name, then `mv` it into place, then check both
-sides. The tool reads every group back and exits 1 on damage; `--digest` writes a
+sides. The tool reads every group back and exits 1 on damage; ~~`--digest` writes a
 per-group fingerprint to diff the two sides, the only way to catch a corruption HDF5's
-checksums cannot see (they cover metadata, not dataset bytes):
+checksums cannot see (they cover metadata, not dataset bytes)~~ **2026-10-02 ruling
+(identity without checksums): the "both sides size+sha equal" comparison is retired — no
+substitute, the read-back below is the check; `--digest`/`--sha` leave the tool (slice
+16b).**:
 
 ```bash
-# on both sides: the size and sha256 must be equal (seconds)
-python scripts/tooling/s0_verify_curated_qm9.py --sha
 # on the cluster: every group, minutes; exit 0 only when nothing is damaged
 python scripts/tooling/s0_verify_curated_qm9.py
 # a molecule the campaign is failing on

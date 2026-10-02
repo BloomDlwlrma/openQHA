@@ -285,11 +285,11 @@ echo
 echo "done: $(date -Is)"
 
 # ---- 9. the training stack: mace fork + openqha-hessian, editable (05b/05d) ------------
-# The environment files carry the mace fork by git URL, NON-editable -- that is what each
-# solve already installs, and it is enough for eval. TRAINING needs the EDITABLE pair (the
-# fork and the package): `engine.provenance()` records the fork's commit from the `.git`
-# beside the imported package, and 05_train refuses a fork it cannot name (a non-editable
-# install answers `unknown`). Both checkouts travel beside this repository --
+# The environment files install no mace (the fork's git-URL pin retired, 2026-10-02). The
+# fork and the package come from the checkouts that travel beside this repository, and
+# the pair must be EDITABLE: `engine.provenance()` records the fork's commit from the
+# `.git` beside the imported package, and 05_train refuses a fork it cannot name (a
+# non-editable install answers `unknown`). Both checkouts travel beside this repository --
 # hpc/tools/xfer_tianhe_ai.sh push-repo carries `mace/` and `openQHA-Hessian/`; nothing is
 # fetched from GitHub here. The install is `openQHA-Hessian/install.sh`, one call per
 # managed environment, run through THAT environment's own python (`conda run`), so nothing

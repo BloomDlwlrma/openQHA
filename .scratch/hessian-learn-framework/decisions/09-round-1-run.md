@@ -52,3 +52,11 @@ carries the summary block. The runbook's 2026-10-02 revision note is the operati
 for the two-stage arms submission. Records already written (09f's mini arms, the timing
 run) stay readable as data -- readers use key access and the judge's `training_curves`
 works for both shapes. Dated here per the immutable-Records rule.
+
+**Checksum-field change (2026-10-02, later ruling — [identity without checksums](16-identity-without-checksums.md)).**
+The slim Record's identity sheet loses its one digest: `CONFIG_SHA256` retires — new
+Records carry no hash field of any kind, and the recipe's identity is the config file the
+Record names ([16a](../implementation/16a-the-record-without-the-checksum.md)). The
+operative field list is the record-slimming note above with `CONFIG_SHA256` out; the two
+schema-test pins on it retire in the package slice. Old Records keep their field; readers
+ignore it.

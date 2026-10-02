@@ -119,13 +119,15 @@ python scripts/tooling/s0_hl_progress.py --tag draw300
 ```bash
 D=$S0_RUNS_ROOT/draw300/_datasets/draw300_r1
 du -sh $D; ls -lh $D
-sha256sum $D/mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz $D/molecules-draw300_r1.h5 $D/index.dat $D/dataset.out $D/dataset.toml
 tar -czf ~/draw300_r1_fetch.tgz -C $D mace_draw300_r1.wb97m-d3bj_def2-tzvppd.extxyz molecules-draw300_r1.h5 index.dat dataset.out dataset.toml
 ```
 
+> 2026-10-02:本步原含 `sha256sum` 收据,按 checksum 退役裁定删除(decision 16;执行于
+> 2026-09-29,五枚值在 08 号票 Answer 保留为历史);tar 路径与 listing 即收据。
+
 `molecules-draw300_r1.h5` 是 OpenREACT 布局的导出（训练阶段用），一并带回；训练若直接在天河上跑可去掉。`index.dat` 是逐帧索引（split 的权威记录，下次重建要读它）——必带。train/valid/test/pool 是派生物，不带。（早期清单里的 `dataset.dat` 不存在——那是 select 步骤的 `select.dat` 混淆。）把 tar 弄回工作站，路径告诉我。
 
-**步骤 7 — 贴回**：步骤 1-6 的全部输出（签名行、select 汇总、04 三行、进度尾行、sha256 + tar 路径）。之后我写 08 号票 Answer + map 一行。将来跑 `RETRY_ONLY=1` 补了标签，重跑步骤 3+4 即刷新（同名 keep_previous；本地已验证两次跑逐字节幂等）。
+**步骤 7 — 贴回**：步骤 1-6 的全部输出（签名行、select 汇总、04 三行、进度尾行、tar 路径）。之后我写 08 号票 Answer + map 一行。将来跑 `RETRY_ONLY=1` 补了标签，重跑步骤 3+4 即刷新（同名 keep_previous；本地已验证两次跑逐字节幂等）。
 
 ## Amendment 2026-09-27: step 4 goes through a log
 

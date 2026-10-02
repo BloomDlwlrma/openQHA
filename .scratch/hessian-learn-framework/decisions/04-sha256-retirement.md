@@ -114,3 +114,16 @@ untouched (old Records are immutable); only assertions change.
 **Flagged, not decided here.** `level_name()` derives a revision-flavoured Level string
 from a self-trained registered name (`draw300-r4+…`); whether a fine-tuned revision is a
 new Level is decided with [13](13-publication.md) / the first registration.
+
+**Postscript (2026-10-02, user ruling — [identity without checksums](16-identity-without-checksums.md)).**
+The kept list above is overwritten: `CONFIG_SHA256` retires with the record-slimming field
+table (the recipe's identity becomes the config file the Record names, `CONFIG_FILE`; the
+two schema-test pins on `CONFIG_SHA256` retire with it — slice
+[16a](../implementation/16a-the-record-without-the-checksum.md)), and the non-weight hashes
+retire too (the QM9 list, the curated pack, the artifact index, the edge list, the
+mace-patch source — slice [16b](../implementation/16b-the-reference-data-without-the-checksums.md)).
+The one sha256 use that stays is PRNG seed material (`frames.frame_seed`,
+`dataset.valid_probes` / `frame_draw`). The Publication paragraph above reconciles the
+same way: the release note's content is index + the config file the Record names (the
+`CONFIG_SHA256` prefix is out; [13](13-publication.md) carries its dated line). Durable
+record: `docs/adr/0014`.

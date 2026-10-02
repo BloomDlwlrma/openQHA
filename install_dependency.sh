@@ -474,10 +474,10 @@ if [ "$MODE" = "tianhe" ]; then
     export CONDA_REMOTE_BACKOFF_FACTOR="${CONDA_REMOTE_BACKOFF_FACTOR:-1}"
 
     # ---- pip: the TUNA PyPI index, to match ------------------------------------------
-    # conda covers everything except mace (the fork, by git URL), pymsym and parsl,
-    # which have no conda-forge package and come from pip. Left alone they cross the
-    # proxy one wheel at a time; mace's dependency set makes that the slowest part of
-    # the install.
+    # conda covers everything except pymsym and parsl, which have no conda-forge package
+    # and come from pip (the mace FORK comes from the sibling `mace/` checkout through
+    # openQHA-Hessian/install.sh -- never from an index; 2026-10-02 ruling). Left alone
+    # the pip wheels cross the proxy one at a time.
     # Exported for this run only -- ~/.pip/pip.conf is not written, same principle as
     # ~/.condarc. Set OPENQHA_PIP_INDEX to override, or to "" to keep pypi.org.
     if [ -z "${PIP_INDEX_URL+x}" ]; then
@@ -703,9 +703,9 @@ fi
 conda activate "$PY_ENV"
 
 # -------------------------------------------------------------------------------------
-# 3. pip-only packages, MACE among them
+# 3. pip-only packages (pymsym, parsl; the mace fork comes from install.sh, not here)
 # -------------------------------------------------------------------------------------
-say "pip packages (mace from the fork URL in $REQ; pymsym, parsl)"
+say "pip packages (pymsym, parsl; mace via openQHA-Hessian/install.sh)"
 # `--no-user` on every pip call: without an activated environment pip falls back to
 # ~/.local, and a package there shadows the environment in every later job (PEP 370 puts
 # the user site first on sys.path). Measured 2026-09-12: a scipy in ~/.local, built
@@ -715,15 +715,21 @@ python -m pip install --no-user -r "$REQ"
 
 # Named explicitly rather than left to the requirements file, because these two are the
 # ones with no conda-forge package and the ones whose absence is least obvious. MACE is
-# deliberately NOT on this line: $REQ carries the fork by git URL now, and re-installing
-# the wheel here would overwrite it.
+# deliberately NOT installed here: it comes from the sibling `mace/` checkout through
+# openQHA-Hessian/install.sh (editable; the checkout is the install path, 2026-10-02
+# ruling) -- never from a package index or $REQ.
 python -m pip install --no-user "pymsym>=0.3.5"
 [ "$REQ" = "requirements-minimal.txt" ] || python -m pip install --no-user "parsl>=2024.01"
 
-python - <<'PY'
+if python -c "import mace" 2>/dev/null; then
+    python - <<'PY'
 import mace, torch
 print("mace-torch", mace.__version__, "| torch", torch.__version__)
 PY
+else
+    warn "mace is not installed yet -- run openQHA-Hessian/install.sh in this env"
+    warn "  (installs the fork from the sibling mace/ checkout -- the install path, 2026-10-02 ruling)"
+fi
 
 # -------------------------------------------------------------------------------------
 # 3b. Branch B's OpenMM route
@@ -933,7 +939,8 @@ cat <<'MSG'
   python check_dependency.py
 
 Then:
-  1. python scripts/production/s0_A_pipeline.py --species dsgdb9nsd_000018
-  2. read docs/branchA_workflow.md before running anything at scale
-  3. to TRAIN (Hessian Labels): run ../openQHA-Hessian/install.sh in the active environment
+  1. the mace fork + the training package (sibling checkouts, editable -- this script
+     installs no mace): run ../openQHA-Hessian/install.sh in the active environment
+  2. python scripts/production/s0_A_pipeline.py --species dsgdb9nsd_000018
+  3. read docs/branchA_workflow.md before running anything at scale
 MSG

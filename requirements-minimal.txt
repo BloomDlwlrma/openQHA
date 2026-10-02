@@ -16,7 +16,8 @@ ase>=3.22
 rdkit>=2023.03
 qc-procrustes>=1.0
 torch>=2.0
-# The mace FORK (branch `openqha-hessian`), by git URL -- see requirements.txt.
-git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
+# The mace FORK is not installed from this file -- it comes from the sibling `mace/`
+# checkout, installed by openQHA-Hessian/install.sh (see requirements.txt; 2026-10-02
+# ruling).
 pymsym>=0.3.5
 PyYAML>=6.0

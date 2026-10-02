@@ -57,10 +57,10 @@ qc-procrustes>=1.0        # chirality test of g' (rotational vs orthogonal Procr
 # float64 is required, not preferred: geometry optimisation converges to fmax = 1e-4
 # eV/A and a float32 force call cannot resolve that.
 torch>=2.0
-# The mace FORK (branch `openqha-hessian`, version 0.3.16+openqha), by git URL.
-# Non-editable by design: `import mace` is the fork for eval; machines that TRAIN run
-# openQHA-Hessian/install.sh (editable) regardless. get_hessian returns (3N, N, 3).
-git+https://github.com/BloomDlwlrma/mace.git@openqha-hessian
+# The mace FORK is not installed from this file. It arrives as the sibling `mace/`
+# checkout, and openQHA-Hessian/install.sh installs it (editable) beside the package --
+# the checkout is the install path (2026-10-02 ruling: the fork-by-URL pin retired).
+# get_hessian returns (3N, N, 3).
 
 # ---- symmetry -------------------------------------------------------------------------
 # Point-group LABEL and an independent cross-check on ideal geometries only. sigma

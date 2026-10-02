@@ -32,11 +32,12 @@ frame. `--pt-valid-file` names the draw tool's companion validation file; withou
 mace takes `--valid-fraction` (10 %) of the Replay for the pretraining head's validation.
 
 One run writes `<root>/<tag>/_datasets/<name>/train/<run>/`: mace's own files plus the
-Record `train.toml` (the identities -- Dataset, files, config SHA, the mace fork's commit,
-this package's version and commit -- and one valid row per epoch with the three validation
-curves; `train.out`/`train.dat` were retired on 2026-10-02 and the run's stdout carries the
-summary block). `--register` prints the `ENGINES` entry for the fine-tuned potential and,
-with `--register-copy`, puts the model into `data/potentials/`.
+Record `train.toml` (the identities -- Dataset, files, the config file the Record names
+(the config-SHA field retired with the checksum ruling, 2026-10-02), the mace fork's
+commit, this package's version and commit -- and one valid row per epoch with the three
+validation curves; `train.out`/`train.dat` were retired on 2026-10-02 and the run's stdout
+carries the summary block). `--register` prints the `ENGINES` entry for the fine-tuned
+potential and, with `--register-copy`, puts the model into `data/potentials/`.
 
 The driver REFUSES a mace that is not the fork, or a dirty checkout: a potential whose
 loss cannot be reproduced from a commit is not a product. `--no-strict-fork` is for

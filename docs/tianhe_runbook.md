@@ -387,8 +387,9 @@ bash install_dependency.sh
 rsync -a data/potentials/ <tianhe>:$HOME/openQHA/data/potentials/
 ```
 
-Then on Tianhe — the hash is recomputed on every load, so a truncated transfer fails here
-rather than three hours into a campaign:
+Then on Tianhe — a truncated transfer fails here rather than three hours into a campaign
+(~~the hash is recomputed on every load~~ **retired 2026-10-02: loads do not hash; a
+truncated file fails at first use, which is what this read-back is for**):
 
 ```bash
 source env_openqha.sh
