@@ -71,7 +71,11 @@ this commit).
 - **Spec.** No missing requirements, no scope creep; one wording finding fixed -- the
   note's "environment files carry the fork non-editable" sentence became provider-agnostic
   ("A non-editable fork is enough for eval"), true before and after 16c's env-file
-  retirement. Left for the env-file retirement to reconcile (recorded, not rewritten): the
-  page's remaining env-mechanics prose -- section 1.2's "arrives from GitHub", the
-  `install_dependency.sh` reinstall sentence, section 3.3's "carry the fork's git URL".
+  retirement. The retirement landed mid-session (`244e0ff`) without touching this page, so
+  the three sentences that then went factually stale -- section 1.2's "arrives from
+  GitHub", the `install_dependency.sh` reinstall sentence, section 3.3's "carry the fork's
+  git URL" -- are reconciled in the follow-up commit (the environment files install no
+  mace; nothing reinstalls the fork). Noted, not done (16d's Notes exclude the on-site
+  installer): `install_env_tianhe.slurm`'s no-checkouts skip message still carries "the
+  environment files install the fork NON-editable by git URL".
 

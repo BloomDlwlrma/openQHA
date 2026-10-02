@@ -89,8 +89,7 @@ through `custom_channels` to `<TUNA>/anaconda/cloud/conda-forge` — the only ch
 solve here touches. **This is correct. Do not change it.**
 
 Measured 2026-09-08: that path returns HTTP 200 and its `linux-64/repodata.json` (443 MB)
-was last modified the same day. `pypi.tuna.tsinghua.edu.cn` serves the pip packages too
-(the mace fork itself arrives from GitHub, not from TUNA).
+was last modified the same day. `pypi.tuna.tsinghua.edu.cn` serves the pip packages too.
 
 If you build by hand, `--override-channels -c conda-forge` is the command-line equivalent
 of `nodefaults`. Without it your `channels: [defaults]` is merged in as well.
@@ -291,8 +290,9 @@ Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`
 > `hpc/tools/xfer_tianhe_ai.sh push-repo` carries `mace/` and `openQHA-Hessian/` beside
 > `openQHA/`, `.git` included -- and `install_env_tianhe.slurm` section 9 runs
 > `openQHA-Hessian/install.sh` (local-path mode) inside every environment it manages.
-> Run it last -- or again after any re-run of `install_dependency.sh` (Route B: after the
-> pip step): those reinstall the fork non-editable, and the editable pair is what training
+> Run it last -- the environments install no mace of their own (2026-10-02 ruling): the
+> fork and the package arrive only through `install.sh`, from the sibling checkouts, and
+> the editable pair is what training
 > needs. `openqha.potentials.engine.provenance()` records the fork's commit as `mace_fork_commit`;
 > a non-editable install (or a wheel) answers `unknown` and `05_train` refuses it.
 > `scripts/tooling/s0_check_weights.py` prints the two lines.
@@ -403,8 +403,9 @@ packages above are the only ones with no conda-forge package. In `openqha` the f
 requirements file is fine and is what adds the notebook stack, `mdtraj` and `MDAnalysis` —
 which is why `conda list` there shows them as `pypi_0`.
 
-> The `mace-torch` pins are gone: the environment and requirements files carry
-> the fork's git URL instead, so nothing here installs the PyPI wheel. For bit-identical
+> The `mace-torch` pins are gone: the environment and requirements files install no
+> mace at all (2026-10-02 ruling) -- the fork arrives through `install.sh` from the
+> sibling checkout -- so nothing here installs the PyPI wheel. For bit-identical
 > reproduction, pin `torch==` and stay on one mace fork commit -- every product record
 > carries `engine/torch_version` and `engine/mace_fork_commit`.
 
