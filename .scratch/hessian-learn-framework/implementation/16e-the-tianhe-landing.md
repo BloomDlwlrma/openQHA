@@ -71,3 +71,11 @@ every old / renamed-aside directory stays for a later cleanup.
   commit).
 - The old AI-side directories (already renamed aside) stay; their deletion is a later
   cleanup (storage there is unstable). `$S2/_incoming/` stays as well.
+- **Pre-deployment smoke (2026-10-02):** the 2-epoch multihead dbg acceptance ran on
+  both device paths with the tips this landing will carry (package `306313b`, openQHA
+  `6b16292`): `cpu16g` rc 0 in the `openqha` env (420 s), `gpu16g` rc 0 in
+  `openqha-cuda` on the local T400 (546 s); both Records name `HL_PACKAGE_COMMIT =
+  306313b` and fork `1110ffb`, the balance reads `8.170329761632427` / `8.170329761632566`,
+  and the epoch tables agree to ~1e-13 (loss and valid-hessian to ~1e-15). (Closes
+  [14c](14c-the-close-out.md)'s "any GPU-side run" gap; evidence paths in its
+  postscript.)

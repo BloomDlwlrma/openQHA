@@ -40,3 +40,19 @@ exists to kill -- fixed in `d4640d6` and pinned by fz1.
   (their launch lines' explicit values coincide with the mirror).
 - Not verified here: the pushes themselves, and any GPU-side run (the gate is the
   dry-run plus the suites; the trained values are unchanged by construction).
+
+**Postscript (2026-10-02, the CPU+GPU dbg pair).** The GPU-side gap above closes. On
+the tips the Tianhe landing will carry (package `306313b`, openQHA `6b16292`), the
+2-epoch multihead dbg acceptance ran on both device paths -- `cpu16g` in the `openqha`
+env (rc 0, 420 s; epochs 2 in 312.3 s) and `gpu16g` in the `openqha-cuda` env on the
+local T400 4GB (rc 0, 546 s; epochs 2 in 352.2 s; torch 2.12.1+cu129, CUDA true).
+Both Records: `DEVICE=cpu` / `cuda`, fork `1110ffb`, package `306313b`; the balance
+(gaussian k=4) reads `w_H = 8.170329761632427` on CPU -- the stored 15b reference --
+and `8.170329761632566` on CUDA (~1e-13 apart); the two epoch tables agree (loss and
+valid-hessian to ~1e-15, force columns to ~1e-13) and reproduce the 2026-10-01
+`cpu14` / `gpu14c` values (cpu bit-identical, gpu no worse than 1.4e-13) -- no training-math drift
+from tickets 15/16. (The Records are the slim 53-key shape of the 2026-10-02 record ruling
+-- the control block is out by design; the full recipe is `config.yaml`.) Evidence:
+`%TEMP%\oqt16g-run.log`, `/tmp/oqt16g_{cpu16g,gpu16g}.out`, and the run dirs
+`~/runs/openQHA/draw300/_datasets/draw300_r1dbg/train/{cpu16g,gpu16g}` (the
+workstation WSL side).

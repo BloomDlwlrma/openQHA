@@ -183,6 +183,9 @@ round-1 launch lines keep working unchanged, and their trained values do not cha
   4. Commits on both repos with recorded hashes.
   5. Deployment rides the next Tianhe sync; the round-1 arms are unaffected either way
      (their launch lines already carry the same effective values).
+  6. Done (2026-10-02): the acceptance re-run on both device paths -- CPU and CUDA
+     green with the post-ruling tips; evidence in
+     [14c](implementation/14c-the-close-out.md)'s postscript.
 - **Prior art.** The 15b control/Record unit additions; the fixture integration's
   Record assertions; the 09f dry-run procedure.
 
