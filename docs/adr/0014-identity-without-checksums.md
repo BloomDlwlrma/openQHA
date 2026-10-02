@@ -77,3 +77,20 @@ opt-in.
   non-editable ride are retired; the one-script install and the
   editable-where-provenance-needs-it rule stand. Narrows ticket 04's "kept" list and
   ADR 0013's bare-branch-name installation note.
+
+**Postscript (2026-10-02, the 16e landing's rulings).** The Tianhe side is
+receive-and-run: code arrives as an overlay of the new-commit ZIPs, carried by hand
+from GitHub downloads, and Tianhe gets no operator git action -- no receipts, no
+writes, no tree surgery; the checkout-remotes item retires with the rest of the site's
+git surface. The site `.git` therefore stays frozen at its pre-landing state: a mass of
+"modified" in `git status` is expected, and the identity fields of Records written
+there (the package's `HL_PACKAGE_COMMIT`) name the frozen commit while the running code
+is the overlaid one. That lag is a known, accepted consequence; a landing's deployment
+identity is the pushed heads recorded workstation-side (the 16e slice,
+`.scratch/hessian-learn-framework/implementation/16e-the-tianhe-landing.md`), not the
+site `.git`. The Decision's receipt sentence ("deployment receipts name each tree's
+`git log -1` and a clean `git status --porcelain`") and the consequence bullet above
+both read accordingly for the site side: the receipt is content probes plus that
+workstation-side record. It further narrows ADR 0012's Tianhe-carry clause: the
+checkouts' `.git` no longer travels for updates -- new code arrives as plain overlays.
+Mechanics live in 16e.
