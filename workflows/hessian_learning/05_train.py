@@ -19,7 +19,8 @@ THE TARGET is the Cartesian matrix itself and nothing else (there is no switch);
 validation uses four standard-normal probes fixed per frame, drawn by the Dataset and read
 from the file, and every control flag
 (`--lr`, `--scheduler-patience`, `--patience`, `--eval-interval`, `--ema`, Stage Two with
-`--start-swa`, `--swa-lr` and the Stage Two weights) is explicit and in the Record.
+`--start-swa`, `--swa-lr` and the Stage Two weights) is explicit in mace's argv and the
+config file (the slim Record keeps the identities and the curves, 2026-10-02 ruling).
 
 THE REPLAY: `--multiheads --pt-train-file FILE` concatenates the file
 `scripts/tooling/s0_spice_pt_draw.py` writes -- the only source of a Replay file -- as
@@ -31,11 +32,11 @@ frame. `--pt-valid-file` names the draw tool's companion validation file; withou
 mace takes `--valid-fraction` (10 %) of the Replay for the pretraining head's validation.
 
 One run writes `<root>/<tag>/_datasets/<name>/train/<run>/`: mace's own files plus the
-Record `train.{out,toml,dat}` (the settings, the epoch table with the three validation
-curves, the Dataset, the base potential's resolved file and the fine-tuned one's, the
-config SHA, the mace fork's commit, this package's version and commit). `--register`
-prints the `ENGINES` entry for the fine-tuned potential and, with `--register-copy`,
-puts the model into `data/potentials/`.
+Record `train.toml` (the identities -- Dataset, files, config SHA, the mace fork's commit,
+this package's version and commit -- and one valid row per epoch with the three validation
+curves; `train.out`/`train.dat` were retired on 2026-10-02 and the run's stdout carries the
+summary block). `--register` prints the `ENGINES` entry for the fine-tuned potential and,
+with `--register-copy`, puts the model into `data/potentials/`.
 
 The driver REFUSES a mace that is not the fork, or a dirty checkout: a potential whose
 loss cannot be reproduced from a commit is not a product. `--no-strict-fork` is for
@@ -185,7 +186,7 @@ def main():
     if out["epochs"]:
         print("  {:>5s} {:6s} {:>12s} {:>10s} {:>10s} {:>12s} {:>12s} {:>12s}".format(
             "epoch", "split", "loss", "E meV/at", "F meV/A", "valid E", "valid F", "valid H"))
-        for r in out["epochs"][-8:]:
+        for r in [r for r in out["epochs"] if r["split"] == "valid"]:
             print("  {:5d} {:6s} {:>12} {:>10} {:>10} {:>12} {:>12} {:>12}".format(
                 r["epoch"], r["split"],
                 "-" if r["loss"] is None else "{:.6f}".format(r["loss"]),

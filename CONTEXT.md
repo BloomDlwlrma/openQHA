@@ -21,6 +21,9 @@ _Avoid_: raw output, native output, product (that word is reserved for the answe
 What this repository writes about one Calculation: a Report, a Property file and, when the
 Calculation produces rows, a Table, in the molecule directory. Nothing is written about a
 Batch.
+(2026-10-02 ruling: the hl_train fine-tune's Record is the Property file alone -- one
+`train.toml`; its Report and Table are retired for this step, and the run's stdout keeps
+the summary block.)
 _Avoid_: metadata, artefact, sidecar, summary
 
 **Report**:

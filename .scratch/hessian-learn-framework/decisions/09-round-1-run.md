@@ -44,3 +44,11 @@ mirror are ticketed as [14](../decisions/14-driver-truth-follow-ups.md). The Tia
 job -> cap -> the two production arms -> evidence fetch-back) are the runbook
 [09g](../implementation/09g-the-timing-and-production-runbook.md), delivered and awaiting
 execution; Status stays open until the two production Records land.
+
+**Record-field change (2026-10-02, user ruling).** The fine-tune's Record is the
+Property file alone -- one `train.toml` with the identity/validation fields and one valid
+row per epoch; `train.out`/`train.dat` are retired for this step and the run's stdout
+carries the summary block. The runbook's 2026-10-02 revision note is the operative text
+for the two-stage arms submission. Records already written (09f's mini arms, the timing
+run) stay readable as data -- readers use key access and the judge's `training_curves`
+works for both shapes. Dated here per the immutable-Records rule.
