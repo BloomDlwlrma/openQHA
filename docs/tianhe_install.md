@@ -285,9 +285,8 @@ Pulled in as dependencies, for the record: `libtorch 2.5.1=cuda120_h6f417b9_303`
 
 > **The mace fork.** The fork is `BloomDlwlrma/mace` (branch
 > `openqha-hessian`, base tag `base-v0.3.16` = upstream v0.3.16 minus three bundled model
-> binaries), and the training side is the `openQHA-Hessian` package. The environment files
-> carry the fork **non-editable** -- enough for eval, and what a machine
-> that never trains should be. TRAINING needs the **editable** pair: the fork and the
+> binaries), and the training side is the `openQHA-Hessian` package. A non-editable fork
+> is enough for eval; TRAINING needs the **editable** pair: the fork and the
 > package, from the two checkouts. Both travel with the repository --
 > `hpc/tools/xfer_tianhe_ai.sh push-repo` carries `mace/` and `openQHA-Hessian/` beside
 > `openQHA/`, `.git` included -- and `install_env_tianhe.slurm` section 9 runs
