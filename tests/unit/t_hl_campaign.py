@@ -159,7 +159,13 @@ def main():
           and "never by an ordinary round" not in text,
           [s for s in ("**any round**", "rides every round by default", "re-attempted ONCE in this round", "retries    R in this task") if s not in text])
     doc_readme = (ROOT / "workflows" / "hessian_learning" / "README.md").read_text(encoding="utf-8")
-    context_doc = (ROOT / "CONTEXT.md").read_text(encoding="utf-8")
+    # CONTEXT.md is not part of the public face (.gitignore): a clone carries no copy, so its
+    # clause is read where the glossary is present and skipped where it is not.
+    context_doc = (ROOT / "CONTEXT.md").read_text(encoding="utf-8") if (ROOT / "CONTEXT.md").is_file() else ""
+    context_ok = not context_doc or (
+        "until a human asks" not in context_doc and "RETRY_FAILED" not in context_doc
+        and "the next round re-attempts it once by default" in context_doc
+        and "durable finality marker" in context_doc)
     check("the workflow README and CONTEXT.md carry the new retry contract -- every round carries the unarchived "
           "failures by default and RETRY_ONLY=1 is the failures-only round; the next round re-attempts a failed frame once "
           "with the archive as the durable marker; no RETRY_FAILED, no 'no ordinary round reruns', no 'until a human asks (--retry)'",
@@ -169,9 +175,7 @@ def main():
           and "failed frame without an archive is carried once" in doc_readme
           and "# the round's summary only" in doc_readme
           and "RETRY_ONLY=1" in doc_readme
-          and "until a human asks" not in context_doc and "RETRY_FAILED" not in context_doc
-          and "the next round re-attempts it once by default" in context_doc
-          and "durable finality marker" in context_doc,
+          and context_ok,
           ("no ordinary round reruns" in doc_readme, "RETRY_ONLY=1" in doc_readme,
            "until a human asks" in context_doc, "durable finality marker" in context_doc))
     sequence = ("TIMEOUT_S=14400 TAG=draw300 sbatch --array=0-11 --time=1-00:00:00 hpc/slurm/hl_branchA.slurm",

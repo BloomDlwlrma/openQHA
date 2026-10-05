@@ -71,3 +71,11 @@ examples/02d-2_qha_settings_array/generated/
 # ---- Slurm job logs (hpc/slurm/*.slurm write --output/--error here) ------------------
 logs/slurm/*
 !logs/slurm/.gitkeep
+
+# ---- the public face: not version control's business (boundary ruling 2026-09-30) -----
+# Public = this repository minus these four. They are the project's working memory: they
+# stay on disk here and on the clusters, and never enter a clone.
+/.scratch/
+/docs/adr/
+/CONTEXT.md
+/AGENTS.md
