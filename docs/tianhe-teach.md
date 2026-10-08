@@ -99,7 +99,7 @@ The wrapper names the ones above; these reach the job through `EXTRA`.
 | `--eval-interval` | `1` | |
 | `--no-ema` / `--ema-decay` | EMA on / mace's | multihead mode trains at the fork's decay unless `--force-mh-ft-lr` |
 | `--no-swa`, `--start-swa`, `--swa-lr`, `--swa-energy-weight`, `--swa-forces-weight`, `--swa-hessian-weight` | Stage Two on, 3/4 of the epochs, `lr/40` | the production arms are single-stage (`--no-swa`) |
-| `--no-exact-anchors` | anchors on | the two full-matrix readings of the Hessian term on the validation file, ≈⅓ epoch each; the production arms keep them |
+| `--exact-anchors` | off | opt in to the two full-matrix readings of the Hessian term on the validation file, ≈⅓ epoch each; off by default since 2026-10-09 (the pre-mace reading can eat a whole window) |
 | `--mace-arg ARG` | — | repeatable, passed to mace verbatim — the two-token form (`--mace-arg=--key --mace-arg=value`) is the house form |
 | `--register` / `--register-copy` | off | print the `ENGINES` entry / copy the model into `data/potentials/`. **Must ride the run** — registering afterwards retrains |
 | `--no-strict-fork` | strict | do not use in production |
