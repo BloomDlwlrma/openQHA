@@ -3,10 +3,6 @@
 # ---- the decision log --------------------------------------------------------------
 # the project's working memory is kept out of version control.
 .mem/
-# docs/*.md
-!docs/cite/
-docs/tutorials/archive/
-!docs/tutorials/
 
 # ---- data: large, redistributable by its owners, not by us --------------------------
 data/qm9/
@@ -73,9 +69,13 @@ logs/slurm/*
 !logs/slurm/.gitkeep
 
 # ---- the public face: not version control's business (boundary ruling 2026-09-30) -----
-# Public = this repository minus these four. They are the project's working memory: they
+# Public = this repository minus these paths. They are the project's working memory: they
 # stay on disk here and on the clusters, and never enter a clone.
 /.scratch/
 /docs/adr/
 /CONTEXT.md
 /AGENTS.md
+# 2026-10-09: the internal docs close as well -- everything under /docs/ except the
+# citation block leaves version control; the runbooks, sheets and tutorials stay on disk.
+/docs/*
+!/docs/cite/

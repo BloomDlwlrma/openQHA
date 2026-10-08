@@ -127,7 +127,10 @@ def main():
               (sel["molecules"], sel["source"], tags_only["molecules"], tags_only["source"]))
 
     # --- the page and the scripts' headers -----------------------------------------------
-    page = sbatch_lines(PAGE.read_text(encoding="utf-8"))
+    # the campaign page is not part of the public face (.gitignore, 2026-10-09): a clone
+    # carries no copy, so the page clauses are read where it is present and skipped where not
+    page_text = PAGE.read_text(encoding="utf-8") if PAGE.is_file() else ""
+    page = sbatch_lines(page_text)
     heads = set()
     for s in SCRIPTS:
         heads |= sbatch_lines((ROOT / "hpc" / "slurm" / s).read_text(encoding="utf-8"), header=True)
@@ -137,15 +140,15 @@ def main():
     foreign = sorted(l for l in page if not any(h in l or l in h for h in heads) and "--time=03:00:00" not in l
                      and "3-00:00:00" not in l)
     check("the campaign page carries every campaign sbatch command of the stage scripts' headers (gate + array), and states no sbatch the headers do not know (the 3-day rounds and the 3 h gate rerun excepted)",
-          not missing and not foreign and len(page) >= 6, (missing, foreign, len(page)))
-    text = PAGE.read_text(encoding="utf-8")
+          not page_text or (not missing and not foreign and len(page) >= 6), (missing, foreign, len(page)))
+    text = page_text
     check("the page names the progress script, the exit-code signal, the resubmit-as-is rule, TIMEOUT_S = 28800, "
           "the failed state, --retry, the one-shot retry's sequencing and the retry wording -- the retry "
           "rides every round by default, the sweep is RETRY_ONLY=1, the sequencing ends at **any round** (a round burns "
           "the shots it touches) and the log-line table describes the rule / retry-only / per-task retry slice -- "
           "with the production command lines and the basin-frames-only scope (GENERATORS=basin on both "
           "commands); the old flag, its round and the old not-rerun claim are gone",
-          all(s in text for s in ("s0_hl_progress.py --tag draw300", "assemble exits 0", "resubmitted **as it is**",
+          not page_text or (all(s in text for s in ("s0_hl_progress.py --tag draw300", "assemble exits 0", "resubmitted **as it is**",
                                   "3-00:00:00", "TIMEOUT_S=28800", "**failed**", "--retry", "touched within 30 min",
                                   "GENERATORS=basin", "basin frames only",
                                   "GENERATORS=basin TAG=draw300 sbatch --array=0-11 --time=3-00:00:00 hpc/slurm/hl_labels.slurm",
@@ -156,7 +159,7 @@ def main():
                                   "re-attempted ONCE in this round", "retries    R in this task",
                                   "plus the failed frames without an archive (their one retry)"))
           and "RETRY_FAILED" not in text and "--retry-failed" not in text and "(retry)" not in text
-          and "never by an ordinary round" not in text,
+          and "never by an ordinary round" not in text),
           [s for s in ("**any round**", "rides every round by default", "re-attempted ONCE in this round", "retries    R in this task") if s not in text])
     doc_readme = (ROOT / "workflows" / "hessian_learning" / "README.md").read_text(encoding="utf-8")
     # CONTEXT.md is not part of the public face (.gitignore): a clone carries no copy, so its
@@ -188,9 +191,9 @@ def main():
     check("the page carries the six-command production sequence (A array, 02 on two nodes, 01, tmux, the parsl driver "
           "with 12 blocks of 3 days, 04), the quota (32 submissions, every array task counted), the tmux gate and its "
           "three outcomes, the sbatch rounds as the fallback",
-          all(s in text for s in sequence) and "| tenant `hku2021_fos4`" in text and "every array task as a submission" in text
+          not page_text or (all(s in text for s in sequence) and "| tenant `hku2021_fos4`" in text and "every array task as a submission" in text
           and "--resource tianhe_cpu --debug --limit-frames 1" in text and "address_by_interface" in text
-          and "AssocMaxSubmitJobLimit" in text and "fallback" in text and "command -v tmux" in text,
+          and "AssocMaxSubmitJobLimit" in text and "fallback" in text and "command -v tmux" in text),
           [s for s in sequence if s not in text])
 
     print("PASS" if not FAIL else "FAIL: " + "; ".join(FAIL))
