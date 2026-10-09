@@ -251,10 +251,27 @@ def main():
         cv6 = [int(a.info["spice_index"]) for a in read(str(td / "cv6.extxyz"), index=":", format="extxyz")]
         check("the fill tier: --n 6 is the coverage frames then the next two of the permutation",
               rc == 0 and cv6 == cov4 + rest[:2] and set(cv4) <= set(cv6), (cv6, perm))
+        rc, _s, se = run("--n", 5, "--seed", 0, "--source", SRC, "--forgetting-ids", absent_ids,
+                         "--out", td / "cv5.extxyz", "--membership-file", benign, "--n-valid", 2,
+                         "--coverage", "min1")
+        sel5 = cov4 + rest[:1]
+        vex = []
+        for i in perm[::-1]:
+            if len(vex) >= 2 or i in set(sel5):
+                break
+            vex.append(i)
+        cv5 = [int(a.info["spice_index"]) for a in read(str(td / "cv5.extxyz"), index=":", format="extxyz")]
+        v5 = ([int(a.info["spice_index"]) for a in read(str(td / "cv5.valid.extxyz"), index=":", format="extxyz")]
+              if (td / "cv5.valid.extxyz").is_file() else [])
+        rec = prop.load(td / "cv5.toml")["Replay"]
+        check("min1 with a valid companion: the valid frames come from the permutation's end, disjoint from a scattered draw",
+              rc == 0 and cv5 == sel5 and v5 == vex and rec["N_VALID"] == len(vex)
+              and not set(v5) & set(sel5), (cv5, vex, rec))
         rc, _s, se = run("--n", 3, "--seed", 0, "--source", SRC, "--forgetting-ids", absent_ids,
                          "--out", td / "cv3.extxyz", "--membership-file", benign, "--coverage", "min1")
         check("min1 with --n below the molecule count exits 2, naming both numbers",
-              rc == 2 and not (td / "cv3.extxyz").is_file() and "min1" in se and "4" in se and "3" in se, (rc, se[-300:]))
+              rc == 2 and not (td / "cv3.extxyz").is_file() and "min1" in se
+              and "the 4 molecules" in se and "got --n 3" in se, (rc, se[-300:]))
         rec = prop.load(td / "pt3.toml")["Replay"]
         check("without --coverage the Rule reads by-frame and the eligible molecules are on the Record",
               rec["COVERAGE"] == "by-frame" and rec["N_ELIGIBLE_MOLECULES"] == 4, rec)
@@ -266,7 +283,7 @@ def main():
         check("an absent forgetting ids file exits 2 naming the test-draw tool",
               rc == 2 and "s0_spice_test_draw" in se and not (td / "x.extxyz").is_file(), se[-300:])
 
-    print("\n{} checks, {} failed".format(35, len(FAIL)))
+    print("\n{} checks, {} failed".format(36, len(FAIL)))
     return 1 if FAIL else 0
 
 

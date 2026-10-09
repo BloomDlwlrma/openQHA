@@ -287,14 +287,6 @@ def draw(frames, n, seed, forgetting_keys, in_distribution_keys, cache, n_valid=
                 first[k] = i
         coverage_frames = set(first.values())
         selected = [int(i) for i in perm if int(i) in coverage_frames]
-        taken = set(selected)
-        for i in perm:
-            if len(selected) >= n:
-                break
-            i = int(i)
-            if classes[i] == "eligible" and i not in taken:
-                selected.append(i)
-                taken.add(i)
     else:
         for i in perm:
             if len(selected) >= n:
@@ -302,6 +294,14 @@ def draw(frames, n, seed, forgetting_keys, in_distribution_keys, cache, n_valid=
             if classes[int(i)] == "eligible":
                 selected.append(int(i))
     selected_set = set(selected)
+    if coverage == COVERAGE_MIN1:
+        for i in perm:
+            if len(selected) >= n:
+                break
+            i = int(i)
+            if classes[i] == "eligible" and i not in selected_set:
+                selected.append(i)
+                selected_set.add(i)
     valid = []
     for i in perm[::-1]:
         if len(valid) >= n_valid or int(i) in selected_set:
