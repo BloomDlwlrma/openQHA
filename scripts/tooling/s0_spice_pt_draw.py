@@ -30,6 +30,14 @@ and its validation companion are taken from the frames that remain. The frame's 
 are the judge (not its SMILES), and the declared set is recorded (`ELEMENTS` /
 `N_SKIPPED_ELEMENTS`).
 
+THE OPTIONAL COVERAGE RULE. With `--coverage min1`, every eligible molecule contributes at
+least one frame: the coverage tier takes each molecule's first frame the permutation meets
+(in permutation order), and the fill tier completes the draw to `--n` in permutation order;
+a smaller `--n` stays the prefix. `--n` must be at least the number of eligible molecules
+(else the tool refuses and writes nothing). The rule is recorded (`COVERAGE`) with the
+eligible-molecule count beside it (`N_ELIGIBLE_MOLECULES`); the default `by-frame` keeps the
+plain first-`N` behaviour.
+
 WHAT IT EXCLUDES, AND THE TWO ASSERTIONS. The Replay must share no molecule
 with the forgetting draw (`s0_spice_test_draw.py`'s `<file>.ids.dat`, `--forgetting-ids`)
 and none of the in_distribution molecules (`judge.IN_DISTRIBUTION`, the four shipped
@@ -75,6 +83,8 @@ DEFAULT_FORGETTING_IDS = ROOT / "data" / "training_sets" / "spice_test_5000.extx
 #: the molecule identity level of the exclusions: connectivity (InChIKey's first block), the widest
 KEY_LEVEL = "connectivity"
 DEFAULT_N_VALID = 200
+COVERAGE_BY_FRAME = "by-frame"
+COVERAGE_MIN1 = "min1"
 
 ID_ROW = {
     "index": ("Integer", None, "the frame's position in the source file, 0-based"),
@@ -98,6 +108,7 @@ SCHEMA = {
         "FRAMES_PER_MOLECULE_MAX": ("Integer", None, "the most frames one molecule contributes"),
         "N_VALID": ("Integer", None, "frames in the companion validation file (from the end of the permutation)"),
         "KEY_LEVEL": ("String", None, "the identity level of the exclusions"),
+        "COVERAGE": ("String", None, "the draw's coverage rule: by-frame (the permutation's first N) or min1 (every eligible molecule once, then fill)"),
         "ELEMENTS": ("String", None, "the declared element set the frames were filtered against ('-' when unfiltered)"),
         "FORGETTING_IDS": ("String", None, "the forgetting draw's ids file the molecules were excluded against"),
         "N_FORGETTING_MOLECULES": ("Integer", None, "molecules of the forgetting draw"),
@@ -107,6 +118,7 @@ SCHEMA = {
         "N_SKIPPED_ELEMENTS": ("Integer", None, "frames skipped because an atom is outside the --elements set"),
         "N_SKIPPED_UNPARSED": ("Integer", None, "frames skipped because RDKit could not read their SMILES (no identity, no promise)"),
         "N_ELIGIBLE": ("Integer", None, "frames of the source that could have been drawn"),
+        "N_ELIGIBLE_MOLECULES": ("Integer", None, "distinct molecules among the eligible frames"),
         "FILE": ("String", None, "the Replay file"),
         "IDS_FILE": ("String", None, "the ids file"),
         "VALID_FILE": ("String", None, "the companion validation file"),
@@ -250,19 +262,45 @@ def classify(frames, forgetting_keys, in_distribution_keys, cache):
     return classes, counts
 
 
-def draw(frames, n, seed, forgetting_keys, in_distribution_keys, cache, n_valid=DEFAULT_N_VALID):
-    """The first `n` eligible frames of the seeded permutation and `n_valid` eligible
-    frames from its end (never one of the drawn). Returns (selected indices in
-    permutation order, valid indices, the counts of `classify`)."""
+def draw(frames, n, seed, forgetting_keys, in_distribution_keys, cache, n_valid=DEFAULT_N_VALID,
+         coverage=COVERAGE_BY_FRAME):
+    """The draw, as `coverage` says. `by-frame`: the first `n` eligible frames of the seeded
+    permutation. `min1`: the coverage tier -- every eligible molecule's first frame the
+    permutation meets, in permutation order -- then the fill tier to `n`, also in
+    permutation order. In both rules `n_valid` eligible frames come from the end of the
+    permutation (never one of the drawn). Returns (selected indices, valid indices, the
+    counts -- `classify`'s plus the eligible molecules')."""
     import numpy as np
     classes, counts = classify(frames, forgetting_keys, in_distribution_keys, cache)
+    counts["molecules_eligible"] = len({molecule_key(frames[i][3], cache)
+                                        for i, c in enumerate(classes) if c == "eligible"})
     perm = np.random.default_rng(int(seed)).permutation(len(frames))
     selected = []
-    for i in perm:
-        if len(selected) >= n:
-            break
-        if classes[int(i)] == "eligible":
-            selected.append(int(i))
+    if coverage == COVERAGE_MIN1:
+        first = {}
+        for i in perm:
+            i = int(i)
+            if classes[i] != "eligible":
+                continue
+            k = molecule_key(frames[i][3], cache)
+            if k not in first:
+                first[k] = i
+        coverage_frames = set(first.values())
+        selected = [int(i) for i in perm if int(i) in coverage_frames]
+        taken = set(selected)
+        for i in perm:
+            if len(selected) >= n:
+                break
+            i = int(i)
+            if classes[i] == "eligible" and i not in taken:
+                selected.append(i)
+                taken.add(i)
+    else:
+        for i in perm:
+            if len(selected) >= n:
+                break
+            if classes[int(i)] == "eligible":
+                selected.append(int(i))
     selected_set = set(selected)
     valid = []
     for i in perm[::-1]:
@@ -301,6 +339,9 @@ def main():
     ap.add_argument("--elements", default=None,
                     help="comma-separated element symbols (e.g. H,C,N,O,F): a frame carrying any other "
                          "element is skipped -- the element set of the fine-tune's Dataset, made explicit")
+    ap.add_argument("--coverage", choices=(COVERAGE_BY_FRAME, COVERAGE_MIN1), default=COVERAGE_BY_FRAME,
+                    help="by-frame: the permutation's first N; min1: every eligible molecule at least once, "
+                         "then filled in permutation order (needs --n >= the eligible molecules)")
     ap.add_argument("--source", default=None, help="the SPICE train file (default: data.training_set's)")
     ap.add_argument("--forgetting-ids", default=None,
                     help="the forgetting draw's ids file (default: data/training_sets/spice_test_5000.extxyz.ids.dat)")
@@ -345,7 +386,12 @@ def main():
     forgetting_keys = forgetting_molecules(ids_file, cache)
     membership = dataset_mod.membership(args.membership_file) if args.membership_file else None
     ind_keys = in_distribution_molecules(cache, membership=membership)
-    selected, valid, counts = draw(frames, int(args.n), args.seed, forgetting_keys, ind_keys, cache, n_valid=args.n_valid)
+    selected, valid, counts = draw(frames, int(args.n), args.seed, forgetting_keys, ind_keys, cache,
+                                   n_valid=args.n_valid, coverage=args.coverage)
+    if args.coverage == COVERAGE_MIN1 and counts["molecules_eligible"] > int(args.n):
+        print("openQHA: --coverage min1 needs --n >= the {} molecules among the eligible frames; got --n {}. "
+              "Nothing written.".format(counts["molecules_eligible"], args.n), file=sys.stderr)
+        return 2
     if len(selected) < int(args.n):
         skipped = "{} skipped for the forgetting draw, {} in_distribution".format(
             counts["forgetting"], counts["in_distribution"])
@@ -388,12 +434,13 @@ def main():
     info = dict(DOI=training_set.settings()["doi"], SPLIT="train", SOURCE=str(src), N_SOURCE=len(frames),
                 SEED=int(args.seed), N=len(selected), WEIGHT=float(args.weight), N_MOLECULES=len(per_mol),
                 FRAMES_PER_MOLECULE_MAX=max(per_mol.values()) if per_mol else 0, N_VALID=len(valid),
-                KEY_LEVEL=KEY_LEVEL, ELEMENTS=elements_label, FORGETTING_IDS=str(ids_file),
+                KEY_LEVEL=KEY_LEVEL, COVERAGE=args.coverage, ELEMENTS=elements_label, FORGETTING_IDS=str(ids_file),
                 N_FORGETTING_MOLECULES=len(forgetting_keys),
                 N_IN_DISTRIBUTION=len(ind_keys), N_SKIPPED_FORGETTING=counts["forgetting"],
                 N_SKIPPED_IN_DISTRIBUTION=counts["in_distribution"], N_SKIPPED_ELEMENTS=counts["element"],
                 N_SKIPPED_UNPARSED=counts["unparsed"],
-                N_ELIGIBLE=counts["eligible"], FILE=str(out), IDS_FILE=str(ids),
+                N_ELIGIBLE=counts["eligible"], N_ELIGIBLE_MOLECULES=counts["molecules_eligible"],
+                FILE=str(out), IDS_FILE=str(ids),
                 VALID_FILE=str(valid_file) if valid else "-", SECONDS=time.time() - t0)
     missing = prop.write(out.with_suffix(".toml"), {"Replay": info}, SCHEMA,
                          prop.NORMAL_TERMINATION, PROGNAME)
@@ -403,6 +450,9 @@ def main():
     element_note = "" if elements is None else ", {} outside the declared elements {}".format(counts["element"], elements_label)
     print("excluded   {} forgetting-draw molecules, {} in_distribution; skipped {} + {} frames of the permutation{}, {} unparsed".format(
         len(forgetting_keys), len(ind_keys), counts["forgetting"], counts["in_distribution"], element_note, counts["unparsed"]))
+    if args.coverage == COVERAGE_MIN1:
+        print("coverage   min1: all {} eligible molecules covered, then filled in permutation order".format(
+            counts["molecules_eligible"]))
     print("drawn      {} frames with seed {}, config_weight {}: {} molecules, at most {} frames of one".format(
         len(selected), args.seed, args.weight, len(per_mol), info["FRAMES_PER_MOLECULE_MAX"]))
     print("written    {}\n           {}\n           {} ({} frames)\n           {}".format(

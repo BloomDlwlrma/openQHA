@@ -232,6 +232,33 @@ def main():
         check("no --elements: the new Record fields read '-' and 0",
               rec["ELEMENTS"] == "-" and rec["N_SKIPPED_ELEMENTS"] == 0, rec)
 
+        # --- the coverage rule: min1 on the 7-frame fixture ------------------------------------------------
+        groups = ({0, 1, 2}, {3}, {4, 5}, {6})          # propanal, the dimer, acetone, methyloxirane
+        rank = {f: r for r, f in enumerate(perm)}
+        cov4 = sorted((min(g, key=rank.get) for g in groups), key=rank.get)
+        rest = [i for i in perm if i not in set(cov4)]
+        rc, _s, se = run("--n", 4, "--seed", 0, "--source", SRC, "--forgetting-ids", absent_ids,
+                         "--out", td / "cv4.extxyz", "--membership-file", benign, "--n-valid", 0,
+                         "--coverage", "min1")
+        cv4 = [int(a.info["spice_index"]) for a in read(str(td / "cv4.extxyz"), index=":", format="extxyz")]
+        rec = prop.load(td / "cv4.toml")["Replay"]
+        check("--coverage min1: --n 4 draws each of the 4 molecules once -- its first frame in the permutation",
+              rc == 0 and cv4 == cov4 and rec["COVERAGE"] == "min1" and rec["N_MOLECULES"] == 4
+              and rec["N_ELIGIBLE_MOLECULES"] == 4, (cv4, cov4, rec))
+        rc, _s, se = run("--n", 6, "--seed", 0, "--source", SRC, "--forgetting-ids", absent_ids,
+                         "--out", td / "cv6.extxyz", "--membership-file", benign, "--n-valid", 0,
+                         "--coverage", "min1")
+        cv6 = [int(a.info["spice_index"]) for a in read(str(td / "cv6.extxyz"), index=":", format="extxyz")]
+        check("the fill tier: --n 6 is the coverage frames then the next two of the permutation",
+              rc == 0 and cv6 == cov4 + rest[:2] and set(cv4) <= set(cv6), (cv6, perm))
+        rc, _s, se = run("--n", 3, "--seed", 0, "--source", SRC, "--forgetting-ids", absent_ids,
+                         "--out", td / "cv3.extxyz", "--membership-file", benign, "--coverage", "min1")
+        check("min1 with --n below the molecule count exits 2, naming both numbers",
+              rc == 2 and not (td / "cv3.extxyz").is_file() and "min1" in se and "4" in se and "3" in se, (rc, se[-300:]))
+        rec = prop.load(td / "pt3.toml")["Replay"]
+        check("without --coverage the Rule reads by-frame and the eligible molecules are on the Record",
+              rec["COVERAGE"] == "by-frame" and rec["N_ELIGIBLE_MOLECULES"] == 4, rec)
+
         # --- refusals ---------------------------------------------------------------------------------------
         rc, _s, se = run("--n", 1, "--source", td / "no_such.xyz", "--forgetting-ids", absent_ids, "--out", td / "x.extxyz")
         check("an absent source exits 2 naming the DOI", rc == 2 and "10.17863/CAM.107498" in se, se[-300:])
@@ -239,7 +266,7 @@ def main():
         check("an absent forgetting ids file exits 2 naming the test-draw tool",
               rc == 2 and "s0_spice_test_draw" in se and not (td / "x.extxyz").is_file(), se[-300:])
 
-    print("\n{} checks, {} failed".format(31, len(FAIL)))
+    print("\n{} checks, {} failed".format(35, len(FAIL)))
     return 1 if FAIL else 0
 
 
