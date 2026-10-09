@@ -194,6 +194,8 @@ def main():
               rec["ELEMENTS"] == "H,C,N,O,F" and rec["N_SKIPPED_ELEMENTS"] == 2 and rec["N_ELIGIBLE"] == 4
               and rec["N_SOURCE"] == 6 and rec["N"] == 4, rec)
         check("the stdout names the element skips", "outside the declared elements H,C,N,O,F" in so, so[-400:])
+        ids_txt = (td / "el4.extxyz.ids.dat").read_text(encoding="utf-8")
+        check("the ids file's header names the filter", "# elements H,C,N,O,F" in ids_txt, ids_txt[:200])
         rc, _s, se = run("--n", 2, "--seed", 0, "--source", mix, "--elements", "H,C,N,O,F",
                          "--forgetting-ids", absent_ids, "--out", td / "el2.extxyz",
                          "--membership-file", benign, "--n-valid", 2)
@@ -211,6 +213,10 @@ def main():
                          "--forgetting-ids", absent_ids, "--out", td / "elbad.extxyz", "--membership-file", benign)
         check("a malformed --elements list exits 2 naming the form",
               rc == 2 and not (td / "elbad.extxyz").is_file() and "element symbols" in se, (rc, se[-300:]))
+        rc, _s, se = run("--n", 1, "--seed", 0, "--source", mix, "--elements", "H,,C",
+                         "--forgetting-ids", absent_ids, "--out", td / "elempty.extxyz", "--membership-file", benign)
+        check("an empty token in the list exits 2 too",
+              rc == 2 and not (td / "elempty.extxyz").is_file() and "element symbols" in se, (rc, se[-300:]))
         water_ids = td / "forget_water.ids.dat"
         write_ids(water_ids, ["O"])
         rc, _s, _e = run("--n", 3, "--seed", 0, "--source", mix, "--elements", "H,C,N,O,F",
@@ -233,7 +239,7 @@ def main():
         check("an absent forgetting ids file exits 2 naming the test-draw tool",
               rc == 2 and "s0_spice_test_draw" in se and not (td / "x.extxyz").is_file(), se[-300:])
 
-    print("\n{} checks, {} failed".format(29, len(FAIL)))
+    print("\n{} checks, {} failed".format(31, len(FAIL)))
     return 1 if FAIL else 0
 
 

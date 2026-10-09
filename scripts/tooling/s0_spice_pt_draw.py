@@ -24,10 +24,11 @@ file itself). `<out>.toml`: the Record (`[Replay]`: DOI, SPLIT, SEED, N, WEIGHT,
 N_MOLECULES, FRAMES_PER_MOLECULE_MAX, the exclusions).
 
 THE OPTIONAL ELEMENT FILTER. With `--elements` (a comma list, e.g. `H,C,N,O,F` -- the
-fine-tuning dataset's element set made explicit), a frame carrying any element outside the
-set is skipped like the molecule exclusions, in the same single pass; the draw and its
-validation companion are taken from the frames that remain. The frame's own atoms are the
-judge (not its SMILES), and the declared set is recorded (`ELEMENTS` / `N_SKIPPED_ELEMENTS`).
+element set of the fine-tune's Dataset, made explicit), a frame carrying any element
+outside the set is skipped like the molecule exclusions, in the same single pass; the draw
+and its validation companion are taken from the frames that remain. The frame's own atoms
+are the judge (not its SMILES), and the declared set is recorded (`ELEMENTS` /
+`N_SKIPPED_ELEMENTS`).
 
 WHAT IT EXCLUDES, AND THE TWO ASSERTIONS. The Replay must share no molecule
 with the forgetting draw (`s0_spice_test_draw.py`'s `<file>.ids.dat`, `--forgetting-ids`)
@@ -299,7 +300,7 @@ def main():
     ap.add_argument("--weight", type=float, default=1.0, help="config_weight on every frame (round 1: 1 and 10)")
     ap.add_argument("--elements", default=None,
                     help="comma-separated element symbols (e.g. H,C,N,O,F): a frame carrying any other "
-                         "element is skipped -- the fine-tuning dataset's element set, made explicit")
+                         "element is skipped -- the element set of the fine-tune's Dataset, made explicit")
     ap.add_argument("--source", default=None, help="the SPICE train file (default: data.training_set's)")
     ap.add_argument("--forgetting-ids", default=None,
                     help="the forgetting draw's ids file (default: data/training_sets/spice_test_5000.extxyz.ids.dat)")
