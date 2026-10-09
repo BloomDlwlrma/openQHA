@@ -13,6 +13,15 @@ dimer too, by fragment) and `check_disjoint` raises on a constructed overlap; (b
 the REAL membership table (propanal and acetone are in_distribution) only the
 methyloxirane frame is eligible: `--n 3` exits 2 and writes nothing, `--n 1` writes it;
 an absent source exits 2 naming the DOI; an absent forgetting ids file exits 2.
+
+Also the element filter, on a second fixture (`tests/data/spice_tiny/elements_mix.xyz`:
+methane, chloromethane, water, thiophene, fluoromethane, methanol): `--elements H,C,N,O,F`
+skips the Cl- and S-carrying frames only, and the draw plus its companion valid file are
+the eligible frames of the same seeded permutation; nesting holds under the filter; the
+Record and the stdout carry `ELEMENTS` / `N_SKIPPED_ELEMENTS`; a set no frame matches and a
+malformed list both exit 2; a forgetting ids file naming water composes with the filter
+(water becomes a `forgetting` skip, the Cl/S frames `element` skips); without the flag the
+Record's new fields read `-` and 0.
 """
 import subprocess
 import sys
@@ -166,6 +175,57 @@ def main():
               rc == 0 and len(f1) == 1 and int(f1[0].info["spice_index"]) == 6 and rec["N_SKIPPED_IN_DISTRIBUTION"] == 6
               and rec["N_IN_DISTRIBUTION"] == 4, (rc, rec))
 
+        # --- the element filter: tests/data/spice_tiny/elements_mix.xyz ------------------------------------
+        mix = ROOT / "tests" / "data" / "spice_tiny" / "elements_mix.xyz"
+        perm6 = np.random.default_rng(0).permutation(6).tolist()
+        allowed = {"H", "C", "N", "O", "F"}
+        outside6 = {1, 3}                       # chloromethane carries Cl; thiophene carries S
+        elig6 = [i for i in perm6 if i not in outside6]
+        rc, so, se = run("--n", 4, "--seed", 0, "--source", mix, "--elements", "H,C,N,O,F",
+                         "--forgetting-ids", absent_ids, "--out", td / "el4.extxyz",
+                         "--membership-file", benign, "--n-valid", 0)
+        el = read(str(td / "el4.extxyz"), index=":", format="extxyz")
+        check("--elements H,C,N,O,F: --n 4 from seed 0 draws the first 4 eligible frames (the Cl- and S-frames skipped)",
+              rc == 0 and [int(a.info["spice_index"]) for a in el] == elig6[:4], (rc, se[-300:]))
+        check("every written frame's atoms stay inside the declared element set",
+              all(set(a.get_chemical_symbols()) <= allowed for a in el))
+        rec = prop.load(td / "el4.toml")["Replay"]
+        check("the Record carries ELEMENTS and N_SKIPPED_ELEMENTS beside the other classes",
+              rec["ELEMENTS"] == "H,C,N,O,F" and rec["N_SKIPPED_ELEMENTS"] == 2 and rec["N_ELIGIBLE"] == 4
+              and rec["N_SOURCE"] == 6 and rec["N"] == 4, rec)
+        check("the stdout names the element skips", "outside the declared elements H,C,N,O,F" in so, so[-400:])
+        rc, _s, se = run("--n", 2, "--seed", 0, "--source", mix, "--elements", "H,C,N,O,F",
+                         "--forgetting-ids", absent_ids, "--out", td / "el2.extxyz",
+                         "--membership-file", benign, "--n-valid", 2)
+        iel2 = [int(a.info["spice_index"]) for a in read(str(td / "el2.extxyz"), index=":", format="extxyz")]
+        check("nesting under the filter: --n 2 from seed 0 is the prefix of --n 4",
+              rc == 0 and iel2 == elig6[:2] and iel2 == [int(a.info["spice_index"]) for a in el[:2]], (iel2, elig6))
+        vel2 = [int(a.info["spice_index"]) for a in read(str(td / "el2.valid.extxyz"), index=":", format="extxyz")]
+        check("the companion valid file under the filter: 2 eligible frames from the end, disjoint from the draw",
+              vel2 == elig6[::-1][:2] and not set(vel2) & set(iel2), (vel2, elig6))
+        rc, _s, se = run("--n", 1, "--seed", 0, "--source", mix, "--elements", "N",
+                         "--forgetting-ids", absent_ids, "--out", td / "elN.extxyz", "--membership-file", benign)
+        check("a set no frame matches: exit 2, nothing written, the message names the element skips",
+              rc == 2 and not (td / "elN.extxyz").is_file() and "outside the declared elements N" in se, (rc, se[-300:]))
+        rc, _s, se = run("--n", 1, "--seed", 0, "--source", mix, "--elements", "h,C",
+                         "--forgetting-ids", absent_ids, "--out", td / "elbad.extxyz", "--membership-file", benign)
+        check("a malformed --elements list exits 2 naming the form",
+              rc == 2 and not (td / "elbad.extxyz").is_file() and "element symbols" in se, (rc, se[-300:]))
+        water_ids = td / "forget_water.ids.dat"
+        write_ids(water_ids, ["O"])
+        rc, _s, _e = run("--n", 3, "--seed", 0, "--source", mix, "--elements", "H,C,N,O,F",
+                         "--forgetting-ids", water_ids, "--out", td / "elw3.extxyz",
+                         "--membership-file", benign, "--n-valid", 0)
+        fw = [int(a.info["spice_index"]) for a in read(str(td / "elw3.extxyz"), index=":", format="extxyz")]
+        rec = prop.load(td / "elw3.toml")["Replay"]
+        check("with water in the forgetting draw the filter composes: water is `forgetting`, the Cl/S frames `element`",
+              rc == 0 and fw == [i for i in perm6 if i not in (1, 2, 3)][:3]
+              and rec["N_SKIPPED_FORGETTING"] == 1 and rec["N_SKIPPED_ELEMENTS"] == 2 and rec["N_ELIGIBLE"] == 3,
+              (fw, rec))
+        rec = prop.load(td / "pt3.toml")["Replay"]
+        check("no --elements: the new Record fields read '-' and 0",
+              rec["ELEMENTS"] == "-" and rec["N_SKIPPED_ELEMENTS"] == 0, rec)
+
         # --- refusals ---------------------------------------------------------------------------------------
         rc, _s, se = run("--n", 1, "--source", td / "no_such.xyz", "--forgetting-ids", absent_ids, "--out", td / "x.extxyz")
         check("an absent source exits 2 naming the DOI", rc == 2 and "10.17863/CAM.107498" in se, se[-300:])
@@ -173,7 +233,7 @@ def main():
         check("an absent forgetting ids file exits 2 naming the test-draw tool",
               rc == 2 and "s0_spice_test_draw" in se and not (td / "x.extxyz").is_file(), se[-300:])
 
-    print("\n{} checks, {} failed".format(19, len(FAIL)))
+    print("\n{} checks, {} failed".format(29, len(FAIL)))
     return 1 if FAIL else 0
 
 

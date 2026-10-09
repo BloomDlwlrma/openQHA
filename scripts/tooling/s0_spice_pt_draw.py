@@ -23,6 +23,12 @@ set, the same for every draw (mace would otherwise take `--valid_fraction` of th
 file itself). `<out>.toml`: the Record (`[Replay]`: DOI, SPLIT, SEED, N, WEIGHT,
 N_MOLECULES, FRAMES_PER_MOLECULE_MAX, the exclusions).
 
+THE OPTIONAL ELEMENT FILTER. With `--elements` (a comma list, e.g. `H,C,N,O,F` -- the
+fine-tuning dataset's element set made explicit), a frame carrying any element outside the
+set is skipped like the molecule exclusions, in the same single pass; the draw and its
+validation companion are taken from the frames that remain. The frame's own atoms are the
+judge (not its SMILES), and the declared set is recorded (`ELEMENTS` / `N_SKIPPED_ELEMENTS`).
+
 WHAT IT EXCLUDES, AND THE TWO ASSERTIONS. The Replay must share no molecule
 with the forgetting draw (`s0_spice_test_draw.py`'s `<file>.ids.dat`, `--forgetting-ids`)
 and none of the in_distribution molecules (`judge.IN_DISTRIBUTION`, the four shipped
@@ -91,11 +97,13 @@ SCHEMA = {
         "FRAMES_PER_MOLECULE_MAX": ("Integer", None, "the most frames one molecule contributes"),
         "N_VALID": ("Integer", None, "frames in the companion validation file (from the end of the permutation)"),
         "KEY_LEVEL": ("String", None, "the identity level of the exclusions"),
+        "ELEMENTS": ("String", None, "the declared element set the frames were filtered against ('-' when unfiltered)"),
         "FORGETTING_IDS": ("String", None, "the forgetting draw's ids file the molecules were excluded against"),
         "N_FORGETTING_MOLECULES": ("Integer", None, "molecules of the forgetting draw"),
         "N_IN_DISTRIBUTION": ("Integer", None, "in_distribution molecules excluded"),
         "N_SKIPPED_FORGETTING": ("Integer", None, "frames of the permutation skipped for a forgetting-draw molecule"),
         "N_SKIPPED_IN_DISTRIBUTION": ("Integer", None, "frames skipped for an in_distribution molecule"),
+        "N_SKIPPED_ELEMENTS": ("Integer", None, "frames skipped because an atom is outside the --elements set"),
         "N_SKIPPED_UNPARSED": ("Integer", None, "frames skipped because RDKit could not read their SMILES (no identity, no promise)"),
         "N_ELIGIBLE": ("Integer", None, "frames of the source that could have been drawn"),
         "FILE": ("String", None, "the Replay file"),
@@ -109,9 +117,15 @@ _SMILES_RE = re.compile(r'smiles="([^"]*)"|smiles=(\S+)')
 _CONFIG_RE = re.compile(r'config_type="([^"]*)"|config_type=(\S+)')
 
 
-def scan_frames(path):
+_SYMBOL_RE = re.compile(r'[A-Z][a-z]?$')
+
+
+def scan_frames(path, elements=None):
     """One pass over an extxyz file: per frame (byte offset, byte length, n_atoms, smiles,
-    config_type), reading headers only. Byte offsets, so a frame can be re-read alone."""
+    config_type, elements_ok), reading headers only. Byte offsets, so a frame can be re-read
+    alone. With `elements` (a set of symbols), every atom line's first token is validated and
+    tested against it -- elements_ok is False for a frame holding an element outside the set,
+    None when no set was asked for; the SMILES is not consulted for this, the atoms are."""
     out = []
     with open(path, "rb") as fh:
         while True:
@@ -127,13 +141,26 @@ def scan_frames(path):
             except ValueError:
                 raise ValueError("{}: expected an atom count at byte {}, read {!r}".format(path, start, s[:40]))
             header = fh.readline().decode("utf-8", errors="replace")
-            for _ in range(nat):
-                fh.readline()
+            elements_ok = None
+            if elements is None:
+                for _ in range(nat):
+                    fh.readline()
+            else:
+                elements_ok = True
+                for _ in range(nat):
+                    tok = fh.readline().split(None, 1)
+                    if not tok:
+                        raise ValueError("{}: expected an atom line at byte {}".format(path, fh.tell()))
+                    sym = tok[0].decode("utf-8", errors="replace")
+                    if not _SYMBOL_RE.match(sym):
+                        raise ValueError("{}: expected an element symbol at byte {}, read {!r}".format(path, fh.tell(), sym[:12]))
+                    if sym not in elements:
+                        elements_ok = False
             m = _SMILES_RE.search(header)
             c = _CONFIG_RE.search(header)
             smiles = (m.group(1) if m and m.group(1) is not None else (m.group(2) if m else "")) or ""
             ctype = (c.group(1) if c and c.group(1) is not None else (c.group(2) if c else "")) or ""
-            out.append((start, fh.tell() - start, nat, smiles, ctype))
+            out.append((start, fh.tell() - start, nat, smiles, ctype, elements_ok))
     return out
 
 
@@ -199,11 +226,12 @@ def check_disjoint(drawn_keys, forgetting_keys, in_distribution_keys):
 
 def classify(frames, forgetting_keys, in_distribution_keys, cache):
     """Every frame's class, once: `eligible`, `forgetting` (a fragment in the forgetting
-    draw), `in_distribution`, or `unparsed` (RDKit could not read the SMILES: no identity,
-    so no promise, so excluded). Returns (classes list, counts dict)."""
+    draw), `in_distribution`, `element` (an atom outside the `--elements` set) or `unparsed`
+    (RDKit could not read the SMILES: no identity, so no promise, so excluded). Returns
+    (classes list, counts dict)."""
     forgetting_keys, in_distribution_keys = set(forgetting_keys), set(in_distribution_keys)
     classes = []
-    for _off, _len, _nat, smiles, _ct in frames:
+    for _off, _len, _nat, smiles, _ct, elements_ok in frames:
         key = molecule_key(smiles, cache)
         if key is None:
             classes.append("unparsed")
@@ -213,9 +241,11 @@ def classify(frames, forgetting_keys, in_distribution_keys, cache):
             classes.append("forgetting")
         elif fr & in_distribution_keys:
             classes.append("in_distribution")
+        elif elements_ok is False:
+            classes.append("element")
         else:
             classes.append("eligible")
-    counts = {c: classes.count(c) for c in ("eligible", "forgetting", "in_distribution", "unparsed")}
+    counts = {c: classes.count(c) for c in ("eligible", "forgetting", "in_distribution", "element", "unparsed")}
     return classes, counts
 
 
@@ -267,6 +297,9 @@ def main():
     ap.add_argument("--n", type=int, required=True, help="frames to draw (round 1's production draw: 30000; the S0 ladder used 5000 / 17132 / 68528)")
     ap.add_argument("--seed", type=int, default=0, help="the permutation's seed; one seed, one draw, the whole campaign")
     ap.add_argument("--weight", type=float, default=1.0, help="config_weight on every frame (round 1: 1 and 10)")
+    ap.add_argument("--elements", default=None,
+                    help="comma-separated element symbols (e.g. H,C,N,O,F): a frame carrying any other "
+                         "element is skipped -- the fine-tuning dataset's element set, made explicit")
     ap.add_argument("--source", default=None, help="the SPICE train file (default: data.training_set's)")
     ap.add_argument("--forgetting-ids", default=None,
                     help="the forgetting draw's ids file (default: data/training_sets/spice_test_5000.extxyz.ids.dat)")
@@ -276,6 +309,19 @@ def main():
     ap.add_argument("--membership-file", default=None, help="the QM9 membership table with the in_distribution SMILES")
     args = ap.parse_args()
     t0 = time.time()
+
+    elements = None
+    elements_label = "-"
+    if args.elements is not None:
+        tokens = [tok.strip() for tok in args.elements.split(",")]
+        bad = [tok for tok in tokens if not _SYMBOL_RE.match(tok)]
+        if not tokens or bad:
+            print("openQHA: --elements wants comma-separated element symbols (e.g. H,C,N,O,F); got {!r}{}"
+                  .format(args.elements, " (not a symbol: {})".format(", ".join(map(repr, bad))) if bad else ""),
+                  file=sys.stderr)
+            return 2
+        elements = frozenset(tokens)
+        elements_label = ",".join(dict.fromkeys(tokens))
 
     from ase.io import write
     src = Path(args.source) if args.source else Path(training_set.settings()["train"])
@@ -294,16 +340,19 @@ def main():
         return 2
 
     cache = {}
-    frames = scan_frames(src)
+    frames = scan_frames(src, elements=elements)
     forgetting_keys = forgetting_molecules(ids_file, cache)
     membership = dataset_mod.membership(args.membership_file) if args.membership_file else None
     ind_keys = in_distribution_molecules(cache, membership=membership)
     selected, valid, counts = draw(frames, int(args.n), args.seed, forgetting_keys, ind_keys, cache, n_valid=args.n_valid)
     if len(selected) < int(args.n):
-        print("openQHA: only {} eligible frames in {} after the exclusions ({} skipped for the forgetting draw, {} "
-              "in_distribution, {} unparsed); --n {} cannot be drawn. Nothing written.".format(
-                  len(selected), src, counts["forgetting"], counts["in_distribution"], counts["unparsed"], args.n),
-              file=sys.stderr)
+        skipped = "{} skipped for the forgetting draw, {} in_distribution".format(
+            counts["forgetting"], counts["in_distribution"])
+        if elements is not None:
+            skipped += ", {} outside the declared elements {}".format(counts["element"], elements_label)
+        skipped += ", {} unparsed".format(counts["unparsed"])
+        print("openQHA: only {} eligible frames in {} after the exclusions ({}); --n {} cannot be drawn. "
+              "Nothing written.".format(len(selected), src, skipped, args.n), file=sys.stderr)
         return 2
     drawn_keys = [molecule_key(frames[i][3], cache) for i in selected]
     try:
@@ -319,7 +368,7 @@ def main():
         per_mol[k] = per_mol.get(k, 0) + 1
     atoms_list, rows = [], []
     for i, key in zip(selected, drawn_keys):
-        off, length, nat, smiles, ctype = frames[i]
+        off, length, nat, smiles, ctype, _elements_ok = frames[i]
         atoms_list.append(prepare(read_frame(src, off, length), args.weight, i))
         rows.append(dict(index=int(i), smiles=smiles or "-", config_type=ctype or "-", n_atoms=int(nat),
                          molecule_key=key, frames_of_molecule=per_mol[key]))
@@ -328,6 +377,8 @@ def main():
     dat.write_table(ids, rows, list(ID_ROW), ID_ROW)
     header = "# source {}\n# seed {}\n# n_source {}\n# n_drawn {}\n# weight {}\n".format(
         src, args.seed, len(frames), len(selected), args.weight)
+    if elements is not None:
+        header += "# elements {}\n".format(elements_label)
     ids.write_text(header + ids.read_text(encoding="utf-8"), encoding="utf-8")
     valid_file = out.with_suffix(".valid" + out.suffix)
     if valid:
@@ -336,9 +387,11 @@ def main():
     info = dict(DOI=training_set.settings()["doi"], SPLIT="train", SOURCE=str(src), N_SOURCE=len(frames),
                 SEED=int(args.seed), N=len(selected), WEIGHT=float(args.weight), N_MOLECULES=len(per_mol),
                 FRAMES_PER_MOLECULE_MAX=max(per_mol.values()) if per_mol else 0, N_VALID=len(valid),
-                KEY_LEVEL=KEY_LEVEL, FORGETTING_IDS=str(ids_file), N_FORGETTING_MOLECULES=len(forgetting_keys),
+                KEY_LEVEL=KEY_LEVEL, ELEMENTS=elements_label, FORGETTING_IDS=str(ids_file),
+                N_FORGETTING_MOLECULES=len(forgetting_keys),
                 N_IN_DISTRIBUTION=len(ind_keys), N_SKIPPED_FORGETTING=counts["forgetting"],
-                N_SKIPPED_IN_DISTRIBUTION=counts["in_distribution"], N_SKIPPED_UNPARSED=counts["unparsed"],
+                N_SKIPPED_IN_DISTRIBUTION=counts["in_distribution"], N_SKIPPED_ELEMENTS=counts["element"],
+                N_SKIPPED_UNPARSED=counts["unparsed"],
                 N_ELIGIBLE=counts["eligible"], FILE=str(out), IDS_FILE=str(ids),
                 VALID_FILE=str(valid_file) if valid else "-", SECONDS=time.time() - t0)
     missing = prop.write(out.with_suffix(".toml"), {"Replay": info}, SCHEMA,
@@ -346,8 +399,9 @@ def main():
     if missing:
         raise RuntimeError("keys outside the schema: {}".format(missing))
     print("source     {} ({} frames; {} eligible after the exclusions)".format(src, len(frames), counts["eligible"]))
-    print("excluded   {} forgetting-draw molecules, {} in_distribution; skipped {} + {} frames of the permutation, {} unparsed".format(
-        len(forgetting_keys), len(ind_keys), counts["forgetting"], counts["in_distribution"], counts["unparsed"]))
+    element_note = "" if elements is None else ", {} outside the declared elements {}".format(counts["element"], elements_label)
+    print("excluded   {} forgetting-draw molecules, {} in_distribution; skipped {} + {} frames of the permutation{}, {} unparsed".format(
+        len(forgetting_keys), len(ind_keys), counts["forgetting"], counts["in_distribution"], element_note, counts["unparsed"]))
     print("drawn      {} frames with seed {}, config_weight {}: {} molecules, at most {} frames of one".format(
         len(selected), args.seed, args.weight, len(per_mol), info["FRAMES_PER_MOLECULE_MAX"]))
     print("written    {}\n           {}\n           {} ({} frames)\n           {}".format(
